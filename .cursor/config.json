@@ -1,0 +1,5 @@
+{
+    "project": "Nutrapp",
+    "guidelines": "Follow only the tasks listed in TODO.md. Do not add or delete anything not explicitly required. Check off tasks as they are completed. Always refer to cursor-guidelines.md. Don't do anything crazy.",
+    "primary_language": "typescript"
+  }
