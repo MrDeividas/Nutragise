@@ -77,7 +77,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
             </Text>
             {goal.category && (
               <View className="mt-1">
-                <Text className="text-sm text-blue-600 font-medium">
+                <Text className="text-sm font-medium" style={{ color: '#129490' }}>
                   {goal.category}
                 </Text>
               </View>
@@ -159,7 +159,8 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
           <Text className="text-2xl font-bold text-gray-900">My Goals</Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('NewGoal')}
-            className="bg-blue-500 px-4 py-2 rounded-lg flex-row items-center"
+            className="px-4 py-2 rounded-lg flex-row items-center"
+            style={{ backgroundColor: '#129490' }}
           >
             <Ionicons name="add" size={20} color="white" />
             <Text className="text-white font-medium ml-1">New Goal</Text>
@@ -168,9 +169,9 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         
         {/* Stats */}
         <View className="flex-row mt-4 space-x-4">
-          <View className="flex-1 bg-blue-50 p-3 rounded-lg">
-            <Text className="text-blue-600 font-semibold text-lg">{activeGoals.length}</Text>
-            <Text className="text-blue-600 text-sm">Active</Text>
+          <View className="flex-1 p-3 rounded-lg" style={{ backgroundColor: '#e6f7f5' }}>
+            <Text className="font-semibold text-lg" style={{ color: '#129490' }}>{activeGoals.length}</Text>
+            <Text className="text-sm" style={{ color: '#129490' }}>Active</Text>
           </View>
           <View className="flex-1 bg-green-50 p-3 rounded-lg">
             <Text className="text-green-600 font-semibold text-lg">{completedGoals.length}</Text>
@@ -210,7 +211,8 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
             </Text>
             <TouchableOpacity
               onPress={() => navigation.navigate('NewGoal')}
-              className="bg-blue-500 px-6 py-3 rounded-lg"
+              className="px-6 py-3 rounded-lg"
+              style={{ backgroundColor: '#129490' }}
             >
               <Text className="text-white font-medium">Create Your First Goal</Text>
             </TouchableOpacity>

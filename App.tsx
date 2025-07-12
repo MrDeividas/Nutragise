@@ -43,7 +43,7 @@ function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }: any) => ({
-        tabBarActiveTintColor: '#3b82f6',
+        tabBarActiveTintColor: '#129490',
         tabBarInactiveTintColor: '#6b7280',
         headerShown: false,
         tabBarIcon: ({ color, size }: any) => {
@@ -82,7 +82,7 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color="#129490" />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );

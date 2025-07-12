@@ -92,8 +92,9 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
             className={`px-4 py-2 rounded-lg ${
               loading || !title.trim() 
                 ? 'bg-gray-300' 
-                : 'bg-blue-500'
+                : ''
             }`}
+            style={loading || !title.trim() ? {} : { backgroundColor: '#129490' }}
           >
             <Text className={`font-medium ${
               loading || !title.trim() 
@@ -173,7 +174,10 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
                     }}
                     className={`p-4 ${index < CATEGORIES.length - 1 ? 'border-b border-gray-200' : ''}`}
                   >
-                    <Text className={`text-base ${category === cat ? 'text-blue-500 font-medium' : 'text-gray-900'}`}>
+                    <Text 
+                      className={`text-base ${category === cat ? 'font-medium' : 'text-gray-900'}`}
+                      style={category === cat ? { color: '#129490' } : {}}
+                    >
                       {cat}
                     </Text>
                   </TouchableOpacity>
@@ -198,7 +202,7 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
               Optional: Set a target completion date
             </Text>
             {endDate && (
-              <Text className="text-sm text-blue-500 mt-1">
+              <Text className="text-sm mt-1" style={{ color: '#129490' }}>
                 Target: {formatDate(endDate)}
               </Text>
             )}

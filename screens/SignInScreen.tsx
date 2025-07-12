@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     color: '#1f2937',
   },
   button: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#129490',
     borderRadius: 8,
     paddingVertical: 12,
     marginTop: 8,
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   linkText: {
-    color: '#3b82f6',
+    color: '#129490',
     fontWeight: '600',
   },
 }); 
