@@ -11,8 +11,10 @@ import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import GoalsScreen from './screens/GoalsScreen';
 import NewGoalScreen from './screens/NewGoalScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -26,8 +28,14 @@ function HomeScreen() {
   );
 }
 
-function ProfileTab() {
-  return <ProfileScreen />;
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+    </Stack.Navigator>
+  );
 }
 
 function GoalsStack() {
@@ -57,7 +65,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'Feed' }} />
       <Tab.Screen name="Goals" component={GoalsStack} />
-      <Tab.Screen name="Profile" component={ProfileTab} />
+      <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
 }
