@@ -104,21 +104,23 @@ export default function ProfileScreen({ navigation }: any) {
         <View style={styles.profileRowBoxes}>
           <View style={[styles.profileBox, { height: 50, justifyContent: 'center', alignItems: 'center', marginTop: 80 }]}>
             <Text style={styles.leftBarLabelAbove}>Daily tasks</Text>
-            <View style={styles.leftBarContainer}>
-              <View style={styles.leftBarBackground}>
-                {[...Array(5)].map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.leftBarSegment,
-                      i === 4 && { marginRight: 0 },
-                      (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                      i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                      i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                      (i === 3 || i === 4) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#129490' },
-                    ]}
-                  />
-                ))}
+            <View style={{ flexDirection: 'row', alignItems: 'center', width: '80%', justifyContent: 'space-between' }}>
+              <View style={[styles.leftBarContainer, { flex: 1 }]}>
+                <View style={styles.leftBarBackground}>
+                  {[...Array(5)].map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.leftBarSegment,
+                        i === 4 && { marginRight: 0 },
+                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        (i === 3 || i === 4) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#129490' },
+                      ]}
+                    />
+                  ))}
+                </View>
               </View>
             </View>
           </View>
@@ -141,14 +143,42 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={styles.username}>
               @{user?.username || 'username'}
             </Text>
-            {user?.bio && (
-              <Text style={styles.bio}>{user.bio}</Text>
-            )}
           </View>
           <View style={styles.spacer} />
-          <View style={[styles.profileBox, { height: 80, marginTop: 80 }]} />
+          <View style={[styles.profileBox, { height: 80, marginTop: 80, justifyContent: 'center' }]}>
+            <Text style={styles.leftBarLabelAbove}>Note to self</Text>
+            <Text style={styles.levelTextbox}>To escape the matrix</Text>
+          </View>
         </View>
 
+        {/* Small white box above Keep Track section */}
+        <View style={[styles.weeklyTrackerCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 36 }]}> 
+          <Image source={require('../assets/Shrimp.png')} style={{ width: 20, height: 20, marginRight: 6 }} />
+          <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
+            <View style={styles.leftBarBackground}>
+              {[...Array(30)].map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    {
+                      width: '2.9%', // 100% / 30 segments, adjusted for spacing
+                      height: '100%',
+                      backgroundColor: '#129490',
+                      marginRight: i === 29 ? 0 : '0.4%', // increased spacing between segments
+                      borderRadius: 2,
+                      transform: [{ skewX: '-18deg' }],
+                    },
+                    (i > 0 && i < 29) && { borderRadius: 0 },
+                    i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 2, borderBottomLeftRadius: 2 },
+                    i === 29 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
+                    (i >= 18) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#129490' },
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+          <Image source={require('../assets/Dolphin.png')} style={{ width: 20, height: 20, marginLeft: 6 }} />
+        </View>
         {/* Keep Track Section */}
                   <View style={styles.keepTrackSection}>
             <Text style={styles.keepTrackTitle}>Keep track</Text>
@@ -954,5 +984,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     alignSelf: 'flex-start',
     marginBottom: 16, // match keepTrackTitle spacing
+  },
+  levelTextbox: {
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    color: '#1f2937',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

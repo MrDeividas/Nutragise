@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  ScrollView,
+  StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useGoalsStore } from '../state/goalsStore';
 import { useAuthStore } from '../state/authStore';
@@ -69,28 +70,22 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
-      <View className="bg-white mx-4 mb-4 p-4 rounded-lg shadow-sm border border-gray-200">
-        <View className="flex-row items-start justify-between mb-2">
-          <View className="flex-1">
-            <Text className={`text-lg font-semibold ${goal.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+      <View style={styles.weeklyTrackerCard}>
+        <View style={styles.goalHeader}>
+          <View style={styles.goalTitleContainer}>
+            <Text style={[styles.goalTitle, goal.completed && styles.completedGoalTitle]}>
               {goal.title}
             </Text>
             {goal.category && (
-              <View className="mt-1">
-                <Text className="text-sm font-medium" style={{ color: '#129490' }}>
-                  {goal.category}
-                </Text>
-              </View>
+              <Text style={styles.goalCategory}>
+                {goal.category}
+              </Text>
             )}
           </View>
-          <View className="flex-row items-center ml-2">
+          <View style={styles.goalActions}>
             <TouchableOpacity
               onPress={() => handleToggleCompletion(goal.id)}
-              className={`w-6 h-6 rounded-full border-2 items-center justify-center ${
-                goal.completed 
-                  ? 'bg-green-500 border-green-500' 
-                  : 'border-gray-300'
-              }`}
+              style={[styles.checkboxContainer, goal.completed && styles.checkboxCompleted]}
             >
               {goal.completed && (
                 <Ionicons name="checkmark" size={16} color="white" />
@@ -98,7 +93,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleDeleteGoal(goal)}
-              className="ml-3 p-1"
+              style={styles.deleteButton}
             >
               <Ionicons name="trash-outline" size={18} color="#ef4444" />
             </TouchableOpacity>
@@ -106,23 +101,22 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         </View>
 
         {goal.description && (
-          <Text className="text-gray-600 mb-2 leading-5">
+          <Text style={styles.goalDescription}>
             {goal.description}
           </Text>
         )}
 
-        <View className="flex-row items-center justify-between">
-          <Text className="text-sm text-gray-500">
+        <View style={styles.goalDateContainer}>
+          <Text style={styles.goalDate}>
             Started: {formatDate(goal.start_date)}
           </Text>
           {goal.end_date && (
-            <Text className={`text-sm font-medium ${
-              daysUntilTarget !== null && daysUntilTarget < 0 
-                ? 'text-red-500' 
-                : daysUntilTarget !== null && daysUntilTarget <= 7 
-                ? 'text-orange-500' 
-                : 'text-gray-600'
-            }`}>
+            <Text style={[
+              styles.goalDate,
+              styles.goalTargetDate,
+              daysUntilTarget !== null && daysUntilTarget < 0 && styles.overdue,
+              daysUntilTarget !== null && daysUntilTarget <= 7 && daysUntilTarget >= 0 && styles.dueSoon
+            ]}>
               {daysUntilTarget !== null && daysUntilTarget < 0 
                 ? `${Math.abs(daysUntilTarget)} days overdue`
                 : daysUntilTarget !== null && daysUntilTarget === 0
@@ -138,8 +132,8 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         </View>
 
         {goal.completed && (
-          <View className="mt-2 pt-2 border-t border-gray-200">
-            <Text className="text-sm text-green-600 font-medium">
+          <View style={styles.completedIndicator}>
+            <Text style={styles.completedText}>
               ✅ Completed
             </Text>
           </View>
@@ -152,73 +146,300 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const completedGoals = goals.filter(goal => goal.completed);
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      {/* Header */}
-      <View className="bg-white px-6 py-4 border-b border-gray-200">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-2xl font-bold text-gray-900">My Goals</Text>
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>My Goals</Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('NewGoal')}
-            className="px-4 py-2 rounded-lg flex-row items-center"
-            style={{ backgroundColor: '#129490' }}
+            style={styles.newGoalButton}
           >
             <Ionicons name="add" size={20} color="white" />
-            <Text className="text-white font-medium ml-1">New Goal</Text>
+            <Text style={styles.newGoalButtonText}>New Goal</Text>
           </TouchableOpacity>
         </View>
-        
-        {/* Stats */}
-        <View className="flex-row mt-4 space-x-4">
-          <View className="flex-1 p-3 rounded-lg" style={{ backgroundColor: '#e6f7f5' }}>
-            <Text className="font-semibold text-lg" style={{ color: '#129490' }}>{activeGoals.length}</Text>
-            <Text className="text-sm" style={{ color: '#129490' }}>Active</Text>
-          </View>
-          <View className="flex-1 bg-green-50 p-3 rounded-lg">
-            <Text className="text-green-600 font-semibold text-lg">{completedGoals.length}</Text>
-            <Text className="text-green-600 text-sm">Completed</Text>
-          </View>
-          <View className="flex-1 bg-gray-50 p-3 rounded-lg">
-            <Text className="text-gray-600 font-semibold text-lg">{goals.length}</Text>
-            <Text className="text-gray-600 text-sm">Total</Text>
+
+        {/* Stats Section */}
+        <View style={styles.keepTrackSection}>
+          <Text style={styles.keepTrackTitle}>Progress</Text>
+          <View style={styles.weeklyTrackerCard}>
+            <View style={styles.statsContainer}>
+              <View style={styles.statBox}>
+                <Text style={styles.statNumber}>{activeGoals.length}</Text>
+                <Text style={styles.statLabel}>Active</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, styles.completedStatNumber]}>{completedGoals.length}</Text>
+                <Text style={[styles.statLabel, styles.completedStatLabel]}>Completed</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={[styles.statNumber, styles.totalStatNumber]}>{goals.length}</Text>
+                <Text style={[styles.statLabel, styles.totalStatLabel]}>Total</Text>
+              </View>
+            </View>
           </View>
         </View>
-      </View>
 
-      {/* Error Message */}
-      {error && (
-        <View className="mx-4 mt-4 p-4 bg-red-50 rounded-lg">
-          <Text className="text-red-600 text-center">{error}</Text>
-        </View>
-      )}
-
-      {/* Goals List */}
-      <FlatList
-        data={[...activeGoals, ...completedGoals]}
-        keyExtractor={(item) => item.id}
-        renderItem={renderGoalItem}
-        contentContainerStyle={{ paddingVertical: 16 }}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
-        }
-        ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-16">
-            <Ionicons name="trophy-outline" size={64} color="#d1d5db" />
-            <Text className="text-xl font-medium text-gray-500 mt-4 mb-2">
-              No Goals Yet
-            </Text>
-            <Text className="text-gray-400 text-center px-8 mb-6">
-              Start your journey by creating your first goal
-            </Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('NewGoal')}
-              className="px-6 py-3 rounded-lg"
-              style={{ backgroundColor: '#129490' }}
-            >
-              <Text className="text-white font-medium">Create Your First Goal</Text>
-            </TouchableOpacity>
+        {/* Error Message */}
+        {error && (
+          <View style={styles.keepTrackSection}>
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
           </View>
-        }
-      />
-    </SafeAreaView>
+        )}
+
+        {/* Goals List */}
+        <View style={styles.keepTrackSection}>
+          <Text style={styles.keepTrackTitle}>Goals</Text>
+          {goals.length === 0 ? (
+            <View style={styles.weeklyTrackerCard}>
+              <View style={styles.emptyState}>
+                <Ionicons name="trophy-outline" size={64} color="#d1d5db" />
+                <Text style={styles.emptyStateTitle}>
+                  No Goals Yet
+                </Text>
+                <Text style={styles.emptyStateSubtitle}>
+                  Start your journey by creating your first goal
+                </Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('NewGoal')}
+                  style={styles.createFirstGoalButton}
+                >
+                  <Text style={styles.createFirstGoalButtonText}>Create Your First Goal</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <FlatList
+              data={[...activeGoals, ...completedGoals]}
+              keyExtractor={(item) => item.id}
+              renderItem={renderGoalItem}
+              scrollEnabled={false}
+              refreshControl={
+                <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
+              }
+            />
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
+    backgroundColor: '#ffffff',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  newGoalButton: {
+    backgroundColor: '#129490',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  newGoalButtonText: {
+    color: 'white',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  keepTrackSection: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: 'transparent',
+  },
+  keepTrackTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 16,
+  },
+  weeklyTrackerCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#129490',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#129490',
+    fontWeight: '500',
+  },
+  completedStatNumber: {
+    color: '#10b981',
+  },
+  completedStatLabel: {
+    color: '#10b981',
+  },
+  totalStatNumber: {
+    color: '#6b7280',
+  },
+  totalStatLabel: {
+    color: '#6b7280',
+  },
+  goalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  goalTitleContainer: {
+    flex: 1,
+  },
+  goalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  completedGoalTitle: {
+    color: '#6b7280',
+    textDecorationLine: 'line-through',
+  },
+  goalCategory: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#129490',
+  },
+  goalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  checkboxContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxCompleted: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  goalDescription: {
+    fontSize: 16,
+    color: '#6b7280',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  goalDateContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalDate: {
+    fontSize: 14,
+    color: '#9ca3af',
+  },
+  goalTargetDate: {
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  overdue: {
+    color: '#ef4444',
+  },
+  dueSoon: {
+    color: '#f59e0b',
+  },
+  completedIndicator: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  completedText: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: '500',
+  },
+  errorContainer: {
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
+    padding: 16,
+  },
+  errorText: {
+    color: '#dc2626',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateSubtitle: {
+    fontSize: 16,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 32,
+  },
+  createFirstGoalButton: {
+    backgroundColor: '#129490',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  createFirstGoalButtonText: {
+    color: 'white',
+    fontWeight: '500',
+    fontSize: 16,
+  },
+}); 
