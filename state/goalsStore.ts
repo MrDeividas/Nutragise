@@ -48,7 +48,7 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
         .insert([{ 
           ...goalData, 
           user_id: user.id,
-          start_date: new Date().toISOString().split('T')[0]
+          start_date: goalData.start_date || new Date().toISOString().split('T')[0]
         }])
         .select()
         .single();

@@ -8,39 +8,138 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useGoalsStore } from '../state/goalsStore';
 import { CreateGoalData } from '../types/database';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTheme } from '../state/themeStore';
 
 interface NewGoalScreenProps {
   navigation: any;
 }
 
 const CATEGORIES = [
-  'Fitness',
   'Health',
+  'Learning', 
+  'Productivity',
+  'Finance',
+  'Relationships',
+  'Fitness',
+  'Gym',
   'Nutrition',
-  'Weight Loss',
-  'Muscle Gain',
-  'Endurance',
   'Habits',
+  'Career',
+  'Personal Growth',
   'Other'
 ];
 
+const TIME_COMMITMENTS = [
+  '10 minutes',
+  '15 minutes',
+  '30 minutes',
+  '45 minutes',
+  '1 hour',
+  '1.5 hours',
+  '2 hours',
+  '3 hours',
+  '4 hours',
+  '6 hours',
+  '8 hours',
+  '12 hours'
+];
+
+const CHECK_IN_SCHEDULES = [
+  'Daily at 6pm',
+  'Daily at 9am',
+  'Every Monday',
+  'Every Friday',
+  'Twice a week',
+  'Weekly',
+  'Bi-weekly',
+  'Monthly'
+];
+
+const SHARING_OPTIONS = [
+  'Private',
+  'Friends',
+  'Public'
+];
+
 export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
+  const { theme } = useTheme();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+
+  const handleTitleChange = (text: string) => {
+    if (text.length > 0) {
+      setTitle(text.charAt(0).toUpperCase() + text.slice(1));
+    } else {
+      setTitle(text);
+    }
+  };
   const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [frequency, setFrequency] = useState<boolean[]>([false, false, false, false, false, false, false]); // S,M,T,W,T,F,S
+  const [timeCommitment, setTimeCommitment] = useState('');
+  const [checkInSchedule, setCheckInSchedule] = useState('');
+  const [sharingOption, setSharingOption] = useState('Public');
+  const [successCriteria, setSuccessCriteria] = useState('');
+  const [milestoneCount, setMilestoneCount] = useState(0);
+  const [milestones, setMilestones] = useState<string[]>([]);
+
   const [showCategories, setShowCategories] = useState(false);
+  const [showTimeCommitments, setShowTimeCommitments] = useState(false);
+  const [showCheckInSchedules, setShowCheckInSchedules] = useState(false);
+  const [showSharingOptions, setShowSharingOptions] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerMode, setDatePickerMode] = useState<'start' | 'end'>('start');
 
   const { createGoal, loading, error } = useGoalsStore();
 
+  const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  // Validation for UI state (no alerts)
+  const isFormValidForUI = () => {
+    return (
+      title.trim().length > 0 &&
+      category.trim().length > 0 &&
+      description.trim().length > 0 &&
+      startDate.trim().length > 0 &&
+      endDate.trim().length > 0 &&
+      frequency.some(Boolean) &&
+      sharingOption.trim().length > 0 &&
+      successCriteria.trim().length > 0
+    );
+  };
+
+  // Validation for form submission (with alerts)
+  const isFormValid = () => {
+    const hasFrequencyDays = frequency.some(Boolean);
+    
+    if (!hasFrequencyDays) {
+      Alert.alert('Frequency Required', 'Please select at least one day of the week to work on your goal.');
+      return false;
+    }
+    
+    return (
+      title.trim().length > 0 &&
+      category.trim().length > 0 &&
+      description.trim().length > 0 &&
+      startDate.trim().length > 0 &&
+      endDate.trim().length > 0 &&
+      hasFrequencyDays &&
+      sharingOption.trim().length > 0 &&
+      successCriteria.trim().length > 0
+    );
+  };
+
   const handleCreateGoal = async () => {
-    if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a goal title');
+    if (!isFormValid()) {
+      Alert.alert('Missing Information', 'Please fill in all fields before creating your goal.');
       return;
     }
 
@@ -48,7 +147,14 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
       title: title.trim(),
       description: description.trim() || undefined,
       category: category || undefined,
+      start_date: startDate || undefined,
       end_date: endDate || undefined,
+      frequency: frequency,
+      time_commitment: timeCommitment || undefined,
+      sharing_option: sharingOption || undefined,
+      success_criteria: successCriteria.trim() || undefined,
+      milestone_count: milestoneCount > 0 ? milestoneCount : undefined,
+      milestones: milestoneCount > 0 ? milestones.filter(m => m.trim().length > 0) : undefined,
     };
 
     const newGoal = await createGoal(goalData);
@@ -61,161 +167,706 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
     }
   };
 
+  const toggleFrequencyDay = (index: number) => {
+    const newFrequency = [...frequency];
+    newFrequency[index] = !newFrequency[index];
+    setFrequency(newFrequency);
+  };
+
+  const handleMilestoneCountChange = (count: number) => {
+    if (milestoneCount === count) {
+      // If clicking the same number, untick it
+      setMilestoneCount(0);
+      setMilestones([]);
+    } else {
+      // If clicking a different number, set it
+      setMilestoneCount(count);
+      setMilestones(new Array(count).fill(''));
+    }
+  };
+
+  const updateMilestone = (index: number, text: string) => {
+    const newMilestones = [...milestones];
+    newMilestones[index] = text;
+    setMilestones(newMilestones);
+  };
+
+  // Helper to format date as YYYY-MM-DD
   const formatDate = (dateString: string) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString();
   };
 
-  const handleDateChange = (text: string) => {
-    // Simple date validation (YYYY-MM-DD format)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (text === '' || dateRegex.test(text)) {
-      setEndDate(text);
+  // Handler for date picker
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    // For inline pickers, close on any interaction
+    // For modal pickers, close when confirmed or dismissed
+    if (Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14) {
+      // Inline picker - always close when user taps on any date
+      setShowDatePicker(false);
+    } else {
+      // Modal picker - close on set or dismissed
+      if (event.type === 'set' || event.type === 'dismissed') {
+        setShowDatePicker(false);
+      }
+    }
+    
+    if (selectedDate) {
+      const iso = selectedDate.toISOString().slice(0, 10);
+      if (datePickerMode === 'start') {
+        setStartDate(iso);
+      } else {
+        setEndDate(iso);
+      }
     }
   };
 
+  const DropdownSection = ({ 
+    title, 
+    value, 
+    placeholder, 
+    options, 
+    onSelect, 
+    showDropdown, 
+    setShowDropdown,
+    required = false 
+  }: {
+    title: string;
+    value: string;
+    placeholder: string;
+    options: string[];
+    onSelect: (value: string) => void;
+    showDropdown: boolean;
+    setShowDropdown: (show: boolean) => void;
+    required?: boolean;
+  }) => (
+    <View style={styles.section}>
+      <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+        {title}{required && ' *'}
+      </Text>
+      <TouchableOpacity
+        onPress={() => setShowDropdown(!showDropdown)}
+        style={[styles.dropdown, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}
+      >
+        <Text style={[styles.dropdownText, { color: theme.textPrimary }, !value && { color: theme.textTertiary }]}>
+          {value || placeholder}
+        </Text>
+        <Ionicons 
+          name={showDropdown ? "chevron-up" : "chevron-down"} 
+          size={20} 
+          color={theme.textSecondary} 
+        />
+      </TouchableOpacity>
+      
+      {showDropdown && (
+        <View style={[styles.dropdownOptions, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+          {options.map((option, index) => (
+            <TouchableOpacity
+              key={option}
+              onPress={() => {
+                onSelect(option);
+                setShowDropdown(false);
+              }}
+              style={[
+                styles.dropdownOption,
+                index < options.length - 1 && [styles.dropdownOptionBorder, { borderBottomColor: theme.borderSecondary }]
+              ]}
+            >
+              <Text style={[
+                styles.dropdownOptionText,
+                { color: theme.textPrimary },
+                value === option && [styles.selectedOptionText, { color: theme.primary }]
+              ]}>
+                {option}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
+        style={styles.keyboardView}
       >
         {/* Header */}
-        <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-200">
+        <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="close" size={24} color="#6b7280" />
+            <Ionicons name="close" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
-          <Text className="text-lg font-semibold text-gray-900">New Goal</Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>New Goal</Text>
           <TouchableOpacity
+            style={[
+              styles.createButton,
+              { backgroundColor: isFormValidForUI() ? '#ffffff' : 'rgba(128, 128, 128, 0.15)' },
+              (loading || !isFormValidForUI()) && styles.createButtonDisabled
+            ]}
             onPress={handleCreateGoal}
-            disabled={loading || !title.trim()}
-            className={`px-4 py-2 rounded-lg ${
-              loading || !title.trim() 
-                ? 'bg-gray-300' 
-                : ''
-            }`}
-            style={loading || !title.trim() ? {} : { backgroundColor: '#129490' }}
+            disabled={loading || !isFormValidForUI()}
+            activeOpacity={0.8}
           >
-            <Text className={`font-medium ${
-              loading || !title.trim() 
-                ? 'text-gray-500' 
-                : 'text-white'
-            }`}>
-              {loading ? 'Creating...' : 'Create'}
+            <Text style={[
+              styles.createButtonText,
+              { color: isFormValidForUI() ? '#000000' : '#ffffff' },
+              (loading || !isFormValidForUI()) && styles.createButtonTextDisabled
+            ]}>
+              {loading ? 'Creating...' : 'Create Goal'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView className="flex-1 px-6 py-6">
-          {/* Title Input */}
-          <View className="mb-6">
-            <Text className="text-base font-medium text-gray-900 mb-2">
-              Goal Title *
-            </Text>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* Goal Title */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Goal Title *</Text>
             <TextInput
               value={title}
-              onChangeText={setTitle}
+              onChangeText={handleTitleChange}
               placeholder="What do you want to achieve?"
-              className="w-full p-4 border border-gray-300 rounded-lg text-base"
-              multiline={false}
+              placeholderTextColor={theme.textTertiary}
+              style={[styles.textInput, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
               maxLength={100}
             />
-            <Text className="text-sm text-gray-500 mt-1">
-              {title.length}/100 characters
-            </Text>
+            <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{title.length}/100 characters</Text>
           </View>
 
-          {/* Description Input */}
-          <View className="mb-6">
-            <Text className="text-base font-medium text-gray-900 mb-2">
-              Description
-            </Text>
+          {/* Goal Category */}
+          <DropdownSection
+            title="Goal Category"
+            value={category}
+            placeholder="Select a category"
+            options={CATEGORIES}
+            onSelect={setCategory}
+            showDropdown={showCategories}
+            setShowDropdown={setShowCategories}
+            required
+          />
+
+          {/* Description */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Description / Why this matters</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Powerful for motivation</Text>
             <TextInput
               value={description}
               onChangeText={setDescription}
-              placeholder="Describe your goal in detail..."
-              className="w-full p-4 border border-gray-300 rounded-lg text-base min-h-[100px]"
+              placeholder="Describe your goal and why it's important to you..."
+              placeholderTextColor={theme.textTertiary}
+              style={[styles.textInput, styles.textAreaInput, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
               multiline
               textAlignVertical="top"
               maxLength={500}
             />
-            <Text className="text-sm text-gray-500 mt-1">
-              {description.length}/500 characters
-            </Text>
+            <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{description.length}/500 characters</Text>
           </View>
 
-          {/* Category Selection */}
-          <View className="mb-6">
-            <Text className="text-base font-medium text-gray-900 mb-2">
-              Category
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowCategories(!showCategories)}
-              className="w-full p-4 border border-gray-300 rounded-lg flex-row items-center justify-between"
-            >
-              <Text className={`text-base ${category ? 'text-gray-900' : 'text-gray-500'}`}>
-                {category || 'Select a category'}
-              </Text>
-              <Ionicons 
-                name={showCategories ? "chevron-up" : "chevron-down"} 
-                size={20} 
-                color="#6b7280" 
-              />
-            </TouchableOpacity>
-            
-            {showCategories && (
-              <View className="mt-2 border border-gray-300 rounded-lg">
-                {CATEGORIES.map((cat, index) => (
+          {/* Frequency */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Frequency</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Select days to work on this goal</Text>
+            <View style={[styles.frequencyContainer, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+              {days.map((day, index) => (
+                <View key={index} style={styles.dayContainer}>
+                  <Text style={[styles.dayLabel, { color: theme.textSecondary }]}>{day}</Text>
                   <TouchableOpacity
-                    key={cat}
-                    onPress={() => {
-                      setCategory(cat);
-                      setShowCategories(false);
-                    }}
-                    className={`p-4 ${index < CATEGORIES.length - 1 ? 'border-b border-gray-200' : ''}`}
+                    onPress={() => toggleFrequencyDay(index)}
+                    style={[
+                      styles.checkbox,
+                      { borderColor: theme.borderSecondary },
+                      frequency[index] && [styles.checkboxSelected, { backgroundColor: theme.primary, borderColor: theme.primary }]
+                    ]}
                   >
-                    <Text 
-                      className={`text-base ${category === cat ? 'font-medium' : 'text-gray-900'}`}
-                      style={category === cat ? { color: '#129490' } : {}}
-                    >
-                      {cat}
+                    {frequency[index] && (
+                      <Ionicons name="checkmark" size={16} color="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Check-in Schedule Info */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Check-in Schedule</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+              Your goal will appear on the calendar on the selected days above
+            </Text>
+            <View style={[styles.checkinInfoContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
+              <View style={styles.checkinInfoRow}>
+                <Ionicons name="calendar-outline" size={20} color={theme.primary} />
+                <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
+                  {frequency.filter(Boolean).length > 0 
+                    ? `Check-ins available ${frequency.filter(Boolean).length} days per week`
+                    : 'Select frequency days above to enable check-ins'
+                  }
+                </Text>
+              </View>
+              {frequency.some(Boolean) && (
+                <>
+                  <View style={styles.checkinInfoRow}>
+                    <Ionicons name="checkmark-circle-outline" size={20} color={theme.primary} />
+                    <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
+                      Selected days: {days.filter((_, index) => frequency[index]).join(', ')}
+                    </Text>
+                  </View>
+                  <View style={styles.checkinInfoRow}>
+                    <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
+                    <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
+                      Check-ins will appear on these days in your weekly calendar
+                    </Text>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Time Commitment */}
+          <DropdownSection
+            title="Time Commitment per Session"
+            value={timeCommitment}
+            placeholder="Select time commitment (optional)"
+            options={TIME_COMMITMENTS}
+            onSelect={setTimeCommitment}
+            showDropdown={showTimeCommitments}
+            setShowDropdown={setShowTimeCommitments}
+          />
+
+          {/* Start and End Dates */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Start and End Dates</Text>
+            <View style={styles.dateRow}>
+              {/* Start Date */}
+              <View style={styles.dateColumn}>
+                <Text style={[styles.dateLabel, { color: theme.textSecondary }]}>Start Date</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.datePickerButton, 
+                    { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary },
+                    showDatePicker && datePickerMode === 'start' && [styles.datePickerButtonActive, { borderColor: theme.primary }]
+                  ]}
+                  onPress={() => { setDatePickerMode('start'); setShowDatePicker(true); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[startDate ? styles.datePickerText : styles.placeholderText, { color: startDate ? theme.textPrimary : theme.textTertiary }]}>
+                    {startDate ? formatDate(startDate) : 'Select start date'}
+                  </Text>
+                </TouchableOpacity>
+                {/* Inline Date Picker for iOS 14+ */}
+                {showDatePicker && datePickerMode === 'start' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
+                  <DateTimePicker
+                    value={startDate ? new Date(startDate) : new Date()}
+                    mode="date"
+                    display="inline"
+                    onChange={handleDateChange}
+                    style={styles.inlineDatePicker}
+                  />
+                )}
+              </View>
+
+              {/* End Date */}
+              <View style={styles.dateColumn}>
+                <Text style={[styles.dateLabel, { color: theme.textSecondary }]}>End Date</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.datePickerButton, 
+                    { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary },
+                    showDatePicker && datePickerMode === 'end' && [styles.datePickerButtonActive, { borderColor: theme.primary }]
+                  ]}
+                  onPress={() => { setDatePickerMode('end'); setShowDatePicker(true); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[endDate ? styles.datePickerText : styles.placeholderText, { color: endDate ? theme.textPrimary : theme.textTertiary }]}>
+                    {endDate ? formatDate(endDate) : 'Select end date'}
+                  </Text>
+                </TouchableOpacity>
+                {/* Inline Date Picker for iOS 14+ */}
+                {showDatePicker && datePickerMode === 'end' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
+                  <DateTimePicker
+                    value={endDate ? new Date(endDate) : new Date()}
+                    mode="date"
+                    display="inline"
+                    onChange={handleDateChange}
+                    style={styles.inlineDatePicker}
+                  />
+                )}
+              </View>
+            </View>
+          </View>
+
+          {/* Date Picker Modal for Android and iOS < 14 */}
+          {showDatePicker && ((Platform.OS === 'android') || (Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) < 14)) && (
+            <DateTimePicker
+              value={
+                datePickerMode === 'start'
+                  ? (startDate ? new Date(startDate) : new Date())
+                  : (endDate ? new Date(endDate) : new Date())
+              }
+              mode="date"
+              display="default"
+              onChange={handleDateChange}
+            />
+          )}
+
+          {/* Buddy or Public Sharing */}
+          <DropdownSection
+            title="Buddy or Public Sharing?"
+            value={sharingOption}
+            placeholder="Choose sharing level"
+            options={SHARING_OPTIONS}
+            onSelect={setSharingOption}
+            showDropdown={showSharingOptions}
+            setShowDropdown={setShowSharingOptions}
+            required
+          />
+
+          {/* Success Criteria */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>What does success look like?</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>e.g. "Lose 5kg", "Finish reading 3 books"</Text>
+            <TextInput
+              value={successCriteria}
+              onChangeText={setSuccessCriteria}
+              placeholder="Define your success criteria..."
+              placeholderTextColor={theme.textTertiary}
+              style={[styles.textInput, styles.textAreaInput, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
+              multiline
+              textAlignVertical="top"
+              maxLength={200}
+            />
+            <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{successCriteria.length}/200 characters</Text>
+          </View>
+
+          {/* Milestones */}
+          <View style={[styles.section, styles.lastSection]}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Milestones</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Optional: break goal into smaller steps</Text>
+            
+            {/* Milestone Count Selection */}
+            <Text style={[styles.milestoneCountLabel, { color: theme.textPrimary }]}>How many milestones?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.milestoneCountScrollContainer}>
+              {[...Array(10)].map((_, index) => {
+                const count = index + 1;
+                const isSelected = milestoneCount === count;
+                return (
+                  <TouchableOpacity
+                    key={count}
+                    onPress={() => handleMilestoneCountChange(count)}
+                    style={[
+                      styles.milestoneCountButton,
+                      { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary },
+                      isSelected && [styles.milestoneCountButtonSelected, { backgroundColor: theme.primary, borderColor: theme.primary }]
+                    ]}
+                  >
+                    <Text style={[
+                      styles.milestoneCountButtonText,
+                      { color: theme.textSecondary },
+                      isSelected && [styles.milestoneCountButtonTextSelected, { color: '#ffffff' }]
+                    ]}>
+                      {count}
                     </Text>
                   </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Dynamic Milestone Inputs */}
+            {milestoneCount > 0 && (
+              <View style={styles.milestonesInputContainer}>
+                {milestones.map((milestone, index) => (
+                  <View key={index} style={styles.milestoneInputWrapper}>
+                    <Text style={[styles.milestoneInputLabel, { color: theme.textPrimary }]}>
+                      Milestone {index + 1}
+                    </Text>
+                    <TextInput
+                      value={milestone}
+                      onChangeText={(text) => updateMilestone(index, text)}
+                      placeholder={`Enter milestone ${index + 1}...`}
+                      placeholderTextColor={theme.textTertiary}
+                      style={[styles.textInput, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
+                      maxLength={100}
+                    />
+                  </View>
                 ))}
               </View>
             )}
           </View>
 
-          {/* Target Date Input */}
-          <View className="mb-6">
-            <Text className="text-base font-medium text-gray-900 mb-2">
-              Target Date
-            </Text>
-            <TextInput
-              value={endDate}
-              onChangeText={handleDateChange}
-              placeholder="YYYY-MM-DD (optional)"
-              className="w-full p-4 border border-gray-300 rounded-lg text-base"
-              maxLength={10}
-            />
-            <Text className="text-sm text-gray-500 mt-1">
-              Optional: Set a target completion date
-            </Text>
-            {endDate && (
-              <Text className="text-sm mt-1" style={{ color: '#129490' }}>
-                Target: {formatDate(endDate)}
-              </Text>
-            )}
-          </View>
-
           {/* Error Message */}
           {error && (
-            <View className="mb-4 p-4 bg-red-50 rounded-lg">
-              <Text className="text-red-600 text-center">{error}</Text>
+            <View style={[styles.errorContainer, { backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}>
+              <Text style={[styles.errorText, { color: '#dc2626' }]}>{error}</Text>
             </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  createButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  createButtonDisabled: {
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+  },
+  createButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  createButtonTextDisabled: {
+    color: 'rgba(0, 0, 0, 0.3)',
+  },
+  scrollView: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  lastSection: {
+    marginBottom: 40,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  textAreaInput: {
+    minHeight: 80,
+    maxHeight: 120,
+  },
+  characterCount: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+    textAlign: 'right',
+  },
+  dropdown: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  placeholderText: {
+    color: '#9ca3af',
+  },
+  dropdownOptions: {
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dropdownOptionBorder: {
+    borderBottomWidth: 1,
+  },
+  dropdownOptionText: {
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  selectedOptionText: {
+    color: '#129490',
+    fontWeight: '600',
+  },
+  frequencyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  dayContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  dayLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#129490',
+    borderColor: '#129490',
+  },
+  errorContainer: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#dc2626',
+    textAlign: 'center',
+    fontSize: 14,
+  },
+  milestoneCountLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1f2937',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  milestoneCountContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  milestoneCountButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  milestoneCountButtonSelected: {
+    backgroundColor: '#129490',
+    borderColor: '#129490',
+  },
+  milestoneCountButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  milestoneCountButtonTextSelected: {
+    color: '#ffffff',
+  },
+  milestonesInputContainer: {
+    gap: 16,
+  },
+  milestoneInputWrapper: {
+    gap: 8,
+  },
+  milestoneInputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1f2937',
+  },
+  milestoneCountScrollContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 2,
+    marginBottom: 16,
+  },
+  datePickerButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  datePickerButtonActive: {
+    borderColor: '#129490',
+    shadowColor: '#129490',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  inlineDatePicker: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  dateColumn: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  checkinInfoContainer: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  checkinInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  checkinInfoText: {
+    fontSize: 14,
+    flex: 1,
+  },
+}); 

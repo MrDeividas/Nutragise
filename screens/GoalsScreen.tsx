@@ -9,10 +9,13 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useGoalsStore } from '../state/goalsStore';
 import { useAuthStore } from '../state/authStore';
 import { Goal } from '../types/database';
+import { useTheme } from '../state/themeStore';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface GoalsScreenProps {
   navigation: any;
@@ -21,12 +24,16 @@ interface GoalsScreenProps {
 export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const { user } = useAuthStore();
   const { goals, loading, error, fetchGoals, toggleGoalCompletion, deleteGoal } = useGoalsStore();
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (user) {
       fetchGoals(user.id);
     }
   }, [user]);
+
+  // Only fetch goals once when component mounts or user changes
+  // Removed useFocusEffect to prevent layout resets
 
   const handleRefresh = () => {
     if (user) {
@@ -70,75 +77,84 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
-      <View style={styles.weeklyTrackerCard}>
-        <View style={styles.goalHeader}>
-          <View style={styles.goalTitleContainer}>
-            <Text style={[styles.goalTitle, goal.completed && styles.completedGoalTitle]}>
-              {goal.title}
+      <View style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+        <TouchableOpacity
+          onPress={() => {
+            navigation.navigate('GoalDetail', { goal });
+          }}
+          activeOpacity={0.85}
+        >
+          <View>
+          <View style={styles.goalHeader}>
+            <View style={styles.goalTitleContainer}>
+              <Text style={[styles.goalTitle, { color: theme.textPrimary }, goal.completed && styles.completedGoalTitle]}>
+                {goal.title}
+              </Text>
+              {goal.category && (
+                <Text style={[styles.goalCategory, { color: theme.primary }]}>
+                  {goal.category}
+                </Text>
+              )}
+            </View>
+            <View style={styles.goalActions}>
+              <TouchableOpacity
+                onPress={() => handleToggleCompletion(goal.id)}
+                style={[styles.checkboxContainer, goal.completed && styles.checkboxCompleted]}
+              >
+                {goal.completed && (
+                  <Ionicons name="checkmark-outline" size={16} color="#ffffff" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleDeleteGoal(goal)}
+                style={styles.deleteButton}
+              >
+                <Ionicons name="trash-outline" size={18} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {goal.description && (
+            <Text style={[styles.goalDescription, { color: theme.textSecondary }]}>
+              {goal.description}
             </Text>
-            {goal.category && (
-              <Text style={styles.goalCategory}>
-                {goal.category}
+          )}
+
+          <View style={styles.goalDateContainer}>
+            <Text style={styles.goalDate}>
+              Started: {formatDate(goal.start_date)}
+            </Text>
+            {goal.end_date && (
+              <Text style={[
+                styles.goalDate,
+                styles.goalTargetDate,
+                daysUntilTarget !== null && daysUntilTarget < 0 && styles.overdue,
+                daysUntilTarget !== null && daysUntilTarget <= 7 && daysUntilTarget >= 0 && styles.dueSoon
+              ]}>
+                {daysUntilTarget !== null && daysUntilTarget < 0 
+                  ? `${Math.abs(daysUntilTarget)} days overdue`
+                  : daysUntilTarget !== null && daysUntilTarget === 0
+                  ? 'Due today'
+                  : daysUntilTarget !== null && daysUntilTarget === 1
+                  ? '1 day left'
+                  : daysUntilTarget !== null
+                  ? `${daysUntilTarget} days left`
+                  : 'No target date'
+                }
               </Text>
             )}
           </View>
-          <View style={styles.goalActions}>
-            <TouchableOpacity
-              onPress={() => handleToggleCompletion(goal.id)}
-              style={[styles.checkboxContainer, goal.completed && styles.checkboxCompleted]}
-            >
-              {goal.completed && (
-                <Ionicons name="checkmark" size={16} color="white" />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleDeleteGoal(goal)}
-              style={styles.deleteButton}
-            >
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        {goal.description && (
-          <Text style={styles.goalDescription}>
-            {goal.description}
-          </Text>
-        )}
-
-        <View style={styles.goalDateContainer}>
-          <Text style={styles.goalDate}>
-            Started: {formatDate(goal.start_date)}
-          </Text>
-          {goal.end_date && (
-            <Text style={[
-              styles.goalDate,
-              styles.goalTargetDate,
-              daysUntilTarget !== null && daysUntilTarget < 0 && styles.overdue,
-              daysUntilTarget !== null && daysUntilTarget <= 7 && daysUntilTarget >= 0 && styles.dueSoon
-            ]}>
-              {daysUntilTarget !== null && daysUntilTarget < 0 
-                ? `${Math.abs(daysUntilTarget)} days overdue`
-                : daysUntilTarget !== null && daysUntilTarget === 0
-                ? 'Due today'
-                : daysUntilTarget !== null && daysUntilTarget === 1
-                ? '1 day left'
-                : daysUntilTarget !== null
-                ? `${daysUntilTarget} days left`
-                : 'No target date'
-              }
-            </Text>
+          {goal.completed && (
+            <View style={styles.completedIndicator}>
+              <Text style={styles.completedText}>
+                ✅ Completed
+              </Text>
+            </View>
           )}
         </View>
-
-        {goal.completed && (
-          <View style={styles.completedIndicator}>
-            <Text style={styles.completedText}>
-              ✅ Completed
-            </Text>
-          </View>
-        )}
-      </View>
+      </TouchableOpacity>
+        </View>
     );
   };
 
@@ -146,24 +162,28 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const completedGoals = goals.filter(goal => goal.completed);
 
   return (
-    <View style={styles.container}>
-      <ScrollView style={styles.scrollView}>
+          <SafeAreaView style={{ flex: 1 }}>
+              <ScrollView 
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>My Goals</Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Goals</Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('NewGoal')}
-            style={styles.newGoalButton}
+            style={[styles.newGoalButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
           >
-            <Ionicons name="add" size={20} color="white" />
+            <Ionicons name="add-outline" size={20} color="#ffffff" />
             <Text style={styles.newGoalButtonText}>New Goal</Text>
           </TouchableOpacity>
         </View>
 
         {/* Stats Section */}
         <View style={styles.keepTrackSection}>
-          <Text style={styles.keepTrackTitle}>Progress</Text>
-          <View style={styles.weeklyTrackerCard}>
+          <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Progress</Text>
+          <View style={[styles.weeklyTrackerCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
             <View style={styles.statsContainer}>
               <View style={styles.statBox}>
                 <Text style={styles.statNumber}>{activeGoals.length}</Text>
@@ -196,7 +216,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
           {goals.length === 0 ? (
             <View style={styles.weeklyTrackerCard}>
               <View style={styles.emptyState}>
-                <Ionicons name="trophy-outline" size={64} color="#d1d5db" />
+                <Ionicons name="locate-outline" size={64} color="#d1d5db" />
                 <Text style={styles.emptyStateTitle}>
                   No Goals Yet
                 </Text>
@@ -217,6 +237,10 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
               keyExtractor={(item) => item.id}
               renderItem={renderGoalItem}
               scrollEnabled={false}
+              removeClippedSubviews={false}
+              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={10}
               refreshControl={
                 <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
               }
@@ -224,14 +248,13 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
   scrollView: {
     flex: 1,
@@ -241,17 +264,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 20,
-    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#1f2937',
   },
   newGoalButton: {
-    backgroundColor: '#129490',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -265,26 +291,35 @@ const styles = StyleSheet.create({
   },
   keepTrackSection: {
     paddingHorizontal: 24,
-    paddingVertical: 10,
+    paddingVertical: 4,
     backgroundColor: 'transparent',
   },
   keepTrackTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1f2937',
+    color: '#ffffff',
     marginBottom: 16,
   },
   weeklyTrackerCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 20,
-    marginBottom: 16,
+    marginBottom: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  goalCard: {
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -295,30 +330,30 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 4,
   },
   statNumber: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#129490',
+    color: '#ffffff',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
-    color: '#129490',
+    color: '#ffffff',
     fontWeight: '500',
   },
   completedStatNumber: {
-    color: '#10b981',
+    color: '#ffffff',
   },
   completedStatLabel: {
-    color: '#10b981',
+    color: '#ffffff',
   },
   totalStatNumber: {
-    color: '#6b7280',
+    color: '#ffffff',
   },
   totalStatLabel: {
-    color: '#6b7280',
+    color: '#ffffff',
   },
   goalHeader: {
     flexDirection: 'row',
@@ -403,7 +438,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   errorContainer: {
-    backgroundColor: '#fef2f2',
     borderRadius: 8,
     padding: 16,
   },
@@ -432,7 +466,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   createFirstGoalButton: {
-    backgroundColor: '#129490',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,

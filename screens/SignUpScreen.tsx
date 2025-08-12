@@ -10,9 +10,13 @@ import {
   Platform,
   StyleSheet
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../state/authStore';
+import { useTheme } from '../state/themeStore';
 
 export default function SignUpScreen({ navigation }: any) {
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -56,24 +60,37 @@ export default function SignUpScreen({ navigation }: any) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Join Nutrapp</Text>
-          <Text style={styles.subtitle}>
-            Start your health journey today
-          </Text>
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
+        <View style={styles.content}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+            >
+              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.title, { color: theme.textPrimary }]}>Join Nutrapp</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              Start your health journey today
+            </Text>
+          </View>
 
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                color: theme.textPrimary,
+                borderColor: theme.borderSecondary
+              }]}
               placeholder="Enter your email"
+              placeholderTextColor={theme.textTertiary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -83,10 +100,15 @@ export default function SignUpScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Password</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                color: theme.textPrimary,
+                borderColor: theme.borderSecondary
+              }]}
               placeholder="Enter your password"
+              placeholderTextColor={theme.textTertiary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -94,10 +116,15 @@ export default function SignUpScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Password</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Confirm Password</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                color: theme.textPrimary,
+                borderColor: theme.borderSecondary
+              }]}
               placeholder="Confirm your password"
+              placeholderTextColor={theme.textTertiary}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -105,7 +132,10 @@ export default function SignUpScreen({ navigation }: any) {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[
+              styles.button, 
+              { backgroundColor: loading ? 'rgba(128, 128, 128, 0.3)' : theme.primary }
+            ]}
             onPress={handleSignUp}
             disabled={loading}
           >
@@ -118,20 +148,25 @@ export default function SignUpScreen({ navigation }: any) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}>
+            Already have an account?{' '}
+          </Text>
           <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-            <Text style={styles.linkText}>Sign In</Text>
+            <Text style={[styles.linkText, { color: theme.primary }]}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+  },
+  keyboardView: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -140,16 +175,21 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 32,
+    alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    padding: 8,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1f2937',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
   },
   form: {
     gap: 16,
@@ -160,25 +200,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#374151',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1f2937',
   },
   button: {
-    backgroundColor: '#129490',
     borderRadius: 8,
     paddingVertical: 12,
     marginTop: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
   },
   buttonText: {
     color: 'white',
@@ -192,10 +225,9 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   footerText: {
-    color: '#6b7280',
+    fontSize: 16,
   },
   linkText: {
-    color: '#129490',
     fontWeight: '600',
   },
 }); 

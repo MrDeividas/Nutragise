@@ -2,77 +2,166 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuthStore } from './state/authStore';
+import { useTheme } from './state/themeStore';
+import CustomBackground from './components/CustomBackground';
 import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import ProfileCardScreen from './screens/ProfileCardScreen';
 import GoalsScreen from './screens/GoalsScreen';
 import NewGoalScreen from './screens/NewGoalScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import { GoalsStackParamList } from './screens/GoalDetailScreen';
+import GoalDetailScreen from './screens/GoalDetailScreen';
+import HomeScreen from './screens/HomeScreen';
+import ActionScreen from './screens/ActionScreen';
+import UserProfileScreen from './screens/UserProfileScreen';
+import FollowersScreen from './screens/FollowersScreen';
+import FollowingScreen from './screens/FollowingScreen';
+import CompetitionsScreen from './screens/CompetitionsScreen';
+import MeditationScreen from './screens/MeditationScreen';
+import MicrolearningScreen from './screens/MicrolearningScreen';
+import InformationDetailScreen from './screens/InformationDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Temporary placeholder screens
-function HomeScreen() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderText}>Home Feed</Text>
-    </View>
-  );
-}
 
-function ProfileStack() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
-      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-      <Stack.Screen name="Notifications" component={NotificationsScreen} />
-    </Stack.Navigator>
-  );
-}
 
+// Goals Stack
 function GoalsStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+      }}
+    >
       <Stack.Screen name="GoalsList" component={GoalsScreen} />
       <Stack.Screen name="NewGoal" component={NewGoalScreen} />
+      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
     </Stack.Navigator>
   );
 }
 
+// Profile Stack
+function ProfileStack() {
+  return (
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+      }}
+    >
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <Stack.Screen name="ProfileCard" component={ProfileCardScreen} />
+      <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
+      <Stack.Screen name="Followers" component={FollowersScreen as any} />
+      <Stack.Screen name="Following" component={FollowingScreen as any} />
+    </Stack.Navigator>
+  );
+}
+
+// Main Tab Navigator (only visible tabs)
 function MainTabs() {
+  const { theme } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }: any) => ({
-        tabBarActiveTintColor: '#129490',
-        tabBarInactiveTintColor: '#6b7280',
+        tabBarActiveTintColor: '#ffffff',
+        tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
+        tabBarStyle: {
+          backgroundColor: 'rgba(128, 128, 128, 0.15)',
+          borderTopColor: 'rgba(128, 128, 128, 0.2)',
+        },
         headerShown: false,
         tabBarIcon: ({ color, size }: any) => {
           let iconName: any = 'home-outline';
           if (route.name === 'Home') iconName = 'home-outline';
-          else if (route.name === 'Goals') iconName = 'trophy-outline';
+          else if (route.name === 'Action') iconName = 'flash-outline';
+          else if (route.name === 'Goals') iconName = 'walk-outline';
+          else if (route.name === 'Discover') iconName = 'trophy-outline';
           else if (route.name === 'Profile') iconName = 'person-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}
     >
+      <Tab.Screen name="Action" component={ActionScreen} options={{ tabBarLabel: 'Action' }} />
       <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'Feed' }} />
       <Tab.Screen name="Goals" component={GoalsStack} />
+      <Tab.Screen name="Discover" component={CompetitionsScreen} options={{ tabBarLabel: 'Competitions' }} />
       <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
 }
 
+// Root App Stack Navigator
+function AppStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'none',
+        animationDuration: 0,
+        gestureEnabled: false
+      }}
+    >
+      <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen 
+        name="Meditation" 
+        component={MeditationScreen}
+        options={{
+          animation: 'none',
+          animationDuration: 0,
+          gestureEnabled: false
+        }}
+      />
+      <Stack.Screen 
+        name="Microlearning" 
+        component={MicrolearningScreen}
+        options={{
+          animation: 'none',
+          animationDuration: 0,
+          gestureEnabled: false
+        }}
+      />
+      <Stack.Screen 
+        name="InformationDetail" 
+        component={InformationDetailScreen}
+        options={{
+          animation: 'none',
+          animationDuration: 0,
+          gestureEnabled: false
+        }}
+      />
+      <Stack.Screen 
+        name="Notifications" 
+        component={NotificationsScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
 function AuthStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+        // Use default navigation behavior like Tab.Navigator
+      }}
+    >
       <Stack.Screen name="SignIn" component={SignInScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
@@ -82,6 +171,7 @@ function AuthStack() {
 
 export default function App() {
   const { user, loading, initialize } = useAuthStore();
+  const { theme } = useTheme();
 
   useEffect(() => {
     initialize();
@@ -89,10 +179,12 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#129490" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+      <CustomBackground>
+        <View style={[styles.loadingContainer, { backgroundColor: 'rgba(20, 19, 19, 0.8)' }]}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
+        </View>
+      </CustomBackground>
     );
   }
 
@@ -100,15 +192,48 @@ export default function App() {
   const needsProfileSetup = user && (!user.username || !user.bio);
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer>
-        {user ? (
-          needsProfileSetup ? <ProfileSetupScreen /> : <MainTabs />
-        ) : (
-          <AuthStack />
-        )}
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <CustomBackground>
+      <SafeAreaProvider>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+        <NavigationContainer
+          theme={{
+            dark: false,
+            colors: {
+              primary: '#129490',
+              background: 'transparent',
+              card: 'transparent',
+              text: '#1f2937',
+              border: '#e5e7eb',
+              notification: '#ff3b30',
+            },
+            fonts: {
+              regular: {
+                fontFamily: 'System',
+                fontWeight: '400',
+              },
+              medium: {
+                fontFamily: 'System',
+                fontWeight: '500',
+              },
+              bold: {
+                fontFamily: 'System',
+                fontWeight: '700',
+              },
+              heavy: {
+                fontFamily: 'System',
+                fontWeight: '900',
+              },
+            },
+          }}
+        >
+          {user ? (
+            needsProfileSetup ? <ProfileSetupScreen /> : <AppStack />
+          ) : (
+            <AuthStack />
+          )}
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </CustomBackground>
   );
 }
 
@@ -117,30 +242,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#6b7280',
-  },
-  placeholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-  },
-  placeholderText: {
-    fontSize: 18,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  tabBar: {
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    paddingBottom: 8,
-    paddingTop: 8,
-    height: 60,
   },
 });

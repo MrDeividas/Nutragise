@@ -10,10 +10,15 @@ import {
   StyleSheet,
   Image
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../state/authStore';
+import { useTheme } from '../state/themeStore';
+import { socialService } from '../lib/socialService';
 
 export default function ProfileSetupScreen() {
+  const { theme } = useTheme();
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
@@ -40,50 +45,78 @@ export default function ProfileSetupScreen() {
     }
 
     setLoading(true);
-    const { error } = await updateProfile({
-      username: username.trim(),
-      bio: bio.trim(),
-      avatar_url: avatarUri || undefined,
-    });
-    setLoading(false);
+    try {
+      // Update the user profile
+      const { error } = await updateProfile({
+        username: username.trim(),
+        bio: bio.trim(),
+        avatar_url: avatarUri || undefined,
+      });
 
-    if (error) {
+      if (error) {
+        Alert.alert('Error', 'Failed to save profile. Please try again.');
+        return;
+      }
+
+      // Also ensure the profile exists in the profiles table
+      const { user } = useAuthStore.getState();
+      if (user) {
+        await socialService.createProfile(user.id, {
+          username: username.trim(),
+          display_name: username.trim(),
+          bio: bio.trim(),
+          avatar_url: avatarUri || undefined,
+        });
+      }
+    } catch (error) {
+      console.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Complete Your Profile</Text>
-          <Text style={styles.subtitle}>
-            Tell us a bit about yourself to get started
-          </Text>
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: theme.textPrimary }]}>Complete Your Profile</Text>
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              Tell us a bit about yourself to get started
+            </Text>
+          </View>
 
         <View style={styles.form}>
           {/* Avatar Upload */}
           <View style={styles.avatarSection}>
-            <Text style={styles.label}>Profile Photo</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Profile Photo</Text>
             <TouchableOpacity style={styles.avatarContainer} onPress={pickImage}>
               {avatarUri ? (
                 <Image source={{ uri: avatarUri }} style={styles.avatar} />
               ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarPlaceholderText}>+</Text>
+                <View style={[styles.avatarPlaceholder, { 
+                  backgroundColor: 'rgba(128, 128, 128, 0.3)',
+                  borderColor: theme.borderSecondary
+                }]}>
+                  <Ionicons name="add" size={32} color={theme.textSecondary} />
                 </View>
               )}
             </TouchableOpacity>
-            <Text style={styles.avatarHint}>Tap to add photo</Text>
+            <Text style={[styles.avatarHint, { color: theme.textSecondary }]}>Tap to add photo</Text>
           </View>
 
           {/* Username */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Username</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Username</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                color: theme.textPrimary,
+                borderColor: theme.borderSecondary
+              }]}
               placeholder="Choose a username"
+              placeholderTextColor={theme.textTertiary}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -93,10 +126,15 @@ export default function ProfileSetupScreen() {
 
           {/* Bio */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Bio (Optional)</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Bio (Optional)</Text>
             <TextInput
-              style={[styles.input, styles.bioInput]}
+              style={[styles.input, styles.bioInput, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                color: theme.textPrimary,
+                borderColor: theme.borderSecondary
+              }]}
               placeholder="Tell us about your health goals..."
+              placeholderTextColor={theme.textTertiary}
               value={bio}
               onChangeText={setBio}
               multiline
@@ -106,7 +144,10 @@ export default function ProfileSetupScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[
+              styles.button, 
+              { backgroundColor: loading ? 'rgba(128, 128, 128, 0.3)' : theme.primary }
+            ]}
             onPress={handleSaveProfile}
             disabled={loading}
           >
@@ -119,13 +160,16 @@ export default function ProfileSetupScreen() {
         </View>
       </View>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
     paddingHorizontal: 24,
@@ -139,13 +183,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1f2937',
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
     textAlign: 'center',
   },
   form: {
@@ -158,7 +200,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#374151',
   },
   avatarContainer: {
     width: 100,
@@ -173,46 +214,32 @@ const styles = StyleSheet.create({
   avatarPlaceholder: {
     width: 100,
     height: 100,
-    backgroundColor: '#f3f4f6',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#d1d5db',
     borderStyle: 'dashed',
-  },
-  avatarPlaceholderText: {
-    fontSize: 32,
-    color: '#9ca3af',
-    fontWeight: '300',
   },
   avatarHint: {
     fontSize: 14,
-    color: '#6b7280',
   },
   inputGroup: {
     gap: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1f2937',
   },
   bioInput: {
     height: 80,
     paddingTop: 12,
   },
   button: {
-    backgroundColor: '#129490',
     borderRadius: 8,
     paddingVertical: 12,
     marginTop: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
   },
   buttonText: {
     color: 'white',

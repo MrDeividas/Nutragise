@@ -11,12 +11,14 @@ import {
   StyleSheet
 } from 'react-native';
 import { useAuthStore } from '../state/authStore';
+import { useTheme } from '../state/themeStore';
 
 export default function SignInScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const signIn = useAuthStore(state => state.signIn);
+  const { theme } = useTheme();
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -33,25 +35,27 @@ export default function SignInScreen({ navigation }: any) {
     }
   };
 
-  return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>
-            Sign in to continue your health journey
-          </Text>
-        </View>
+    return (
+    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>Welcome Back</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          Share your journey, inspire the world
+        </Text>
+      </View>
 
+      <View style={styles.centerContent}>
         <View style={styles.form}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                borderColor: 'rgba(128, 128, 128, 0.3)',
+                color: theme.textPrimary
+              }]}
               placeholder="Enter your email"
+              placeholderTextColor="rgba(255, 255, 255, 0.6)"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -61,10 +65,15 @@ export default function SignInScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={[styles.label, { color: theme.textPrimary }]}>Password</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { 
+                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                borderColor: 'rgba(128, 128, 128, 0.3)',
+                color: theme.textPrimary
+              }]}
               placeholder="Enter your password"
+              placeholderTextColor="rgba(255, 255, 255, 0.6)"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -72,7 +81,7 @@ export default function SignInScreen({ navigation }: any) {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }, loading && styles.buttonDisabled]}
             onPress={handleSignIn}
             disabled={loading}
           >
@@ -82,41 +91,45 @@ export default function SignInScreen({ navigation }: any) {
               <Text style={styles.buttonText}>Sign In</Text>
             )}
           </TouchableOpacity>
-        </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-            <Text style={styles.linkText}>Sign Up</Text>
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: theme.textSecondary }]}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+              <Text style={[styles.linkText, { color: '#EA580C' }]}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
   },
   header: {
-    marginBottom: 32,
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1f2937',
+    textAlign: 'center',
     marginBottom: 8,
+    marginTop: 80,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    marginTop: -180,
   },
   form: {
     gap: 16,
@@ -127,19 +140,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#374151',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1f2937',
   },
   button: {
-    backgroundColor: '#129490',
     borderRadius: 8,
     paddingVertical: 12,
     marginTop: 8,
@@ -159,10 +168,8 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   footerText: {
-    color: '#6b7280',
   },
   linkText: {
-    color: '#129490',
     fontWeight: '600',
   },
 }); 

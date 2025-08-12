@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { socialService } from '../lib/socialService';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
 
 interface AuthStore extends AuthState {
@@ -28,12 +29,31 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           .eq('id', session.user.id)
           .single();
 
+        // Also check if profile exists, create if not
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (!profileData && userData) {
+          // Create profile if it doesn't exist
+          await socialService.createProfile(session.user.id, {
+            username: userData.username || userData.email?.split('@')[0] || 'user',
+            display_name: userData.username || userData.email?.split('@')[0] || 'User',
+            bio: userData.bio,
+            avatar_url: userData.avatar_url
+          });
+        }
+
+        const userToSet = userData || {
+          id: session.user.id,
+          email: session.user.email!,
+          created_at: session.user.created_at
+        };
+        
         set({
-          user: userData || {
-            id: session.user.id,
-            email: session.user.email!,
-            created_at: session.user.created_at
-          },
+          user: userToSet,
           session,
           loading: false
         });
@@ -49,6 +69,23 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             .select('*')
             .eq('id', session.user.id)
             .single();
+
+          // Also check if profile exists, create if not
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (!profileData && userData) {
+            // Create profile if it doesn't exist
+            await socialService.createProfile(session.user.id, {
+              username: userData.username || userData.email?.split('@')[0] || 'user',
+              display_name: userData.username || userData.email?.split('@')[0] || 'User',
+              bio: userData.bio,
+              avatar_url: userData.avatar_url
+            });
+          }
 
           set({
             user: userData || {
@@ -84,6 +121,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           id: user.id,
           email: user.email
         });
+        
+        // Also create a profile record for social features
+        await socialService.createProfile(user.id, {
+          username: user.email?.split('@')[0] || 'user',
+          display_name: user.email?.split('@')[0] || 'User'
+        });
       }
       return { error: null };
     } catch (error) {
@@ -114,7 +157,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const { user } = get();
       if (!user) return { error: new Error('No user logged in') };
 
-      const { error } = await supabase
+      // Update users table
+      const { error: usersError } = await supabase
         .from('users')
         .upsert({
           id: user.id,
@@ -123,19 +167,44 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           avatar_url: data.avatar_url
         });
 
-      if (!error) {
-        set({
-          user: {
-            ...user,
-            username: data.username,
-            bio: data.bio,
-            avatar_url: data.avatar_url
-          }
+      // Update profiles table for social features
+      const { error: profilesError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          username: data.username,
+          display_name: data.username,
+          bio: data.bio,
+          avatar_url: data.avatar_url
         });
+
+      if (!usersError && !profilesError) {
+        // Fetch fresh user data from database
+        const { data: freshUserData, error: fetchError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (!fetchError && freshUserData) {
+          set({
+            user: freshUserData
+          });
+        } else {
+          set({
+            user: {
+              ...user,
+              username: data.username,
+              bio: data.bio,
+              avatar_url: data.avatar_url
+            }
+          });
+        }
       }
 
-      return { error };
+      return { error: usersError || profilesError };
     } catch (error) {
+      console.error('Update profile error:', error);
       return { error };
     }
   }
