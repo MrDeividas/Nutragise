@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,7 +78,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
-      <View style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+      <View style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)', ...(Platform.OS === 'android' ? { borderWidth: 1, borderColor: theme.borderSecondary, overflow: 'hidden' } : {}) }]}>
         <TouchableOpacity
           onPress={() => {
             navigation.navigate('GoalDetail', { goal });
@@ -162,7 +163,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const completedGoals = goals.filter(goal => goal.completed);
 
   return (
-          <SafeAreaView style={{ flex: 1 }}>
+          <SafeAreaView style={{ flex: 1 }} edges={['top']}>
               <ScrollView 
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
@@ -266,11 +267,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   headerTitle: {
     fontSize: 28,
@@ -305,21 +301,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 20,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   goalCard: {
     borderRadius: 12,
     padding: 20,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   statsContainer: {
     flexDirection: 'row',

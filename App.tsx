@@ -50,6 +50,20 @@ function GoalsStack() {
   );
 }
 
+// Action Stack
+function ActionStack() {
+  return (
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+      }}
+    >
+      <Stack.Screen name="ActionMain" component={ActionScreen} />
+      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
+    </Stack.Navigator>
+  );
+}
+
 // Profile Stack
 function ProfileStack() {
   return (
@@ -64,6 +78,7 @@ function ProfileStack() {
       <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
       <Stack.Screen name="Followers" component={FollowersScreen as any} />
       <Stack.Screen name="Following" component={FollowingScreen as any} />
+      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
     </Stack.Navigator>
   );
 }
@@ -80,6 +95,12 @@ function MainTabs() {
         tabBarStyle: {
           backgroundColor: 'rgba(128, 128, 128, 0.15)',
           borderTopColor: 'rgba(128, 128, 128, 0.2)',
+          shadowColor: 'transparent',
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          elevation: 0,
+          borderTopWidth: 0,
         },
         headerShown: false,
         tabBarIcon: ({ color, size }: any) => {

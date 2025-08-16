@@ -27,8 +27,7 @@ export default function GoalInteractionBar({
 }: GoalInteractionBarProps) {
   const { theme } = useTheme();
   
-  console.log('GoalInteractionBar rendered for goal:', goalId);
-  console.log('Comment count:', initialCommentCount);
+
 
   return (
     <View style={[

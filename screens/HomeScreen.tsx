@@ -121,7 +121,7 @@ export default function HomeScreen() {
       
       goalIds.forEach((goalId, index) => {
         const commentCount = interactionCounts[goalId]?.comments || 0;
-        console.log(`Goal ${goalId} comment count:`, commentCount);
+  
         newInteractionData[goalId] = {
           likes: interactionCounts[goalId]?.likes || 0,
           comments: commentCount,
@@ -188,7 +188,7 @@ export default function HomeScreen() {
     setIsSearching(true);
     setHasSearched(true);
     
-    console.log('Searching with type:', searchType, 'query:', query);
+    
     
     try {
       if (searchType === 'users') {
@@ -1255,7 +1255,7 @@ function ExploreContent({
             {goals.map((goal) => (
               <View key={goal.id} style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
                 <View style={styles.goalContentRow}>
-                  <View style={styles.goalContentLeft}>
+                  <View style={[styles.goalContentLeft, Platform.OS === 'android' && styles.goalContentLeftAndroid]}>
                     <View style={styles.cardHeader}>
                       <View style={styles.userInfo}>
                         {goal.profiles?.avatar_url ? (
@@ -1456,7 +1456,7 @@ function FollowingContent({
             {followingUsers.map((goal) => (
               <View key={goal.id} style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
                 <View style={styles.goalContentRow}>
-                  <View style={styles.goalContentLeft}>
+                  <View style={[styles.goalContentLeft, Platform.OS === 'android' && styles.goalContentLeftAndroid]}>
                     <View style={styles.cardHeader}>
                       <View style={styles.userInfo}>
                         {goal.profiles?.avatar_url ? (
@@ -1661,11 +1661,6 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -1745,11 +1740,6 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     width: (width - 72) / 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   categoryIcon: {
     fontSize: 24,
@@ -2386,6 +2376,13 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingRight: 12,
     justifyContent: 'space-between',
+  },
+  goalContentLeftAndroid: {
+    width: '50%',
+    padding: 20,
+    paddingRight: 12,
+    justifyContent: 'space-between',
+    flexGrow: 1,
   },
   goalUpdateRight: {
     width: '50%',

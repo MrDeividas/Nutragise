@@ -15,7 +15,9 @@ export type GoalsStackParamList = {
   GoalDetail: { goal: Goal; onCheckInDeleted?: () => void };
 };
 
-type Props = NativeStackScreenProps<GoalsStackParamList, 'GoalDetail'>;
+type Props = NativeStackScreenProps<any, 'GoalDetail'> & { 
+  route: { params: { goal: Goal; onCheckInDeleted?: () => void } } 
+};
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const { width } = Dimensions.get('window');
@@ -78,9 +80,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
     
     setLoading(true);
     try {
-      console.log('Loading progress photos for goal:', goal.id, 'user:', user.id);
       const photos = await progressService.getProgressPhotos(goal.id, user.id);
-      console.log('Loaded photos:', photos);
       setProgressPhotos(photos);
     } catch (error) {
       console.error('Error loading progress photos:', error);
@@ -244,8 +244,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
                       <Image 
                         source={{ uri: photo.photo_url }} 
                         style={styles.progressPhoto}
-                        onError={(error) => console.log('Image load error:', error.nativeEvent)}
-                        onLoad={() => console.log('Image loaded successfully:', photo.photo_url)}
+                        
                       />
                     ) : (
                       <View style={[styles.noPhotoPlaceholder, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: 'rgba(128, 128, 128, 0.3)' }]}>

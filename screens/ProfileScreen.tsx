@@ -252,6 +252,17 @@ export default function ProfileScreen({ navigation }: any) {
     }
   }, [user]);
 
+  // Refresh data when screen comes into focus (e.g., after returning from GoalDetail)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user && userGoals.length > 0) {
+        // Only refresh progress-related data, not goals themselves to avoid loading flicker
+        fetchGoalProgress();
+        checkTodaysCheckIns();
+      }
+    }, [user, userGoals.length])
+  );
+
   const loadProfileData = async () => {
     try {
       const savedProfileData = await AsyncStorage.getItem('profileData');
@@ -266,7 +277,7 @@ export default function ProfileScreen({ navigation }: any) {
         setSocialCounts({ followers, following });
       }
       
-      console.log('ProfileScreen - Current user.avatar_url:', user?.avatar_url);
+  
     } catch (error) {
       console.error('Error loading profile data:', error);
     }
@@ -570,14 +581,6 @@ export default function ProfileScreen({ navigation }: any) {
   const handleMediaSelected = async (uri: string) => {
     if (!selectedGoal || !user) return;
     
-          // Check-in flow debug logs
-      if (__DEV__) {
-        console.log('=== CHECK-IN FLOW ===');
-        console.log('Selected URI:', uri);
-        console.log('Goal ID:', selectedGoal.id);
-        console.log('User ID:', user.id);
-      }
-    
     setIsCheckingIn(true);
     try {
       // Get the date for the expanded day (the day being checked in for)
@@ -597,15 +600,8 @@ export default function ProfileScreen({ navigation }: any) {
           [{ text: 'OK' }]
         );
         // Immediately update the checked-in state for this goal
-        if (__DEV__) {
-          console.log('=== UPDATING CHECK-IN STATE ===');
-          console.log('Selected goal ID:', selectedGoal.id);
-          console.log('Today:', new Date().getDay());
-        }
-        
         setCheckedInGoals(prev => {
           const newSet = new Set([...prev, selectedGoal.id]);
-          if (__DEV__) console.log('Updated checkedInGoals:', newSet);
           return newSet;
         });
         
@@ -616,7 +612,6 @@ export default function ProfileScreen({ navigation }: any) {
           const prevSet = updated[targetDay.toString()] || new Set();
           updated[targetDay.toString()] = new Set(prevSet);
           updated[targetDay.toString()].add(selectedGoal.id);
-          console.log(`Updated checkedInGoalsByDay for day ${targetDay}:`, updated[targetDay.toString()]);
           return updated;
         });
         // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
@@ -663,13 +658,8 @@ export default function ProfileScreen({ navigation }: any) {
           [{ text: 'OK' }]
         );
         // Immediately update the checked-in state for this goal
-        console.log('=== UPDATING CHECK-IN STATE (SKIP) ===');
-        console.log('Selected goal ID:', selectedGoal.id);
-        console.log('Today:', new Date().getDay());
-        
         setCheckedInGoals(prev => {
           const newSet = new Set([...prev, selectedGoal.id]);
-          console.log('Updated checkedInGoals:', newSet);
           return newSet;
         });
         
@@ -680,7 +670,6 @@ export default function ProfileScreen({ navigation }: any) {
           const prevSet = updated[targetDay.toString()] || new Set();
           updated[targetDay.toString()] = new Set(prevSet);
           updated[targetDay.toString()].add(selectedGoal.id);
-          console.log(`Updated checkedInGoalsByDay for day ${targetDay}:`, updated[targetDay.toString()]);
           return updated;
         });
         // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
@@ -824,8 +813,7 @@ export default function ProfileScreen({ navigation }: any) {
                 <Image 
                   source={{ uri: user.avatar_url }} 
                   style={styles.profilePicture}
-                  onError={(error) => console.log('Image load error:', error)}
-                  onLoad={() => console.log('Image loaded successfully:', user.avatar_url)}
+                                  onError={(error) => console.log('Image load error:', error)}
                 />
               ) : (
                 <View style={[styles.profilePicturePlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
@@ -1048,7 +1036,16 @@ export default function ProfileScreen({ navigation }: any) {
                         <TouchableOpacity 
                           key={goal.id} 
                           style={styles.circularGoalItem}
-                          onPress={() => navigation.navigate('Goals')}
+                          onPress={() => {
+                            navigation.navigate('GoalDetail', { 
+                              goal,
+                              onCheckInDeleted: () => {
+                                // Refresh progress data when check-in is deleted
+                                fetchGoalProgress();
+                                checkTodaysCheckIns();
+                              }
+                            });
+                          }}
                         >
                                                   <View style={styles.circularProgressContainer}>
                           <Svg width={110} height={110}>
@@ -1059,11 +1056,11 @@ export default function ProfileScreen({ navigation }: any) {
                                 <Stop offset="100%" stopColor={gradientColors[2]} />
                               </LinearGradient>
                             </Defs>
-                            {/* Background circle */}
+                                                        {/* Background circle */}
                             <Circle
                               cx={55}
                               cy={55}
-                              r={45}
+                              r={42}
                               stroke="rgba(128, 128, 128, 0.3)"
                               strokeWidth={8}
                               fill="transparent"
@@ -1072,24 +1069,21 @@ export default function ProfileScreen({ navigation }: any) {
                             <Circle
                               cx={55}
                               cy={55}
-                              r={45}
+                              r={42}
                               stroke={`url(#gradient-${goal.id})`}
                               strokeWidth={8}
                               fill="transparent"
-                              strokeDasharray={`${2 * Math.PI * 45}`}
-                              strokeDashoffset={`${2 * Math.PI * 45 * (1 - completionPercent / 100)}`}
+                              strokeDasharray={`${2 * Math.PI * 42}`}
+                              strokeDashoffset={`${2 * Math.PI * 42 * (1 - Math.round(completionPercent) / 100)}`}
                               strokeLinecap="round"
                               transform="rotate(-90 55 55)"
                             />
                           </Svg>
                           <View style={styles.circularProgressText}>
                             <Text style={[styles.circularProgressValue, { color: theme.textPrimary }]}>
-                              {completionPercent.toFixed(1)}
+                              {Math.round(completionPercent)}
                             </Text>
-                            <Text style={[styles.circularProgressPercent, { color: theme.textPrimary }]}>
-                              %
-                            </Text>
-                                                      </View>
+                          </View>
                           </View>
                           <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
                             {goal.title}
@@ -1303,11 +1297,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 20,
     marginHorizontal: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   weeklyTracker: {
     flexDirection: 'row',
@@ -1589,11 +1578,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(209, 213, 219, 0.5)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   overlayDayName: {
     fontSize: 16,
@@ -1621,11 +1605,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 180,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
     paddingHorizontal: 0,
     paddingVertical: 0,
   },
@@ -1741,11 +1720,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 120,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   bigTaskBoxText: {
     fontSize: 18,
@@ -1996,11 +1970,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginHorizontal: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   radarChartTitle: {
     fontSize: 18,
@@ -2054,11 +2023,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     paddingVertical: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
   },
   profilePictureSection: {
     marginRight: 0,
@@ -2148,7 +2112,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   circularProgressValue: {
-    fontSize: 20,
+    fontSize: 25,
     fontWeight: '700',
     textAlign: 'center',
   },

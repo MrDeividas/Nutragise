@@ -354,10 +354,6 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
   },
   tabText: {
     fontSize: 15,

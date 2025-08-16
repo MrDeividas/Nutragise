@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,12 +115,20 @@ export default function MeditationScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
       >
-        <View style={styles.cardsContainer}>
+        <View style={[styles.cardsContainer, Platform.OS === 'android' && { gap: undefined }] }>
           <View style={styles.gridRow}>
-            {meditationSessions.slice(0, 2).map(renderMeditationCard)}
+            {meditationSessions.slice(0, 2).map((session, idx) => (
+              <View key={session.id} style={[styles.gridRowItem, Platform.OS === 'android' && idx === 0 && { marginRight: 12 }]}>
+                {renderMeditationCard(session)}
+              </View>
+            ))}
           </View>
           <View style={styles.gridRow}>
-            {meditationSessions.slice(2, 4).map(renderMeditationCard)}
+            {meditationSessions.slice(2, 4).map((session, idx) => (
+              <View key={session.id} style={[styles.gridRowItem, Platform.OS === 'android' && idx === 0 && { marginRight: 12 }]}>
+                {renderMeditationCard(session)}
+              </View>
+            ))}
           </View>
         </View>
         
@@ -128,8 +137,8 @@ export default function MeditationScreen({ navigation }: any) {
           <Text style={[styles.statsTitle, { color: theme.textPrimary }]}>
             Your Meditation Stats
           </Text>
-          <View style={styles.statsGrid}>
-            <View style={[styles.statCard, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
+          <View style={[styles.statsGrid, Platform.OS === 'android' && { gap: undefined }]}>
+            <View style={[styles.statCard, Platform.OS === 'android' && { marginRight: 12 }, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
               <Ionicons name="time-outline" size={24} color={theme.textPrimary} />
               <Text style={[styles.statValue, { color: theme.textPrimary }]}>
                 12 min
@@ -139,7 +148,7 @@ export default function MeditationScreen({ navigation }: any) {
               </Text>
             </View>
             
-            <View style={[styles.statCard, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
+            <View style={[styles.statCard, Platform.OS === 'android' && { marginRight: 12 }, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
               <Ionicons name="timer-outline" size={24} color={theme.textPrimary} />
               <Text style={[styles.statValue, { color: theme.textPrimary }]}>
                 4h 32m
@@ -191,6 +200,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    lineHeight: Platform.select({ android: 34 }),
   },
   headerSubtitle: {
     fontSize: 16,
@@ -210,6 +220,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  gridRowItem: {
+    flex: 1,
   },
   card: {
     flex: 1,
@@ -239,6 +252,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+    lineHeight: Platform.select({ android: 20 }),
   },
   cardCategory: {
     fontSize: 10,
@@ -280,8 +294,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 8,
     marginBottom: 4,
+    lineHeight: Platform.select({ android: 22 }),
   },
   statLabel: {
     fontSize: 12,
+    lineHeight: Platform.select({ android: 16 }),
   },
 }); 

@@ -36,6 +36,8 @@ const CATEGORIES = [
   'Other'
 ];
 
+
+
 const TIME_COMMITMENTS = [
   '10 minutes',
   '15 minutes',
@@ -81,7 +83,13 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
   };
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [endDate, setEndDate] = useState('');
   const [frequency, setFrequency] = useState<boolean[]>([false, false, false, false, false, false, false]); // S,M,T,W,T,F,S
   const [timeCommitment, setTimeCommitment] = useState('');
@@ -200,24 +208,27 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
 
   // Handler for date picker
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    // For inline pickers, close on any interaction
-    // For modal pickers, close when confirmed or dismissed
-    if (Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14) {
-      // Inline picker - always close when user taps on any date
-      setShowDatePicker(false);
-    } else {
-      // Modal picker - close on set or dismissed
-      if (event.type === 'set' || event.type === 'dismissed') {
-        setShowDatePicker(false);
-      }
-    }
-    
     if (selectedDate) {
       const iso = selectedDate.toISOString().slice(0, 10);
       if (datePickerMode === 'start') {
         setStartDate(iso);
       } else {
         setEndDate(iso);
+      }
+      
+      // For inline pickers, close after successful selection
+      if (Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14) {
+        // Small delay to ensure the date is set before closing
+        setTimeout(() => {
+          setShowDatePicker(false);
+        }, 100);
+      }
+    }
+    
+    // For modal pickers, close on set or dismissed
+    if (Platform.OS === 'android' || (Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) < 14)) {
+      if (event.type === 'set' || event.type === 'dismissed') {
+        setShowDatePicker(false);
       }
     }
   };
@@ -288,7 +299,7 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top']}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -330,6 +341,10 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
               placeholderTextColor={theme.textTertiary}
               style={[styles.textInput, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
               maxLength={100}
+              autoCorrect={true}
+              autoCapitalize="words"
+              textContentType="none"
+              autoComplete="off"
             />
             <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{title.length}/100 characters</Text>
           </View>
@@ -436,64 +451,83 @@ export default function NewGoalScreen({ navigation }: NewGoalScreenProps) {
 
           {/* Start and End Dates */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Start and End Dates</Text>
             <View style={styles.dateRow}>
               {/* Start Date */}
               <View style={styles.dateColumn}>
-                <Text style={[styles.dateLabel, { color: theme.textSecondary }]}>Start Date</Text>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Start Date</Text>
                 <TouchableOpacity
                   style={[
                     styles.datePickerButton, 
                     { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary },
                     showDatePicker && datePickerMode === 'start' && [styles.datePickerButtonActive, { borderColor: theme.primary }]
                   ]}
-                  onPress={() => { setDatePickerMode('start'); setShowDatePicker(true); }}
+                  onPress={() => { 
+                    if (showDatePicker && datePickerMode === 'start') {
+                      setShowDatePicker(false);
+                    } else {
+                      setDatePickerMode('start'); 
+                      setShowDatePicker(true); 
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text style={[startDate ? styles.datePickerText : styles.placeholderText, { color: startDate ? theme.textPrimary : theme.textTertiary }]}>
                     {startDate ? formatDate(startDate) : 'Select start date'}
                   </Text>
                 </TouchableOpacity>
-                {/* Inline Date Picker for iOS 14+ */}
-                {showDatePicker && datePickerMode === 'start' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
-                  <DateTimePicker
-                    value={startDate ? new Date(startDate) : new Date()}
-                    mode="date"
-                    display="inline"
-                    onChange={handleDateChange}
-                    style={styles.inlineDatePicker}
-                  />
-                )}
               </View>
 
               {/* End Date */}
               <View style={styles.dateColumn}>
-                <Text style={[styles.dateLabel, { color: theme.textSecondary }]}>End Date</Text>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>End Date</Text>
                 <TouchableOpacity
                   style={[
                     styles.datePickerButton, 
                     { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary },
                     showDatePicker && datePickerMode === 'end' && [styles.datePickerButtonActive, { borderColor: theme.primary }]
                   ]}
-                  onPress={() => { setDatePickerMode('end'); setShowDatePicker(true); }}
+                  onPress={() => { 
+                    if (showDatePicker && datePickerMode === 'end') {
+                      setShowDatePicker(false);
+                    } else {
+                      setDatePickerMode('end'); 
+                      setShowDatePicker(true); 
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text style={[endDate ? styles.datePickerText : styles.placeholderText, { color: endDate ? theme.textPrimary : theme.textTertiary }]}>
                     {endDate ? formatDate(endDate) : 'Select end date'}
                   </Text>
                 </TouchableOpacity>
-                {/* Inline Date Picker for iOS 14+ */}
-                {showDatePicker && datePickerMode === 'end' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
-                  <DateTimePicker
-                    value={endDate ? new Date(endDate) : new Date()}
-                    mode="date"
-                    display="inline"
-                    onChange={handleDateChange}
-                    style={styles.inlineDatePicker}
-                  />
-                )}
               </View>
             </View>
+
+            {/* Full Width Date Picker for Start Date - positioned below the date row */}
+            {showDatePicker && datePickerMode === 'start' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
+              <View style={styles.fullWidthDatePickerContainer}>
+                <DateTimePicker
+                  value={startDate ? new Date(startDate) : new Date()}
+                  mode="date"
+                  display="inline"
+                  onChange={handleDateChange}
+                  style={styles.inlineDatePicker}
+                />
+              </View>
+            )}
+
+            {/* Full Width Date Picker for End Date - positioned below the date row */}
+            {showDatePicker && datePickerMode === 'end' && Platform.OS === 'ios' && parseInt(Platform.Version as string, 10) >= 14 && (
+              <View style={styles.fullWidthDatePickerContainer}>
+                <DateTimePicker
+                  value={endDate ? new Date(endDate) : new Date()}
+                  mode="date"
+                  display="inline"
+                  onChange={handleDateChange}
+                  style={styles.inlineDatePicker}
+                />
+              </View>
+            )}
           </View>
 
           {/* Date Picker Modal for Android and iOS < 14 */}
@@ -820,6 +854,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 2,
     marginBottom: 2,
+    width: '100%',
   },
   datePickerButtonActive: {
     borderColor: '#129490',
@@ -838,6 +873,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 4,
     marginBottom: 4,
+    width: '100%',
+    height: 300,
+  },
+  fullWidthDatePickerContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+    paddingHorizontal: 24,
   },
   dateRow: {
     flexDirection: 'row',

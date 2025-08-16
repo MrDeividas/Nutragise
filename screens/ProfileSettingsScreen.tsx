@@ -102,10 +102,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
     borderWidth: 1,
   },
   optionContent: {

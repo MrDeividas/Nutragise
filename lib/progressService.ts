@@ -25,12 +25,6 @@ class ProgressService {
    */
   async uploadPhoto(uri: string, fileName: string, userId: string, goalId?: string, photoType: string = 'progress', checkInDate?: Date): Promise<string | null> {
     try {
-      console.log('=== Starting Upload Process ===');
-      console.log('URI:', uri);
-      console.log('FileName:', fileName);
-      console.log('UserID:', userId);
-      console.log('GoalID:', goalId);
-      console.log('PhotoType:', photoType);
       
       // Use checkInDate for the file path if provided
       const fileExt = 'jpg';
@@ -54,12 +48,7 @@ class ProgressService {
         filePath = `${userId}/profile/${datePrefix}${uniqueFileName}`;
       }
       
-      console.log('File path:', filePath);
-
       // REACT NATIVE COMPATIBLE UPLOAD: Use FormData with original URI
-      console.log('=== REACT NATIVE COMPATIBLE UPLOAD ===');
-      console.log('Using FormData with original URI for upload (bypassing blob limitations)');
-      
       // Create FormData for React Native compatibility
       const formData = new FormData();
       
@@ -69,12 +58,6 @@ class ProgressService {
         type: 'image/jpeg',
         name: uniqueFileName,
       } as any);
-      
-      console.log('FormData upload parameters:');
-      console.log('- filePath:', filePath);
-      console.log('- original URI:', uri);
-      console.log('- file name:', uniqueFileName);
-      console.log('- content type: image/jpeg');
       
       const { data, error } = await supabase.storage
         .from('users')
@@ -103,7 +86,6 @@ class ProgressService {
           console.error('This indicates the file was not actually saved to storage.');
           return null;
         } else {
-          console.log('✅ File exists and downloadable, size:', downloadData.size, 'bytes');
           if (downloadData.size === 0) {
             console.error('🚨 CRITICAL: Downloaded file is 0 bytes!');
             return null;
@@ -115,12 +97,9 @@ class ProgressService {
       }
 
       // Get public URL
-      console.log('Getting public URL...');
       const { data: urlData } = supabase.storage
         .from('users')
         .getPublicUrl(data.path);
-
-      console.log('Public URL:', urlData.publicUrl);
       return urlData.publicUrl;
     } catch (error) {
       console.error('Error in uploadPhoto:', error);
@@ -137,13 +116,8 @@ class ProgressService {
     try {
       let photoUrl: string | null = null;
 
-      console.log('Starting check-in process for goal:', checkInData.goalId);
-
       // Debug: Check if the authenticated user matches the passed user ID
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      console.log('Authenticated user ID:', authUser?.id);
-      console.log('Passed user ID:', checkInData.userId);
-      console.log('User IDs match:', authUser?.id === checkInData.userId);
 
       // Upload photo if provided
       if (checkInData.photoUri) {
@@ -156,15 +130,9 @@ class ProgressService {
           'progress',
           checkInData.checkInDate
         );
-        if (photoUrl) {
-          console.log('Photo uploaded successfully:', photoUrl);
-        } else {
-          console.log('Photo upload failed, saving check-in without photo');
-        }
       }
 
       // Save check-in to database
-      console.log('Saving check-in to database...');
       const insertData = {
         user_id: authUser?.id || checkInData.userId, // Use authenticated user ID
         goal_id: checkInData.goalId,
@@ -172,8 +140,6 @@ class ProgressService {
         photo_type: 'progress', // Default photo type for check-ins
         check_in_date: checkInData.checkInDate ? checkInData.checkInDate.toISOString().slice(0, 10) : undefined,
       };
-      
-      console.log('Insert data:', insertData);
       
       const { data, error } = await supabase
         .from('progress_photos')
@@ -185,7 +151,6 @@ class ProgressService {
         return false;
       }
 
-      console.log('Check-in saved successfully:', data);
       return true;
     } catch (error) {
       console.error('Error in createCheckIn:', error);
@@ -234,8 +199,6 @@ class ProgressService {
       const dd = String(checkDate.getDate()).padStart(2, '0');
       const dateString = `${yyyy}-${mm}-${dd}`;
 
-      console.log(`Checking if checked in for goal ${goalId} on ${dateString}`);
-
       // Verify authenticated user matches
       const { data: { user: authUser } } = await supabase.auth.getUser();
       const actualUserId = authUser?.id || userId;
@@ -252,8 +215,6 @@ class ProgressService {
         console.error('Error checking if checked in:', error);
         return false;
       }
-
-      console.log(`Found ${data?.length || 0} check-ins for ${dateString}`);
       return (data && data.length > 0) || false;
     } catch (error) {
       console.error('Error in hasCheckedInToday:', error);
@@ -270,8 +231,6 @@ class ProgressService {
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = endDate.toISOString().split('T')[0];
 
-      console.log(`Fetching check-ins from ${startDateStr} to ${endDateStr}`);
-
       // Verify authenticated user matches
       const { data: { user: authUser } } = await supabase.auth.getUser();
       const actualUserId = authUser?.id || userId;
@@ -287,8 +246,6 @@ class ProgressService {
         console.error('Error fetching check-ins for date range:', error);
         return [];
       }
-
-      console.log(`Found ${data?.length || 0} check-ins in date range`);
       return data || [];
     } catch (error) {
       console.error('Error in getCheckInsForDateRange:', error);
@@ -326,11 +283,45 @@ class ProgressService {
   }
 
   /**
+   * Get all check-ins for multiple goals in a date range (batch query)
+   */
+  async getCheckInsForGoalsInDateRange(userId: string, goalIds: string[], startDate: Date, endDate: Date): Promise<Array<{goal_id: string, check_in_date: string}>> {
+    try {
+      if (goalIds.length === 0) return [];
+      
+      // Format dates as YYYY-MM-DD
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      // Verify authenticated user matches
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const actualUserId = authUser?.id || userId;
+
+      const { data, error } = await supabase
+        .from('progress_photos')
+        .select('goal_id, check_in_date')
+        .eq('user_id', actualUserId)
+        .in('goal_id', goalIds)
+        .gte('check_in_date', startDateStr)
+        .lte('check_in_date', endDateStr);
+
+      if (error) {
+        console.error('Error fetching batch check-ins:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getCheckInsForGoalsInDateRange:', error);
+      return [];
+    }
+  }
+
+  /**
    * Delete a check-in and its associated photo
    */
   async deleteCheckIn(checkInId: string, photoUrl?: string): Promise<boolean> {
     try {
-      console.log('Deleting check-in:', checkInId);
 
       // Delete photo from storage if it exists and is not a placeholder
       if (photoUrl && photoUrl !== 'no-photo' && photoUrl.includes('users/')) {
@@ -341,7 +332,6 @@ class ProgressService {
           const userId = urlParts[urlParts.length - 2];
           const filePath = `${userId}/${fileName}`;
           
-          console.log('Deleting photo from storage:', filePath);
           const { error: storageError } = await supabase.storage
             .from('users')
             .remove([filePath]);
@@ -349,8 +339,6 @@ class ProgressService {
           if (storageError) {
             console.error('Error deleting photo from storage:', storageError);
             // Continue with database deletion even if storage deletion fails
-          } else {
-            console.log('Photo deleted from storage successfully');
           }
         } catch (storageError) {
           console.error('Error parsing photo URL or deleting from storage:', storageError);
@@ -368,8 +356,6 @@ class ProgressService {
         console.error('Error deleting check-in from database:', error);
         return false;
       }
-
-      console.log('Check-in deleted successfully');
       return true;
     } catch (error) {
       console.error('Error in deleteCheckIn:', error);

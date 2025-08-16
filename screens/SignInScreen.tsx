@@ -36,15 +36,19 @@ export default function SignInScreen({ navigation }: any) {
   };
 
     return (
-    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Welcome Back</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Share your journey, inspire the world
-        </Text>
-      </View>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: 'transparent' }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <View style={styles.contentContainer}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: theme.textPrimary }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            Share your journey, inspire the world
+          </Text>
+        </View>
 
-      <View style={styles.centerContent}>
         <View style={styles.form}>
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
@@ -100,7 +104,7 @@ export default function SignInScreen({ navigation }: any) {
           </View>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -108,28 +112,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  contentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 80,
+  },
   header: {
     alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 40,
+    marginBottom: 40,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 8,
-    marginTop: 80,
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
     marginTop: 8,
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    marginTop: -180,
   },
   form: {
     gap: 16,

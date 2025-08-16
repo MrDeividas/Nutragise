@@ -27,9 +27,7 @@ export default function CommentButton({
   useEffect(() => {
     const loadCommentCount = async () => {
       try {
-        console.log('Loading comment count for goal:', goalId);
         const count = await goalInteractionsService.getGoalCommentCount(goalId);
-        console.log('Comment count loaded:', count);
         setCommentCount(count);
       } catch (error) {
         console.error('Error loading comment count:', error);
@@ -40,13 +38,9 @@ export default function CommentButton({
   }, [goalId]);
 
   const handlePress = () => {
-    console.log('CommentButton pressed for goal:', goalId);
-    console.log('Button state - isLoading:', isLoading);
     if (isLoading) {
-      console.log('Button is loading, ignoring press');
       return;
     }
-    console.log('Calling onPress function');
     onPress();
   };
 
