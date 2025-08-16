@@ -7,12 +7,64 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
-import { getCategoryIcon } from '../lib/goalHelpers';
+import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import MediaUploadModal from './MediaUploadModal';
 import { progressService } from '../lib/progressService';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 // Days constants
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Helper function to check if a date is before today
+const isDateBeforeToday = (date: Date): boolean => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return date < today;
+};
+
+// Helper function to check if a date is today
+const isDateToday = (date: Date): boolean => {
+  const today = new Date();
+  return date.toDateString() === today.toDateString();
+};
+
+// Helper function to get goal check-in status
+const getGoalCheckInStatus = (
+  goal: any, 
+  checkedInGoals: Set<string>, 
+  checkedInGoalsByDay: {[key: string]: Set<string>},
+  overdueGoals: Set<string>
+): 'overdue' | 'due_today' | 'completed' | 'not_due' => {
+  if (!goal.frequency || goal.completed) return 'not_due';
+  
+  const hasFrequency = goal.frequency.some((day: boolean) => day);
+  if (!hasFrequency) return 'not_due';
+  
+  const today = new Date();
+  const todayDayOfWeek = today.getDay();
+  
+  // Check if goal is due today
+  const isDueToday = goal.frequency[todayDayOfWeek];
+  const isCheckedInToday = checkedInGoals.has(goal.id);
+  
+  // If checked in today, it's completed
+  if (isDueToday && isCheckedInToday) {
+    return 'completed';
+  }
+  
+  // If due today but not checked in, it's due today
+  if (isDueToday && !isCheckedInToday) {
+    return 'due_today';
+  }
+  
+  // Check if goal is in overdue list
+  if (overdueGoals.has(goal.id)) {
+    return 'overdue';
+  }
+  
+  return 'not_due';
+};
 
 // Calendar component
 const MonthCalendar = ({ theme }: { theme: any }) => {
@@ -160,13 +212,29 @@ export default function ActionScreen({ navigation }: any) {
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
   const [goalProgress, setGoalProgress] = useState<{[goalId: string]: number}>({});
+  const [overdueGoals, setOverdueGoals] = useState<Set<string>>(new Set());
+  const [overdueGoalDates, setOverdueGoalDates] = useState<{[goalId: string]: Date}>({});
+  const [overdueGoalCounts, setOverdueGoalCounts] = useState<{[goalId: string]: number}>({});
 
   useEffect(() => {
     if (user) {
       fetchGoals(user.id);
       checkTodaysCheckIns();
+      checkForOverdueGoals();
     }
-  }, [user]);
+  }, [user, userGoals.length]);
+
+  // Refresh data when screen comes into focus (e.g., after returning from GoalDetail)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user && userGoals.length > 0) {
+        // Only refresh progress-related data, not goals themselves to avoid loading flicker
+        fetchGoalProgress();
+        checkTodaysCheckIns();
+        checkForOverdueGoals();
+      }
+    }, [user, userGoals.length])
+  );
 
   const fetchGoalProgress = async () => {
     if (!user || userGoals.length === 0) return;
@@ -181,6 +249,117 @@ export default function ActionScreen({ navigation }: any) {
     }
     
     setGoalProgress(progressData);
+  };
+
+  const checkForOverdueGoals = async () => {
+    if (!user || userGoals.length === 0) return;
+
+    const overdueSet = new Set<string>();
+    const overdueDatesMap: {[goalId: string]: Date} = {};
+    const overdueCountsMap: {[goalId: string]: number} = {};
+    
+    // Filter goals that need checking
+    const validGoals = userGoals.filter(goal => {
+      if (!goal.frequency || goal.completed) return false;
+      const hasFrequency = goal.frequency.some((day: boolean) => day);
+      return hasFrequency;
+    });
+    
+    if (validGoals.length === 0) {
+      setOverdueGoals(overdueSet);
+      setOverdueGoalDates(overdueDatesMap);
+      setOverdueGoalCounts(overdueCountsMap);
+      return;
+    }
+
+    // Find the earliest start date across all goals
+    const today = new Date();
+    let earliestStartDate = today;
+    
+    for (const goal of validGoals) {
+      const goalStartDate = goal.start_date ? new Date(goal.start_date) : null;
+      const goalCreatedDate = goal.created_at ? new Date(goal.created_at) : goalStartDate;
+      const startCheckDate = goalCreatedDate || goalStartDate;
+      
+      if (startCheckDate && startCheckDate < earliestStartDate) {
+        earliestStartDate = startCheckDate;
+      }
+    }
+    
+    // Get all check-ins for all goals in one batch query
+    const goalIds = validGoals.map(goal => goal.id);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    
+    const allCheckIns = await progressService.getCheckInsForGoalsInDateRange(
+      user.id, 
+      goalIds, 
+      earliestStartDate, 
+      yesterday
+    );
+    
+    // Create a lookup map for quick check-in existence checks
+    const checkInMap = new Map<string, Set<string>>();
+    for (const checkIn of allCheckIns) {
+      const key = checkIn.goal_id;
+      if (!checkInMap.has(key)) {
+        checkInMap.set(key, new Set());
+      }
+      checkInMap.get(key)!.add(checkIn.check_in_date);
+    }
+    
+    // Now check each goal for overdue check-ins
+    for (const goal of validGoals) {
+      const goalStartDate = goal.start_date ? new Date(goal.start_date) : null;
+      const goalCreatedDate = goal.created_at ? new Date(goal.created_at) : goalStartDate;
+      const startCheckDate = goalCreatedDate || goalStartDate;
+      
+      if (!startCheckDate) continue;
+      
+      const goalCheckIns = checkInMap.get(goal.id) || new Set();
+      const goalEndDate = goal.end_date ? new Date(goal.end_date) : null;
+      
+      let overdueCount = 0;
+      let oldestOverdueDate = null;
+      
+      // Calculate number of days to check back
+      const daysDifference = Math.floor((today.getTime() - startCheckDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      // Check each historical date (from oldest to newest)
+      for (let i = daysDifference; i >= 1; i--) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() - i);
+        const dayOfWeek = checkDate.getDay();
+        
+        // Only check dates within goal's active period
+        if (goalStartDate && checkDate < goalStartDate) continue;
+        if (goalEndDate && checkDate > goalEndDate) continue;
+        
+                 // If this day required a check-in
+         if (goal.frequency && goal.frequency[dayOfWeek]) {
+          const dateString = checkDate.toISOString().split('T')[0];
+          const hasCheckedIn = goalCheckIns.has(dateString);
+          
+          if (!hasCheckedIn) {
+            overdueCount++;
+            if (!oldestOverdueDate) {
+              oldestOverdueDate = new Date(checkDate); // First missed = oldest
+            }
+          }
+        }
+      }
+      
+      // If any check-ins are overdue, add to sets
+      if (overdueCount > 0 && oldestOverdueDate) {
+        overdueSet.add(goal.id);
+        overdueDatesMap[goal.id] = oldestOverdueDate;
+        overdueCountsMap[goal.id] = overdueCount;
+      }
+    }
+    
+    setOverdueGoals(overdueSet);
+    setOverdueGoalDates(overdueDatesMap);
+    setOverdueGoalCounts(overdueCountsMap);
   };
 
   const checkTodaysCheckIns = async () => {
@@ -325,18 +504,19 @@ export default function ActionScreen({ navigation }: any) {
   const handleMediaSelected = async (uri: string) => {
     if (!selectedGoal || !user) return;
     
-          // Check-in flow debug logs
-      if (__DEV__) {
-        console.log('=== CHECK-IN FLOW ===');
-        console.log('Selected URI:', uri);
-        console.log('Goal ID:', selectedGoal.id);
-        console.log('User ID:', user.id);
-      }
-    
     setIsCheckingIn(true);
     try {
       // Get the date for the expanded day (the day being checked in for)
-      const checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
+      let checkInDate;
+      if (selectedGoal?.overdueDate) {
+        // Use the specific overdue date
+        checkInDate = selectedGoal.overdueDate;
+      } else {
+        // Use the selected week day or today
+        checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
+      }
+      
+
       
       const success = await progressService.createCheckIn({
         goalId: selectedGoal.id,
@@ -351,30 +531,30 @@ export default function ActionScreen({ navigation }: any) {
           `Great job! You've checked in for "${selectedGoal.title}".`,
           [{ text: 'OK' }]
         );
-        // Immediately update the checked-in state for this goal
-        if (__DEV__) {
-          console.log('=== UPDATING CHECK-IN STATE ===');
-          console.log('Selected goal ID:', selectedGoal.id);
-          console.log('Today:', new Date().getDay());
+        // For overdue check-ins, skip local state updates and refresh from database
+        if (selectedGoal?.overdueDate) {
+          // Refresh check-in data from database to get accurate state
+          checkTodaysCheckIns();
+          checkForOverdueGoals();
+        } else {
+          // For regular check-ins, update local state normally
+          setCheckedInGoals(prev => {
+            const newSet = new Set([...prev, selectedGoal.id]);
+            return newSet;
+          });
+          
+          setCheckedInGoalsByDay(prev => {
+            const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
+            const updated = { ...prev };
+            // Clone the set for the target day to trigger re-render
+            const prevSet = updated[targetDay.toString()] || new Set();
+            updated[targetDay.toString()] = new Set(prevSet);
+            updated[targetDay.toString()].add(selectedGoal.id);
+            return updated;
+          });
         }
         
-        setCheckedInGoals(prev => {
-          const newSet = new Set([...prev, selectedGoal.id]);
-          if (__DEV__) console.log('Updated checkedInGoals:', newSet);
-          return newSet;
-        });
-        
-        setCheckedInGoalsByDay(prev => {
-          const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
-          const updated = { ...prev };
-          // Clone the set for the target day to trigger re-render
-          const prevSet = updated[targetDay.toString()] || new Set();
-          updated[targetDay.toString()] = new Set(prevSet);
-          updated[targetDay.toString()].add(selectedGoal.id);
-          console.log(`Updated checkedInGoalsByDay for day ${targetDay}:`, updated[targetDay.toString()]);
-          return updated;
-        });
-        // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
+        // Also refresh goals
         fetchGoals(user.id);
         fetchGoalProgress();
       } else {
@@ -403,7 +583,14 @@ export default function ActionScreen({ navigation }: any) {
     setIsCheckingIn(true);
     try {
       // Get the date for the expanded day (the day being checked in for)
-      const checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
+      let checkInDate;
+      if (selectedGoal?.overdueDate) {
+        // Use the specific overdue date
+        checkInDate = selectedGoal.overdueDate;
+      } else {
+        // Use the selected week day or today
+        checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
+      }
       
       const success = await progressService.createCheckIn({
         goalId: selectedGoal.id,
@@ -417,30 +604,30 @@ export default function ActionScreen({ navigation }: any) {
           `Great job! You've checked in for "${selectedGoal.title}".`,
           [{ text: 'OK' }]
         );
-        // Immediately update the checked-in state for this goal
-                  if (__DEV__) {
-            console.log('=== UPDATING CHECK-IN STATE (SKIP) ===');
-            console.log('Selected goal ID:', selectedGoal.id);
-            console.log('Today:', new Date().getDay());
-          }
-          
+        // For overdue check-ins, skip local state updates and refresh from database
+        if (selectedGoal?.overdueDate) {
+          // Refresh check-in data from database to get accurate state
+          checkTodaysCheckIns();
+          checkForOverdueGoals();
+        } else {
+          // For regular check-ins, update local state normally
           setCheckedInGoals(prev => {
             const newSet = new Set([...prev, selectedGoal.id]);
-            if (__DEV__) console.log('Updated checkedInGoals:', newSet);
             return newSet;
           });
         
-        setCheckedInGoalsByDay(prev => {
-          const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
-          const updated = { ...prev };
-          // Clone the set for the target day to trigger re-render
-          const prevSet = updated[targetDay.toString()] || new Set();
-          updated[targetDay.toString()] = new Set(prevSet);
-          updated[targetDay.toString()].add(selectedGoal.id);
-          console.log(`Updated checkedInGoalsByDay for day ${targetDay}:`, updated[targetDay.toString()]);
-          return updated;
-        });
-        // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
+          setCheckedInGoalsByDay(prev => {
+            const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
+            const updated = { ...prev };
+            // Clone the set for the target day to trigger re-render
+            const prevSet = updated[targetDay.toString()] || new Set();
+            updated[targetDay.toString()] = new Set(prevSet);
+            updated[targetDay.toString()].add(selectedGoal.id);
+            return updated;
+          });
+        }
+        
+        // Also refresh goals
         fetchGoals(user.id);
         fetchGoalProgress();
       } else {
@@ -519,7 +706,187 @@ export default function ActionScreen({ navigation }: any) {
               return 'Good evening';
             })()}, {user?.username || 'there'}
           </Text>
-          <Text style={styles.todaysTodoText}>Today's to do</Text>
+          <Text style={styles.todaysTodoText}>Today's Overview</Text>
+        </View>
+
+        {/* Combined Check-ins Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Check-ins</Text>
+          <View style={[styles.todaysCheckinsContainer, { borderColor: theme.borderSecondary }]}>
+            {(() => {
+              // Only show check-ins when all data is fully loaded
+              if (Object.keys(checkedInGoalsByDay).length === 0 || userGoals.length === 0) {
+                return null;
+              }
+              
+              // Only show goals that need check-ins (not completed)
+              const allCheckInGoals = userGoals.filter(goal => {
+                                 const status = getGoalCheckInStatus(goal, checkedInGoals, checkedInGoalsByDay, overdueGoals);
+                 return status === 'overdue' || status === 'due_today';
+              });
+
+              if (allCheckInGoals.length > 0) {
+                return allCheckInGoals.map(goal => {
+                  
+                  return (
+                    <TouchableOpacity 
+                      key={`checkin-${goal.id}`} 
+                      style={styles.checkinItem}
+                      onPress={() => {
+                        const status = getGoalCheckInStatus(goal, checkedInGoals, checkedInGoalsByDay, overdueGoals);
+                        if (status === 'overdue') {
+                          // For overdue goals, use the pre-calculated oldest missed date
+                          const oldestMissedDate = overdueGoalDates[goal.id];
+                          
+                          if (oldestMissedDate) {
+                            // Set the check-in for the oldest missed date
+                            setSelectedGoal({...goal, overdueDate: oldestMissedDate});
+                            setExpandedDay(oldestMissedDate.getDay());
+                          } else {
+                            // Fallback to today if no specific overdue date found
+                            handleCheckInPress(goal, new Date().getDay());
+                          }
+                        } else {
+                          // For due today goals, use today
+                          handleCheckInPress(goal, new Date().getDay());
+                        }
+                        setShowMediaUpload(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.checkinItemLeft}>
+                        <TouchableOpacity 
+                          style={styles.circularProgressContainer}
+                          onPress={() => {
+                            navigation.navigate('GoalDetail', { 
+                              goal,
+                              onCheckInDeleted: () => {
+                                // Refresh progress data when check-in is deleted
+                                fetchGoalProgress();
+                                checkTodaysCheckIns();
+                                checkForOverdueGoals();
+                              }
+                            });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Svg width={40} height={40}>
+                            <Defs>
+                              <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                                <Stop offset="0%" stopColor="#FF6B35" />
+                                <Stop offset="50%" stopColor="#9C27B0" />
+                                <Stop offset="100%" stopColor="#E91E63" />
+                              </LinearGradient>
+                            </Defs>
+                            {/* Background circle */}
+                            <Circle
+                              cx={20}
+                              cy={20}
+                              r={16}
+                              stroke="rgba(128, 128, 128, 0.3)"
+                              strokeWidth={3}
+                              fill="transparent"
+                            />
+                            {/* Progress circle */}
+                            <Circle
+                              cx={20}
+                              cy={20}
+                              r={16}
+                              stroke={`url(#gradient-${goal.id})`}
+                              strokeWidth={3}
+                              fill="transparent"
+                              strokeDasharray={`${2 * Math.PI * 16}`}
+                              strokeDashoffset={`${2 * Math.PI * 16 * (1 - (() => {
+                                const checkInCount = goalProgress[goal.id] || 0;
+                                const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
+                                  id: `mock-${index}`,
+                                  goal_id: goal.id,
+                                  user_id: user?.id || '',
+                                  completed_date: new Date().toISOString(),
+                                  created_at: new Date().toISOString(),
+                                }));
+                                return Math.round(calculateCompletionPercentage(goal, mockProgressEntries));
+                              })() / 100)}`}
+                              strokeLinecap="round"
+                              transform="rotate(-90 20 20)"
+                            />
+                          </Svg>
+                          <View style={styles.circularProgressText}>
+                            <Text style={[styles.circularProgressValue, { color: theme.textPrimary }]}>
+                              {(() => {
+                                const checkInCount = goalProgress[goal.id] || 0;
+                                const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
+                                  id: `mock-${index}`,
+                                  goal_id: goal.id,
+                                  user_id: user?.id || '',
+                                  completed_date: new Date().toISOString(),
+                                  created_at: new Date().toISOString(),
+                                }));
+                                return Math.round(calculateCompletionPercentage(goal, mockProgressEntries));
+                              })()}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <View style={styles.checkinItemContent}>
+                          <Text style={[styles.checkinItemTitle, { color: theme.textPrimary }]}>{goal.title}</Text>
+                          <Text style={[styles.checkinItemCategory, { color: theme.textSecondary }]}>
+                            {(() => {
+                              const status = getGoalCheckInStatus(goal, checkedInGoals, checkedInGoalsByDay, overdueGoals);
+                                                                                            if (status === 'overdue') {
+                                 // Use the pre-calculated data
+                                 const oldestMissedDate = overdueGoalDates[goal.id];
+                                 const overdueCount = overdueGoalCounts[goal.id];
+                                 
+                                 if (oldestMissedDate && overdueCount) {
+                                   const todayDate = new Date();
+                                   const diffTime = todayDate.getTime() - oldestMissedDate.getTime();
+                                   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                                  
+                                   return `${overdueCount} overdue, oldest ${diffDays}d`;
+                                }
+                                
+                                return 'Check-in overdue';
+                              } else if (status === 'due_today') {
+                                return 'Check-in due today';
+                              }
+                              return '';
+                            })()}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.checkinItemRight}>
+                        {(() => {
+                          const status = getGoalCheckInStatus(goal, checkedInGoals, checkedInGoalsByDay, overdueGoals);
+                          if (status === 'overdue') {
+                            return (
+                              <View style={styles.overdueIndicator}>
+                                <Ionicons name="alert" size={20} color="#EF4444" />
+                              </View>
+                            );
+                          } else if (status === 'due_today') {
+                            return (
+                              <View style={styles.todayIndicator}>
+                                <Ionicons name="time-outline" size={20} color="#3B82F6" />
+                              </View>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                });
+              }
+              
+              return (
+                <View style={styles.noCheckinsContainer}>
+                  <Ionicons name="calendar-outline" size={24} color={theme.textSecondary} />
+                  <Text style={[styles.noCheckinsText, { color: theme.textSecondary }]}>No check-ins scheduled for today</Text>
+                  <Text style={[styles.noCheckinsSubtext, { color: theme.textTertiary }]}>Create goals and set frequency to see them here</Text>
+                </View>
+              );
+            })()}
+          </View>
         </View>
 
         {/* Quick Actions Section */}
@@ -566,348 +933,7 @@ export default function ActionScreen({ navigation }: any) {
           <MonthCalendar theme={theme} />
         </View>
 
-        {/* Keep Track Section */}
-        <View style={styles.keepTrackSection}>
-          <View style={styles.keepTrackHeader}>
-            <TouchableOpacity 
-              onPress={() => setShowCalendar(!showCalendar)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-            >
-              <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Keep track</Text>
-              <Ionicons 
-                name={showCalendar ? "chevron-up" : "chevron-down"} 
-                size={20} 
-                color={theme.primary} 
-                style={{ marginTop: 2 }}
-              />
-            </TouchableOpacity>
-          </View>
-          
-          {/* Calendar Navigation Header */}
-          {showCalendar && (
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity onPress={goToPreviousWeek} style={styles.calendarNavButton}>
-                <Ionicons name="chevron-back-outline" size={24} color="#ffffff" />
-              </TouchableOpacity>
-              
-              <View style={styles.calendarTitleContainer}>
-                <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>
-                  {formatDate(getWeekStart(selectedWeek))} - {formatDate(new Date(getWeekStart(selectedWeek).getTime() + 6 * 24 * 60 * 60 * 1000))}
-                </Text>
-              </View>
-              
-              <TouchableOpacity onPress={goToNextWeek} style={styles.calendarNavButton}>
-                <Ionicons name="chevron-forward-outline" size={24} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          <View style={[styles.weeklyTrackerCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
-            <Animated.View style={[{ overflow: 'hidden', height: expandedDay !== null ? animatedHeight : undefined }]}> 
-              <View style={styles.weeklyTracker}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => {
-                // Get the actual date for this day in the selected week
-                const dayDate = getDateForDayOfWeekInWeek(index, selectedWeek);
-                const today = new Date();
-                const isToday = dayDate.toDateString() === today.toDateString();
-                const isPast = dayDate < today;
-                const isFuture = dayDate > today;
-                
-                // Check if any goals are scheduled for this day and haven't ended
-                const goalsForDay = userGoals.filter(goal => {
-                  // Check if goal is completed
-                  if (goal.completed) return false;
-                  
-                  // Check if goal has frequency set for this day
-                  if (!goal.frequency || !goal.frequency[index]) return false;
-                  
-                  // Check if goal has started (start date is in the future)
-                  if (goal.start_date) {
-                    const startDate = new Date(goal.start_date);
-                    
-                    // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                    const startDateStr = startDate.toISOString().split('T')[0];
-                    const dayDateStr = dayDate.toISOString().split('T')[0];
-                    
-                    if (dayDateStr < startDateStr) return false;
-                  }
-                  
-                  // Check if goal has ended (end date is in the past)
-                  if (goal.end_date) {
-                    const endDate = new Date(goal.end_date);
-                    
-                    // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                    const endDateStr = endDate.toISOString().split('T')[0];
-                    const dayDateStr = dayDate.toISOString().split('T')[0];
-                    
-                    if (dayDateStr > endDateStr) return false;
-                  }
-                  
-                  return true;
-                });
-                
-                return (
-                  <React.Fragment key={index}>
-                    <TouchableOpacity
-                      style={[
-                        styles.dayContainer, 
-                        isToday && styles.todayContainer,
-                        isPast && styles.pastDayContainer,
-                        isFuture && styles.futureDayContainer
-                      ]}
-                      onPress={() => {
-                        if (expandedDay === index) {
-                          Animated.timing(animatedHeight, {
-                            toValue: 60,
-                            duration: 250,
-                            useNativeDriver: false,
-                          }).start(() => {
-                            setExpandedDay(null);
-                          });
-                        } else {
-                          setExpandedDay(index);
-                          Animated.timing(animatedHeight, {
-                            toValue: 250,
-                            duration: 250,
-                            useNativeDriver: false,
-                          }).start();
-                        }
-                      }}
-                    >
-                      {/* Mini arrow above the expanded day */}
-                      {expandedDay === index && (
-                        <View style={styles.arrowContainerAbove}>
-                          <Text style={styles.arrowDownAbove}>▼</Text>
-                        </View>
-                      )}
-                      {isToday && (
-                        <View style={styles.todayBorderFade}>
-                          <View style={styles.singleCurvedLine} />
-                          <View style={styles.topFade1} />
-                          <View style={styles.topFade2} />
-                          <View style={styles.topFade3} />
-                          <View style={styles.topFade4} />
-                          <View style={styles.topFade5} />
-                          <View style={styles.rightFade1} />
-                          <View style={styles.rightFade2} />
-                          <View style={styles.rightFade3} />
-                          <View style={styles.rightFade4} />
-                          <View style={styles.rightFade5} />
-                        </View>
-                      )}
-                      <Text style={[styles.dayLabel, { color: theme.textSecondary }, isToday && styles.todayLabel]}>{day}</Text>
-                      <Text style={[styles.dayDate, { color: theme.textPrimary }, isToday && styles.todayDate]}>
-                        {dayDate.getDate()}
-                      </Text>
-                      <View style={[styles.dayCircle, { borderColor: theme.border }]}>
-                        {goalsForDay.length > 0 ? (
-                          <View style={[
-                            styles.innerCircle,
-                            checkedInGoalsByDay[index.toString()]?.size > 0 
-                              ? [styles.innerCircleChecked, { backgroundColor: theme.primary }] 
-                              : [styles.innerCircleUnchecked, { borderColor: theme.primary }]
-                          ]}>
-                            <Text style={[
-                              styles.goalCount,
-                              checkedInGoalsByDay[index.toString()]?.size > 0 
-                                ? [styles.goalCountChecked, { color: '#ffffff' }] 
-                                : [styles.goalCountUnchecked, { color: theme.primary }]
-                            ]}>
-                              {goalsForDay.length}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={[styles.plusSign, { color: theme.textTertiary }]}>+</Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                    {index < 6 && index !== 2 && index !== 3 && (
-                      <>
-                        {(index === 0 || index === 5) ? (
-                          <View style={styles.fadeSeparator}>
-                            <View style={styles.fadeSegment1} />
-                            <View style={styles.fadeSegment2} />
-                            <View style={styles.fadeSegment3} />
-                            <View style={styles.fadeSegment4} />
-                            <View style={styles.fadeSegment5} />
-                            <View style={styles.fadeSegment6} />
-                            <View style={styles.fadeSegment7} />
-                            <View style={styles.fadeSegment8} />
-                          </View>
-                        ) : (
-                          <View style={styles.solidFadeSeparator}>
-                            <View style={styles.solidFadeTop} />
-                            <View style={styles.solidFadeMiddle} />
-                            <View style={styles.solidFadeBottom} />
-                          </View>
-                        )}
-                      </>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </View>
-            {expandedDay !== null && (
-              <View style={{ marginTop: 16, paddingHorizontal: 8, paddingBottom: 8 }}>
-                <Text style={{ fontWeight: '600', fontSize: 16, marginBottom: 8, color: theme.textPrimary }}>
-                  {days[expandedDay]} {formatDate(getDateForDayOfWeekInWeek(expandedDay, selectedWeek))} Goals
-                </Text>
-                {/* Show actual goals scheduled for this day */}
-                <View style={{ gap: 6 }}>
-                  {userGoals.filter(goal => {
-                    // Check if goal is completed
-                    if (goal.completed) return false;
-                    
-                    // Check if goal has frequency set for this day
-                    if (!goal.frequency || !goal.frequency[expandedDay]) return false;
-                    
-                    // Check if goal has started (start date is in the future)
-                    if (goal.start_date) {
-                      const startDate = new Date(goal.start_date);
-                      const dayDate = getDateForDayOfWeekInWeek(expandedDay, selectedWeek);
-                      
-                      // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                      const startDateStr = startDate.toISOString().split('T')[0];
-                      const dayDateStr = dayDate.toISOString().split('T')[0];
-                      
-                      if (dayDateStr < startDateStr) return false;
-                    }
-                    
-                    // Check if goal has ended (end date is in the past)
-                    if (goal.end_date) {
-                      const endDate = new Date(goal.end_date);
-                      const today = new Date();
-                      
-                      // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                      const endDateStr = endDate.toISOString().split('T')[0];
-                      const todayStr = today.toISOString().split('T')[0];
-                      
-                      if (endDateStr < todayStr) return false;
-                    }
-                    
-                    // Check if this specific day is after the goal's end date
-                    if (goal.end_date) {
-                      const endDate = new Date(goal.end_date);
-                      const dayDate = getDateForDayOfWeekInWeek(expandedDay, selectedWeek);
-                      
-                      // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                      const endDateStr = endDate.toISOString().split('T')[0];
-                      const dayDateStr = dayDate.toISOString().split('T')[0];
-                      
-                      if (dayDateStr > endDateStr) return false;
-                    }
-                    
-                    return true;
-                  }).length === 0 ? (
-                    <Text style={{ fontSize: 15, color: '#6b7280', fontStyle: 'italic' }}>
-                      No goals scheduled for {days[expandedDay]}
-                    </Text>
-                  ) : (
-                    userGoals.filter(goal => {
-                      // Check if goal is completed
-                      if (goal.completed) return false;
-                      
-                      // Check if goal has frequency set for this day
-                      if (!goal.frequency || !goal.frequency[expandedDay]) return false;
-                      
-                      // Check if goal has started (start date is in the future)
-                      if (goal.start_date) {
-                        const startDate = new Date(goal.start_date);
-                        const dayDate = getDateForDayOfWeekInWeek(expandedDay, selectedWeek);
-                        
-                        // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                        const startDateStr = startDate.toISOString().split('T')[0];
-                        const dayDateStr = dayDate.toISOString().split('T')[0];
-                        
-                        if (dayDateStr < startDateStr) return false;
-                      }
-                      
-                      // Check if goal has ended (end date is in the past)
-                      if (goal.end_date) {
-                        const endDate = new Date(goal.end_date);
-                        const today = new Date();
-                        
-                        // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                        const endDateStr = endDate.toISOString().split('T')[0];
-                        const todayStr = today.toISOString().split('T')[0];
-                        
-                        if (endDateStr < todayStr) return false;
-                      }
-                      
-                      // Check if this specific day is after the goal's end date
-                      if (goal.end_date) {
-                        const endDate = new Date(goal.end_date);
-                        const dayDate = getDateForDayOfWeekInWeek(expandedDay, selectedWeek);
-                        
-                        // Compare dates by converting to YYYY-MM-DD format for accurate comparison
-                        const endDateStr = endDate.toISOString().split('T')[0];
-                        const dayDateStr = dayDate.toISOString().split('T')[0];
-                        
-                        if (dayDateStr > endDateStr) return false;
-                      }
-                      
-                      return true;
-                    }).map((goal) => {
-                      const dayDate = getDateForDayOfWeekInWeek(expandedDay, selectedWeek);
-                      const today = new Date();
-                      const isFutureDay = dayDate > today;
-                      // Check if checked in for the SPECIFIC DAY being viewed
-                      const isCheckedInForThisDay = expandedDay !== null && 
-                        checkedInGoalsByDay[expandedDay.toString()]?.has(goal.id);
-                      
-                      return (
-                        <TouchableOpacity
-                          key={goal.id}
-                          style={[
-                            styles.expandedGoalItem, 
-                            { backgroundColor: theme.backgroundTertiary },
-                            (isFutureDay || isCheckedInForThisDay) && styles.disabledGoalItem
-                          ]}
-                          onPress={() => {
-                            if (isFutureDay) {
-                              // Prevent check-ins for future days
-                              alert("You can't check in for future days!");
-                              return;
-                            }
-                            if (isCheckedInForThisDay) {
-                              alert("You've already checked in for this day! Great job!");
-                              return;
-                            }
-                            handleCheckInPress(goal, expandedDay);
-                          }}
-                          disabled={isFutureDay || isCheckedInForThisDay}
-                        >
-                          <Text style={styles.expandedGoalIcon}>{getCategoryIcon(goal.category)}</Text>
-                          <View style={styles.expandedGoalContent}>
-                            <Text style={[styles.expandedGoalTitle, { color: theme.primary }]}>{goal.title}</Text>
-                            {goal.time_commitment && (
-                              <Text style={[styles.expandedGoalTime, { color: theme.textSecondary }]}>{goal.time_commitment}</Text>
-                            )}
-                          </View>
-                          <View style={[
-                            styles.checkInButton, 
-                            { backgroundColor: theme.primary },
-                            isFutureDay && styles.disabledCheckInButton,
-                            isCheckedInForThisDay && styles.completedCheckInButton
-                          ]}>
-                            <Text style={[
-                              styles.checkInButtonText, 
-                              isFutureDay && styles.disabledCheckInButtonText,
-                              isCheckedInForThisDay && styles.completedCheckInButtonText
-                            ]}>
-                              {isFutureDay ? 'Locked' : isCheckedInForThisDay ? 'Completed' : 'Check-in'}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                </View>
-              </View>
-            )}
-          </Animated.View>
-          </View>
-        </View>
+        
 
         {/* Recent Activity Section */}
         <View style={styles.section}>
@@ -1680,4 +1706,123 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginLeft: 8,
   },
+  // Today's Check-ins styles
+  todaysCheckinsContainer: {
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 8,
+  },
+  checkinItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  checkinItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkinItemContent: {
+    flex: 1,
+  },
+  checkinItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  checkinItemCategory: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  checkinItemRight: {
+    alignItems: 'center',
+  },
+  checkinStatus: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkinButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkinButtonText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+  },
+  noCheckinsContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  noCheckinsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  noCheckinsSubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  // Circular Progress styles (same as ProfileScreen)
+  circularProgressContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  circularProgressText: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  circularProgressValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  circularProgressPercent: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: -2,
+  },
+  // Overdue and today's check-in indicators
+  overdueIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  todayIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
 }); 
