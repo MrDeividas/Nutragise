@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import * as FileSystem from 'expo-file-system';
+import { apiCache } from './apiCache';
 
 export interface ProgressPhoto {
   id: string;
@@ -151,6 +152,10 @@ class ProgressService {
         return false;
       }
 
+      // Invalidate related cache entries when a check-in is created
+      const checkInCountKey = apiCache.generateKey('checkInCount', checkInData.goalId, checkInData.userId);
+      apiCache.delete(checkInCountKey);
+
       return true;
     } catch (error) {
       console.error('Error in createCheckIn:', error);
@@ -256,9 +261,16 @@ class ProgressService {
 
 
   /**
-   * Get check-in count for a goal
+   * Get check-in count for a goal (with caching)
    */
   async getCheckInCount(goalId: string, userId: string): Promise<number> {
+    const cacheKey = apiCache.generateKey('checkInCount', goalId, userId);
+    const cached = apiCache.get<number>(cacheKey);
+    
+    if (cached !== null) {
+      return cached;
+    }
+    
     try {
       // Verify authenticated user matches
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -275,7 +287,10 @@ class ProgressService {
         return 0;
       }
 
-      return count || 0;
+      const result = count || 0;
+      // Cache for 2 minutes since check-ins change frequently
+      apiCache.set(cacheKey, result, 2 * 60 * 1000);
+      return result;
     } catch (error) {
       console.error('Error in getCheckInCount:', error);
       return 0;

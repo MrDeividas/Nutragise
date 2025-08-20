@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -47,7 +47,7 @@ interface GoalWithUser extends Goal {
 
 const { width, height } = Dimensions.get('window');
 
-export default function HomeScreen() {
+function HomeScreen() {
   const [activeTab, setActiveTab] = useState<'explore' | 'following'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
@@ -174,7 +174,7 @@ export default function HomeScreen() {
 
 
 
-  const handleSearchInput = async (query: string) => {
+  const handleSearchInput = useCallback(async (query: string) => {
     setSearchQuery(query);
     
     // Clear results if query is empty
@@ -225,7 +225,7 @@ export default function HomeScreen() {
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [searchType]);
 
   const handleSearch = async (query: string) => {
     if (query.trim().length === 0) {
@@ -302,7 +302,7 @@ export default function HomeScreen() {
     }
   };
 
-  const renderUser = ({ item }: { item: Profile }) => {
+  const renderUser = useCallback(({ item }: { item: Profile }) => {
     const isFollowingUser = followingStatus.get(item.id) || false;
     
     return (
@@ -373,7 +373,7 @@ export default function HomeScreen() {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [followingStatus, followerCounts, theme, handleFollow]);
 
   const renderGoal = ({ item }: { item: any }) => {
     console.log('Rendering goal:', item.title, 'with profiles:', item.profiles);
@@ -1139,6 +1139,9 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
+
+// Memoize the component to prevent unnecessary re-renders
+export default React.memo(HomeScreen);
 
 // Explore Content Component
 

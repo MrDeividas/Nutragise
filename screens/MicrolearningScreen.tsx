@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../state/authStore';
+import CustomBackground from '../components/CustomBackground';
 
 export default function MicrolearningScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -170,8 +171,9 @@ export default function MicrolearningScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Header */}
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.titleSection}>
@@ -256,7 +258,8 @@ export default function MicrolearningScreen({ navigation }: any) {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 

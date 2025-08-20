@@ -94,3 +94,82 @@ export interface GoalProgress {
   completed_date: string;
   created_at: string;
 } 
+
+export interface DailyHabits {
+  id: string;
+  user_id: string;
+  date: string;
+  
+  // Sleep habit data
+  sleep_hours?: number;
+  sleep_quality?: number;
+  sleep_notes?: string;
+  
+  // Water habit data
+  water_intake?: number;
+  water_goal?: string;
+  water_notes?: string;
+  
+  // Run habit data
+  run_activity_type?: 'run' | 'walk';
+  run_day_type?: 'active' | 'rest';
+  run_type?: string;
+  run_distance?: number;
+  run_duration?: string;
+  run_notes?: string;
+  
+  // Gym habit data
+  gym_day_type?: 'active' | 'rest';
+  gym_training_types?: string[];
+  gym_custom_type?: string;
+  
+  // Reflect habit data
+  reflect_mood?: number;
+  reflect_energy?: number;
+  reflect_what_went_well?: string;
+  reflect_friction?: string;
+  reflect_one_tweak?: string;
+  reflect_nothing_to_change?: boolean;
+  
+  // Cold shower habit data
+  cold_shower_completed?: boolean;
+  
+  // Metadata
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateDailyHabitsData {
+  date: string;
+  sleep_hours?: number;
+  sleep_quality?: number;
+  sleep_notes?: string;
+  water_intake?: number;
+  water_goal?: string;
+  water_notes?: string;
+  run_activity_type?: 'run' | 'walk';
+  run_day_type?: 'active' | 'rest';
+  run_type?: string;
+  run_distance?: number;
+  run_duration?: string;
+  run_notes?: string;
+  gym_day_type?: 'active' | 'rest';
+  gym_training_types?: string[];
+  gym_custom_type?: string;
+  reflect_mood?: number;
+  reflect_energy?: number;
+  reflect_what_went_well?: string;
+  reflect_friction?: string;
+  reflect_one_tweak?: string;
+  reflect_nothing_to_change?: boolean;
+  cold_shower_completed?: boolean;
+}
+
+export interface UpdateDailyHabitsData extends Partial<CreateDailyHabitsData> {}
+
+export interface HabitStreak {
+  habit_type: string;
+  current_streak: number;
+  longest_streak: number;
+  last_completed_date?: string;
+} 

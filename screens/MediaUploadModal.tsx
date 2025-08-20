@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'react-native';
 
 interface MediaUploadModalProps {
   visible: boolean;
@@ -49,7 +50,9 @@ export default function MediaUploadModal({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8,
+        quality: 0.8, // Restored original quality for progress photos
+        exif: false, // Remove EXIF data for privacy (keeps file size optimization)
+        base64: false, // Don't include base64 to save memory
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -71,7 +74,9 @@ export default function MediaUploadModal({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8,
+        quality: 0.8, // Restored original quality for progress photos
+        exif: false, // Remove EXIF data for privacy (keeps file size optimization)
+        base64: false, // Don't include base64 to save memory
       });
 
       if (!result.canceled && result.assets[0]) {

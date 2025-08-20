@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -9,77 +9,98 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
 import CustomBackground from './components/CustomBackground';
+
+// Core screens (loaded immediately)
 import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
-import ProfileScreen from './screens/ProfileScreen';
-import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
-import ProfileCardScreen from './screens/ProfileCardScreen';
-import GoalsScreen from './screens/GoalsScreen';
 import NewGoalScreen from './screens/NewGoalScreen';
-import NotificationsScreen from './screens/NotificationsScreen';
+
+// Lazy-loaded screens (loaded on demand)
+const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
+const ProfileSettingsScreen = lazy(() => import('./screens/ProfileSettingsScreen'));
+const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
+const GoalsScreen = lazy(() => import('./screens/GoalsScreen'));
+const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
+const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
+const HomeScreen = lazy(() => import('./screens/HomeScreen'));
+const ActionScreen = lazy(() => import('./screens/ActionScreen'));
+const UserProfileScreen = lazy(() => import('./screens/UserProfileScreen'));
+const FollowersScreen = lazy(() => import('./screens/FollowersScreen'));
+const FollowingScreen = lazy(() => import('./screens/FollowingScreen'));
+const CompetitionsScreen = lazy(() => import('./screens/CompetitionsScreen'));
+const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
+const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
+const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
+const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
+
 import { GoalsStackParamList } from './screens/GoalDetailScreen';
-import GoalDetailScreen from './screens/GoalDetailScreen';
-import HomeScreen from './screens/HomeScreen';
-import ActionScreen from './screens/ActionScreen';
-import UserProfileScreen from './screens/UserProfileScreen';
-import FollowersScreen from './screens/FollowersScreen';
-import FollowingScreen from './screens/FollowingScreen';
-import CompetitionsScreen from './screens/CompetitionsScreen';
-import MeditationScreen from './screens/MeditationScreen';
-import MicrolearningScreen from './screens/MicrolearningScreen';
-import InformationDetailScreen from './screens/InformationDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// Loading component for Suspense fallback
+function LoadingScreen() {
+  const { theme } = useTheme();
+  return (
+    <View style={[styles.loadingContainer, { backgroundColor: 'rgba(20, 19, 19, 0.8)' }]}>
+      <ActivityIndicator size="large" color={theme.primary} />
+      <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
+    </View>
+  );
+}
 
-
-// Goals Stack
+// Goals Stack with Suspense wrapper
 function GoalsStack() {
   return (
-    <Stack.Navigator 
-      screenOptions={{ 
-        headerShown: false
-      }}
-    >
-      <Stack.Screen name="GoalsList" component={GoalsScreen} />
-      <Stack.Screen name="NewGoal" component={NewGoalScreen} />
-      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
-    </Stack.Navigator>
+    <Suspense fallback={<LoadingScreen />}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false
+        }}
+      >
+        <Stack.Screen name="GoalsList" component={GoalsScreen} />
+        <Stack.Screen name="NewGoal" component={NewGoalScreen} />
+        <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
+      </Stack.Navigator>
+    </Suspense>
   );
 }
 
 // Action Stack
 function ActionStack() {
   return (
-    <Stack.Navigator 
-      screenOptions={{ 
-        headerShown: false
-      }}
-    >
-      <Stack.Screen name="ActionMain" component={ActionScreen} />
-      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
-    </Stack.Navigator>
+    <Suspense fallback={<LoadingScreen />}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false
+        }}
+      >
+        <Stack.Screen name="ActionMain" component={ActionScreen} />
+        <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
+      </Stack.Navigator>
+    </Suspense>
   );
 }
 
 // Profile Stack
 function ProfileStack() {
   return (
-    <Stack.Navigator 
-      screenOptions={{ 
-        headerShown: false
-      }}
-    >
-      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
-      <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-      <Stack.Screen name="ProfileCard" component={ProfileCardScreen} />
-      <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
-      <Stack.Screen name="Followers" component={FollowersScreen as any} />
-      <Stack.Screen name="Following" component={FollowingScreen as any} />
-      <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
-    </Stack.Navigator>
+    <Suspense fallback={<LoadingScreen />}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false
+        }}
+      >
+        <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+        <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+        <Stack.Screen name="ProfileCard" component={ProfileCardScreen} />
+        <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
+        <Stack.Screen name="Followers" component={FollowersScreen as any} />
+        <Stack.Screen name="Following" component={FollowingScreen as any} />
+        <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
+      </Stack.Navigator>
+    </Suspense>
   );
 }
 
@@ -107,6 +128,7 @@ function MainTabs() {
           let iconName: any = 'home-outline';
           if (route.name === 'Home') iconName = 'home-outline';
           else if (route.name === 'Action') iconName = 'flash-outline';
+          else if (route.name === 'Insights') iconName = 'trending-up';
           else if (route.name === 'Goals') iconName = 'walk-outline';
           else if (route.name === 'Discover') iconName = 'trophy-outline';
           else if (route.name === 'Profile') iconName = 'person-outline';
@@ -114,10 +136,35 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Action" component={ActionScreen} options={{ tabBarLabel: 'Action' }} />
-      <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'Feed' }} />
+      <Tab.Screen name="Action" component={ActionStack} options={{ tabBarLabel: 'Action' }} />
+      <Tab.Screen 
+        name="Insights" 
+        options={{ tabBarLabel: 'Insights' }}>
+        {() => (
+          <Suspense fallback={<LoadingScreen />}>
+            <InsightsScreen />
+          </Suspense>
+        )}
+      </Tab.Screen>
+      <Tab.Screen 
+        name="Home" 
+        options={{ tabBarLabel: 'Feed' }}>
+        {() => (
+          <Suspense fallback={<LoadingScreen />}>
+            <HomeScreen />
+          </Suspense>
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Goals" component={GoalsStack} />
-      <Tab.Screen name="Discover" component={CompetitionsScreen} options={{ tabBarLabel: 'Competitions' }} />
+      <Tab.Screen 
+        name="Discover" 
+        options={{ tabBarLabel: 'Competitions' }}>
+        {() => (
+          <Suspense fallback={<LoadingScreen />}>
+            <CompetitionsScreen />
+          </Suspense>
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );
@@ -129,9 +176,9 @@ function AppStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        animation: 'none',
-        animationDuration: 0,
-        gestureEnabled: false
+        animation: 'slide_from_right',
+        animationDuration: 250, // Reduced from default 300ms for snappier feel
+        gestureEnabled: true
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />
@@ -139,32 +186,44 @@ function AppStack() {
         name="Meditation" 
         component={MeditationScreen}
         options={{
-          animation: 'none',
-          animationDuration: 0,
-          gestureEnabled: false
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'vertical'
         }}
       />
       <Stack.Screen 
         name="Microlearning" 
         component={MicrolearningScreen}
         options={{
-          animation: 'none',
-          animationDuration: 0,
-          gestureEnabled: false
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'vertical'
         }}
       />
       <Stack.Screen 
         name="InformationDetail" 
         component={InformationDetailScreen}
         options={{
-          animation: 'none',
-          animationDuration: 0,
-          gestureEnabled: false
+          animation: 'slide_from_right',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
         }}
       />
       <Stack.Screen 
         name="Notifications" 
         component={NotificationsScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Insights" 
+        component={InsightsScreen}
         options={{
           animation: 'slide_from_right',
           gestureEnabled: true,

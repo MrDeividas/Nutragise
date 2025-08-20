@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
+import CustomBackground from '../components/CustomBackground';
 
 export default function MeditationScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -86,8 +87,9 @@ export default function MeditationScreen({ navigation }: any) {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Header */}
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.titleSection}>
@@ -170,7 +172,8 @@ export default function MeditationScreen({ navigation }: any) {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 

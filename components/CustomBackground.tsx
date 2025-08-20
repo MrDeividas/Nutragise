@@ -12,20 +12,12 @@ export default function CustomBackground({ children }: CustomBackgroundProps) {
       {/* Black base background */}
       <View style={styles.blackBackground} />
       
-      {/* Burnt orange glow - top left */}
+      {/* Dark grey glow - top */}
       <LinearGradient
-        colors={['rgba(234, 88, 12, 0.25)', 'transparent']}
+        colors={['rgba(64, 64, 64, 0.25)', 'transparent']}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.topLeftGlow}
-      />
-      
-      {/* Burnt orange glow - top right */}
-      <LinearGradient
-        colors={['rgba(234, 88, 12, 0.22)', 'transparent']}
-        start={{ x: 1, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.topRightGlow}
+        style={styles.topGlow}
       />
       
       {/* Purple glow - bottom left */}
@@ -71,19 +63,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: '#141414',
   },
-  topLeftGlow: {
+  topGlow: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: '50%',
-    height: '50%',
-    borderRadius: 0,
-  },
-  topRightGlow: {
-    position: 'absolute',
-    top: 0,
     right: 0,
-    width: '50%',
     height: '50%',
     borderRadius: 0,
   },

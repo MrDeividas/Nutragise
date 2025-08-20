@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,6 +23,7 @@ import MediaUploadModal from './MediaUploadModal';
 import { progressService } from '../lib/progressService';
 import { useTheme } from '../state/themeStore';
 import { useSocialStore } from '../state/socialStore';
+import { useActionStore } from '../state/actionStore';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
 import Svg, { Circle, Line, Text as SvgText, Polygon, Defs, LinearGradient, Stop, Path, Filter, FeGaussianBlur, FeOffset, FeMerge, FeMergeNode } from 'react-native-svg';
@@ -207,10 +208,11 @@ const ModernRadarChart = ({ theme }: { theme: any }) => {
   );
 };
 
-export default function ProfileScreen({ navigation }: any) {
+function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
   const { theme } = useTheme();
+  const { segmentChecked, getActiveSegmentCount } = useActionStore();
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
@@ -260,7 +262,9 @@ export default function ProfileScreen({ navigation }: any) {
         fetchGoalProgress();
         checkTodaysCheckIns();
       }
-    }, [user, userGoals.length])
+      // Force a refresh of the action store data to ensure live updates
+      getActiveSegmentCount();
+    }, [user, userGoals.length, getActiveSegmentCount])
   );
 
   const loadProfileData = async () => {
@@ -956,9 +960,60 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>2</Text>
           </View>
           
-          {/* Daily Tasks Progress Bar */}
+          {/* Green Progress Bar - Now first */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <View style={[styles.leftBarContainer, { flex: 0.84, marginHorizontal: 4, alignSelf: 'center' }]}>
+            <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
+              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent', flexDirection: 'row' }]}>
+                {[...Array(8)].map((_, i) => {
+                  // Get the count of checked segments from action screen
+                  const activeSegmentCount = segmentChecked.filter(checked => checked).length;
+                  
+                  // Debug: Log when segments change
+                  if (i === 0) {
+                    console.log('ProfileScreen render - segments:', segmentChecked, 'active count:', activeSegmentCount);
+                  }
+                  
+                  // Only light up the first N segments based on how many are checked
+                  const shouldBeActive = i < activeSegmentCount;
+                  
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.leftBarSegment,
+                        { 
+                          backgroundColor: shouldBeActive ? '#10B981' : 'transparent', 
+                          height: 2.59,
+                          flex: 1,
+                          marginRight: i === 7 ? 0 : 2,
+                          shadowColor: '#10B981',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: shouldBeActive ? 0.6 : 0,
+                          shadowRadius: 3,
+                          elevation: shouldBeActive ? 3 : 0,
+                        },
+                        (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        (!shouldBeActive) && { 
+                          backgroundColor: 'transparent', 
+                          borderWidth: 0.5, 
+                          borderColor: '#10B981',
+                          shadowColor: 'transparent',
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+          
+          {/* Pink Progress Bar - Now second, with narrower container */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
+            <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
               <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
                 {[...Array(5)].map((_, i) => (
                   <View
@@ -966,9 +1021,9 @@ export default function ProfileScreen({ navigation }: any) {
                     style={[
                       styles.leftBarSegment,
                                               { 
-                          backgroundColor: i < 3 ? '#EA580C' : 'transparent', 
+                          backgroundColor: i < 3 ? '#E91E63' : 'transparent', 
                           height: 2.59,
-                          shadowColor: '#EA580C',
+                          shadowColor: '#E91E63',
                           shadowOffset: { width: 0, height: 0 },
                           shadowOpacity: 0.6,
                           shadowRadius: 3,
@@ -981,7 +1036,7 @@ export default function ProfileScreen({ navigation }: any) {
                       (i === 3 || i === 4) && { 
                         backgroundColor: 'transparent', 
                         borderWidth: 0.5, 
-                        borderColor: '#EA580C',
+                        borderColor: '#E91E63',
                         shadowColor: 'transparent',
                         shadowOpacity: 0,
                         elevation: 0,
@@ -994,13 +1049,13 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Goals Section */}
-        <View style={styles.keepTrackSection}>
+        {/* Goals Section - Moved below pink progress bar */}
+        <View style={[styles.keepTrackSection, { marginTop: 20 }]}>
           <TouchableOpacity 
             onPress={() => navigation.navigate('Goals')}
             style={styles.goalsSectionHeader}
           >
-            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
+            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Pinned Goals</Text>
             <Ionicons name="chevron-forward-outline" size={20} color="#ffffff" />
           </TouchableOpacity>
           <View style={[styles.weeklyTrackerCard, { backgroundColor: 'transparent' }]}>
@@ -1032,22 +1087,27 @@ export default function ProfileScreen({ navigation }: any) {
                     // Create gradient colors based on index
                     const gradientColors = ['#FF6B35', '#9C27B0', '#E91E63']; // Orange to purple to pink
                     
-                                          return (
-                        <TouchableOpacity 
-                          key={goal.id} 
-                          style={styles.circularGoalItem}
-                          onPress={() => {
-                            navigation.navigate('GoalDetail', { 
-                              goal,
-                              onCheckInDeleted: () => {
-                                // Refresh progress data when check-in is deleted
-                                fetchGoalProgress();
-                                checkTodaysCheckIns();
-                              }
-                            });
-                          }}
-                        >
-                                                  <View style={styles.circularProgressContainer}>
+                    return (
+                      <TouchableOpacity 
+                        key={goal.id} 
+                        style={styles.circularGoalItem}
+                        onPress={() => {
+                          navigation.navigate('GoalDetail', { 
+                            goal,
+                            onCheckInDeleted: async () => {
+                              // Refresh progress data when check-in is deleted
+                              await fetchGoalProgress();
+                              await checkTodaysCheckIns();
+                              // Add small delay to ensure database changes propagate
+                              setTimeout(async () => {
+                                await checkTodaysCheckIns();
+                                await fetchGoalProgress();
+                              }, 100);
+                            }
+                          });
+                        }}
+                      >
+                        <View style={styles.circularProgressContainer}>
                           <Svg width={110} height={110}>
                             <Defs>
                               <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -1056,7 +1116,7 @@ export default function ProfileScreen({ navigation }: any) {
                                 <Stop offset="100%" stopColor={gradientColors[2]} />
                               </LinearGradient>
                             </Defs>
-                                                        {/* Background circle */}
+                            {/* Background circle */}
                             <Circle
                               cx={55}
                               cy={55}
@@ -1084,12 +1144,12 @@ export default function ProfileScreen({ navigation }: any) {
                               {Math.round(completionPercent)}
                             </Text>
                           </View>
-                          </View>
-                          <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
-                            {goal.title}
-                          </Text>
-                        </TouchableOpacity>
-                      );
+                        </View>
+                        <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
+                          {goal.title}
+                        </Text>
+                      </TouchableOpacity>
+                    );
                   })}
                 </View>
               )}
@@ -1134,6 +1194,9 @@ export default function ProfileScreen({ navigation }: any) {
     </SafeAreaView>
   );
 }
+
+// Memoize the component to prevent unnecessary re-renders
+export default React.memo(ProfileScreen);
 
 const styles = StyleSheet.create({
   container: {
@@ -2154,6 +2217,27 @@ const styles = StyleSheet.create({
   expandedProfileValue: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Orange Progress Bar Styles (duplicated from ActionScreen)
+  orangeProgressContainer: {
+    marginTop: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Pink Progress Bar Styles
+  pinkProgressContainer: {
+    marginTop: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoIconContainer: {
+    marginLeft: 12,
+    padding: 8,
+  },
+  infoIconUnderneath: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
 
 }); 

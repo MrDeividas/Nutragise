@@ -276,6 +276,61 @@ export default function NotificationsScreen({ navigation }: any) {
           }
         />
       )}
+
+      {/* Recent Activity Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Recent Activity</Text>
+      </View>
+      <View style={styles.activityList}>
+        <View style={styles.activityItem}>
+          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+            <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
+          </View>
+          <View style={styles.activityContent}>
+            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Completed workout goal</Text>
+            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>2 hours ago</Text>
+          </View>
+        </View>
+
+        <View style={styles.activityItem}>
+          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+            <Ionicons name="camera-outline" size={20} color="#ffffff" />
+          </View>
+          <View style={styles.activityContent}>
+            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Added photo to meditation goal</Text>
+            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>5 hours ago</Text>
+          </View>
+        </View>
+
+        <View style={styles.activityItem}>
+          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+            <Ionicons name="add-outline" size={20} color="#ffffff" />
+          </View>
+          <View style={styles.activityContent}>
+            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Created new reading goal</Text>
+            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>1 day ago</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Action Tips Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
+      </View>
+      <View style={styles.tipsContainer}>
+        <View style={styles.tipCard}>
+          <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
+          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Break big goals into smaller, manageable tasks</Text>
+        </View>
+        <View style={styles.tipCard}>
+          <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
+          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Set specific time blocks for your goals</Text>
+        </View>
+        <View style={styles.tipCard}>
+          <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
+          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Celebrate small wins to stay motivated</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -445,5 +500,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  activityList: {
+    marginTop: 0,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 8,
+  },
+  activityIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  activityTime: {
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  tipsContainer: {
+    marginTop: 0,
+    paddingHorizontal: 16,
+  },
+  tipCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 8,
+  },
+  tipText: {
+    fontSize: 13,
+    marginLeft: 14,
+    flex: 1,
+    color: '#6b7280',
+    lineHeight: 18,
   },
 }); 
