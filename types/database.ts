@@ -104,7 +104,10 @@ export interface DailyHabits {
   sleep_hours?: number;
   sleep_quality?: number;
   sleep_notes?: string;
-  
+  sleep_bedtime_hours?: number;
+  sleep_bedtime_minutes?: number;
+  sleep_wakeup_hours?: number;
+  sleep_wakeup_minutes?: number;  
   // Water habit data
   water_intake?: number;
   water_goal?: string;
@@ -141,7 +144,10 @@ export interface DailyHabits {
 
 export interface CreateDailyHabitsData {
   date: string;
-  sleep_hours?: number;
+  sleep_bedtime_hours?: number;
+  sleep_bedtime_minutes?: number;
+  sleep_wakeup_hours?: number;
+  sleep_wakeup_minutes?: number;  sleep_hours?: number;
   sleep_quality?: number;
   sleep_notes?: string;
   water_intake?: number;

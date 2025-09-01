@@ -319,11 +319,13 @@ function ActionScreen({ navigation }: any) {
   });
   
   const [sleepQuestionnaire, setSleepQuestionnaire] = useState({
-    sleepHours: 8, // Changed to number for slider, default 8 hours
     sleepQuality: 50, // Changed to number for slider
+    bedtimeHours: 22, // Default bedtime 22:00
+    bedtimeMinutes: 0,
+    wakeupHours: 6, // Default wake time 06:00
+    wakeupMinutes: 0,
     sleepNotes: ''
-  });
-  
+  });  
   const [waterQuestionnaire, setWaterQuestionnaire] = useState({
     waterIntake: 5, // Changed to number for slider, default 2.25 liters (5 * 0.45)
     waterGoal: '',
@@ -447,18 +449,7 @@ function ActionScreen({ navigation }: any) {
     return '#10B981'; // Green
   };
 
-  // Helper function to format sleep hours
-  const formatSleepHours = (hours: number) => {
-    if (hours >= 12) return '12+ hours';
-    return `${hours} hour${hours === 1 ? '' : 's'}`;
-  };
 
-  // Helper function to get sleep hours color
-  const getSleepHoursColor = (hours: number) => {
-    if (hours < 6) return '#EF4444'; // Red - too little
-    if (hours < 7) return '#F97316'; // Orange - could be better
-    return '#10B981'; // Green - good range (7+ hours)
-  };
 
   // Helper function to format water intake
   const formatWaterIntake = (value: number) => {
@@ -516,14 +507,24 @@ function ActionScreen({ navigation }: any) {
         case 2: // Sleep
           // Load existing data if available
           const { dailyHabits } = useActionStore.getState();
-          if (dailyHabits && dailyHabits.sleep_hours) {
+          if (dailyHabits && dailyHabits.sleep_quality) {
             setSleepQuestionnaire({
               sleepQuality: dailyHabits.sleep_quality || 50,
-              sleepHours: dailyHabits.sleep_hours || 7,
+              bedtimeHours: dailyHabits.sleep_bedtime_hours || 22,
+              bedtimeMinutes: dailyHabits.sleep_bedtime_minutes || 0,
+              wakeupHours: dailyHabits.sleep_wakeup_hours || 6,
+              wakeupMinutes: dailyHabits.sleep_wakeup_minutes || 0,
               sleepNotes: dailyHabits.sleep_notes || ''
             });
           } else {
-            setSleepQuestionnaire({ sleepQuality: 50, sleepHours: 7, sleepNotes: '' });
+            setSleepQuestionnaire({
+              sleepQuality: 50,
+              bedtimeHours: 22,
+              bedtimeMinutes: 0,
+              wakeupHours: 6,
+              wakeupMinutes: 0,
+              sleepNotes: ''
+            });
           }
           modalPosition.setValue(0);
           setShowSleepModal(true);
@@ -1836,42 +1837,21 @@ function ActionScreen({ navigation }: any) {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
             <Animated.View style={[
-              styles.modalContent,
+              styles.sleepModalContent,
               { transform: [{ translateY: modalPosition }] }
             ]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Sleep Quality</Text>
+              <Text style={styles.modalTitle}>Sleep</Text>
               <TouchableOpacity onPress={() => setShowSleepModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            {/* Sleep Hours Slider */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>How many hours did you sleep?</Text>
-              <View style={styles.sliderContainer}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={1}
-                  maximumValue={12}
-                  value={sleepQuestionnaire.sleepHours}
-                  onValueChange={(value) => setSleepQuestionnaire(prev => ({ ...prev, sleepHours: Math.round(value) }))}
-                  minimumTrackTintColor="#10B981"
-                  maximumTrackTintColor="#E5E7EB"
-                  thumbTintColor="#10B981"
-                  step={1}
-                />
-                <View style={styles.sliderLabels}>
-                  <Text style={[styles.sliderPercentage, { color: getSleepHoursColor(sleepQuestionnaire.sleepHours) }]}>
-                    {formatSleepHours(sleepQuestionnaire.sleepHours)}
-                  </Text>
-                </View>
-              </View>
-            </View>
+
 
             {/* Sleep Quality Slider */}
             <View style={styles.questionSection}>
-              <Text style={styles.questionText}>How was your sleep quality?</Text>
+              <Text style={styles.questionText}>How was your sleep?</Text>
               <View style={styles.sliderContainer}>
                 <Slider
                   style={styles.slider}
@@ -1892,7 +1872,280 @@ function ActionScreen({ navigation }: any) {
                 </View>
               </View>
             </View>
+            {/* Bedtime and Wake Time */}
+            <View style={styles.questionSection}>
+              {/* Section Titles */}
+              <View style={styles.timePickerRow}>
+                <Text style={styles.timePickerGroupLabel}>Bed Time</Text>
+                <Text style={styles.timePickerGroupLabelRight}>Wake Time</Text>
+              </View>
+              <View style={styles.timePickerRow}>
+                {/* Bedtime */}
+                <View style={styles.timePickerGroup}>
+                  <View style={styles.timePickerContentRow}>
+                    {/* Hours column */}
+                    <View style={styles.timePickerColumn}>
+                      <Text style={styles.timePickerLabel}>Hour</Text>
+                      <ScrollView 
+                        style={styles.timePickerScroll} 
+                        contentContainerStyle={{ alignItems: 'flex-start' }}
+                        showsVerticalScrollIndicator={false}
+                        snapToInterval={65}
+                        decelerationRate="fast"
+                        contentOffset={{ x: 0, y: (sleepQuestionnaire.bedtimeHours + 24) * 65 }}
+                        onMomentumScrollEnd={(event) => {
+                          const y = event.nativeEvent.contentOffset.y;
+                          const itemHeight = 65;
+                          const selectedIndex = Math.round(y / itemHeight);
+                          // Account for the duplicate items at the top
+                          const actualIndex = selectedIndex % 24;
+                          setSleepQuestionnaire(prev => ({ ...prev, bedtimeHours: actualIndex }));
+                        }}
+                      >
+                        {/* Extra items for wrapping at top */}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`bedtime-h-top-wrap-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`bedtime-h-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {/* Extra items for wrapping at bottom */}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`bedtime-h-bottom-wrap-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
 
+                    {/* Minutes column */}
+                    <View style={styles.timePickerColumn}>
+                      <Text style={styles.timePickerLabel}>Minute</Text>
+                      <ScrollView 
+                        style={styles.timePickerScroll} 
+                        contentContainerStyle={{ alignItems: 'flex-start' }}
+                        showsVerticalScrollIndicator={false}
+                        snapToInterval={65}
+                        decelerationRate="fast"
+                        contentOffset={{ x: 0, y: (sleepQuestionnaire.bedtimeMinutes + 60) * 65 }}
+                        onMomentumScrollEnd={(event) => {
+                          const y = event.nativeEvent.contentOffset.y;
+                          const itemHeight = 65;
+                          const selectedIndex = Math.round(y / itemHeight);
+                          // Account for the duplicate items at the top
+                          const actualIndex = selectedIndex % 60;
+                          setSleepQuestionnaire(prev => ({ ...prev, bedtimeMinutes: actualIndex }));
+                        }}
+                      >
+                        {/* Extra items for wrapping at top */}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`bedtime-m-top-wrap-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`bedtime-m-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {/* Extra items for wrapping at bottom */}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`bedtime-m-bottom-wrap-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, bedtimeMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Wake Time */}
+                <View style={styles.timePickerGroupRight}>
+                  <View style={styles.timePickerContentRow}>
+                    {/* Hours column */}
+                    <View style={styles.timePickerColumn}>
+                      <Text style={styles.timePickerLabel}>Hour</Text>
+                      <ScrollView 
+                        style={styles.timePickerScroll} 
+                        contentContainerStyle={{ alignItems: 'flex-start' }}
+                        showsVerticalScrollIndicator={false}
+                        snapToInterval={65}
+                        decelerationRate="fast"
+                        contentOffset={{ x: 0, y: (sleepQuestionnaire.wakeupHours + 24) * 65 }}
+                        onMomentumScrollEnd={(event) => {
+                          const y = event.nativeEvent.contentOffset.y;
+                          const itemHeight = 65;
+                          const selectedIndex = Math.round(y / itemHeight);
+                          // Account for the duplicate items at the top
+                          const actualIndex = selectedIndex % 24;
+                          setSleepQuestionnaire(prev => ({ ...prev, wakeupHours: actualIndex }));
+                        }}
+                      >
+                        {/* Extra items for wrapping at top */}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`wakeup-h-top-wrap-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`wakeup-h-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {/* Extra items for wrapping at bottom */}
+                        {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                          <TouchableOpacity
+                            key={`wakeup-h-bottom-wrap-${hour}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupHours: hour }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {hour.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+
+                    {/* Minutes column */}
+                    <View style={styles.timePickerColumn}>
+                      <Text style={styles.timePickerLabel}>Minute</Text>
+                      <ScrollView 
+                        style={styles.timePickerScroll} 
+                        contentContainerStyle={{ alignItems: 'flex-start' }}
+                        showsVerticalScrollIndicator={false}
+                        snapToInterval={65}
+                        decelerationRate="fast"
+                        contentOffset={{ x: 0, y: (sleepQuestionnaire.wakeupMinutes + 60) * 65 }}
+                        onMomentumScrollEnd={(event) => {
+                          const y = event.nativeEvent.contentOffset.y;
+                          const itemHeight = 65;
+                          const selectedIndex = Math.round(y / itemHeight);
+                          // Account for the duplicate items at the top
+                          const actualIndex = selectedIndex % 60;
+                          setSleepQuestionnaire(prev => ({ ...prev, wakeupMinutes: actualIndex }));
+                        }}
+                      >
+                        {/* Extra items for wrapping at top */}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`wakeup-m-top-wrap-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`wakeup-m-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                        {/* Extra items for wrapping at bottom */}
+                        {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                          <TouchableOpacity
+                            key={`wakeup-m-bottom-wrap-${minute}`}
+                            style={styles.timePickerItem}
+                            onPress={() => setSleepQuestionnaire(prev => ({ ...prev, wakeupMinutes: minute }))}
+                          >
+                            <Text style={styles.timePickerItemText}>
+                              {minute.toString().padStart(2, '0')}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+            
+            {/* Calculated Sleep Time */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>Calculated Sleep Time</Text>
+              <View style={styles.calculatedSleepContainer}>
+                <Text style={styles.calculatedSleepText}>
+                  {(() => {
+                    const bedtimeTotal = sleepQuestionnaire.bedtimeHours * 60 + sleepQuestionnaire.bedtimeMinutes;
+                    const wakeTimeTotal = sleepQuestionnaire.wakeupHours * 60 + sleepQuestionnaire.wakeupMinutes;
+                    let sleepDuration;
+                    
+                    if (wakeTimeTotal > bedtimeTotal) {
+                      // Same day: wake time is after bedtime
+                      sleepDuration = wakeTimeTotal - bedtimeTotal;
+                    } else {
+                      // Next day: wake time is before bedtime (crossed midnight)
+                      sleepDuration = (24 * 60) - bedtimeTotal + wakeTimeTotal;
+                    }
+                    
+                    const hours = Math.floor(sleepDuration / 60);
+                    const minutes = sleepDuration % 60;
+                    return `${hours}h ${minutes}m`;
+                  })()}
+                </Text>
+              </View>
+            </View>
+            
             {/* Sleep Notes */}
             <View style={styles.questionSection}>
               <Text style={styles.questionText}>Any sleep notes? (optional)</Text>
@@ -1925,10 +2178,29 @@ function ActionScreen({ navigation }: any) {
               onPress={async () => {
                 try {
                   const date = getTodayDateString();
+                  // Calculate sleep duration
+                  const bedtimeTotal = sleepQuestionnaire.bedtimeHours * 60 + sleepQuestionnaire.bedtimeMinutes;
+                  const wakeTimeTotal = sleepQuestionnaire.wakeupHours * 60 + sleepQuestionnaire.wakeupMinutes;
+                  let sleepDuration;
+                  
+                  if (wakeTimeTotal > bedtimeTotal) {
+                    // Same day: wake time is after bedtime
+                    sleepDuration = wakeTimeTotal - bedtimeTotal;
+                  } else {
+                    // Next day: wake time is before bedtime (crossed midnight)
+                    sleepDuration = (24 * 60) - bedtimeTotal + wakeTimeTotal;
+                  }
+                  
+                  const sleepHours = sleepDuration / 60; // Convert minutes to hours
+                  
                   const habitData = {
                     date,
-                    sleep_hours: sleepQuestionnaire.sleepHours,
                     sleep_quality: sleepQuestionnaire.sleepQuality,
+                    sleep_hours: sleepHours,
+                    sleep_bedtime_hours: sleepQuestionnaire.bedtimeHours,
+                    sleep_bedtime_minutes: sleepQuestionnaire.bedtimeMinutes,
+                    sleep_wakeup_hours: sleepQuestionnaire.wakeupHours,
+                    sleep_wakeup_minutes: sleepQuestionnaire.wakeupMinutes,
                     sleep_notes: sleepQuestionnaire.sleepNotes,
                   };
                   
@@ -1936,16 +2208,14 @@ function ActionScreen({ navigation }: any) {
                   if (success) {
                     toggleSegmentStore(2); // Check the sleep segment
                     setShowSleepModal(false);
-                    setSleepQuestionnaire({ sleepHours: 8, sleepQuality: 50, sleepNotes: '' });
+                    setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
                   } else {
-                    // Handle error - could show a toast or alert
                     console.error('Failed to save sleep data');
                   }
                 } catch (error) {
                   console.error('Error saving sleep data:', error);
                 }
-              }}
-            >
+              }}            >
               <Text style={styles.submitButtonText}>
                 {useActionStore.getState().dailyHabitsLoading ? 'Saving...' : 'Complete Sleep Log'}
               </Text>
@@ -2179,7 +2449,7 @@ function ActionScreen({ navigation }: any) {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
             <Animated.View style={[
-              styles.modalContent,
+              styles.runModalContent,
               { transform: [{ translateY: modalPosition }] }
             ]}>
             <View style={styles.modalHeader}>
@@ -2271,11 +2541,11 @@ function ActionScreen({ navigation }: any) {
                   <ScrollView 
                     style={styles.timePickerScroll} 
                     showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
+                    snapToInterval={65}
                     decelerationRate="fast"
                     onMomentumScrollEnd={(event) => {
                       const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 50;
+                      const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
                       setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
@@ -2301,11 +2571,11 @@ function ActionScreen({ navigation }: any) {
                   <ScrollView 
                     style={styles.timePickerScroll} 
                     showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
+                    snapToInterval={65}
                     decelerationRate="fast"
                     onMomentumScrollEnd={(event) => {
                       const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 50;
+                      const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
                       setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
@@ -2331,11 +2601,11 @@ function ActionScreen({ navigation }: any) {
                   <ScrollView 
                     style={styles.timePickerScroll} 
                     showsVerticalScrollIndicator={false}
-                    snapToInterval={50}
+                    snapToInterval={65}
                     decelerationRate="fast"
                     onMomentumScrollEnd={(event) => {
                       const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 50;
+                      const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
                       setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
@@ -2379,10 +2649,10 @@ function ActionScreen({ navigation }: any) {
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={[
-                styles.submitButton,
-                !runQuestionnaire.runType && styles.submitButtonDisabled
-              ]}
+                              style={[
+                  styles.submitButton,
+                  !runQuestionnaire.runType && styles.submitButtonDisabled
+                ]}
               disabled={!runQuestionnaire.runType}
               onPress={async () => {
                 try {
@@ -2986,7 +3256,7 @@ const styles = StyleSheet.create({
   quickActionsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
+    
   },
   actionCard: {
     borderRadius: 16,
@@ -3019,7 +3289,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   activityList: {
-    gap: 12,
+    
   },
   activityItem: {
     flexDirection: 'row',
@@ -3047,7 +3317,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   tipsContainer: {
-    gap: 12,
+    
   },
   tipCard: {
     flexDirection: 'row',
@@ -3096,7 +3366,7 @@ const styles = StyleSheet.create({
   twoItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
+    
   },
   halfWidthTransparentBox: {
     padding: 12,
@@ -3178,7 +3448,7 @@ const styles = StyleSheet.create({
   },
   dayContainer: {
     alignItems: 'center',
-    gap: 8,
+    
     position: 'relative', // add this
   },
   todayContainer: {
@@ -3187,7 +3457,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 16,
     alignItems: 'center',
-    gap: 8,
+    
   },
   dayLabel: {
     fontSize: 14,
@@ -3515,7 +3785,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    
   },
   calendarTitle: {
     fontSize: 16,
@@ -3558,7 +3828,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     paddingVertical: 8,
-    gap: 8,
+    
   },
   // New styles for the month calendar
   calendarContainer: {
@@ -3638,7 +3908,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 60,
-    gap: 80,
+    
   },
   currentMonthName: {
     fontSize: 20,
@@ -3856,7 +4126,46 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
+    maxHeight: '70%',
+    marginBottom: 300, // Push modal higher when keyboard is visible
+  },
+  sleepModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '90%',
+    minHeight: 600,
+  },
+  sleepModalContentKeyboard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
     maxHeight: '80%',
+    minHeight: 600,
+    marginBottom: 300, // Push modal higher when keyboard is visible
+  },
+  runModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '90%',
+    minHeight: 600,
+    paddingBottom: 32,
+  },
+  runModalContentKeyboard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    minHeight: 600,
     marginBottom: 300, // Push modal higher when keyboard is visible
   },
   modalHeader: {
@@ -3871,7 +4180,8 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   questionSection: {
-    marginBottom: 16,
+    marginBottom: 15,
+    paddingVertical: 5,
   },
   questionText: {
     fontSize: 18,
@@ -3881,7 +4191,7 @@ const styles = StyleSheet.create({
   },
   optionsContainer: {
     flexDirection: 'row',
-    gap: 12,
+    
   },
   optionButton: {
     flex: 1,
@@ -3908,7 +4218,7 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    
     marginTop: 24,
   },
   actionBtn: {
@@ -3925,7 +4235,7 @@ const styles = StyleSheet.create({
   trainingTypesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    
     justifyContent: 'space-between',
   },
   trainingTypeButton: {
@@ -3959,7 +4269,7 @@ const styles = StyleSheet.create({
   starButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -4017,7 +4327,7 @@ const styles = StyleSheet.create({
   otherOptionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    
     justifyContent: 'space-between',
   },
   otherOptionButton: {
@@ -4104,39 +4414,64 @@ const styles = StyleSheet.create({
   timePickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
     marginTop: 6,
+    width: '100%',
+  },
+  timePickerContentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    width: 'auto',
+    paddingLeft: 0,
   },
   timePickerColumn: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     minWidth: 80,
+    justifyContent: 'flex-start',
+    marginLeft: 0,
   },
   timePickerLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#666',
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   timePickerContainer: {
-    height: 50,
-    overflow: 'hidden',
-  },
-  timePickerScroll: {
-    height: 50,
-  },
-  timePickerItem: {
-    height: 50,
-    width: 50,
-    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
     justifyContent: 'center',
-    borderRadius: 25,
+    alignItems: 'center',
+    width: '100%',
   },
-  timePickerItemText: {
+  timePickerGroup: {
+    flex: 1,
+    marginHorizontal: 0,
+    paddingHorizontal: 0,
+    alignItems: 'flex-start',
+  },
+  timePickerGroupRight: {
+    flex: 1,
+    marginHorizontal: 0,
+    paddingHorizontal: 0,
+    alignItems: 'flex-start',
+  },
+  timePickerGroupLabel: {
     fontSize: 18,
-    color: '#666',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 16,
+    textAlign: 'left',
+  },
+  timePickerGroupLabelRight: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 16,
+    marginLeft: 'auto',
+    marginRight: 'auto',
   },
   timePickerSeparator: {
     fontSize: 24,
@@ -4144,14 +4479,10 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 8,
   },
-
-  // Run Notes Scroll Container
   runNotesScrollContainer: {
     maxHeight: 60,
     marginBottom: 16,
   },
-
-  // Reflect Questionnaire Styles
   progressIndicator: {
     alignItems: 'center',
     marginBottom: 20,
@@ -4212,7 +4543,6 @@ const styles = StyleSheet.create({
   checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
   checkboxLabel: {
     fontSize: 16,
@@ -4227,7 +4557,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 0,
-    gap: 15,
+    
   },
   backButton: {
     backgroundColor: '#f5f5f5',
@@ -4254,5 +4584,39 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     lineHeight: 22,
   },
-
+  timePickerScroll: {
+    height: 65,
+  },
+  timePickerItem: {
+    height: 65,
+    width: 65,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    borderRadius: 32,
+    paddingTop: 15,
+  },
+  timePickerItemText: {
+    fontSize: 20,
+    color: '#666',
+    fontWeight: '600',
+  },
+  timePickerItemSelected: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  timePickerItemTextSelected: {
+    color: '#ffffff',
+  },
+  calculatedSleepContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  calculatedSleepText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#10B981',
+  }
 }); 
