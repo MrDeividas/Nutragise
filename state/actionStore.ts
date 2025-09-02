@@ -14,6 +14,7 @@ interface ActionState {
 	dailyHabitsLoading: boolean;
 	dailyHabitsError: string | null;
 	selectedDate: string;
+	shouldOpenGraphs: boolean;
 	
 	// Daily habits actions
 	saveDailyHabits: (habitData: CreateDailyHabitsData) => Promise<boolean>;
@@ -22,6 +23,7 @@ interface ActionState {
 	clearHabitForDate: (date: string, habitType: string) => Promise<boolean>;
 	setSelectedDate: (date: string) => void;
 	syncSegmentsWithData: (dailyHabits: DailyHabits) => void;
+	setShouldOpenGraphs: (shouldOpen: boolean) => void;
 }
 
 export const useActionStore = create<ActionState>((set, get) => ({
@@ -31,11 +33,12 @@ export const useActionStore = create<ActionState>((set, get) => ({
 	dailyHabits: null,
 	dailyHabitsLoading: false,
 	dailyHabitsError: null,
-	  selectedDate: (() => {
+	selectedDate: (() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
   })(), // Yesterday's date as default
+	shouldOpenGraphs: false,
 	
 	setSegmentChecked: (segments: boolean[]) => {
 		set({ segmentChecked: segments });
@@ -180,5 +183,9 @@ export const useActionStore = create<ActionState>((set, get) => ({
 		}
 		
 		set({ segmentChecked: segments });
+	},
+	
+	setShouldOpenGraphs: (shouldOpen: boolean) => {
+		set({ shouldOpenGraphs: shouldOpen });
 	},
 })); 

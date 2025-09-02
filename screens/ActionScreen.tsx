@@ -18,7 +18,7 @@ import DateNavigator from '../components/DateNavigator';
 
 import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
-import ProgressChart from '../components/ProgressChart';
+
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -302,12 +302,7 @@ function ActionScreen({ navigation }: any) {
   const [selectedHabitType, setSelectedHabitType] = useState<string>('');
   const [selectedDateHabitsData, setSelectedDateHabitsData] = useState<any>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
-  const [showProgressModal, setShowProgressModal] = useState(false);
 
-  // Debug progress modal state
-  useEffect(() => {
-    console.log('Progress modal state changed:', showProgressModal);
-  }, [showProgressModal]);
   
   // Keyboard state for modal positioning
   const modalPosition = useRef(new Animated.Value(0)).current;
@@ -1589,15 +1584,33 @@ function ActionScreen({ navigation }: any) {
               setSelectedDateHabitsData(habitsData);
               setShowHabitInfoModal(true);
             }}
-            onShowProgress={() => {
-              console.log('Progress button pressed, setting modal to true');
-              setShowProgressModal(true);
-            }}
+
             dailyHabitsData={useActionStore.getState().dailyHabits}
           />
         </View>
 
-
+        {/* View Progress Charts Button */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={[styles.progressChartsButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+            onPress={() => {
+              // Set flag in action store to open graphs
+              useActionStore.getState().setShouldOpenGraphs(true);
+              // Navigate to Insights tab
+              navigation.navigate('Insights');
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.progressChartsContent}>
+              <Ionicons name="analytics" size={24} color={theme.primary} />
+              <View style={styles.progressChartsText}>
+                <Text style={[styles.progressChartsTitle, { color: theme.textPrimary }]}>View Progress Charts</Text>
+                <Text style={[styles.progressChartsSubtitle, { color: theme.textSecondary }]}>Track your wellness journey</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+            </View>
+          </TouchableOpacity>
+        </View>
 
         {/* Month Calendar */}
         <View style={styles.section}>
@@ -3013,8 +3026,8 @@ function ActionScreen({ navigation }: any) {
                           const date = getTodayDateString();
                           const habitData = {
                             date,
-                            reflect_mood: reflectQuestionnaire.mood,
-                            reflect_energy: reflectQuestionnaire.energy,
+                            reflect_mood: Math.round(reflectQuestionnaire.mood),
+                            reflect_energy: Math.round(reflectQuestionnaire.energy),
                             reflect_what_went_well: reflectQuestionnaire.whatWentWell,
                             reflect_friction: reflectQuestionnaire.friction,
                             reflect_one_tweak: reflectQuestionnaire.oneTweak,
@@ -3186,24 +3199,7 @@ function ActionScreen({ navigation }: any) {
         onClose={() => setShowStreakModal(false)}
       />
 
-      {/* Progress Chart Modal */}
-      <Modal visible={showProgressModal} transparent animationType="fade" onRequestClose={() => setShowProgressModal(false)}>
-        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-          <View style={[styles.modalContent, { 
-            backgroundColor: theme.cardBackground, 
-            padding: 0,
-            width: '90%',
-            maxWidth: 400,
-            height: 600,
-            maxHeight: '80%',
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: theme.borderSecondary
-          }]}> 
-            <ProgressChart onClose={() => setShowProgressModal(false)} />
-          </View>
-        </View>
-      </Modal>
+
 
       {/* Media Upload Modal */}
       <MediaUploadModal
@@ -4602,7 +4598,32 @@ const styles = StyleSheet.create({
   },
   timePickerItemSelected: {
     backgroundColor: '#10B981',
-    borderColor: '#10B981',
+  },
+  progressChartsButton: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  progressChartsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  progressChartsText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  progressChartsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  progressChartsSubtitle: {
+    fontSize: 14,
   },
   timePickerItemTextSelected: {
     color: '#ffffff',

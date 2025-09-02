@@ -126,12 +126,17 @@ class DailyHabitsService {
    */
   async getHabitHistory(userId: string, habitType: string, startDate: string, endDate: string): Promise<DailyHabits[]> {
     try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Ensure endDate doesn't exceed today
+      const effectiveEndDate = endDate > today ? today : endDate;
+      
       let query = supabase
         .from('daily_habits')
         .select('*')
         .eq('user_id', userId)
         .gte('date', startDate)
-        .lte('date', endDate)
+        .lte('date', effectiveEndDate)
         .order('date', { ascending: false });
 
       // Filter by habit type
@@ -165,7 +170,10 @@ class DailyHabitsService {
         throw error;
       }
 
-      return data || [];
+      // Filter out any future dates that might have slipped through
+      const filteredData = (data || []).filter(record => record.date <= today);
+      
+      return filteredData;
     } catch (error) {
       console.error('Error in getHabitHistory:', error);
       return [];
@@ -253,6 +261,13 @@ class DailyHabitsService {
       for (const record of sortedHistory) {
         const recordDate = new Date(record.date);
         
+        // Skip future dates
+        const today = new Date();
+        if (recordDate > today) {
+          console.log('Skipping future date in streak calculation:', record.date);
+          continue;
+        }
+        
         if (lastDate === null) {
           // First record
           tempStreak = 1;
@@ -279,6 +294,7 @@ class DailyHabitsService {
       const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const yesterdayRecord = history.find(h => h.date === yesterdayDate);
       
+      // Only count as current streak if it's recent (within last 2 days)
       if (todayRecord) {
         // If completed today, current streak is the full temp streak
         currentStreak = tempStreak;
@@ -289,6 +305,25 @@ class DailyHabitsService {
       } else {
         // No recent completion, streak is broken
         currentStreak = 0;
+      }
+      
+      // Additional check: if the last completion was more than 2 days ago, streak is broken
+      if (sortedHistory.length > 0) {
+        const lastCompletionDate = new Date(sortedHistory[0].date);
+        const today = new Date();
+        
+        // Check if the date is in 2025 (future year) - this is definitely not a real streak
+        if (lastCompletionDate.getFullYear() > 2024) {
+          currentStreak = 0;
+        } else if (lastCompletionDate > today) {
+          currentStreak = 0;
+        } else {
+          const daysSinceLastCompletion = Math.floor((today.getTime() - lastCompletionDate.getTime()) / (24 * 60 * 60 * 1000));
+          
+          if (daysSinceLastCompletion > 2) {
+            currentStreak = 0; // Streak is broken if more than 2 days have passed
+          }
+        }
       }
 
       // Update longest streak if current streak is longer
@@ -332,6 +367,29 @@ class DailyHabitsService {
     } catch (error) {
       console.error('Error in deleteDailyHabits:', error);
       return false;
+    }
+  }
+
+  /**
+   * Check if a habit is completed in a record
+   */
+  private isHabitCompleted(record: DailyHabits, habitType: string): boolean {
+    switch (habitType) {
+      case 'sleep':
+        return (record.sleep_hours !== null && record.sleep_hours > 0) ||
+               (record.sleep_bedtime_hours !== null && record.sleep_wakeup_hours !== null);
+      case 'water':
+        return record.water_intake !== null && record.water_intake > 0;
+      case 'run':
+        return record.run_day_type === 'active';
+      case 'gym':
+        return record.gym_day_type === 'active';
+      case 'reflect':
+        return record.reflect_mood !== null;
+      case 'cold_shower':
+        return record.cold_shower_completed === true;
+      default:
+        return false;
     }
   }
 

@@ -8,7 +8,7 @@ interface DateNavigatorProps {
   onDateChange: (date: string) => void;
   onViewHistory: () => void;
   onHabitPress: (habitType: string, habitsData: any) => void;
-  onShowProgress: () => void;
+  onShowProgress?: () => void;
   dailyHabitsData: any; // This will always be today's data from global state
 }
 
@@ -260,18 +260,7 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
         )}
       </View>
 
-      {/* Progress Button */}
-      <TouchableOpacity 
-        style={[styles.progressButton, { backgroundColor: '#10B981' }]}
-        onPress={() => {
-          console.log('Progress button pressed in DateNavigator');
-          onShowProgress();
-        }}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="bar-chart" size={16} color="#ffffff" />
-        <Text style={[styles.progressButtonText, { color: '#ffffff' }]}>View Progress Chart</Text>
-      </TouchableOpacity>
+
 
       {/* Scrollable Day/Month/Year Picker */}
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
@@ -516,20 +505,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     opacity: 0.6,
   },
-  progressButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  progressButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
   loadingState: {
     alignItems: 'center',
     paddingVertical: 20,
