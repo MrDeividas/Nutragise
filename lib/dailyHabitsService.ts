@@ -139,30 +139,7 @@ class DailyHabitsService {
         .lte('date', effectiveEndDate)
         .order('date', { ascending: false });
 
-      // Filter by habit type
-      switch (habitType) {
-        case 'sleep':
-          query = query.not('sleep_hours', 'is', null);
-          break;
-        case 'water':
-          query = query.not('water_intake', 'is', null);
-          break;
-        case 'run':
-          query = query.not('run_day_type', 'is', null);
-          break;
-        case 'gym':
-          query = query.not('gym_day_type', 'is', null);
-          break;
-        case 'reflect':
-          query = query.not('reflect_mood', 'is', null);
-          break;
-        case 'cold_shower':
-          query = query.not('cold_shower_completed', 'is', null);
-          break;
-        default:
-          break;
-      }
-
+      // Filter by habit type - only get records where the habit is actually completed
       const { data, error } = await query;
 
       if (error) {
@@ -170,8 +147,20 @@ class DailyHabitsService {
         throw error;
       }
 
+      // Filter for actually completed habits using the isHabitCompleted logic
+      const completedHabits = (data || []).filter(record => {
+        if (habitType === 'all') {
+          // For 'all', return any record that has at least one completed habit
+          return ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'].some(habit => 
+            this.isHabitCompleted(record, habit)
+          );
+        } else {
+          return this.isHabitCompleted(record, habitType);
+        }
+      });
+      
       // Filter out any future dates that might have slipped through
-      const filteredData = (data || []).filter(record => record.date <= today);
+      const filteredData = completedHabits.filter(record => record.date <= today);
       
       return filteredData;
     } catch (error) {
@@ -264,7 +253,6 @@ class DailyHabitsService {
         // Skip future dates
         const today = new Date();
         if (recordDate > today) {
-          console.log('Skipping future date in streak calculation:', record.date);
           continue;
         }
         
@@ -312,10 +300,8 @@ class DailyHabitsService {
         const lastCompletionDate = new Date(sortedHistory[0].date);
         const today = new Date();
         
-        // Check if the date is in 2025 (future year) - this is definitely not a real streak
-        if (lastCompletionDate.getFullYear() > 2024) {
-          currentStreak = 0;
-        } else if (lastCompletionDate > today) {
+        // Only check if the date is actually in the future relative to today
+        if (lastCompletionDate > today) {
           currentStreak = 0;
         } else {
           const daysSinceLastCompletion = Math.floor((today.getTime() - lastCompletionDate.getTime()) / (24 * 60 * 60 * 1000));

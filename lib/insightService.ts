@@ -1,18 +1,24 @@
 import { analyticsService } from './analyticsService';
 import { dailyHabitsService } from './dailyHabitsService';
+import { dailyInsightsService } from './dailyInsightsService';
+import TimePeriodUtils from './timePeriodUtils';
 import { InsightCard } from '../types/insights';
 
 class InsightService {
   /**
-   * Generate today's overview insight
+   * Generate today's overview with enhanced daily insights for specific period
    */
-  async generateTodayOverview(userId: string): Promise<InsightCard> {
+  async generateTodayOverview(userId: string, period: 'past7' | 'currentWeek' | 'last30' = 'past7'): Promise<InsightCard> {
     try {
-      const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
-      const streaks = await Promise.all(
-        habitTypes.map(habitType => dailyHabitsService.getHabitStreak(userId, habitType))
-      );
+      const timePeriod = TimePeriodUtils.getPeriodByType(period);
       
+      const [streaks, dailyInsights] = await Promise.all([
+        Promise.all(['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'].map(habitType => 
+          dailyHabitsService.getHabitStreak(userId, habitType)
+        )),
+        dailyInsightsService.generateDailyInsights(userId, period)
+      ]);
+
       const activeStreaks = streaks.filter(streak => streak.current_streak > 0);
       
       const topStreak = activeStreaks.reduce((max, streak) => 
@@ -20,28 +26,20 @@ class InsightService {
         { current_streak: 0, habit_type: '', longest_streak: 0 }
       );
 
-      let description = '';
-      if (topStreak.current_streak > 0) {
-        description = `You're on a ${topStreak.current_streak}-day ${topStreak.habit_type} streak!`;
-        
-        // Add other active streaks
-        const otherStreaks = activeStreaks.filter(s => s.habit_type !== topStreak.habit_type);
-        if (otherStreaks.length > 0) {
-          const otherStreakText = otherStreaks.map(s => `${s.habit_type}: ${s.current_streak} days`).join(', ');
-          description += ` ${otherStreakText}.`;
-        }
-      } else {
-        description = "Start your wellness journey by completing your first habit!";
-      }
+      const description = dailyInsights.summary;
+      const icon = this.getMoodIcon(dailyInsights.mood);
 
       return {
         type: 'streak',
         title: "Today's Overview",
         description,
-        icon: "trending-up",
-        data: {
-          streaks: activeStreaks,
-          topStreak: topStreak.current_streak > 0 ? topStreak : null
+        icon,
+        data: { 
+          streaks: activeStreaks, 
+          topStreak: topStreak.current_streak > 0 ? topStreak : null,
+          dailyInsights: dailyInsights.insights,
+          keyMetrics: dailyInsights.keyMetrics,
+          mood: dailyInsights.mood
         },
         priority: 90,
         expandable: true,
@@ -50,6 +48,17 @@ class InsightService {
     } catch (error) {
       console.error('Error generating today overview:', error);
       return this.getDefaultTodayOverview();
+    }
+  }
+
+  /**
+   * Get mood-based icon for today's overview
+   */
+  private getMoodIcon(mood: 'positive' | 'neutral' | 'concerned'): string {
+    switch (mood) {
+      case 'positive': return 'happy';
+      case 'concerned': return 'alert-circle';
+      default: return 'trending-up';
     }
   }
 
@@ -76,6 +85,12 @@ class InsightService {
         icon = "calendar";
       }
 
+      // Calculate total days from both patterns
+      const totalDays = sleepPatterns.monday.totalDays + sleepPatterns.tuesday.totalDays + 
+                       sleepPatterns.wednesday.totalDays + sleepPatterns.thursday.totalDays + 
+                       sleepPatterns.friday.totalDays + sleepPatterns.saturday.totalDays + 
+                       sleepPatterns.sunday.totalDays;
+
       return {
         type: 'pattern',
         title: "Weekly Pattern",
@@ -84,7 +99,8 @@ class InsightService {
         data: {
           sleepPatterns,
           waterPatterns,
-          consistencyScore: Math.max(sleepPatterns.consistencyScore, waterPatterns.consistencyScore)
+          consistencyScore: Math.max(sleepPatterns.consistencyScore, waterPatterns.consistencyScore),
+          totalDays
         },
         priority: 80,
         expandable: true,
@@ -207,12 +223,26 @@ class InsightService {
   }
 
   /**
-   * Generate all insights for a user
+   * Generate basic insights (fast loading)
    */
-  async generateInsights(userId: string): Promise<InsightCard[]> {
+  async generateBasicInsights(userId: string): Promise<InsightCard[]> {
+    try {
+      // Only load essential insights for immediate display
+      const todayOverview = await this.generateTodayOverview(userId);
+      return [todayOverview];
+    } catch (error) {
+      console.error('Error generating basic insights:', error);
+      return [this.getDefaultTodayOverview()];
+    }
+  }
+
+  /**
+   * Generate all insights for a user with period support (only affects Today's Overview)
+   */
+  async generateInsights(userId: string, period: 'past7' | 'currentWeek' | 'last30' = 'past7'): Promise<InsightCard[]> {
     try {
       const insights = await Promise.all([
-        this.generateTodayOverview(userId),
+        this.generateTodayOverview(userId, period), // Only this uses the period
         this.generateWeeklyPatterns(userId),
         this.generateCorrelationInsights(userId),
         this.generateRecommendations(userId)

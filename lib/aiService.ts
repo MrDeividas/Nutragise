@@ -2,6 +2,7 @@ import { analyticsService } from './analyticsService';
 import { dailyHabitsService } from './dailyHabitsService';
 import { DailyHabits } from '../types/database';
 import { config, getApiKey } from './config';
+import TimePeriodUtils from './timePeriodUtils';
 
 interface AIResponse {
   response: string;
@@ -28,13 +29,13 @@ class AIService {
   /**
    * Generate personalized AI response based on user data
    */
-  async generateResponse(userId: string, userMessage: string): Promise<AIResponse> {
+  async generateResponse(userId: string, userMessage: string, conversationContext?: string): Promise<AIResponse> {
     try {
-      // Gather user context
-      const context = await this.buildUserContext(userId);
+      // Gather user context (always use recent data, not period-specific)
+      const context = await this.buildUserContext(userId, conversationContext);
       
       // Create the prompt for the AI
-      const prompt = this.createPrompt(context, userMessage);
+      const prompt = this.createPrompt(context, userMessage, conversationContext);
       
       // Call DeepSeek API
       const response = await this.callDeepSeekAPI(prompt);
@@ -49,13 +50,19 @@ class AIService {
   /**
    * Build comprehensive user context for AI analysis
    */
-  private async buildUserContext(userId: string): Promise<UserContext> {
+  private async buildUserContext(userId: string, conversationContext?: string): Promise<UserContext> {
     try {
-      // Get recent habits (last 30 days)
+      // Always use last 30 days for AI context (not period-specific)
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
       
+      console.log('🤖 [AI] Building context for user:', userId);
+      console.log('📅 [AI] Date range:', startDate, 'to', endDate);
+      
       const recentHabits = await dailyHabitsService.getHabitHistory(userId, 'all', startDate, endDate);
+      
+      console.log('📊 [AI] Recent habits found:', recentHabits.length);
+      console.log('📋 [AI] Habit dates:', recentHabits.map(h => h.date));
       
       // Get current streaks
       const sleepStreak = await dailyHabitsService.getHabitStreak(userId, 'sleep');
@@ -67,6 +74,12 @@ class AIService {
       
       const streaks = [sleepStreak, waterStreak, runStreak, gymStreak, reflectStreak, coldShowerStreak].filter(Boolean);
       
+      console.log('🔥 [AI] Streaks found:', streaks.map(s => `${s.habit_type}: ${s.current_streak}d`));
+      
+      // Validate streaks to prevent false claims
+      const validStreaks = streaks.filter(streak => streak.current_streak > 0);
+      console.log('✅ [AI] Valid streaks (streak > 0):', validStreaks.map(s => `${s.habit_type}: ${s.current_streak}d`));
+      
       // Get patterns
       const sleepPatterns = await analyticsService.calculateWeeklyPatterns(userId, 'sleep', 4);
       const waterPatterns = await analyticsService.calculateWeeklyPatterns(userId, 'water', 4);
@@ -74,13 +87,22 @@ class AIService {
       // Get correlations
       const correlations = await analyticsService.generateCorrelationInsights(userId);
       
-      // Get completion rate
-      const completionRate = await analyticsService.calculateHabitCompletionRate(userId, 'week');
+      // Get completion rate (always use week for AI context)
+      const completionRate = await analyticsService.calculateHabitCompletionRate(userId, 'past7');
+      
+      console.log('📈 [AI] Completion rate details:', {
+        overallCompletion: completionRate.overallCompletion,
+        weeklyCompleted: completionRate.weeklyCompleted,
+        weeklyGoal: completionRate.weeklyGoal,
+        habitBreakdown: completionRate.habitBreakdown
+      });
+      
+      console.log('📈 [AI] Completion rate:', completionRate.overallCompletion?.toFixed(1) + '%');
       
       return {
         userId,
         recentHabits,
-        streaks,
+        streaks: validStreaks, // Only return valid streaks
         patterns: { sleep: sleepPatterns, water: waterPatterns },
         correlations,
         completionRate
@@ -94,8 +116,14 @@ class AIService {
   /**
    * Create a comprehensive prompt for the AI
    */
-  private createPrompt(context: UserContext, userMessage: string): string {
+  private createPrompt(context: UserContext, userMessage: string, conversationContext?: string): string {
+    // Validate completion rate to prevent false claims
+    const completionRate = context.completionRate.overallCompletion || 0;
+    const isValidCompletionRate = completionRate > 0 && completionRate <= 100;
+    
     const systemPrompt = `You are Neutro, an AI wellness assistant. You help users understand their health data, provide personalized insights, and offer actionable recommendations.
+
+IMPORTANT: Only reference data that is actually available and accurate. If completion rates are 0% or seem incorrect, do not congratulate users on high completion rates.
 
 Your responses should be:
 - Friendly and encouraging
@@ -103,18 +131,19 @@ Your responses should be:
 - Actionable with clear next steps
 - Under 200 words
 - Focused on wellness and habit building
+- Accurate to the actual data provided
 
 Current user data:
 - Recent habits: ${context.recentHabits.length} records in the last 30 days
-- Current streaks: ${context.streaks.map(s => `${s.habit_type}: ${s.current_streak} days`).join(', ')}
+- Current streaks: ${context.streaks.length > 0 ? context.streaks.map(s => `${s.habit_type}: ${s.current_streak} days`).join(', ') : 'no active streaks'}
 - Sleep pattern: Best on ${context.patterns.sleep.peakDay || 'insufficient data'}s
 - Water pattern: Best on ${context.patterns.water.peakDay || 'insufficient data'}s
-- Weekly completion rate: ${context.completionRate.overallCompletion?.toFixed(1) || 0}%
+- Weekly completion rate: ${isValidCompletionRate ? completionRate.toFixed(1) : 'insufficient data'}%
 - Correlations found: ${context.correlations.length} significant relationships
 
 User message: "${userMessage}"
 
-Provide a helpful, personalized response based on their data.`;
+Provide a helpful, personalized response based on their data. If completion rate is 0% or insufficient data, focus on getting started rather than maintaining high rates.`;
 
     return systemPrompt;
   }

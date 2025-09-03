@@ -1,4 +1,5 @@
 import { dailyHabitsService } from './dailyHabitsService';
+import TimePeriodUtils from './timePeriodUtils';
 import { DailyHabits, HabitStreak } from '../types/database';
 
 export interface WeeklyPattern {
@@ -113,7 +114,6 @@ class AnalyticsService {
         try {
           // Validate date string format first
           if (!record.date || typeof record.date !== 'string') {
-            console.log('Skipping invalid date record:', record.date);
             return;
           }
           
@@ -122,7 +122,6 @@ class AnalyticsService {
           // Skip future dates and invalid dates
           const today = new Date();
           if (date > today || isNaN(date.getTime())) {
-            console.log('Skipping future/invalid date:', record.date);
             return;
           }
           
@@ -235,12 +234,9 @@ class AnalyticsService {
   /**
    * Calculate habit completion rates
    */
-  async calculateHabitCompletionRate(userId: string, period: 'week' | 'month' | 'quarter' = 'week'): Promise<HabitCompletionRate> {
+  async calculateHabitCompletionRate(userId: string, period: 'past7' | 'currentWeek' | 'last30' = 'past7'): Promise<HabitCompletionRate> {
     try {
-      const days = period === 'week' ? 7 : period === 'month' ? 30 : 90;
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      
+      const timePeriod = TimePeriodUtils.getPeriodByType(period);
       const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
       const habitBreakdown: any = {};
       let totalCompleted = 0;
@@ -248,7 +244,7 @@ class AnalyticsService {
 
       // Calculate completion for each habit type
       for (const habitType of habitTypes) {
-        const history = await dailyHabitsService.getHabitHistory(userId, habitType, startDate, endDate);
+        const history = await dailyHabitsService.getHabitHistory(userId, habitType, timePeriod.startDate, timePeriod.endDate);
         const completed = history.filter(record => this.isHabitCompleted(record, habitType)).length;
         const streak = await dailyHabitsService.getHabitStreak(userId, habitType);
         
@@ -262,6 +258,24 @@ class AnalyticsService {
         totalPossible += history.length;
       }
 
+      // Calculate total possible as days * habit types
+      const allHistory = await dailyHabitsService.getDailyHabitsRange(userId, timePeriod.startDate, timePeriod.endDate);
+      const uniqueDays = new Set(allHistory.map(record => record.date)).size;
+      totalPossible = uniqueDays * habitTypes.length;
+
+      console.log(`🔧 [Completion Rate Debug - ${period}]`, {
+        period: timePeriod.label,
+        startDate: timePeriod.startDate,
+        endDate: timePeriod.endDate,
+        allHistoryLength: allHistory.length,
+        uniqueDays,
+        habitTypesCount: habitTypes.length,
+        totalPossible,
+        totalCompleted,
+        calculatedRate: totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0,
+        uniqueDates: Array.from(new Set(allHistory.map(record => record.date)))
+      });
+
       // Find top performing and needs attention habits
       const sortedHabits = Object.entries(habitBreakdown)
         .sort(([,a], [,b]) => b.completion - a.completion);
@@ -274,12 +288,39 @@ class AnalyticsService {
         habitBreakdown,
         topPerforming,
         needsAttention,
-        weeklyGoal: 21, // 7 days * 3 habits
-        weeklyCompleted: totalCompleted
+        weeklyGoal: totalPossible, // Use actual calculated total possible
+        weeklyCompleted: totalCompleted,
+        period: timePeriod
       };
     } catch (error) {
       console.error('Error calculating habit completion rate:', error);
       return this.getDefaultHabitCompletionRate();
+    }
+  }
+
+  /**
+   * Get completion rates for all time periods
+   */
+  async getMultiPeriodStats(userId: string): Promise<{
+    past7: HabitCompletionRate;
+    currentWeek: HabitCompletionRate;
+    last30: HabitCompletionRate;
+  }> {
+    try {
+      const [past7, currentWeek, last30] = await Promise.all([
+        this.calculateHabitCompletionRate(userId, 'past7'),
+        this.calculateHabitCompletionRate(userId, 'currentWeek'),
+        this.calculateHabitCompletionRate(userId, 'last30')
+      ]);
+
+      return { past7, currentWeek, last30 };
+    } catch (error) {
+      console.error('Error getting multi-period stats:', error);
+      return {
+        past7: this.getDefaultHabitCompletionRate(),
+        currentWeek: this.getDefaultHabitCompletionRate(),
+        last30: this.getDefaultHabitCompletionRate()
+      };
     }
   }
 
@@ -436,6 +477,20 @@ class AnalyticsService {
 
   private calculateConsistencyScore(dayCounts: any): number {
     try {
+      // Check if we have enough data for meaningful analysis
+      const totalDays = Object.values(dayCounts).reduce((sum: number, count: any) => sum + count.total, 0);
+      const totalCompleted = Object.values(dayCounts).reduce((sum: number, count: any) => sum + count.completed, 0);
+      
+      // Require at least 14 days of data (2 weeks) for meaningful consistency analysis
+      if (totalDays < 14) {
+        return 0;
+      }
+      
+      // Require at least 7 completed days to have any meaningful pattern
+      if (totalCompleted < 7) {
+        return 0;
+      }
+      
       const rates = Object.values(dayCounts).map((count: any) => this.calculateRate(count));
       if (rates.length === 0) return 0;
       

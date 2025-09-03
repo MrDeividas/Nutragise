@@ -2204,7 +2204,7 @@ function ActionScreen({ navigation }: any) {
                     sleepDuration = (24 * 60) - bedtimeTotal + wakeTimeTotal;
                   }
                   
-                  const sleepHours = sleepDuration / 60; // Convert minutes to hours
+                  const sleepHours = Math.round(sleepDuration / 60); // Convert minutes to hours and round to integer
                   
                   const habitData = {
                     date,

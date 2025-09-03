@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRoute } from '@react-navigation/native';
 import { useActionStore } from '../state/actionStore';
 import {
@@ -14,6 +14,8 @@ import {
   Keyboard,
   ActivityIndicator,
   Modal,
+  Alert,
+  Animated
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -24,6 +26,18 @@ import { aiService } from '../lib/aiService';
 import { initializeAI } from '../lib/config';
 import { InsightCard } from '../types/insights';
 import ProgressChart from '../components/ProgressChart';
+import { 
+  StreakInsight, 
+  PatternInsight, 
+  CorrelationInsight, 
+  RecommendationInsight 
+} from '../components/InsightComponents';
+import { InsightSkeleton } from '../components/InsightSkeleton';
+import CacheService from '../lib/cacheService';
+import ConversationCacheService from '../lib/conversationCacheService';
+import { smartSuggestionEngine } from '../lib/smartSuggestionEngine';
+import { voiceService, VoiceState } from '../lib/voiceService';
+import TimePeriodUtils from '../lib/timePeriodUtils';
 
 interface Message {
   id: string;
@@ -32,10 +46,14 @@ interface Message {
   timestamp: Date;
 }
 
+type ModalType = 'progress' | 'requirements' | null;
+
 export default function InsightsScreen({ route }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { shouldOpenGraphs, setShouldOpenGraphs } = useActionStore();
+  
+  // Optimized state management
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -43,211 +61,577 @@ export default function InsightsScreen({ route }: any) {
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [insightError, setInsightError] = useState<string | null>(null);
-  const [showProgressModal, setShowProgressModal] = useState(false);
-  const [showDataRequirements, setShowDataRequirements] = useState(false);
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [lastMessageCount, setLastMessageCount] = useState(0);
+  const [selectedPeriod, setSelectedPeriod] = useState<'past7' | 'currentWeek' | 'last30'>('past7');
+  
+  // Lazy loading states
+  const [loadingPhase, setLoadingPhase] = useState<'initial' | 'basic' | 'detailed' | 'complete'>('initial');
+  const [isLoadingFromCache, setIsLoadingFromCache] = useState(false);
+  const [cacheStatus, setCacheStatus] = useState<{
+    exists: boolean;
+    isValid: boolean;
+    expiresIn: number | null;
+  } | null>(null);
+  
   const [suggestions, setSuggestions] = useState<string[]>([
     "What habits can I improve?",
     "Summarise my week",
     "How can I balance my habits better?",
-    "Tell me about my sleep patterns"
+    "What's my biggest wellness opportunity?"
   ]);
+  
+  // Voice input states
+  const [voiceState, setVoiceState] = useState<VoiceState>({
+    isListening: false,
+    isAvailable: false,
+    error: null,
+    results: []
+  });
+  
+  // Animated typing dots
+  const dot1Opacity = useRef(new Animated.Value(0.3)).current;
+  const dot2Opacity = useRef(new Animated.Value(0.3)).current;
+  const dot3Opacity = useRef(new Animated.Value(0.3)).current;
+  
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Destructure theme for efficiency
+  const { textPrimary, textSecondary, primary, cardBackground, borderSecondary } = theme;
+
+  // Optimized message ID generation with timestamp for uniqueness
+  const generateMessageId = useCallback(() => {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substr(2, 9);
+    return `msg_${timestamp}_${random}`;
+  }, []);
+
+  // Optimized state updates - batch message additions
+  const addMessages = useCallback((newMessages: Message[]) => {
+    setMessages(prev => [...prev, ...newMessages]);
+  }, []);
+
+  // Optimized scroll management - only scroll on new messages
+  const scrollToBottom = useCallback(() => {
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > lastMessageCount) {
+      scrollToBottom();
+      setLastMessageCount(messages.length);
+    }
+  }, [messages.length, lastMessageCount, scrollToBottom]);
 
   // Auto-open graphs if flag is set in action store
   useEffect(() => {
     if (shouldOpenGraphs) {
-      setShowProgressModal(true);
-      setShouldOpenGraphs(false); // Reset the flag
+      setActiveModal('progress');
+      setShouldOpenGraphs(false);
     }
   }, [shouldOpenGraphs, setShouldOpenGraphs]);
 
-  const loadInsights = async () => {
+  // Initialize voice service subscription
+  useEffect(() => {
+    const unsubscribe = voiceService.subscribe((newVoiceState) => {
+      setVoiceState(newVoiceState);
+      
+      // Auto-fill input when voice results are available
+      if (newVoiceState.results.length > 0 && !newVoiceState.isListening) {
+        const bestResult = voiceService.getBestResult();
+        if (bestResult) {
+          setInputText(bestResult);
+        }
+      }
+      
+      // Show error alert if voice recognition fails
+      if (newVoiceState.error) {
+        Alert.alert('Voice Recognition Error', newVoiceState.error);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      voiceService.destroy();
+    };
+  }, []);
+
+  // Combined useEffect for initialization
+  useEffect(() => {
+    if (user) {
+      initializeAI();
+      loadInsights();
+      loadSmartSuggestions();
+      if (messages.length === 0) {
+        initializeChat();
+      }
+    }
+  }, [user]);
+
+  // Reload insights when period changes
+  useEffect(() => {
+    if (user) {
+      loadInsights(true);
+    }
+  }, [selectedPeriod, user]);
+
+  const loadSmartSuggestions = async () => {
+    if (!user) return;
+    
+    try {
+      const smartSuggestions = await smartSuggestionEngine.generateSuggestions(user.id);
+      setSuggestions(smartSuggestions);
+    } catch (error) {
+      console.error('Error loading smart suggestions:', error);
+      // Keep fallback suggestions if smart suggestions fail
+    }
+  };
+
+  const loadInsights = async (forceRefresh = false) => {
     if (!user) return;
     
     setIsLoadingInsights(true);
     setInsightError(null);
+    setLoadingPhase('initial');
     
     try {
-      const userInsights = await insightService.generateInsights(user.id);
-      setInsights(userInsights);
+      // Check cache first (unless forcing refresh)
+      if (!forceRefresh) {
+        setIsLoadingFromCache(true);
+        const cached = await CacheService.getCachedInsights(user.id);
+        
+        if (cached) {
+          setInsights(cached.insights);
+          setLoadingPhase('complete');
+          setIsLoadingInsights(false);
+          setIsLoadingFromCache(false);
+          
+          // Update cache status
+          const status = await CacheService.getCacheStatus(user.id);
+          setCacheStatus(status);
+          
+          return;
+        }
+      }
+      
+      setIsLoadingFromCache(false);
+      
+      // Preserve current expansion state
+      const currentExpansionState = insights.map(insight => insight.expanded);
+      
+      // Phase 1: Load basic insights immediately
+      setLoadingPhase('basic');
+      const basicInsights = await insightService.generateBasicInsights(user.id);
+      setInsights(basicInsights);
+      
+      // Phase 2: Load detailed insights progressively
+      setLoadingPhase('detailed');
+      const detailedInsights = await insightService.generateInsights(user.id, selectedPeriod);
+      
+      // Restore expansion state
+      const insightsWithExpansion = detailedInsights.map((insight, index) => ({
+        ...insight,
+        expanded: currentExpansionState[index] || false
+      }));
+      
+      setInsights(insightsWithExpansion);
+      
+      // Cache the results
+      await CacheService.cacheInsights(user.id, insightsWithExpansion, {});
+      
+      setLoadingPhase('complete');
+      
+      // Update cache status
+      const status = await CacheService.getCacheStatus(user.id);
+      setCacheStatus(status);
+      
     } catch (error) {
       console.error('Failed to load insights:', error);
       setInsightError('Failed to load insights. Please try again.');
     } finally {
       setIsLoadingInsights(false);
+      setIsLoadingFromCache(false);
     }
   };
 
-  const toggleInsightExpansion = (insightIndex: number) => {
+  const refreshInsights = async () => {
+    // Clear cache first
+    if (user) {
+      await CacheService.clearCache(user.id);
+    }
+    await loadInsights(true);
+  };
+
+  const toggleInsightExpansion = useCallback((insightIndex: number) => {
     setInsights(prev => prev.map((insight, index) => 
       index === insightIndex 
         ? { ...insight, expanded: !insight.expanded }
         : insight
     ));
-  };
+  }, []);
+
+  // Reusable error handler
+  const handleAsyncOperation = useCallback(async <T,>(
+    operation: () => Promise<T>, 
+    fallback: T
+  ): Promise<T> => {
+    try {
+      return await operation();
+    } catch (error) {
+      console.error('Operation failed:', error);
+      return fallback;
+    }
+  }, []);
 
   const sendMessage = async (messageText?: string) => {
     const textToSend = messageText || inputText.trim();
     if (!textToSend || !user) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: generateMessageId(),
       text: textToSend,
       isUser: true,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Add user message to conversation cache
+    await ConversationCacheService.addMessage(user.id, {
+      id: userMessage.id,
+      text: textToSend,
+      isUser: true,
+      timestamp: Date.now()
+    });
+
+    addMessages([userMessage]);
     if (!messageText) {
       setInputText('');
     }
     setIsTyping(true);
 
     try {
-      // Get AI response
-      const aiResponse = await aiService.generateResponse(user.id, textToSend);
+      // Get conversation context for AI
+      const conversationContext = await ConversationCacheService.getConversationContext(user.id);
+      
+      const aiResponse = await handleAsyncOperation(
+        () => aiService.generateResponse(user.id, textToSend, conversationContext),
+        { response: "I'm having trouble analyzing your data right now. Please try again in a moment! 🤖" }
+      );
       
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         text: aiResponse.response,
         isUser: false,
         timestamp: new Date(),
       };
+
+      // Add AI message to conversation cache
+      await ConversationCacheService.addMessage(user.id, {
+        id: aiMessage.id,
+        text: aiResponse.response,
+        isUser: false,
+        timestamp: Date.now()
+      });
       
-      setMessages(prev => [...prev, aiMessage]);
+      addMessages([aiMessage]);
+      
+      // Update suggestions if AI response suggests new questions
+      if (aiResponse.suggestions && Array.isArray(aiResponse.suggestions) && aiResponse.suggestions.length > 0) {
+        setSuggestions(prev => [...prev.slice(0, 2), ...(aiResponse.suggestions || []).slice(0, 2)]);
+      }
     } catch (error) {
-      console.error('Error getting AI response:', error);
-      
-      // Fallback response
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm having trouble analyzing your data right now. Please try again in a moment! 🤖",
+      console.error('Error sending message:', error);
+      const errorMessage: Message = {
+        id: generateMessageId(),
+        text: "Sorry, I'm having trouble connecting right now. Please try again.",
         isUser: false,
         timestamp: new Date(),
       };
-      
-      setMessages(prev => [...prev, aiMessage]);
+      addMessages([errorMessage]);
     } finally {
       setIsTyping(false);
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
+  const handleSuggestionClick = useCallback((suggestion: string) => {
     sendMessage(suggestion);
-  };
+  }, []);
 
-  const scrollToBottom = () => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-  };
+  // Voice input functions
+  const handleVoiceInput = useCallback(async () => {
+    if (voiceState.isListening) {
+      await voiceService.stopListening();
+    } else {
+      await voiceService.startListening();
+    }
+  }, [voiceState.isListening]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    // Initialize AI with API key
-    initializeAI();
-    loadInsights();
-  }, [user]);
+  const handleVoiceSubmit = useCallback(() => {
+    if (inputText.trim()) {
+      sendMessage(inputText.trim());
+      setInputText('');
+      voiceService.clearResults();
+    }
+  }, [inputText]);
 
   // Initialize chat with simple greeting
-  useEffect(() => {
-    const initializeChat = () => {
-      if (user && messages.length === 0) {
-        const welcomeMessage: Message = {
-          id: '1',
-          text: "Hello! I'm Neutro, your AI assistant. What can I do for you?",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        setMessages([welcomeMessage]);
-      }
-    };
-
-    initializeChat();
+  const initializeChat = useCallback(() => {
+    if (user && messages.length === 0) {
+      const welcomeMessage: Message = {
+        id: `welcome_${Date.now()}`,
+        text: "Hello! I'm Neutro, your AI assistant. What can I do for you?",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages([welcomeMessage]);
+    }
   }, [user, messages.length]);
+
+  // Animate typing dots
+  const animateTypingDots = useCallback(() => {
+    const animationSequence = Animated.sequence([
+      Animated.parallel([
+        Animated.timing(dot1Opacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot2Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot3Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(dot1Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot2Opacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot3Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(dot1Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot2Opacity, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dot3Opacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]);
+
+    Animated.loop(animationSequence).start();
+  }, [dot1Opacity, dot2Opacity, dot3Opacity]);
+
+  // Start/stop typing animation
+  useEffect(() => {
+    if (isTyping) {
+      animateTypingDots();
+    } else {
+      // Reset dots to initial state
+      dot1Opacity.setValue(0.3);
+      dot2Opacity.setValue(0.3);
+      dot3Opacity.setValue(0.3);
+    }
+  }, [isTyping, animateTypingDots, dot1Opacity, dot2Opacity, dot3Opacity]);
+
+  // Memoized style calculations
+  const getMessageBubbleStyle = useMemo(() => (isUser: boolean) => [
+    styles.messageBubble,
+    isUser ? styles.userBubble : styles.aiBubble,
+    { 
+      backgroundColor: isUser ? primary : cardBackground,
+      borderColor: isUser ? 'transparent' : borderSecondary
+    }
+  ], [primary, cardBackground, borderSecondary]);
+
+  // Memoized style calculations
+  const getMessageTextStyle = useMemo(() => (isUser: boolean) => [
+    styles.messageText,
+    { color: isUser ? '#ffffff' : textPrimary }
+  ], [textPrimary]);
+
+  const getTimestampStyle = useMemo(() => (isUser: boolean) => [
+    styles.timestamp,
+    { color: isUser ? 'rgba(255,255,255,0.7)' : textSecondary }
+  ], [textSecondary]);
 
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container}>
         {/* Collapsible Header */}
-      <View style={[styles.header, { borderBottomColor: theme.borderSecondary }]}>
-        <View style={styles.headerTopRow}>
-          <TouchableOpacity 
-            style={styles.headerButton}
-            onPress={() => setIsHeaderExpanded(!isHeaderExpanded)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.headerContent}>
-              <View style={styles.titleContainer}>
-                <Text style={[styles.title, { color: theme.textPrimary }]}>Insights</Text>
-                <Ionicons 
-                  name={isHeaderExpanded ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={theme.textSecondary} 
-                  style={styles.expandIcon}
-                />
+        <View style={[styles.header, { borderBottomColor: borderSecondary }]}>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={() => setIsHeaderExpanded(!isHeaderExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.headerContent}>
+                <View style={styles.titleContainer}>
+                  <Text style={[styles.title, { color: textPrimary }]}>Insights</Text>
+                  <Ionicons 
+                    name={isHeaderExpanded ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color={textSecondary} 
+                    style={styles.expandIcon}
+                  />
+                </View>
+                <Text style={[styles.subtitle, { color: textSecondary }]}>
+                  Neutro AI Assistant Beta V1.0
+                </Text>
               </View>
-              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-                Neutro AI Assistant Beta V1.0
-              </Text>
-            </View>
-          </TouchableOpacity>
-          
-
+            </TouchableOpacity>
+          </View>
         </View>
         
-        {/* Expandable Content */}
-        {isHeaderExpanded && (
-          <View style={[styles.expandedContent, { borderTopColor: theme.borderSecondary }]}>
+        {/* Main Content Area */}
+        <View style={styles.mainContent}>
+          {/* Expandable Content */}
+          {isHeaderExpanded && (
+            <View style={[styles.expandedContent, { borderTopColor: borderSecondary }]}>
             {/* Dropdown Header */}
             <View style={styles.dropdownHeader}>
               <TouchableOpacity 
                 style={styles.dropdownHeaderButton}
-                onPress={() => setShowProgressModal(true)}
+                onPress={() => setActiveModal('progress')}
                 activeOpacity={0.7}
               >
-                <Ionicons name="analytics" size={20} color={theme.primary} />
-                <Text style={[styles.dropdownHeaderText, { color: theme.textPrimary }]}>
+                <Ionicons name="analytics" size={20} color={primary} />
+                <Text style={[styles.dropdownHeaderText, { color: textPrimary }]}>
                   View Progress Charts
                 </Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
                 style={styles.dropdownHeaderButton}
-                onPress={() => setShowDataRequirements(true)}
+                onPress={() => setActiveModal('requirements')}
                 activeOpacity={0.7}
               >
-                <Ionicons name="information-circle" size={20} color={theme.textSecondary} />
-                <Text style={[styles.dropdownHeaderText, { color: theme.textSecondary }]}>
+                <Ionicons name="information-circle" size={20} color={textSecondary} />
+                <Text style={[styles.dropdownHeaderText, { color: textSecondary }]}>
                   Data Requirements
                 </Text>
               </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.refreshIconButton}
+                onPress={refreshInsights}
+                activeOpacity={0.7}
+                disabled={isLoadingInsights}
+              >
+                <Ionicons 
+                  name="refresh" 
+                  size={20} 
+                  color={isLoadingInsights ? textSecondary : primary} 
+                />
+              </TouchableOpacity>
             </View>
+
+            {/* Cache Status Indicator */}
+            {cacheStatus && (
+              <View style={styles.cacheStatusContainer}>
+                <Ionicons 
+                  name={cacheStatus.isValid ? "checkmark-circle" : "time"} 
+                  size={16} 
+                  color={cacheStatus.isValid ? "#10B981" : textSecondary} 
+                />
+                <Text style={[styles.cacheStatusText, { color: textSecondary }]}>
+                  {cacheStatus.isValid 
+                    ? `Cached (expires in ${Math.round((cacheStatus.expiresIn || 0) / (1000 * 60 * 60))}h)`
+                    : 'No cache'
+                  }
+                </Text>
+              </View>
+            )}
             {isLoadingInsights ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.primary} />
-                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                  Analyzing your wellness data...
-                </Text>
+                {isLoadingFromCache ? (
+                  <>
+                    <ActivityIndicator size="large" color={primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                      Loading cached insights...
+                    </Text>
+                  </>
+                ) : loadingPhase === 'initial' ? (
+                  <>
+                    <ActivityIndicator size="large" color={primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                      Checking for cached data...
+                    </Text>
+                  </>
+                ) : loadingPhase === 'basic' ? (
+                  <>
+                    <ActivityIndicator size="large" color={primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                      Loading basic insights...
+                    </Text>
+                    <InsightSkeleton type="card" />
+                  </>
+                ) : loadingPhase === 'detailed' ? (
+                  <>
+                    <ActivityIndicator size="large" color={primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                      Analyzing detailed patterns...
+                    </Text>
+                    <InsightSkeleton type="list" />
+                  </>
+                ) : (
+                  <>
+                    <ActivityIndicator size="large" color={primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                      Analyzing your wellness data...
+                    </Text>
+                  </>
+                )}
               </View>
             ) : insightError ? (
               <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={24} color={theme.error || '#ff6b6b'} />
-                <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+                <Ionicons name="alert-circle" size={24} color="#ff6b6b" />
+                <Text style={[styles.errorText, { color: textSecondary }]}>
                   {insightError}
                 </Text>
-                <TouchableOpacity 
-                  style={[styles.retryButton, { backgroundColor: theme.primary }]}
-                  onPress={loadInsights}
-                >
+                                  <TouchableOpacity 
+                    style={[styles.retryButton, { backgroundColor: primary }]}
+                    onPress={refreshInsights}
+                  >
                   <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
                     Try Again
                   </Text>
                 </TouchableOpacity>
               </View>
             ) : insights.length > 0 ? (
-              insights.map((insight, index) => (
+              <ScrollView 
+                style={[
+                  styles.insightsScrollView,
+                  insights.some(insight => insight.expanded) && styles.insightsScrollViewExpanded
+                ]}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
+              >
+                {insights.map((insight, index) => (
                 <TouchableOpacity
                   key={index}
                   style={styles.insightCard}
@@ -255,21 +639,21 @@ export default function InsightsScreen({ route }: any) {
                   activeOpacity={insight.expandable ? 0.7 : 1}
                 >
                   <View style={styles.insightHeader}>
-                    <Ionicons name={insight.icon as any} size={20} color={theme.primary} />
-                    <Text style={[styles.insightTitle, { color: theme.textPrimary }]}>
+                    <Ionicons name={insight.icon as any} size={20} color={primary} />
+                                          <Text style={[styles.insightTitle, { color: textPrimary }]}>
                       {insight.title || 'Insight'}
                     </Text>
                     {insight.expandable && (
                       <Ionicons 
                         name={insight.expanded ? "chevron-up" : "chevron-down"} 
                         size={16} 
-                        color={theme.textSecondary}
-                        style={styles.expandIcon}
+                        color={textSecondary}
+                        style={styles.insightExpandIcon}
                       />
                     )}
                   </View>
                   {insight.expanded && (
-                    <Text style={[styles.insightText, { color: theme.textSecondary }]}>
+                                          <Text style={[styles.insightText, { color: textSecondary }]}>
                       {insight.description || 'No description available'}
                     </Text>
                   )}
@@ -277,230 +661,66 @@ export default function InsightsScreen({ route }: any) {
                   {/* Expanded content */}
                   {insight.expanded && insight.data && (
                     <View style={styles.expandedData}>
-                                             {insight.type === 'streak' && insight.data?.streaks && Array.isArray(insight.data.streaks) && (
-                         <View style={styles.streakData}>
-                           {insight.data.streaks.map((streak: any, streakIndex: number) => (
-                             <View key={streakIndex} style={styles.streakItem}>
-                               <Text style={[styles.streakLabel, { color: theme.textSecondary }]}>
-                                 {streak?.habit_type || 'Unknown'}:
-                               </Text>
-                               <Text style={[styles.streakValue, { color: theme.primary }]}>
-                                 {streak?.current_streak || 0} days
-                               </Text>
-                             </View>
-                           ))}
-                         </View>
-                       )}
+                      {insight.type === 'streak' && (
+                        <StreakInsight 
+                          data={insight.data} 
+                          textPrimary={textPrimary} 
+                          textSecondary={textSecondary} 
+                          primary={primary}
+                          selectedPeriod={selectedPeriod}
+                          onPeriodChange={setSelectedPeriod}
+                        />
+                      )}
                       
-                                             {insight.type === 'pattern' && (
-                         <View style={styles.patternData}>
-                           {insight.data?.consistencyScore !== undefined && insight.data.consistencyScore > 0 ? (
-                             <View>
-                               {/* Weekly Consistency Section */}
-                               <View style={styles.patternSection}>
-                                 <View style={styles.patternHeader}>
-                                   <Text style={[styles.patternLabel, { color: theme.textSecondary }]}>
-                                     Weekly Consistency:
-                                   </Text>
-                                   <TouchableOpacity 
-                                     style={styles.infoButton}
-                                     onPress={() => {
-                                       // Toggle the expanded state for this specific insight
-                                       const updatedInsights = insights.map((ins, i) => 
-                                         i === index ? { ...ins, showConsistencyInfo: !ins.showConsistencyInfo } : ins
-                                       );
-                                       setInsights(updatedInsights);
-                                     }}
-                                   >
-                                     <Ionicons name="information-circle" size={16} color={theme.textSecondary} />
-                                   </TouchableOpacity>
-                                 </View>
-                                 <Text style={[styles.patternValue, { color: theme.primary }]}>
-                                   {insight.data.consistencyScore.toFixed(1)}%
-                                 </Text>
-                                 {insight.showConsistencyInfo && (
-                                   <View>
-                                     <Text style={[styles.patternDescription, { color: theme.textSecondary }]}>
-                                       How evenly you complete habits across all days of the week
-                                     </Text>
-                                     <View style={styles.patternBreakdown}>
-                                       <Text style={[styles.patternBreakdownTitle, { color: theme.textPrimary }]}>
-                                         What this means:
-                                       </Text>
-                                       <Text style={[styles.patternBreakdownItem, { color: theme.textSecondary }]}>
-                                         • Higher score = More consistent across all days
-                                       </Text>
-                                       <Text style={[styles.patternBreakdownItem, { color: theme.textSecondary }]}>
-                                         • Lower score = Some days much better than others
-                                       </Text>
-                                       <Text style={[styles.patternBreakdownItem, { color: theme.textSecondary }]}>
-                                         • Based on sleep, water, exercise, and reflection data
-                                       </Text>
-                                     </View>
-                                   </View>
-                                 )}
-                               </View>
-
-                               {/* Sleep Quality Pattern */}
-                               {insight.data?.sleepPatterns?.peakDay && (
-                                 <View style={styles.patternSection}>
-                                   <Text style={[styles.patternLabel, { color: theme.textSecondary }]}>
-                                     Sleep Quality Pattern:
-                                   </Text>
-                                   <Text style={[styles.patternValue, { color: theme.primary }]}>
-                                     Best on {insight.data.sleepPatterns.peakDay.charAt(0).toUpperCase() + insight.data.sleepPatterns.peakDay.slice(1)}s
-                                   </Text>
-                                 </View>
-                               )}
-
-                               {/* Water Intake Pattern */}
-                               {insight.data?.waterPatterns?.peakDay && (
-                                 <View style={styles.patternSection}>
-                                   <Text style={[styles.patternLabel, { color: theme.textSecondary }]}>
-                                     Water Intake Pattern:
-                                   </Text>
-                                   <Text style={[styles.patternValue, { color: theme.primary }]}>
-                                     Best on {insight.data.waterPatterns.peakDay.charAt(0).toUpperCase() + insight.data.waterPatterns.peakDay.slice(1)}s
-                                   </Text>
-                                 </View>
-                               )}
-                             </View>
-                           ) : (
-                             <View style={styles.patternNoData}>
-                               <Ionicons name="calendar" size={24} color={theme.textSecondary} style={styles.patternNoDataIcon} />
-                               <Text style={[styles.patternNoDataTitle, { color: theme.textPrimary }]}>
-                                 Not Enough Data Yet
-                               </Text>
-                               <Text style={[styles.patternNoDataDescription, { color: theme.textSecondary }]}>
-                                 Complete at least 7 days of habits to discover your weekly patterns and consistency trends.
-                               </Text>
-                               <View style={styles.patternNoDataRequirements}>
-                                 <Text style={[styles.patternNoDataRequirementsTitle, { color: theme.textPrimary }]}>
-                                   What you can discover:
-                                 </Text>
-                                 <View style={styles.patternNoDataRequirementsList}>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Your best days of the week
-                                   </Text>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Consistency scores
-                                   </Text>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Weekly trends
-                                   </Text>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Peak performance days
-                                   </Text>
-                                 </View>
-                               </View>
-                               <View style={styles.patternNoDataRequirements}>
-                                 <Text style={[styles.patternNoDataRequirementsTitle, { color: theme.textPrimary }]}>
-                                   What you need:
-                                 </Text>
-                                 <View style={styles.patternNoDataRequirementsList}>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • At least 7 days of habit data
-                                   </Text>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Multiple habit types completed
-                                   </Text>
-                                   <Text style={[styles.patternNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Consistent tracking
-                                   </Text>
-                                 </View>
-                               </View>
-                             </View>
-                           )}
-                         </View>
-                       )}
+                      {insight.type === 'pattern' && (
+                        <PatternInsight 
+                          data={insight.data} 
+                          textPrimary={textPrimary} 
+                          textSecondary={textSecondary} 
+                          primary={primary} 
+                          insights={insights}
+                          setInsights={setInsights}
+                          index={index}
+                        />
+                      )}
                        
-                       {insight.type === 'recommendation' && insight.data?.recommendations && Array.isArray(insight.data.recommendations) && (
-                         <View style={styles.recommendationData}>
-                           {insight.data.recommendations.slice(1).map((rec: string, recIndex: number) => (
-                             <Text key={recIndex} style={[styles.recommendationItem, { color: theme.textSecondary }]}>
-                               • {rec || 'No recommendation'}
-                             </Text>
-                           ))}
-                         </View>
-                       )}
+                      {insight.type === 'recommendation' && (
+                        <RecommendationInsight 
+                          data={insight.data} 
+                          textSecondary={textSecondary} 
+                        />
+                      )}
                        
-                       {insight.type === 'correlation' && (
-                         <View style={styles.correlationData}>
-                           {insight.data?.correlations && Array.isArray(insight.data.correlations) && insight.data.correlations.length > 0 ? (
-                             insight.data.correlations.map((correlation: any, corrIndex: number) => (
-                               <View key={corrIndex} style={styles.correlationItem}>
-                                 <View style={styles.correlationHeader}>
-                                   <View style={[
-                                     styles.correlationStrength, 
-                                     { backgroundColor: correlation.type === 'positive' ? '#10B981' : correlation.type === 'negative' ? '#EF4444' : '#6B7280' }
-                                   ]}>
-                                     <Text style={styles.correlationStrengthText}>
-                                       {correlation.strength.toUpperCase()}
-                                     </Text>
-                                   </View>
-                                   <Text style={[styles.correlationDescription, { color: theme.textPrimary }]}>
-                                     {correlation.description}
-                                   </Text>
-                                 </View>
-                                 <Text style={[styles.correlationRecommendation, { color: theme.textSecondary }]}>
-                                   {correlation.recommendation}
-                                 </Text>
-                               </View>
-                             ))
-                           ) : (
-                             <View style={styles.correlationNoData}>
-                               <Ionicons name="link" size={24} color={theme.textSecondary} style={styles.correlationNoDataIcon} />
-                               <Text style={[styles.correlationNoDataTitle, { color: theme.textPrimary }]}>
-                                 Not Enough Data Yet
-                               </Text>
-                               <Text style={[styles.correlationNoDataDescription, { color: theme.textSecondary }]}>
-                                 Complete at least 5 days of habits with mood and energy ratings to discover how your habits affect each other.
-                               </Text>
-                               <View style={styles.correlationNoDataRequirements}>
-                                 <Text style={[styles.correlationNoDataRequirementsTitle, { color: theme.textPrimary }]}>
-                                   What you need:
-                                 </Text>
-                                 <View style={styles.correlationNoDataRequirementsList}>
-                                   <Text style={[styles.correlationNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Sleep data (quality or hours)
-                                   </Text>
-                                   <Text style={[styles.correlationNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Mood ratings (1-5 scale)
-                                   </Text>
-                                   <Text style={[styles.correlationNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • Energy ratings (1-5 scale)
-                                   </Text>
-                                   <Text style={[styles.correlationNoDataRequirementsItem, { color: theme.textSecondary }]}>
-                                     • At least 5 days of data
-                                   </Text>
-                                 </View>
-                               </View>
-                             </View>
-                           )}
-                         </View>
-                       )}
+                                             {insight.type === 'correlation' && (
+                        <CorrelationInsight 
+                          data={insight.data} 
+                          textPrimary={textPrimary} 
+                          textSecondary={textSecondary} 
+                        />
+                      )}
                     </View>
                   )}
                 </TouchableOpacity>
-              ))
+              ))}
+            </ScrollView>
             ) : (
               <View style={styles.emptyContainer}>
-                <Ionicons name="analytics" size={32} color={theme.textSecondary} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                <Ionicons name="analytics" size={32} color={textSecondary} />
+                <Text style={[styles.emptyText, { color: textSecondary }]}>
                   Complete some habits to see personalized insights!
                 </Text>
               </View>
             )}
           </View>
         )}
-      </View>
 
-      {/* Messages */}
-      <KeyboardAvoidingView 
-        style={styles.content} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
+        {/* Messages - Only show when header is not expanded */}
+        {!isHeaderExpanded && (
+          <KeyboardAvoidingView 
+            style={styles.content} 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          >
         <ScrollView
           ref={scrollViewRef}
           style={styles.messagesContainer}
@@ -516,52 +736,51 @@ export default function InsightsScreen({ route }: any) {
               ]}
             >
               {!message.isUser && (
-                <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
+                <View style={[styles.avatar, { backgroundColor: primary }]}>
                   <Ionicons name="hardware-chip" size={16} color="#ffffff" />
                 </View>
               )}
-              <View
-                style={[
-                  styles.messageBubble,
-                  message.isUser
-                    ? [styles.userBubble, { backgroundColor: theme.primary }]
-                    : [styles.aiBubble, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }],
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    { color: message.isUser ? '#ffffff' : theme.textPrimary },
-                  ]}
-                >
+              <View style={getMessageBubbleStyle(message.isUser)}>
+                <Text style={getMessageTextStyle(message.isUser)}>
                   {message.text}
                 </Text>
-                <Text
-                  style={[
-                    styles.timestamp,
-                    { color: message.isUser ? 'rgba(255,255,255,0.7)' : theme.textSecondary },
-                  ]}
-                >
+                <Text style={getTimestampStyle(message.isUser)}>
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </View>
             </View>
           ))}
           
+          {/* Voice Listening Indicator */}
+          {voiceState.isListening && (
+            <View style={styles.messageContainer}>
+              <View style={[styles.avatar, { backgroundColor: '#ff6b6b' }]}>
+                <Ionicons name="mic" size={16} color="#ffffff" />
+              </View>
+              <View style={getMessageBubbleStyle(false)}>
+                <View style={styles.voiceIndicator}>
+                  <Text style={[styles.voiceIndicatorText, { color: textSecondary }]}>
+                    Listening... Speak now
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+          
           {isTyping && (
             <View style={styles.messageContainer}>
-              <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
-                                 <Ionicons name="hardware-chip" size={16} color="#ffffff" />
+                            <View style={[styles.avatar, { backgroundColor: primary }]}>
+                <Ionicons name="hardware-chip" size={16} color="#ffffff" />
               </View>
-              <View style={[styles.messageBubble, styles.aiBubble, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+              <View style={getMessageBubbleStyle(false)}>
                 <View style={styles.typingIndicator}>
-                  <Text style={[styles.typingText, { color: theme.textSecondary }]}>
+                  <Text style={[styles.typingText, { color: textSecondary }]}>
                     Neutro is typing
                   </Text>
                   <View style={styles.typingDots}>
-                    <View style={[styles.dot, { backgroundColor: theme.textSecondary }]} />
-                    <View style={[styles.dot, { backgroundColor: theme.textSecondary }]} />
-                    <View style={[styles.dot, { backgroundColor: theme.textSecondary }]} />
+                    <Animated.View style={[styles.dot, { backgroundColor: textSecondary, opacity: dot1Opacity }]} />
+                    <Animated.View style={[styles.dot, { backgroundColor: textSecondary, opacity: dot2Opacity }]} />
+                    <Animated.View style={[styles.dot, { backgroundColor: textSecondary, opacity: dot3Opacity }]} />
                   </View>
                 </View>
               </View>
@@ -582,12 +801,12 @@ export default function InsightsScreen({ route }: any) {
                   key={index}
                   style={[styles.suggestionButton, { 
                     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderColor: theme.borderSecondary 
+                    borderColor: borderSecondary 
                   }]}
                   onPress={() => handleSuggestionClick(suggestion)}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.suggestionText, { color: theme.textPrimary }]}>
+                  <Text style={[styles.suggestionText, { color: textPrimary }]}>
                     {suggestion}
                   </Text>
                 </TouchableOpacity>
@@ -597,49 +816,83 @@ export default function InsightsScreen({ route }: any) {
         )}
 
         {/* Input */}
-        <View style={[styles.inputContainer, { borderTopColor: theme.borderSecondary }]}>
-          <TextInput
-            style={[
-              styles.textInput,
-              { 
-                backgroundColor: theme.cardBackground,
-                borderColor: theme.borderSecondary,
-                color: '#ffffff',
-              },
-            ]}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask me about your wellness journey..."
-            placeholderTextColor={theme.textSecondary}
-            multiline
-            maxLength={500}
-            onSubmitEditing={sendMessage}
-            onFocus={() => setIsHeaderExpanded(false)}
-          />
+        <View style={[styles.inputContainer, { borderTopColor: borderSecondary }]}>
+          <View style={styles.textInputWrapper}>
+            <TextInput
+              style={[
+                styles.textInput,
+                { 
+                  color: '#ffffff',
+                },
+              ]}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Ask Neutro anything..."
+              placeholderTextColor={textSecondary}
+              maxLength={500}
+              onSubmitEditing={() => sendMessage()}
+              onFocus={() => setIsHeaderExpanded(false)}
+              autoCorrect={true}
+              autoCapitalize="sentences"
+              textContentType="none"
+              autoComplete="off"
+              spellCheck={true}
+            />
+            
+            {/* Voice Input Button - Inside Text Input */}
+            <TouchableOpacity
+              style={[
+                styles.voiceButtonInside,
+                { 
+                  backgroundColor: voiceState.isListening ? '#ff6b6b' : 'transparent',
+                  opacity: voiceState.isAvailable ? 0.7 : 0.3,
+                },
+              ]}
+              onPress={handleVoiceInput}
+              disabled={!voiceState.isAvailable}
+            >
+              <Ionicons 
+                name={voiceState.isListening ? "mic" : "mic-outline"} 
+                size={18} 
+                color={voiceState.isListening ? '#ffffff' : textSecondary} 
+              />
+            </TouchableOpacity>
+          </View>
+          
           <TouchableOpacity
             style={[
               styles.sendButton,
               { 
-                backgroundColor: inputText.trim() ? theme.primary : theme.borderSecondary,
+                backgroundColor: 'rgba(128, 128, 128, 0.1)',
               },
             ]}
-            onPress={sendMessage}
+            onPress={() => sendMessage()}
             disabled={!inputText.trim()}
           >
             <Ionicons 
               name="send" 
               size={20} 
-              color={inputText.trim() ? '#ffffff' : theme.textSecondary} 
+              color={inputText.trim() ? primary : textSecondary} 
             />
           </TouchableOpacity>
         </View>
+        
+        {/* Voice Help Text */}
+        {!voiceState.isAvailable && (
+          <View style={styles.voiceHelpContainer}>
+            <Text style={[styles.voiceHelpText, { color: textSecondary }]}>
+              Voice input requires a development build (not available in Expo Go)
+            </Text>
+          </View>
+        )}
       </KeyboardAvoidingView>
+        )}
 
       {/* Progress Chart Modal */}
-      <Modal visible={showProgressModal} transparent animationType="fade" onRequestClose={() => setShowProgressModal(false)}>
+      <Modal visible={activeModal === 'progress'} transparent animationType="fade" onRequestClose={() => setActiveModal(null)}>
         <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
           <View style={[styles.modalContent, { 
-            backgroundColor: theme.cardBackground, 
+            backgroundColor: cardBackground, 
             padding: 0,
             width: '90%',
             maxWidth: 400,
@@ -647,97 +900,99 @@ export default function InsightsScreen({ route }: any) {
             maxHeight: '80%',
             borderRadius: 16,
             borderWidth: 1,
-            borderColor: theme.borderSecondary
+            borderColor: borderSecondary
           }]}> 
-            <ProgressChart onClose={() => setShowProgressModal(false)} />
+            <ProgressChart onClose={() => setActiveModal(null)} />
           </View>
         </View>
       </Modal>
 
+        </View>
+
       {/* Data Requirements Modal */}
-      <Modal visible={showDataRequirements} transparent animationType="fade" onRequestClose={() => setShowDataRequirements(false)}>
+      <Modal visible={activeModal === 'requirements'} transparent animationType="fade" onRequestClose={() => setActiveModal(null)}>
         <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
           <View style={[styles.modalContent, { 
-            backgroundColor: theme.cardBackground, 
+            backgroundColor: cardBackground, 
             padding: 24,
             width: '90%',
             maxWidth: 400,
             maxHeight: '80%',
             borderRadius: 16,
             borderWidth: 1,
-            borderColor: theme.borderSecondary
+            borderColor: borderSecondary
           }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.modalTitle, { color: textPrimary }]}>
                 Data Requirements
               </Text>
               <TouchableOpacity 
                 style={styles.closeButton}
-                onPress={() => setShowDataRequirements(false)}
+                onPress={() => setActiveModal(null)}
               >
-                <Ionicons name="close" size={24} color={theme.textSecondary} />
+                <Ionicons name="close" size={24} color={textSecondary} />
               </TouchableOpacity>
             </View>
             
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.requirementSection}>
-                <Text style={[styles.requirementTitle, { color: theme.textPrimary }]}>
+                <Text style={[styles.requirementTitle, { color: textPrimary }]}>
                   Weekly Patterns
                 </Text>
-                <Text style={[styles.requirementDescription, { color: theme.textSecondary }]}>
+                <Text style={[styles.requirementDescription, { color: textSecondary }]}>
                   Complete at least 7 days of habits to discover your weekly patterns and consistency trends.
                 </Text>
                 <View style={styles.requirementList}>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • At least 7 days of habit data
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Multiple habit types completed
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Consistent tracking
                   </Text>
                 </View>
               </View>
 
               <View style={styles.requirementSection}>
-                <Text style={[styles.requirementTitle, { color: theme.textPrimary }]}>
+                <Text style={[styles.requirementTitle, { color: textPrimary }]}>
                   Habit Correlations
                 </Text>
-                <Text style={[styles.requirementDescription, { color: theme.textSecondary }]}>
+                <Text style={[styles.requirementDescription, { color: textSecondary }]}>
                   Complete at least 5 days of habits with mood and energy ratings to discover how your habits affect each other.
                 </Text>
                 <View style={styles.requirementList}>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Sleep data (quality or hours)
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Mood ratings (1-5 scale)
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Energy ratings (1-5 scale)
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • At least 5 days of data
                   </Text>
                 </View>
               </View>
 
               <View style={styles.requirementSection}>
-                <Text style={[styles.requirementTitle, { color: theme.textPrimary }]}>
+                <Text style={[styles.requirementTitle, { color: textPrimary }]}>
                   Progress Charts
                 </Text>
-                <Text style={[styles.requirementDescription, { color: theme.textSecondary }]}>
+                <Text style={[styles.requirementDescription, { color: textSecondary }]}>
                   View detailed progress charts for all your habits over time.
                 </Text>
                 <View style={styles.requirementList}>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Any completed habit data
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Historical tracking
                   </Text>
-                  <Text style={[styles.requirementItem, { color: theme.textSecondary }]}>
+                  <Text style={[styles.requirementItem, { color: textSecondary }]}>
                     • Trend analysis
                   </Text>
                 </View>
@@ -763,6 +1018,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 16,
   },
+  mainContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
   headerTopRow: {
     alignItems: 'center',
     position: 'relative',
@@ -787,30 +1046,61 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingTop: 8,
     marginTop: 8,
+    paddingHorizontal: 16,
+    flex: 1,
+  },
+  insightsScrollView: {
+    maxHeight: 400,
+  },
+  insightsScrollViewExpanded: {
+    maxHeight: '100%',
+    flex: 1,
   },
   dropdownHeader: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 8,
-    gap: 16,
+    gap: 8,
   },
   dropdownHeaderButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
+  refreshIconButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    width: 32,
+    height: 32,
+  },
   dropdownHeaderText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
+  },
+  cacheStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  cacheStatusText: {
+    fontSize: 12,
+    opacity: 0.8,
   },
   insightCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
@@ -835,7 +1125,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     opacity: 0.9,
   },
-  expandIcon: {
+  insightExpandIcon: {
     marginLeft: 'auto',
   },
   expandedData: {
@@ -844,172 +1134,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
-  streakData: {
-    gap: 8,
-  },
-  streakItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  streakLabel: {
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-  streakValue: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  patternData: {
-    gap: 16,
-  },
-  patternSection: {
-    gap: 8,
-  },
-  patternLabel: {
-    fontSize: 12,
-  },
-  patternHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoButton: {
-    padding: 2,
-  },
-  patternValue: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  patternDescription: {
-    fontSize: 11,
-    lineHeight: 14,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  patternBreakdown: {
-    marginTop: 12,
-    gap: 6,
-  },
-  patternBreakdownTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  patternBreakdownItem: {
-    fontSize: 11,
-    lineHeight: 14,
-  },
-  patternNoData: {
-    alignItems: 'center',
-    padding: 16,
-  },
-  patternNoDataIcon: {
-    marginBottom: 12,
-  },
-  patternNoDataTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  patternNoDataDescription: {
-    fontSize: 14,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  patternNoDataRequirements: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  patternNoDataRequirementsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  patternNoDataRequirementsList: {
-    gap: 4,
-  },
-  patternNoDataRequirementsItem: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  recommendationData: {
-    gap: 6,
-  },
-  recommendationItem: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  correlationData: {
-    gap: 8,
-  },
-  correlationItem: {
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-  },
-  correlationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  correlationStrength: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  correlationStrengthText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  correlationDescription: {
-    fontSize: 12,
-    fontWeight: '500',
-    flex: 1,
-  },
-  correlationRecommendation: {
-    fontSize: 11,
-    lineHeight: 14,
-    fontStyle: 'italic',
-  },
-  correlationNoData: {
-    alignItems: 'center',
-    padding: 16,
-  },
-  correlationNoDataIcon: {
-    marginBottom: 12,
-  },
-  correlationNoDataTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  correlationNoDataDescription: {
-    fontSize: 14,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  correlationNoDataRequirements: {
-    width: '100%',
-  },
-  correlationNoDataRequirementsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  correlationNoDataRequirementsList: {
-    gap: 4,
-  },
-  correlationNoDataRequirementsItem: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
+
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 12,
@@ -1141,7 +1266,6 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginHorizontal: 2,
-    opacity: 0.6,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -1151,18 +1275,42 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: 12,
   },
+  textInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
   textInput: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 14,
-    maxHeight: 100,
-    textAlignVertical: 'top',
-    opacity: 0.7,
+    color: '#ffffff',
+    textAlignVertical: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  voiceButtonInside: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
   },
   sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.7,
+  },
+  voiceButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -1224,5 +1372,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  voiceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  voiceIndicatorText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  voiceHelpContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    alignItems: 'center',
+  },
+  voiceHelpText: {
+    fontSize: 12,
+    textAlign: 'center',
   },
 }); 

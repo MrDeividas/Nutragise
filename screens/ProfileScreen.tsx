@@ -817,7 +817,7 @@ function ProfileScreen({ navigation }: any) {
                 <Image 
                   source={{ uri: user.avatar_url }} 
                   style={styles.profilePicture}
-                                  onError={(error) => console.log('Image load error:', error)}
+                                  onError={(error) => {}}
                 />
               ) : (
                 <View style={[styles.profilePicturePlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
@@ -968,10 +968,7 @@ function ProfileScreen({ navigation }: any) {
                   // Get the count of checked segments from action screen
                   const activeSegmentCount = segmentChecked.filter(checked => checked).length;
                   
-                  // Debug: Log when segments change
-                  if (i === 0) {
-                    console.log('ProfileScreen render - segments:', segmentChecked, 'active count:', activeSegmentCount);
-                  }
+
                   
                   // Only light up the first N segments based on how many are checked
                   const shouldBeActive = i < activeSegmentCount;
