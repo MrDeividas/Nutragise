@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../state/themeStore';
+import { notificationService, Notification } from '../lib/notificationService';
 
 
 
@@ -12,6 +13,8 @@ export default function NotificationsScreen({ navigation }: any) {
   const { theme } = useTheme();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recentActivityCollapsed, setRecentActivityCollapsed] = useState(true);
+  const [actionTipsCollapsed, setActionTipsCollapsed] = useState(true);
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -19,60 +22,53 @@ export default function NotificationsScreen({ navigation }: any) {
     try {
       setLoading(true);
       
-      // Fetch recent followers (last 7 days)
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      // Fetch notifications from our notifications table
+      const notifications = await notificationService.getNotifications(user.id, 50);
       
-      const { data: followers, error } = await supabase
-        .from('followers')
-        .select('created_at, follower_id')
-        .eq('following_id', user.id)
-        .gte('created_at', sevenDaysAgo.toISOString())
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching notifications:', error);
-        return;
-      }
-
-      // Transform followers into notifications
-      const followerNotifications = (followers || []).map((follower: any) => ({
-        id: `follow_${follower.follower_id}`,
-        type: 'follow',
-        name: 'New Follower', // We'll update this with real data if available
-        avatar: null,
-        message: 'started following you',
-        time: getTimeAgo(follower.created_at),
-        created_at: follower.created_at,
-        follower_id: follower.follower_id
-      }));
-
-      // Try to fetch profile data for followers if we have any
-      if (followerNotifications.length > 0) {
-        const followerIds = followerNotifications.map(n => n.follower_id);
-        try {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url')
-            .in('id', followerIds);
-
-          if (!profilesError && profiles) {
-            // Update notifications with real profile data
-            followerNotifications.forEach(notification => {
-              const profile = profiles.find(p => p.id === notification.follower_id);
-              if (profile) {
-                notification.name = profile.display_name || profile.username || 'Unknown User';
-                notification.avatar = profile.avatar_url;
-              }
-            });
-          }
-        } catch (profileError) {
-          console.error('Error fetching profile data:', profileError);
+      // Transform notifications into the expected format
+      const transformedNotifications = notifications.map((notification: Notification) => {
+        let message = '';
+        let type = notification.notification_type;
+        
+        switch (notification.notification_type) {
+          case 'post_like':
+            message = 'liked your post';
+            break;
+          case 'post_comment':
+            message = notification.comment_content 
+              ? `commented: "${notification.comment_content}"`
+              : 'commented on your post';
+            break;
+          case 'post_reply':
+            message = notification.reply_content 
+              ? `replied: "${notification.reply_content}"`
+              : 'replied to your comment';
+            break;
+          case 'follow':
+            message = 'started following you';
+            break;
+          default:
+            message = 'interacted with your content';
         }
-      }
-
-      // Set notifications to only real follower notifications
-      setNotifications(followerNotifications);
+        
+        return {
+          id: notification.id,
+          type: type,
+          name: notification.from_user?.display_name || notification.from_user?.username || 'Unknown User',
+          avatar: notification.from_user?.avatar_url || null,
+          message: message,
+          time: getTimeAgo(notification.created_at),
+          created_at: notification.created_at,
+          is_read: notification.is_read,
+          post_id: notification.post_id,
+          comment_id: notification.comment_id,
+          reply_id: notification.reply_id,
+          goal_id: notification.goal_id
+        };
+      });
+      
+      // Set notifications
+      setNotifications(transformedNotifications);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -148,6 +144,10 @@ export default function NotificationsScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchNotifications();
+    // Mark notifications as read when screen is opened
+    if (user) {
+      notificationService.markAllAsRead(user.id);
+    }
   }, [user]);
 
   return (
@@ -176,7 +176,7 @@ export default function NotificationsScreen({ navigation }: any) {
         <FlatList
           data={notifications}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={{ padding: 12 }}
           refreshControl={
             <RefreshControl
               refreshing={loading}
@@ -279,58 +279,82 @@ export default function NotificationsScreen({ navigation }: any) {
 
       {/* Recent Activity Section */}
       <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Recent Activity</Text>
+        <TouchableOpacity 
+          style={styles.collapsibleHeader}
+          onPress={() => setRecentActivityCollapsed(!recentActivityCollapsed)}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Recent Activity</Text>
+          <Ionicons 
+            name={recentActivityCollapsed ? "chevron-down" : "chevron-up"} 
+            size={16} 
+            color={theme.textSecondary} 
+          />
+        </TouchableOpacity>
       </View>
-      <View style={styles.activityList}>
-        <View style={styles.activityItem}>
-          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-            <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
+      {!recentActivityCollapsed && (
+        <View style={styles.activityList}>
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Completed workout goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>2 hours ago</Text>
+            </View>
           </View>
-          <View style={styles.activityContent}>
-            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Completed workout goal</Text>
-            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>2 hours ago</Text>
-          </View>
-        </View>
 
-        <View style={styles.activityItem}>
-          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-            <Ionicons name="camera-outline" size={20} color="#ffffff" />
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="camera-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Added photo to meditation goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>5 hours ago</Text>
+            </View>
           </View>
-          <View style={styles.activityContent}>
-            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Added photo to meditation goal</Text>
-            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>5 hours ago</Text>
-          </View>
-        </View>
 
-        <View style={styles.activityItem}>
-          <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-            <Ionicons name="add-outline" size={20} color="#ffffff" />
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Created new reading goal</Text>
-            <Text style={[styles.activityTime, { color: theme.textTertiary }]}>1 day ago</Text>
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="add-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Created new reading goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>1 day ago</Text>
+            </View>
           </View>
         </View>
-      </View>
+      )}
 
       {/* Action Tips Section */}
       <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
+        <TouchableOpacity 
+          style={styles.collapsibleHeader}
+          onPress={() => setActionTipsCollapsed(!actionTipsCollapsed)}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
+          <Ionicons 
+            name={actionTipsCollapsed ? "chevron-down" : "chevron-up"} 
+            size={16} 
+            color={theme.textSecondary} 
+          />
+        </TouchableOpacity>
       </View>
-      <View style={styles.tipsContainer}>
-        <View style={styles.tipCard}>
-          <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
-          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Break big goals into smaller, manageable tasks</Text>
+      {!actionTipsCollapsed && (
+        <View style={styles.tipsContainer}>
+          <View style={styles.tipCard}>
+            <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Break big goals into smaller, manageable tasks</Text>
+          </View>
+          <View style={styles.tipCard}>
+            <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Set specific time blocks for your goals</Text>
+          </View>
+          <View style={styles.tipCard}>
+            <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Celebrate small wins to stay motivated</Text>
+          </View>
         </View>
-        <View style={styles.tipCard}>
-          <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
-          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Set specific time blocks for your goals</Text>
-        </View>
-        <View style={styles.tipCard}>
-          <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
-          <Text style={[styles.tipText, { color: theme.textSecondary }]}>Celebrate small wins to stay motivated</Text>
-        </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -338,6 +362,7 @@ export default function NotificationsScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingBottom: 34, // Add bottom padding for home indicator
   },
   headerRow: {
     flexDirection: 'row',
@@ -428,23 +453,23 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 8,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    marginRight: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    marginRight: 12,
     backgroundColor: '#e5e7eb',
   },
   name: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1f2937',
   },
   message: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b7280',
     marginTop: 2,
   },
@@ -454,10 +479,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   time: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#9ca3af',
     marginLeft: 12,
-    minWidth: 60,
+    minWidth: 50,
     textAlign: 'right',
   },
   loadingContainer: {
@@ -494,6 +519,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     marginTop: 8,
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
   sectionTitle: {
     fontSize: 14,

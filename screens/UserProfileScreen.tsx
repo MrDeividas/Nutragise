@@ -136,7 +136,6 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
             {profile.display_name || profile.username}
           </Text>
-          <View style={styles.headerSpacer} />
         </View>
 
         {/* Profile Card */}

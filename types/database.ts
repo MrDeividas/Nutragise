@@ -4,7 +4,7 @@ export interface Goal {
   title: string;
   description?: string;
   category?: string;
-  start_date: string;
+  start_date?: string;
   end_date?: string;
   frequency?: boolean[];
   time_commitment?: string;
@@ -18,20 +18,57 @@ export interface Goal {
   last_updated_at?: string;
 }
 
+export interface Post {
+  id: string;
+  user_id: string;
+  content: string;
+  goal_id?: string;
+  date: string;
+  photos: string[];
+  habits_completed: string[];
+  caption?: string;
+  mood_rating?: number;
+  energy_level?: number;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileView {
+  id: string;
+  viewer_id: string;
+  profile_user_id: string;
+  last_viewed_at: string;
+}
+
+export interface CreatePostData {
+  content: string;
+  goal_id?: string;
+  date: string;
+  photos: string[];
+  habits_completed: string[];
+  caption?: string;
+  mood_rating?: number;
+  energy_level?: number;
+  is_public?: boolean;
+}
+
+export interface UpdatePostData extends Partial<CreatePostData> {}
+
+export interface DailyPostGroup {
+  date: string;
+  posts: Post[];
+  isNewDay: boolean;
+}
+
 export interface ProgressPhoto {
   id: string;
   user_id: string;
   goal_id: string;
   photo_url: string;
   date_uploaded: string;
-}
-
-export interface Post {
-  id: string;
-  user_id: string;
-  content: string;
-  goal_id?: string;
-  created_at: string;
+  check_in_date?: string;
+  note?: string;
 }
 
 export interface Follower {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Animated } from 'react-native';
 import {
   View,
   Text,
@@ -21,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
-import { Goal } from '../types/database';
+import { Goal, DailyHabits } from '../types/database';
 import { useTheme } from '../state/themeStore';
 import { syncAllUserData } from '../lib/syncUserData';
 import { useSocialStore } from '../state/socialStore';
@@ -30,9 +31,14 @@ import { socialService } from '../lib/socialService';
 import CustomBackground from '../components/CustomBackground';
 import { LinearGradient } from 'expo-linear-gradient';
 import GoalInteractionBar from '../components/GoalInteractionBar';
+import PostInteractionBar from '../components/PostInteractionBar';
 import CommentModal from '../components/CommentModal';
+import PostCommentModal from '../components/PostCommentModal';
+import CreatePostModal from '../components/CreatePostModal';
+import { notificationService } from '../lib/notificationService';
 import { goalInteractionsService } from '../lib/goalInteractions';
 import { formatLastUpdate } from '../lib/goalHelpers';
+import { postsService } from '../lib/postsService';
 
 // Extended Goal type with user data
 interface GoalWithUser extends Goal {
@@ -43,15 +49,42 @@ interface GoalWithUser extends Goal {
     avatar_url?: string;
   };
   media_url?: string;
+  dailyHabits?: DailyHabits;
+}
+
+// Extended Post type with user data
+interface PostWithUser {
+  id: string;
+  user_id: string;
+  content: string;
+  goal_id?: string;
+  date: string;
+  photos: string[];
+  habits_completed: string[];
+  caption?: string;
+  mood_rating: number;
+  energy_level: number;
+  is_public: boolean;
+  created_at: string;
+  profiles?: {
+    id: string;
+    username: string;
+    display_name?: string;
+    avatar_url?: string;
+  };
+  dailyHabits?: DailyHabits;
+  type: 'post'; // To distinguish from goals
 }
 
 const { width, height } = Dimensions.get('window');
 
-function HomeScreen() {
+function HomeScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<'explore' | 'following'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
+  const [explorePosts, setExplorePosts] = useState<PostWithUser[]>([]);
   const [filteredGoals, setFilteredGoals] = useState<GoalWithUser[]>([]);
+  const [filteredPosts, setFilteredPosts] = useState<PostWithUser[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -65,13 +98,21 @@ function HomeScreen() {
   const [followingStatus, setFollowingStatus] = useState<Map<string, boolean>>(new Map());
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [youMayLikeUsers, setYouMayLikeUsers] = useState<Profile[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [followerCounts, setFollowerCounts] = useState<Map<string, number>>(new Map());
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [goalInteractionData, setGoalInteractionData] = useState<{[goalId: string]: { likes: number; comments: number; isLiked: boolean }}>({});
+  const [postInteractionData, setPostInteractionData] = useState<{[postId: string]: { likes: number; comments: number; isLiked: boolean }}>({});
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [selectedGoalForComment, setSelectedGoalForComment] = useState<{id: string, title: string} | null>(null);
+  const [postCommentModalVisible, setPostCommentModalVisible] = useState(false);
+  const [selectedPostForComment, setSelectedPostForComment] = useState<{id: string, title: string} | null>(null);
   const [followingGoalsList, setFollowingGoalsList] = useState<GoalWithUser[]>([]);
   const [loadingFollowing, setLoadingFollowing] = useState(false);
+  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState<{[postId: string]: number}>({});
+  const [photoAnimations, setPhotoAnimations] = useState<{[postId: string]: Animated.Value}>({});
+  const [photoFadeAnimations, setPhotoFadeAnimations] = useState<{[postId: string]: Animated.Value}>({});
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const { fetchSuggestedUsers, followUser, isLoading: socialLoading } = useSocialStore();
@@ -94,10 +135,26 @@ function HomeScreen() {
     if (user) {
       loadExploreGoals();
       fetchSuggestedUsers(user.id);
+      loadUnreadNotificationCount();
       // Sync user data to ensure email is properly set
       syncAllUserData();
+    } else {
+      // Clear explore goals when user logs out
+      setExploreGoals([]);
+      setFilteredGoals([]);
     }
   }, [user, selectedCategory]);
+
+  // Refresh notification count when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (user) {
+        loadUnreadNotificationCount();
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, user]);
 
   // Load goals from people you're following when following tab is active
   useEffect(() => {
@@ -107,6 +164,152 @@ function HomeScreen() {
   }, [activeTab, user, selectedCategory]);
 
   // Load interaction data for goals
+  const refreshPostInteractionData = async (postId: string) => {
+    if (!user) return;
+    
+    try {
+      // Load likes for the specific post
+      const { data: postLikes, error: likesError } = await supabase
+        .from('post_likes')
+        .select('post_id, user_id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id);
+
+      if (likesError) {
+        console.error('Error loading post likes:', likesError);
+      }
+
+      // Load comment counts for the specific post
+      const { data: postComments, error: commentsError } = await supabase
+        .from('post_comments')
+        .select('post_id, id')
+        .eq('post_id', postId);
+
+      if (commentsError) {
+        console.error('Error loading post comments:', commentsError);
+      }
+
+      // Load reply counts for the specific post
+      const commentIds = postComments?.map(c => c.id) || [];
+      const { data: postReplies, error: repliesError } = await supabase
+        .from('post_comment_replies')
+        .select('parent_comment_id')
+        .in('parent_comment_id', commentIds);
+
+      if (repliesError) {
+        console.error('Error loading post replies:', repliesError);
+      }
+
+      // Load like counts for the specific post
+      const { data: postLikeCounts, error: likeCountsError } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('post_id', postId);
+
+      if (likeCountsError) {
+        console.error('Error loading post like counts:', likeCountsError);
+      }
+
+      // Process the data
+      const isLiked = postLikes?.length > 0 || false;
+      const likeCount = postLikeCounts?.length || 0;
+      const mainCommentCount = postComments?.length || 0;
+      const replyCount = postReplies?.length || 0;
+      const totalCommentCount = mainCommentCount + replyCount;
+      
+      setPostInteractionData(prev => ({
+        ...prev,
+        [postId]: {
+          likes: likeCount,
+          comments: totalCommentCount,
+          isLiked: isLiked
+        }
+      }));
+    } catch (error) {
+      console.error('Error refreshing post interaction data:', error);
+    }
+  };
+
+  const loadPostInteractionData = async (posts: PostWithUser[]) => {
+    if (!user) return;
+    
+    try {
+      const postIds = posts.map(post => post.id);
+      
+      // Load likes for posts
+      const { data: postLikes, error: likesError } = await supabase
+        .from('post_likes')
+        .select('post_id, user_id')
+        .in('post_id', postIds)
+        .eq('user_id', user.id);
+
+      if (likesError) {
+        console.error('Error loading post likes:', likesError);
+      }
+
+      // Load comment counts for posts
+      const { data: postComments, error: commentsError } = await supabase
+        .from('post_comments')
+        .select('post_id')
+        .in('post_id', postIds);
+
+      if (commentsError) {
+        console.error('Error loading post comments:', commentsError);
+      }
+
+      // Load reply counts for posts
+      const { data: postReplies, error: repliesError } = await supabase
+        .from('post_comment_replies')
+        .select('parent_comment_id')
+        .in('parent_comment_id', 
+          (await supabase
+            .from('post_comments')
+            .select('id')
+            .in('post_id', postIds)
+          ).data?.map(c => c.id) || []
+        );
+
+      if (repliesError) {
+        console.error('Error loading post replies:', repliesError);
+      }
+
+      // Load like counts for posts
+      const { data: postLikeCounts, error: likeCountsError } = await supabase
+        .from('post_likes')
+        .select('post_id')
+        .in('post_id', postIds);
+
+      if (likeCountsError) {
+        console.error('Error loading post like counts:', likeCountsError);
+      }
+
+      // Process the data
+      const interactionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }} = {};
+      
+      postIds.forEach(postId => {
+        const isLiked = postLikes?.some(like => like.post_id === postId) || false;
+        const likeCount = postLikeCounts?.filter(like => like.post_id === postId).length || 0;
+        const mainCommentCount = postComments?.filter(comment => comment.post_id === postId).length || 0;
+        
+        // Get comment IDs for this post to count replies
+        const postCommentIds = postComments?.filter(comment => comment.post_id === postId).map(c => c.id) || [];
+        const replyCount = postReplies?.filter(reply => postCommentIds.includes(reply.parent_comment_id)).length || 0;
+        
+        const totalCommentCount = mainCommentCount + replyCount;
+        
+        interactionData[postId] = {
+          likes: likeCount,
+          comments: totalCommentCount,
+          isLiked: isLiked
+        };
+      });
+
+      setPostInteractionData(interactionData);
+    } catch (error) {
+      console.error('Error loading post interaction data:', error);
+    }
+  };
+
   const loadGoalInteractionData = async (goals: GoalWithUser[]) => {
     if (!user || !goals.length) return;
 
@@ -463,17 +666,18 @@ function HomeScreen() {
     </View>
   );
 
-  const loadExploreGoals = async () => {
+    const loadExploreGoals = async () => {
     if (!user) return;
     
     setLoading(true);
     try {
-      // Build the query
+      // Build the query - show ALL goals (not just ones with photos)
       let query = supabase
         .from('goals')
         .select('*')
         .neq('user_id', user.id)
-        .eq('completed', false);
+        .eq('completed', false)
+        .eq('sharing_option', 'Public'); // Only show public goals
 
       // Add category filter if a category is selected
       if (selectedCategory && selectedCategory !== 'Default') {
@@ -526,10 +730,65 @@ function HomeScreen() {
             profileMap.set(profile.id, profile);
           });
 
-          // Attach profile data to goals
+          // Fetch latest progress photos for each goal
+          const goalIds = goals.map(goal => goal.id);
+          
+          // Try to fetch progress photos, but handle RLS restrictions gracefully
+          let progressPhotos = [];
+          try {
+            const { data: photos, error: photosError } = await supabase
+              .from('progress_photos')
+              .select('goal_id, photo_url, date_uploaded')
+              .in('goal_id', goalIds)
+              .order('date_uploaded', { ascending: false });
+
+            if (photosError) {
+              console.error('Error fetching progress photos (RLS restriction?):', photosError);
+              // Continue without photos - this is expected if RLS is blocking access
+            } else {
+              progressPhotos = photos || [];
+            }
+          } catch (error) {
+            console.error('Error accessing progress_photos table:', error);
+            // Continue without photos
+          }
+
+          // Create a map of goal ID to latest photo
+          const photoMap = new Map();
+          progressPhotos.forEach(photo => {
+            if (!photoMap.has(photo.goal_id)) {
+              photoMap.set(photo.goal_id, photo.photo_url);
+            }
+          });
+
+          // Fetch daily habits data for all goal creators (today's date)
+          const today = new Date().toISOString().split('T')[0];
+          let dailyHabitsMap = new Map();
+          
+          try {
+            const { data: dailyHabits, error: habitsError } = await supabase
+              .from('daily_habits')
+              .select('*')
+              .in('user_id', userIds)
+              .eq('date', today);
+
+            if (habitsError) {
+              console.error('Error fetching daily habits:', habitsError);
+            } else {
+              dailyHabits?.forEach(habit => {
+                dailyHabitsMap.set(habit.user_id, habit);
+              });
+            }
+          } catch (error) {
+            console.error('Error accessing daily_habits table:', error);
+          }
+
+          // Attach profile data, media, and daily habits to goals
           const goalsWithProfiles = goals.map(goal => ({
             ...goal,
-            profiles: profileMap.get(goal.user_id)
+            profiles: profileMap.get(goal.user_id),
+            media_url: photoMap.get(goal.id),
+            dailyHabits: dailyHabitsMap.get(goal.user_id)
           }));
 
           setExploreGoals(goalsWithProfiles);
@@ -552,6 +811,11 @@ function HomeScreen() {
           
           // Load interaction data for the goals
           loadGoalInteractionData(goalsWithProfiles);
+          
+          // Now fetch posts for all users
+          await loadExplorePosts(userIds, profileMap, dailyHabitsMap);
+          
+          // Load post interaction data will be called after posts are loaded
           return;
         }
       }
@@ -563,6 +827,125 @@ function HomeScreen() {
       setLoading(false);
     }
   };
+
+  const handlePhotoNavigation = (postId: string, direction: 'next' | 'prev') => {
+    const currentIndex = currentPhotoIndex[postId] || 0;
+    const posts = explorePosts.filter(p => p.id === postId);
+    if (posts.length === 0) return;
+    
+    const post = posts[0];
+    const maxIndex = post.photos.length - 1;
+    
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = currentIndex >= maxIndex ? 0 : currentIndex + 1;
+    } else {
+      newIndex = currentIndex <= 0 ? maxIndex : currentIndex - 1;
+    }
+    
+    // Get or create animation values for this post
+    let slideAnimation = photoAnimations[postId];
+    let fadeAnimation = photoFadeAnimations[postId];
+    
+    if (!slideAnimation) {
+      slideAnimation = new Animated.Value(0);
+      setPhotoAnimations(prev => ({
+        ...prev,
+        [postId]: slideAnimation
+      }));
+    }
+    
+    if (!fadeAnimation) {
+      fadeAnimation = new Animated.Value(1);
+      setPhotoFadeAnimations(prev => ({
+        ...prev,
+        [postId]: fadeAnimation
+      }));
+    }
+    
+    // Animate the transition
+    const slideDirection = direction === 'next' ? 1 : -1;
+    slideAnimation.setValue(slideDirection * 200); // Start off-screen (right for next, left for prev)
+    fadeAnimation.setValue(0.3); // Start faded
+    
+    Animated.parallel([
+      Animated.timing(slideAnimation, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnimation, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      })
+    ]).start();
+    
+    setCurrentPhotoIndex(prev => ({
+      ...prev,
+      [postId]: newIndex
+    }));
+  };
+
+  const loadUnreadNotificationCount = async () => {
+    if (!user) return;
+    try {
+      const count = await notificationService.getUnreadCount(user.id);
+      setUnreadNotificationCount(count);
+    } catch (error) {
+      console.error('Error loading unread notification count:', error);
+    }
+  };
+
+  const loadExplorePosts = async (userIds: string[], profileMap: Map<string, any>, dailyHabitsMap: Map<string, any>) => {
+    try {
+      // Fetch all public posts from the users we're following or that are public
+      const { data: posts, error } = await supabase
+        .from('posts')
+        .select('*')
+        .in('user_id', userIds)
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+        .limit(20); // Limit to 20 posts for performance
+
+      if (error) {
+        console.error('Error fetching explore posts:', error);
+        return;
+      }
+
+      if (posts && posts.length > 0) {
+        // Attach profile data and daily habits to posts
+        const postsWithProfiles = posts.map(post => ({
+          ...post,
+          profiles: profileMap.get(post.user_id),
+          dailyHabits: dailyHabitsMap.get(post.user_id),
+          type: 'post' as const
+        }));
+
+        setExplorePosts(postsWithProfiles);
+        
+        // Load post interaction data after posts are set
+        await loadPostInteractionData(postsWithProfiles);
+      } else {
+        setExplorePosts([]);
+      }
+    } catch (error) {
+      console.error('Error loading explore posts:', error);
+      setExplorePosts([]);
+    }
+  };
+
+  // Merge goals and posts chronologically
+  const getMergedFeed = useMemo(() => {
+    const allItems = [
+      ...exploreGoals.map(goal => ({ ...goal, type: 'goal' as const, sortDate: goal.created_at })),
+      ...explorePosts.map(post => ({ ...post, type: 'post' as const, sortDate: post.created_at }))
+    ];
+    
+    return allItems.sort((a, b) => 
+      new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime()
+    );
+  }, [exploreGoals, explorePosts]);
 
   // Load search history and suggested users when modal opens
   useEffect(() => {
@@ -626,6 +1009,65 @@ function HomeScreen() {
     } catch (error) {
       console.error('Error removing from search history:', error);
     }
+  };
+
+  // Handle post like changes
+  const handlePostLikeChange = async (postId: string, isLiked: boolean, newCount: number) => {
+    if (!user) return;
+    
+    try {
+      if (isLiked) {
+        // Add like
+        const { error } = await supabase
+          .from('post_likes')
+          .insert({
+            post_id: postId,
+            user_id: user.id,
+            created_at: new Date().toISOString()
+          });
+
+        if (error) {
+          console.error('Error adding post like:', error);
+          return;
+        }
+
+        // Create notification for post owner
+        await notificationService.createPostLikeNotification(postId, user.id);
+      } else {
+        // Remove like
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', user.id);
+
+        if (error) {
+          console.error('Error removing post like:', error);
+          return;
+        }
+      }
+
+      // Update local state
+      setPostInteractionData(prev => ({
+        ...prev,
+        [postId]: {
+          ...prev[postId],
+          likes: newCount,
+          isLiked: isLiked
+        }
+      }));
+    } catch (error) {
+      console.error('Error handling post like change:', error);
+    }
+  };
+
+  const handlePostCommentPress = (postId: string) => {
+    const posts = explorePosts.filter(p => p.id === postId);
+    if (posts.length === 0) return;
+    
+    const post = posts[0];
+    setSelectedPostForComment({ id: postId, title: post.content || 'Post' });
+    setPostCommentModalVisible(true);
   };
 
   // Handle goal like changes
@@ -776,6 +1218,29 @@ function HomeScreen() {
             >
               <Ionicons name="search-outline" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
+          
+          {/* Notifications Button */}
+          <TouchableOpacity 
+            style={styles.notificationButton}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
+            {unreadNotificationCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {/* Create Post Button */}
+          <TouchableOpacity 
+            style={styles.createPostButton}
+            onPress={() => setShowCreatePostModal(true)}
+          >
+            <Ionicons name="add" size={20} color={theme.textPrimary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -1095,6 +1560,8 @@ function HomeScreen() {
             >
               <ExploreContent 
                 goals={filteredGoals} 
+                posts={filteredPosts}
+                mergedFeed={getMergedFeed}
                 loading={loading} 
                 theme={theme}
                 goalInteractionData={goalInteractionData}
@@ -1104,6 +1571,14 @@ function HomeScreen() {
                 followingUsers={followingUsers}
                 followingStatus={followingStatus}
                 fetchFollowerCounts={fetchFollowerCounts}
+                user={user}
+                currentPhotoIndex={currentPhotoIndex}
+                photoAnimations={photoAnimations}
+                photoFadeAnimations={photoFadeAnimations}
+                onPhotoNavigation={handlePhotoNavigation}
+                postInteractionData={postInteractionData}
+                onPostLikeChange={handlePostLikeChange}
+                onPostCommentPress={handlePostCommentPress}
               />
             </ScrollView>
           )
@@ -1136,6 +1611,39 @@ function HomeScreen() {
         }}
       />
 
+      {/* Post Comment Modal */}
+      <PostCommentModal
+        visible={postCommentModalVisible}
+        postId={selectedPostForComment?.id || ''}
+        postTitle={selectedPostForComment?.title || ''}
+        onClose={() => {
+          const postId = selectedPostForComment?.id;
+          setPostCommentModalVisible(false);
+          setSelectedPostForComment(null);
+          // Refresh interaction data when modal closes to ensure count is updated
+          if (postId) {
+            refreshPostInteractionData(postId);
+          }
+        }}
+        onCommentAdded={() => {
+          // Refresh interaction data for the current post
+          if (selectedPostForComment) {
+            refreshPostInteractionData(selectedPostForComment.id);
+          }
+        }}
+      />
+
+      {/* Create Post Modal */}
+      <CreatePostModal
+        visible={showCreatePostModal}
+        onClose={() => setShowCreatePostModal(false)}
+        onPostCreated={() => {
+          setShowCreatePostModal(false);
+          loadExploreGoals(); // Reload goals and posts after creating post
+        }}
+        userGoals={exploreGoals.filter(goal => !goal.completed)}
+      />
+
     </SafeAreaView>
   );
 }
@@ -1148,6 +1656,8 @@ export default React.memo(HomeScreen);
 
 function ExploreContent({ 
   goals, 
+  posts,
+  mergedFeed,
   loading, 
   theme, 
   goalInteractionData,
@@ -1157,8 +1667,18 @@ function ExploreContent({
   followingUsers,
   followingStatus,
   fetchFollowerCounts,
+  user,
+  currentPhotoIndex,
+  photoAnimations,
+  photoFadeAnimations,
+  onPhotoNavigation,
+  postInteractionData,
+  onPostLikeChange,
+  onPostCommentPress,
 }: { 
   goals: GoalWithUser[], 
+  posts: PostWithUser[],
+  mergedFeed: any[],
   loading: boolean, 
   theme: any,
   goalInteractionData: {[goalId: string]: { likes: number; comments: number; isLiked: boolean }},
@@ -1168,6 +1688,14 @@ function ExploreContent({
   followingUsers: Set<string>;
   followingStatus: Map<string, boolean>;
   fetchFollowerCounts: (users: Profile[]) => Promise<void>;
+  user: any;
+  currentPhotoIndex: {[postId: string]: number};
+  photoAnimations: {[postId: string]: Animated.Value};
+  photoFadeAnimations: {[postId: string]: Animated.Value};
+  onPhotoNavigation: (postId: string, direction: 'next' | 'prev') => void;
+  postInteractionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }};
+  onPostLikeChange: (postId: string, isLiked: boolean, newCount: number) => void;
+  onPostCommentPress: (postId: string) => void;
 }) {
   const getCategoryIcon = (category: string) => {
     switch (category?.toLowerCase()) {
@@ -1251,101 +1779,322 @@ function ExploreContent({
           
           {loading ? (
           <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading goals...</Text>
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading goals & posts...</Text>
           </View>
-        ) : goals.length > 0 ? (
+        ) : mergedFeed.length > 0 ? (
           <View style={styles.cardsContainer}>
-            {goals.map((goal) => (
-              <View key={goal.id} style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
-                <View style={styles.goalContentRow}>
-                  <View style={[styles.goalContentLeft, Platform.OS === 'android' && styles.goalContentLeftAndroid]}>
-                    <View style={styles.cardHeader}>
-                      <View style={styles.userInfo}>
-                        {goal.profiles?.avatar_url ? (
-                          <Image 
-                            source={{ uri: goal.profiles.avatar_url }} 
-                            style={[styles.avatarPlaceholder, { borderRadius: 8 }]}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={[styles.avatarPlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-                            <Text style={[styles.avatarInitial, { color: 'white' }]}>
-                              {goal.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
-                            </Text>
-                          </View>
-                        )}
-                        <View style={styles.userInfoText}>
-                          <Text style={[styles.userHandle, { color: '#ffffff', fontWeight: 'bold' }]}>@{goal.profiles?.username || 'user'}</Text>
-                          <TouchableOpacity onPress={() => onFollow(goal.profiles?.id || '')}>
-                            <Text style={[styles.followStatus, { color: 'rgba(255, 255, 255, 0.7)' }]}>
-                              {goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'Followed' : 'Follow'}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                    
-                    <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
-                      {goal.title}
-                    </Text>
-                    <View style={styles.goalStats}>
-                      <View style={styles.stat}>
-                        <Ionicons name="time-outline" size={16} color="#ffffff" />
-                        <Text style={[styles.statText, { color: theme.textTertiary }]}>
-                          {formatLastUpdate(goal.last_updated_at, goal.created_at)}
+            {mergedFeed.map((item) => {
+              if (item.type === 'goal') {
+                const goal = item;
+                return (
+              <View key={goal.id} style={styles.goalCardContainer}>
+                {/* Floating Profile Section */}
+                <View style={styles.floatingProfileSection}>
+                  <View style={styles.profileInfo}>
+                    {goal.profiles?.avatar_url ? (
+                      <Image 
+                        source={{ uri: goal.profiles.avatar_url }} 
+                        style={styles.floatingAvatar}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.floatingAvatarPlaceholder}>
+                        <Text style={styles.floatingAvatarInitial}>
+                          {goal.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
                         </Text>
                       </View>
-                      <View style={styles.stat}>
-                        <Ionicons name="trophy-outline" size={16} color="#ffffff" />
-                        <Text style={[styles.statText, { color: theme.textTertiary }]}>
-                          {goal.category || 'No category'}
-                        </Text>
-                      </View>
+                    )}
+                    <View style={styles.profileTextInfo}>
+                      <Text style={styles.floatingUsername}>@{goal.profiles?.username || 'user'}</Text>
+                      <Text style={styles.floatingTime}>
+                        {formatLastUpdate(goal.last_updated_at, goal.created_at)}
+                      </Text>
                     </View>
+                    {goal.user_id !== user?.id && (
+                      <TouchableOpacity 
+                        onPress={() => onFollow(goal.profiles?.id || '')}
+                        style={styles.floatingFollowButton}
+                      >
+                        <Text style={styles.floatingFollowText}>
+                          {goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'Followed' : 'Follow'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     
-                    {/* Goal Interaction Bar */}
-                    <GoalInteractionBar
-                      goalId={goal.id}
-                      initialLikeCount={goalInteractionData[goal.id]?.likes || 0}
-                      initialCommentCount={goalInteractionData[goal.id]?.comments || 0}
-                      initialIsLiked={goalInteractionData[goal.id]?.isLiked || false}
-                      onLikeChange={(isLiked, newCount) => onLikeChange(goal.id, isLiked, newCount)}
-                      onCommentPress={() => onCommentPress(goal.id)}
-                      size="medium"
-                      showCounts={true}
-                    />
+                    {/* Mini Habit Icons */}
+                    <View style={styles.miniHabitIcons}>
+                      <Ionicons 
+                        name="book-outline" 
+                        size={12} 
+                        color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="leaf-outline" 
+                        size={12} 
+                        color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="snow-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.cold_shower_completed ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="bulb-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.reflect_mood ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="water-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.water_intake ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="moon-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.sleep_hours ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="walk-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.run_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                      <Ionicons 
+                        name="barbell-outline" 
+                        size={12} 
+                        color={goal.dailyHabits?.gym_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                      />
+                    </View>
                   </View>
-                  
-                  <View style={styles.goalUpdateRight}>
-                    {goal.media_url ? (
+                </View>
+
+                {/* Goal Card */}
+                <View style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+                  {/* Media Section */}
+                  <View style={styles.mediaSection}>
+                    {goal.media_url && goal.media_url !== 'no-photo' ? (
                       <Image 
                         source={{ uri: goal.media_url }} 
                         style={styles.goalUpdateMedia}
                         resizeMode="cover"
                       />
                     ) : (
-                      <View style={styles.noUpdateContainer}>
-                        <Text style={[styles.noUpdateText, { color: theme.textTertiary }]}>
-                          Reason: {goal.description || 'No reason provided'}
+                      <View style={[styles.noMediaContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
+                        <Ionicons name="camera-outline" size={32} color={theme.textSecondary} />
+                        <Text style={[styles.noMediaText, { color: theme.textSecondary }]}>
+                          No progress photos yet
                         </Text>
-                        <Text style={[styles.noUpdateText, { color: theme.textTertiary, marginTop: 8 }]}>
-                          Next update: {getTimeUntilNextCheckIn(goal.check_in_schedule || '', goal.last_updated_at)}
+                        <Text style={[styles.noMediaSubtext, { color: theme.textTertiary }]}>
+                          Check in to share your journey
                         </Text>
                       </View>
                     )}
                   </View>
+
+                  {/* Content Section */}
+                  <View style={styles.contentSection}>
+                    <View style={styles.titleRow}>
+                      <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
+                        {goal.title}
+                      </Text>
+                      
+                      {/* Goal Interaction Bar */}
+                      <GoalInteractionBar
+                        goalId={goal.id}
+                        initialLikeCount={goalInteractionData[goal.id]?.likes || 0}
+                        initialCommentCount={goalInteractionData[goal.id]?.comments || 0}
+                        initialIsLiked={goalInteractionData[goal.id]?.isLiked || false}
+                        onLikeChange={(isLiked, newCount) => onLikeChange(goal.id, isLiked, newCount)}
+                        onCommentPress={() => onCommentPress(goal.id)}
+                        size="medium"
+                        showCounts={true}
+                      />
+                    </View>
+                    
+                    <View style={styles.goalStats}>
+                    </View>
+                  </View>
                 </View>
               </View>
-            ))}
+            );
+              } else if (item.type === 'post') {
+                const post = item;
+                return (
+                  <View key={post.id} style={styles.goalCardContainer}>
+                    {/* Floating Profile Section */}
+                    <View style={styles.floatingProfileSection}>
+                      <View style={styles.profileInfo}>
+                        {post.profiles?.avatar_url ? (
+                          <Image 
+                            source={{ uri: post.profiles.avatar_url }} 
+                            style={styles.floatingAvatar}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.floatingAvatarPlaceholder}>
+                            <Text style={styles.floatingAvatarInitial}>
+                              {post.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.profileTextInfo}>
+                          <Text style={styles.floatingUsername}>@{post.profiles?.username || 'user'}</Text>
+                          <Text style={styles.floatingTime}>
+                            {formatLastUpdate(post.created_at, post.created_at)}
+                          </Text>
+                        </View>
+                        {post.user_id !== user?.id && (
+                          <TouchableOpacity 
+                            onPress={() => onFollow(post.profiles?.id || '')}
+                            style={styles.floatingFollowButton}
+                          >
+                            <Text style={styles.floatingFollowText}>
+                              {post.profiles?.id && followingStatus.get(post.profiles.id) ? 'Followed' : 'Follow'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        
+                        {/* Mini Habit Icons */}
+                        <View style={styles.miniHabitIcons}>
+                          <Ionicons 
+                            name="book-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="leaf-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="snow-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="bulb-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('reflect') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="water-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="moon-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="walk-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          <Ionicons 
+                            name="barbell-outline" 
+                            size={12} 
+                            color={post.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                          {/* Football icon for goal progress */}
+                          <Ionicons 
+                            name="football-outline" 
+                            size={12} 
+                            color={post.goal_id ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
+                          />
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Post Card */}
+                    <View style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+                      {/* Media Section */}
+                      <View style={styles.mediaSection}>
+                        {post.photos && post.photos.length > 0 ? (
+                          <View>
+                            <TouchableOpacity 
+                              style={styles.photoContainer}
+                              onPress={() => onPhotoNavigation(post.id, 'next')}
+                              onLongPress={() => onPhotoNavigation(post.id, 'prev')}
+                              activeOpacity={0.9}
+                            >
+                              <Animated.Image 
+                                source={{ uri: post.photos[currentPhotoIndex[post.id] || 0] }} 
+                                style={[
+                                  styles.goalUpdateMedia,
+                                  {
+                                    transform: [{
+                                      translateX: photoAnimations[post.id] || new Animated.Value(0)
+                                    }],
+                                    opacity: photoFadeAnimations[post.id] || new Animated.Value(1)
+                                  }
+                                ]}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+                            {/* Photo Navigation Dots */}
+                            {post.photos.length > 1 && (
+                              <View style={styles.photoDotsContainer}>
+                                {post.photos.map((_, index) => (
+                                  <View 
+                                    key={index} 
+                                    style={[
+                                      styles.photoDot, 
+                                      { 
+                                        backgroundColor: index === (currentPhotoIndex[post.id] || 0) ? '#ffffff' : 'rgba(255, 255, 255, 0.3)',
+                                        width: index === (currentPhotoIndex[post.id] || 0) ? 8 : 6,
+                                        height: index === (currentPhotoIndex[post.id] || 0) ? 8 : 6,
+                                      }
+                                    ]} 
+                                  />
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        ) : (
+                          <View style={[styles.noMediaContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
+                            <Ionicons name="camera-outline" size={32} color={theme.textSecondary} />
+                            <Text style={[styles.noMediaText, { color: theme.textSecondary }]}>
+                              No photos
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Content Section */}
+                      <View style={styles.contentSection}>
+                        <View style={styles.titleRow}>
+                          <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
+                            {post.caption ? post.caption.split(' | ')[currentPhotoIndex[post.id] || 0] || '' : ''}
+                          </Text>
+                          
+                          {/* Post Interaction Bar */}
+                          <PostInteractionBar
+                            postId={post.id}
+                            initialLikeCount={postInteractionData[post.id]?.likes || 0}
+                            initialCommentCount={postInteractionData[post.id]?.comments || 0}
+                            initialIsLiked={postInteractionData[post.id]?.isLiked || false}
+                            onLikeChange={(isLiked, newCount) => onPostLikeChange(post.id, isLiked, newCount)}
+                            onCommentPress={() => onPostCommentPress(post.id)}
+                            size="medium"
+                            showCounts={true}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }
+              return null;
+            })}
           </View>
         ) : (
           <View style={styles.emptyState}>
             <Ionicons name="flag-outline" size={64} color={theme.textSecondary} />
             <Text style={[styles.emptyStateTitle, { color: theme.textPrimary }]}>
-              Discover Goals
+              Discover Goals & Posts
             </Text>
             <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
-              Find inspiring goals from other users
+              Find inspiring goals and posts from other users
             </Text>
           </View>
         )}
@@ -1516,7 +2265,7 @@ function FollowingContent({
                   </View>
                   
                   <View style={styles.goalUpdateRight}>
-                    {goal.media_url ? (
+                    {goal.media_url && goal.media_url !== 'no-photo' ? (
                       <Image 
                         source={{ uri: goal.media_url }} 
                         style={styles.goalUpdateMedia}
@@ -1662,8 +2411,122 @@ const styles = StyleSheet.create({
   cardsContainer: {
     gap: 16,
   },
+  goalCardContainer: {
+    position: 'relative',
+    marginBottom: 24,
+    marginTop: 30,
+  },
+  floatingProfileSection: {
+    position: 'absolute',
+    top: -25,
+    left: 12,
+    right: 12,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    paddingLeft: 0,
+    paddingRight: 8,
+    paddingVertical: 0,
+    height: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+  },
+  profileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floatingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    marginLeft: 0,
+  },
+  floatingAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 0,
+  },
+  floatingAvatarInitial: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  profileTextInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floatingUsername: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  floatingTime: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '400',
+  },
+  floatingFollowButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+  },
+  floatingFollowText: {
+    fontSize: 10,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  miniHabitIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
+    paddingRight: 4,
+  },
   card: {
     borderRadius: 12,
+    paddingTop: 20,
+  },
+  mediaSection: {
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  noMediaContainer: {
+    height: 200,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(128, 128, 128, 0.2)',
+    borderStyle: 'dashed',
+  },
+  noMediaText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  noMediaSubtext: {
+    fontSize: 14,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  contentSection: {
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -2091,6 +2954,32 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  notificationButton: {
+    padding: 8,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#ff5a5f',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  createPostButton: {
+    padding: 8,
+    alignItems: 'center',
+  },
   searchModalOverlay: {
     flex: 1,
     backgroundColor: 'rgb(20, 19, 19)',
@@ -2397,7 +3286,9 @@ const styles = StyleSheet.create({
   },
   goalUpdateMedia: {
     width: '100%',
-    height: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
   },
   noUpdateContainer: {
     flex: 1,
@@ -2412,5 +3303,21 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  photoDotsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    position: 'absolute',
+    bottom: 12,
+    left: 0,
+    right: 0,
+  },
+  photoDot: {
+    borderRadius: 4,
+  },
+  photoContainer: {
+    position: 'relative',
   },
 }); 

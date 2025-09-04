@@ -33,6 +33,7 @@ const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
 const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
+// const TestScreen = lazy(() => import('./screens/TestScreen'));
 
 import { GoalsStackParamList } from './screens/GoalDetailScreen';
 
@@ -98,6 +99,7 @@ function ProfileStack() {
         <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
         <Stack.Screen name="Followers" component={FollowersScreen as any} />
         <Stack.Screen name="Following" component={FollowingScreen as any} />
+        {/* <Stack.Screen name="Test" component={TestScreen as any} /> */}
         <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
       </Stack.Navigator>
     </Suspense>

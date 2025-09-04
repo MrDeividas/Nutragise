@@ -20,6 +20,7 @@ import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
+import { notificationService } from '../lib/notificationService';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -302,6 +303,7 @@ function ActionScreen({ navigation }: any) {
   const [selectedHabitType, setSelectedHabitType] = useState<string>('');
   const [selectedDateHabitsData, setSelectedDateHabitsData] = useState<any>(null);
   const [showStreakModal, setShowStreakModal] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   
   // Keyboard state for modal positioning
@@ -368,6 +370,33 @@ function ActionScreen({ navigation }: any) {
     const today = new Date().toISOString().split('T')[0];
     useActionStore.getState().loadDailyHabits(today);
   }, []);
+
+  // Load unread notification count
+  const loadUnreadNotificationCount = async () => {
+    if (!user) return;
+    try {
+      const count = await notificationService.getUnreadCount(user.id);
+      setUnreadNotificationCount(count);
+    } catch (error) {
+      console.error('Error loading unread notification count:', error);
+    }
+  };
+
+  // Load notification count when component mounts and when screen comes into focus
+  useEffect(() => {
+    if (user) {
+      loadUnreadNotificationCount();
+    }
+  }, [user]);
+
+  // Refresh notification count when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadUnreadNotificationCount();
+      }
+    }, [user])
+  );
 
   // Sync animated values with store state on mount and when store changes
   useEffect(() => {
@@ -1208,8 +1237,30 @@ function ActionScreen({ navigation }: any) {
             </TouchableOpacity>
             
             <TouchableOpacity onPress={() => navigation.navigate('Notifications')} style={{ marginRight: 12 }}>
-              <View style={{ position: 'relative' }}>
+              <View style={{ position: 'relative', width: 24, height: 24 }}>
                 <Ionicons name="notifications-outline" size={24} color="#ffffff" />
+                {unreadNotificationCount > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -6,
+                    backgroundColor: '#ff5a5f',
+                    borderRadius: 10,
+                    minWidth: 16,
+                    height: 16,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    paddingHorizontal: 3,
+                  }}>
+                    <Text style={{
+                      color: '#fff',
+                      fontSize: 9,
+                      fontWeight: '700',
+                    }}>
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
 
@@ -3228,7 +3279,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 20,
   },
   headerTitle: {

@@ -24,6 +24,7 @@ interface ActionState {
 	setSelectedDate: (date: string) => void;
 	syncSegmentsWithData: (dailyHabits: DailyHabits) => void;
 	setShouldOpenGraphs: (shouldOpen: boolean) => void;
+	clearStore: () => void;
 }
 
 export const useActionStore = create<ActionState>((set, get) => ({
@@ -187,5 +188,20 @@ export const useActionStore = create<ActionState>((set, get) => ({
 	
 	setShouldOpenGraphs: (shouldOpen: boolean) => {
 		set({ shouldOpenGraphs: shouldOpen });
+	},
+	
+	clearStore: () => {
+		set({
+			segmentChecked: [false, false, false, false, false, false, false, false],
+			dailyHabits: null,
+			dailyHabitsLoading: false,
+			dailyHabitsError: null,
+			selectedDate: (() => {
+				const yesterday = new Date();
+				yesterday.setDate(yesterday.getDate() - 1);
+				return yesterday.toISOString().split('T')[0];
+			})(),
+			shouldOpenGraphs: false
+		});
 	},
 })); 

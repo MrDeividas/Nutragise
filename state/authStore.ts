@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
+import { useActionStore } from './actionStore';
 
 interface AuthStore extends AuthState {
   signUp: (data: SignUpData) => Promise<{ error: any | null }>;
@@ -150,6 +151,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut();
     set({ user: null, session: null });
+    
+    // Clear action store data when signing out
+    const { clearStore } = useActionStore.getState();
+    clearStore();
   },
 
   updateProfile: async (data: ProfileData) => {
