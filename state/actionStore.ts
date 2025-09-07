@@ -41,6 +41,27 @@ export const useActionStore = create<ActionState>((set, get) => ({
   })(), // Yesterday's date as default
 	shouldOpenGraphs: false,
 	
+	// Listen for auth changes and clear store when user logs out
+	...(function() {
+		// This runs once when the store is created
+		const unsubscribe = useAuthStore.subscribe((state) => {
+			if (!state.user) {
+				// User logged out, clear the action store
+				set({
+					segmentChecked: [false, false, false, false, false, false, false, false],
+					dailyHabits: null,
+					dailyHabitsLoading: false,
+					dailyHabitsError: null,
+					selectedDate: new Date().toISOString().split('T')[0],
+					shouldOpenGraphs: false
+				});
+			}
+		});
+		
+		// Return empty object since we're just setting up the listener
+		return {};
+	})(),
+	
 	setSegmentChecked: (segments: boolean[]) => {
 		set({ segmentChecked: segments });
 	},

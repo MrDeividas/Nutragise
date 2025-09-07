@@ -35,6 +35,8 @@ import PostInteractionBar from '../components/PostInteractionBar';
 import CommentModal from '../components/CommentModal';
 import PostCommentModal from '../components/PostCommentModal';
 import CreatePostModal from '../components/CreatePostModal';
+import GesturePhotoCarousel from '../components/GesturePhotoCarousel';
+import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
 import { notificationService } from '../lib/notificationService';
 import { goalInteractionsService } from '../lib/goalInteractions';
 import { formatLastUpdate } from '../lib/goalHelpers';
@@ -78,7 +80,13 @@ interface PostWithUser {
 
 const { width, height } = Dimensions.get('window');
 
-function HomeScreen({ navigation }: any) {
+interface HomeScreenProps {
+  navigation?: {
+    navigate: (screen: string) => void;
+  };
+}
+
+function HomeScreen({ navigation }: HomeScreenProps) {
   const [activeTab, setActiveTab] = useState<'explore' | 'following'>('explore');
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
@@ -111,8 +119,9 @@ function HomeScreen({ navigation }: any) {
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState<{[postId: string]: number}>({});
-  const [photoAnimations, setPhotoAnimations] = useState<{[postId: string]: Animated.Value}>({});
-  const [photoFadeAnimations, setPhotoFadeAnimations] = useState<{[postId: string]: Animated.Value}>({});
+  const [showFullScreenModal, setShowFullScreenModal] = useState(false);
+  const [fullScreenPhotos, setFullScreenPhotos] = useState<string[]>([]);
+  const [fullScreenInitialIndex, setFullScreenInitialIndex] = useState(0);
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const { fetchSuggestedUsers, followUser, isLoading: socialLoading } = useSocialStore();
@@ -145,16 +154,12 @@ function HomeScreen({ navigation }: any) {
     }
   }, [user, selectedCategory]);
 
-  // Refresh notification count when screen comes into focus
+  // Refresh notification count when component mounts
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      if (user) {
-        loadUnreadNotificationCount();
-      }
-    });
-
-    return unsubscribe;
-  }, [navigation, user]);
+    if (user) {
+      loadUnreadNotificationCount();
+    }
+  }, [user]);
 
   // Load goals from people you're following when following tab is active
   useEffect(() => {
@@ -211,7 +216,7 @@ function HomeScreen({ navigation }: any) {
       }
 
       // Process the data
-      const isLiked = postLikes?.length > 0 || false;
+      const isLiked = (postLikes?.length || 0) > 0;
       const likeCount = postLikeCounts?.length || 0;
       const mainCommentCount = postComments?.length || 0;
       const replyCount = postReplies?.length || 0;
@@ -250,7 +255,7 @@ function HomeScreen({ navigation }: any) {
       // Load comment counts for posts
       const { data: postComments, error: commentsError } = await supabase
         .from('post_comments')
-        .select('post_id')
+        .select('id, post_id')
         .in('post_id', postIds);
 
       if (commentsError) {
@@ -258,16 +263,11 @@ function HomeScreen({ navigation }: any) {
       }
 
       // Load reply counts for posts
+      const commentIds = postComments?.map(c => c.id) || [];
       const { data: postReplies, error: repliesError } = await supabase
         .from('post_comment_replies')
         .select('parent_comment_id')
-        .in('parent_comment_id', 
-          (await supabase
-            .from('post_comments')
-            .select('id')
-            .in('post_id', postIds)
-          ).data?.map(c => c.id) || []
-        );
+        .in('parent_comment_id', commentIds);
 
       if (repliesError) {
         console.error('Error loading post replies:', repliesError);
@@ -292,8 +292,10 @@ function HomeScreen({ navigation }: any) {
         const mainCommentCount = postComments?.filter(comment => comment.post_id === postId).length || 0;
         
         // Get comment IDs for this post to count replies
-        const postCommentIds = postComments?.filter(comment => comment.post_id === postId).map(c => c.id) || [];
-        const replyCount = postReplies?.filter(reply => postCommentIds.includes(reply.parent_comment_id)).length || 0;
+        const postCommentIdsForThisPost = postComments?.filter(comment => comment.post_id === postId).map(c => c.id) || [];
+        const replyCount = postReplies?.filter(reply => 
+          postCommentIdsForThisPost.includes(reply.parent_comment_id)
+        ).length || 0;
         
         const totalCommentCount = mainCommentCount + replyCount;
         
@@ -734,7 +736,7 @@ function HomeScreen({ navigation }: any) {
           const goalIds = goals.map(goal => goal.id);
           
           // Try to fetch progress photos, but handle RLS restrictions gracefully
-          let progressPhotos = [];
+          let progressPhotos: Array<{goal_id: string, photo_url: string, date_uploaded: string}> = [];
           try {
             const { data: photos, error: photosError } = await supabase
               .from('progress_photos')
@@ -826,65 +828,6 @@ function HomeScreen({ navigation }: any) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePhotoNavigation = (postId: string, direction: 'next' | 'prev') => {
-    const currentIndex = currentPhotoIndex[postId] || 0;
-    const posts = explorePosts.filter(p => p.id === postId);
-    if (posts.length === 0) return;
-    
-    const post = posts[0];
-    const maxIndex = post.photos.length - 1;
-    
-    let newIndex;
-    if (direction === 'next') {
-      newIndex = currentIndex >= maxIndex ? 0 : currentIndex + 1;
-    } else {
-      newIndex = currentIndex <= 0 ? maxIndex : currentIndex - 1;
-    }
-    
-    // Get or create animation values for this post
-    let slideAnimation = photoAnimations[postId];
-    let fadeAnimation = photoFadeAnimations[postId];
-    
-    if (!slideAnimation) {
-      slideAnimation = new Animated.Value(0);
-      setPhotoAnimations(prev => ({
-        ...prev,
-        [postId]: slideAnimation
-      }));
-    }
-    
-    if (!fadeAnimation) {
-      fadeAnimation = new Animated.Value(1);
-      setPhotoFadeAnimations(prev => ({
-        ...prev,
-        [postId]: fadeAnimation
-      }));
-    }
-    
-    // Animate the transition
-    const slideDirection = direction === 'next' ? 1 : -1;
-    slideAnimation.setValue(slideDirection * 200); // Start off-screen (right for next, left for prev)
-    fadeAnimation.setValue(0.3); // Start faded
-    
-    Animated.parallel([
-      Animated.timing(slideAnimation, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnimation, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      })
-    ]).start();
-    
-    setCurrentPhotoIndex(prev => ({
-      ...prev,
-      [postId]: newIndex
-    }));
   };
 
   const loadUnreadNotificationCount = async () => {
@@ -1070,6 +1013,12 @@ function HomeScreen({ navigation }: any) {
     setPostCommentModalVisible(true);
   };
 
+  const handlePhotoPress = (photos: string[], initialIndex: number) => {
+    setFullScreenPhotos(photos);
+    setFullScreenInitialIndex(initialIndex);
+    setShowFullScreenModal(true);
+  };
+
   // Handle goal like changes
   const handleGoalLikeChange = (goalId: string, isLiked: boolean, newCount: number) => {
     setGoalInteractionData(prev => ({
@@ -1194,53 +1143,61 @@ function HomeScreen({ navigation }: any) {
             </TouchableOpacity>
           
           {/* Tab Buttons */}
-          <TouchableOpacity
-            style={[styles.headerTabButton, activeTab === 'explore' && styles.headerTabButtonActive]}
-            onPress={() => setActiveTab('explore')}
-          >
-            <Text style={[styles.headerTabText, { color: theme.textSecondary }, activeTab === 'explore' && styles.headerTabTextActive]}>
-              Explore
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerTabButton, activeTab === 'following' && styles.headerTabButtonActive]}
-            onPress={() => setActiveTab('following')}
-          >
-            <Text style={[styles.headerTabText, { color: theme.textSecondary }, activeTab === 'following' && styles.headerTabTextActive]}>
-              Following
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.headerTabButtons}>
+            <TouchableOpacity
+              style={[styles.headerTabButton, activeTab === 'explore' && styles.headerTabButtonActive]}
+              onPress={() => setActiveTab('explore')}
+            >
+              <Text style={[styles.headerTabText, { color: theme.textSecondary }, activeTab === 'explore' && styles.headerTabTextActive]}>
+                Explore
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.headerTabButton, activeTab === 'following' && styles.headerTabButtonActive]}
+              onPress={() => setActiveTab('following')}
+            >
+              <Text style={[styles.headerTabText, { color: theme.textSecondary }, activeTab === 'following' && styles.headerTabTextActive]}>
+                Following
+              </Text>
+            </TouchableOpacity>
+          </View>
           
-          {/* Search Modal Button */}
-                      <TouchableOpacity 
+          {/* Action Buttons */}
+          <View style={styles.headerActionButtons}>
+            <TouchableOpacity 
               style={styles.searchIconButton}
               onPress={() => setShowSearchModal(true)}
             >
               <Ionicons name="search-outline" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
-          
-          {/* Notifications Button */}
-          <TouchableOpacity 
-            style={styles.notificationButton}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
-            {unreadNotificationCount > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          
-          {/* Create Post Button */}
-          <TouchableOpacity 
-            style={styles.createPostButton}
-            onPress={() => setShowCreatePostModal(true)}
-          >
-            <Ionicons name="add" size={20} color={theme.textPrimary} />
-          </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.notificationButton}
+              onPress={() => {
+                if (navigation && navigation.navigate) {
+                  navigation.navigate('Notifications');
+                } else {
+                  console.error('Navigation not available');
+                }
+              }}
+            >
+              <Ionicons name="notifications-outline" size={20} color={theme.textPrimary} />
+              {unreadNotificationCount > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.createPostButton}
+              onPress={() => setShowCreatePostModal(true)}
+            >
+              <Ionicons name="add" size={20} color={theme.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -1573,12 +1530,11 @@ function HomeScreen({ navigation }: any) {
                 fetchFollowerCounts={fetchFollowerCounts}
                 user={user}
                 currentPhotoIndex={currentPhotoIndex}
-                photoAnimations={photoAnimations}
-                photoFadeAnimations={photoFadeAnimations}
-                onPhotoNavigation={handlePhotoNavigation}
+                setCurrentPhotoIndex={setCurrentPhotoIndex}
                 postInteractionData={postInteractionData}
                 onPostLikeChange={handlePostLikeChange}
                 onPostCommentPress={handlePostCommentPress}
+                onPhotoPress={handlePhotoPress}
               />
             </ScrollView>
           )
@@ -1644,6 +1600,14 @@ function HomeScreen({ navigation }: any) {
         userGoals={exploreGoals.filter(goal => !goal.completed)}
       />
 
+      {/* Full Screen Photo Modal */}
+      <FullScreenPhotoModal
+        visible={showFullScreenModal}
+        photos={fullScreenPhotos}
+        initialIndex={fullScreenInitialIndex}
+        onClose={() => setShowFullScreenModal(false)}
+      />
+
     </SafeAreaView>
   );
 }
@@ -1669,12 +1633,11 @@ function ExploreContent({
   fetchFollowerCounts,
   user,
   currentPhotoIndex,
-  photoAnimations,
-  photoFadeAnimations,
-  onPhotoNavigation,
+  setCurrentPhotoIndex,
   postInteractionData,
   onPostLikeChange,
   onPostCommentPress,
+  onPhotoPress,
 }: { 
   goals: GoalWithUser[], 
   posts: PostWithUser[],
@@ -1690,12 +1653,11 @@ function ExploreContent({
   fetchFollowerCounts: (users: Profile[]) => Promise<void>;
   user: any;
   currentPhotoIndex: {[postId: string]: number};
-  photoAnimations: {[postId: string]: Animated.Value};
-  photoFadeAnimations: {[postId: string]: Animated.Value};
-  onPhotoNavigation: (postId: string, direction: 'next' | 'prev') => void;
+  setCurrentPhotoIndex: React.Dispatch<React.SetStateAction<{[postId: string]: number}>>;
   postInteractionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }};
   onPostLikeChange: (postId: string, isLiked: boolean, newCount: number) => void;
   onPostCommentPress: (postId: string) => void;
+  onPhotoPress: (photos: string[], initialIndex: number) => void;
 }) {
   const getCategoryIcon = (category: string) => {
     switch (category?.toLowerCase()) {
@@ -1820,55 +1782,55 @@ function ExploreContent({
                         </Text>
                       </TouchableOpacity>
                     )}
-                    
-                    {/* Mini Habit Icons */}
-                    <View style={styles.miniHabitIcons}>
-                      <Ionicons 
-                        name="book-outline" 
-                        size={12} 
-                        color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="leaf-outline" 
-                        size={12} 
-                        color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="snow-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.cold_shower_completed ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="bulb-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.reflect_mood ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="water-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.water_intake ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="moon-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.sleep_hours ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="walk-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.run_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                      <Ionicons 
-                        name="barbell-outline" 
-                        size={12} 
-                        color={goal.dailyHabits?.gym_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                      />
-                    </View>
+                  </View>
+                  
+                  {/* Mini Habit Icons - moved outside profileInfo */}
+                  <View style={styles.miniHabitIcons}>
+                    <Ionicons 
+                      name="book-outline" 
+                      size={12} 
+                      color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="leaf-outline" 
+                      size={12} 
+                      color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="snow-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.cold_shower_completed ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="bulb-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.reflect_mood ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="water-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.water_intake ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="moon-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.sleep_hours ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="walk-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.run_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
+                    <Ionicons 
+                      name="barbell-outline" 
+                      size={12} 
+                      color={goal.dailyHabits?.gym_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                    />
                   </View>
                 </View>
 
                 {/* Goal Card */}
-                <View style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+                <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
                   {/* Media Section */}
                   <View style={styles.mediaSection}>
                     {goal.media_url && goal.media_url !== 'no-photo' ? (
@@ -1952,103 +1914,77 @@ function ExploreContent({
                             </Text>
                           </TouchableOpacity>
                         )}
-                        
-                        {/* Mini Habit Icons */}
-                        <View style={styles.miniHabitIcons}>
-                          <Ionicons 
-                            name="book-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="leaf-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="snow-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="bulb-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('reflect') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="water-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="moon-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="walk-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          <Ionicons 
-                            name="barbell-outline" 
-                            size={12} 
-                            color={post.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                          {/* Football icon for goal progress */}
-                          <Ionicons 
-                            name="football-outline" 
-                            size={12} 
-                            color={post.goal_id ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
-                          />
-                        </View>
+                      </View>
+                      
+                      {/* Mini Habit Icons - moved outside profileInfo */}
+                      <View style={styles.miniHabitIcons}>
+                        <Ionicons 
+                          name="book-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="leaf-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="snow-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="bulb-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('reflect') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="water-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="moon-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="walk-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="barbell-outline" 
+                          size={12} 
+                          color={post.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        {/* Football icon for goal progress */}
+                        <Ionicons 
+                          name="football-outline" 
+                          size={12} 
+                          color={post.goal_id ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
                       </View>
                     </View>
 
                     {/* Post Card */}
-                    <View style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
+                    <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
                       {/* Media Section */}
                       <View style={styles.mediaSection}>
                         {post.photos && post.photos.length > 0 ? (
                           <View>
-                            <TouchableOpacity 
+                            <GesturePhotoCarousel
+                              photos={post.photos}
+                              currentIndex={currentPhotoIndex[post.id] || 0}
+                              onIndexChange={(index) => {
+                                setCurrentPhotoIndex(prev => ({
+                                  ...prev,
+                                  [post.id]: index
+                                }));
+                              }}
+                              onPhotoPress={() => onPhotoPress(post.photos, currentPhotoIndex[post.id] || 0)}
                               style={styles.photoContainer}
-                              onPress={() => onPhotoNavigation(post.id, 'next')}
-                              onLongPress={() => onPhotoNavigation(post.id, 'prev')}
-                              activeOpacity={0.9}
-                            >
-                              <Animated.Image 
-                                source={{ uri: post.photos[currentPhotoIndex[post.id] || 0] }} 
-                                style={[
-                                  styles.goalUpdateMedia,
-                                  {
-                                    transform: [{
-                                      translateX: photoAnimations[post.id] || new Animated.Value(0)
-                                    }],
-                                    opacity: photoFadeAnimations[post.id] || new Animated.Value(1)
-                                  }
-                                ]}
-                                resizeMode="cover"
-                              />
-                            </TouchableOpacity>
-                            {/* Photo Navigation Dots */}
-                            {post.photos.length > 1 && (
-                              <View style={styles.photoDotsContainer}>
-                                {post.photos.map((_, index) => (
-                                  <View 
-                                    key={index} 
-                                    style={[
-                                      styles.photoDot, 
-                                      { 
-                                        backgroundColor: index === (currentPhotoIndex[post.id] || 0) ? '#ffffff' : 'rgba(255, 255, 255, 0.3)',
-                                        width: index === (currentPhotoIndex[post.id] || 0) ? 8 : 6,
-                                        height: index === (currentPhotoIndex[post.id] || 0) ? 8 : 6,
-                                      }
-                                    ]} 
-                                  />
-                                ))}
-                              </View>
-                            )}
+                            />
                           </View>
                         ) : (
                           <View style={[styles.noMediaContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
@@ -2309,7 +2245,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   header: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: 2,
     paddingBottom: 8,
     shadowColor: '#000',
@@ -2320,29 +2256,34 @@ const styles = StyleSheet.create({
   headerTabButtons: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  headerActionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerTabButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     alignItems: 'center',
+    minWidth: 80,
   },
   headerTabButtonActive: {
     // No background, just text color change
   },
   headerTabText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerTabTextActive: {
     color: '#EA580C',
   },
   headerCategoryButton: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
   },
   headerCategoryText: {
     fontSize: 16,
@@ -2425,12 +2366,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     borderRadius: 12,
     paddingLeft: 0,
-    paddingRight: 8,
+    paddingRight: 0,
     paddingVertical: 0,
     height: 32,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 0,
+    justifyContent: 'space-between',
   },
   profileInfo: {
     flexDirection: 'row',
@@ -2484,18 +2425,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   miniHabitIcons: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 4,
     marginLeft: 'auto',
-    paddingRight: 4,
+    justifyContent: 'flex-end',
+    paddingRight: 8,
   },
   card: {
     borderRadius: 12,
     paddingTop: 20,
   },
   mediaSection: {
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 12,
   },
   noMediaContainer: {
@@ -2575,7 +2517,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1f2937',
-    marginBottom: 8,
   },
   goalDescription: {
     fontSize: 14,
@@ -2943,7 +2884,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
+    paddingHorizontal: 8,
   },
   headerTitle: {
     fontSize: 24,
@@ -2951,7 +2892,6 @@ const styles = StyleSheet.create({
   },
   searchIconButton: {
     padding: 8,
-    flex: 1,
     alignItems: 'center',
   },
   notificationButton: {

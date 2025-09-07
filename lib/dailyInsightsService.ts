@@ -30,22 +30,58 @@ class DailyInsightsService {
    */
   async generateDailyInsights(userId: string, period: 'past7' | 'currentWeek' | 'last30' = 'past7'): Promise<DailyInsightsData> {
     try {
-      const [streaks, patterns, completionRate, correlations] = await Promise.all([
-        streakService.getStreakAnalytics(userId),
-        patternService.getPatternAnalytics(userId),
-        analyticsService.calculateHabitCompletionRate(userId, period),
-        analyticsService.generateCorrelationInsights(userId)
+      // Add timeout wrapper for each service call
+      const timeoutPromise = (promise: Promise<any>, timeoutMs: number = 10000) => {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Service timeout after ${timeoutMs}ms`)), timeoutMs)
+          )
+        ]);
+      };
+
+      
+      const [streaks, patterns, completionRate, correlations] = await Promise.allSettled([
+        timeoutPromise(streakService.getStreakAnalytics(userId), 8000),
+        timeoutPromise(patternService.getPatternAnalytics(userId), 8000),
+        timeoutPromise(analyticsService.calculateHabitCompletionRate(userId, period), 8000),
+        timeoutPromise(analyticsService.generateCorrelationInsights(userId), 8000)
       ]);
 
+      // Handle failed promises with fallbacks
+      const safeStreaks = streaks.status === 'fulfilled' ? streaks.value : {
+        activeStreaks: [],
+        topStreak: null,
+        totalActiveStreaks: 0,
+        averageStreakLength: 0
+      };
+
+      const safePatterns = patterns.status === 'fulfilled' ? patterns.value : {
+        overallConsistency: 0,
+        bestDay: 'Monday',
+        worstDay: 'Sunday',
+        patterns: {}
+      };
+
+      const safeCompletionRate = completionRate.status === 'fulfilled' ? completionRate.value : {
+        overallCompletion: 0,
+        weeklyCompleted: 0,
+        weeklyGoal: 0,
+        habitBreakdown: {}
+      };
+
+      const safeCorrelations = correlations.status === 'fulfilled' ? correlations.value : [];
+
+      
       const insights: DailyInsight[] = [];
       let mood: 'positive' | 'neutral' | 'concerned' = 'neutral';
 
       // Achievement insights
-      if (streaks.topStreak && streaks.topStreak.current_streak >= 7) {
+      if (safeStreaks.topStreak && safeStreaks.topStreak.current_streak >= 7) {
         insights.push({
           type: 'achievement',
           title: 'Streak Champion!',
-          message: `You've maintained a ${streaks.topStreak.current_streak}-day ${streaks.topStreak.habit_type} streak!`,
+          message: `You've maintained a ${safeStreaks.topStreak.current_streak}-day ${safeStreaks.topStreak.habit_type} streak!`,
           priority: 90,
           icon: 'trophy',
           actionable: false
@@ -54,11 +90,11 @@ class DailyInsightsService {
       }
 
       // New streak achievements
-      if (streaks.totalActiveStreaks > 0 && streaks.totalActiveStreaks <= 3) {
+      if (safeStreaks.totalActiveStreaks > 0 && safeStreaks.totalActiveStreaks <= 3) {
         insights.push({
           type: 'achievement',
           title: 'Building Momentum',
-          message: `You have ${streaks.totalActiveStreaks} active streak${streaks.totalActiveStreaks > 1 ? 's' : ''}! Keep building your habit foundation.`,
+          message: `You have ${safeStreaks.totalActiveStreaks} active streak${safeStreaks.totalActiveStreaks > 1 ? 's' : ''}! Keep building your habit foundation.`,
           priority: 85,
           icon: 'trending-up',
           actionable: true,
@@ -68,21 +104,21 @@ class DailyInsightsService {
       }
 
       // Consistency improvements
-      if (patterns.overallConsistency > 0 && patterns.overallConsistency < 50) {
+      if (safePatterns.overallConsistency > 0 && safePatterns.overallConsistency < 50) {
         insights.push({
           type: 'tip',
           title: 'Consistency Opportunity',
-          message: `Your weekly consistency is ${Math.round(patterns.overallConsistency)}%. Small daily efforts lead to big improvements.`,
+          message: `Your weekly consistency is ${Math.round(safePatterns.overallConsistency)}%. Small daily efforts lead to big improvements.`,
           priority: 80,
           icon: 'bulb',
           actionable: true,
           actionText: 'Get tips'
         });
-      } else if (patterns.overallConsistency >= 70) {
+      } else if (safePatterns.overallConsistency >= 70) {
         insights.push({
           type: 'achievement',
           title: 'Consistency Master',
-          message: `Excellent ${Math.round(patterns.overallConsistency)}% weekly consistency! You're building lasting habits.`,
+          message: `Excellent ${Math.round(safePatterns.overallConsistency)}% weekly consistency! You're building lasting habits.`,
           priority: 85,
           icon: 'checkmark-circle',
           actionable: false
@@ -91,11 +127,11 @@ class DailyInsightsService {
       }
 
       // Warning insights
-      if (completionRate.overallCompletion < 50) {
+      if (safeCompletionRate.overallCompletion < 50) {
         insights.push({
           type: 'warning',
           title: 'Low Weekly Completion',
-          message: `You've only completed ${Math.round(completionRate.overallCompletion)}% of your weekly habits.`,
+          message: `You've only completed ${Math.round(safeCompletionRate.overallCompletion)}% of your weekly habits.`,
           priority: 85,
           icon: 'warning',
           actionable: true,
@@ -105,8 +141,8 @@ class DailyInsightsService {
       }
 
       // Pattern insights
-      if (patterns.worstDay) {
-        const worstDayName = patterns.worstDay.charAt(0).toUpperCase() + patterns.worstDay.slice(1);
+      if (safePatterns.worstDay) {
+        const worstDayName = safePatterns.worstDay.charAt(0).toUpperCase() + safePatterns.worstDay.slice(1);
         insights.push({
           type: 'pattern',
           title: 'Weekly Pattern Detected',
@@ -119,8 +155,8 @@ class DailyInsightsService {
       }
 
       // Correlation insights
-      if (correlations.length > 0) {
-        const strongestCorrelation = correlations[0];
+      if (safeCorrelations.length > 0) {
+        const strongestCorrelation = safeCorrelations[0];
         insights.push({
           type: 'correlation',
           title: 'Habit Connection Found',
@@ -133,7 +169,7 @@ class DailyInsightsService {
       }
 
       // Tip insights
-      if (streaks.totalActiveStreaks === 0) {
+      if (safeStreaks.totalActiveStreaks === 0) {
         insights.push({
           type: 'tip',
           title: 'Start Your Journey',
@@ -143,7 +179,7 @@ class DailyInsightsService {
           actionable: true,
           actionText: 'View habits'
         });
-      } else if (streaks.averageStreakLength < 3) {
+      } else if (safeStreaks.averageStreakLength < 3) {
         insights.push({
           type: 'tip',
           title: 'Build Momentum',
@@ -156,7 +192,7 @@ class DailyInsightsService {
       }
 
       // Water intake insights
-      const waterStreak = streaks.activeStreaks.find(s => s.habit_type === 'water');
+      const waterStreak = safeStreaks.activeStreaks.find(s => s.habit_type === 'water');
       if (waterStreak && waterStreak.current_streak < 5) {
         insights.push({
           type: 'tip',
@@ -170,7 +206,7 @@ class DailyInsightsService {
       }
 
       // Exercise insights
-      const exerciseStreaks = streaks.activeStreaks.filter(s => ['run', 'gym'].includes(s.habit_type));
+      const exerciseStreaks = safeStreaks.activeStreaks.filter(s => ['run', 'gym'].includes(s.habit_type));
       if (exerciseStreaks.length > 0) {
         const avgExerciseStreak = exerciseStreaks.reduce((sum, s) => sum + s.current_streak, 0) / exerciseStreaks.length;
         if (avgExerciseStreak >= 5) {
@@ -197,7 +233,7 @@ class DailyInsightsService {
       }
 
       // Sleep insights
-      const sleepStreak = streaks.activeStreaks.find(s => s.habit_type === 'sleep');
+      const sleepStreak = safeStreaks.activeStreaks.find(s => s.habit_type === 'sleep');
       if (sleepStreak && sleepStreak.current_streak >= 5) {
         insights.push({
           type: 'achievement',
@@ -236,21 +272,20 @@ class DailyInsightsService {
         .slice(0, 3);
 
       // Generate summary
-      const summary = this.generateSummary(streaks, patterns, completionRate, mood);
+      const summary = this.generateSummary(safeStreaks, safePatterns, safeCompletionRate, mood);
 
       return {
         insights: topInsights,
         summary,
         mood,
         keyMetrics: {
-          activeStreaks: streaks.totalActiveStreaks,
-          weeklyConsistency: Math.round(patterns.overallConsistency),
-          completionRate: Math.round(completionRate.overallCompletion),
-          topPerformer: streaks.topStreak?.habit_type || null
+          activeStreaks: safeStreaks.totalActiveStreaks,
+          weeklyConsistency: Math.round(safePatterns.overallConsistency),
+          completionRate: Math.round(safeCompletionRate.overallCompletion),
+          topPerformer: safeStreaks.topStreak?.habit_type || null
         }
       };
     } catch (error) {
-      console.error('Error generating daily insights:', error);
       return this.getDefaultDailyInsights();
     }
   }
@@ -317,7 +352,6 @@ class DailyInsightsService {
       // For now, return current daily insights
       return this.generateDailyInsights(userId);
     } catch (error) {
-      console.error('Error getting daily insights for date range:', error);
       return this.getDefaultDailyInsights();
     }
   }
@@ -373,7 +407,6 @@ class DailyInsightsService {
 
       return insights;
     } catch (error) {
-      console.error('Error getting habit-specific insights:', error);
       return [];
     }
   }

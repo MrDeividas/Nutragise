@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
-import { useActionStore } from './actionStore';
 
 interface AuthStore extends AuthState {
   signUp: (data: SignUpData) => Promise<{ error: any | null }>;
@@ -152,9 +151,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     await supabase.auth.signOut();
     set({ user: null, session: null });
     
-    // Clear action store data when signing out
-    const { clearStore } = useActionStore.getState();
-    clearStore();
+    // Note: actionStore will be cleared by the component that uses it
+    // when it detects the user is null
   },
 
   updateProfile: async (data: ProfileData) => {

@@ -36,7 +36,6 @@ import { InsightSkeleton } from '../components/InsightSkeleton';
 import CacheService from '../lib/cacheService';
 import ConversationCacheService from '../lib/conversationCacheService';
 import { smartSuggestionEngine } from '../lib/smartSuggestionEngine';
-import { voiceService, VoiceState } from '../lib/voiceService';
 import TimePeriodUtils from '../lib/timePeriodUtils';
 
 interface Message {
@@ -75,19 +74,12 @@ export default function InsightsScreen({ route }: any) {
   } | null>(null);
   
   const [suggestions, setSuggestions] = useState<string[]>([
-    "What habits can I improve?",
-    "Summarise my week",
-    "How can I balance my habits better?",
+    "How do I systematically build all core wellness habits?",
+    "What's the best order to add habits to my routine?",
+    "How can I master each core habit one by one?",
     "What's my biggest wellness opportunity?"
   ]);
   
-  // Voice input states
-  const [voiceState, setVoiceState] = useState<VoiceState>({
-    isListening: false,
-    isAvailable: false,
-    error: null,
-    results: []
-  });
   
   // Animated typing dots
   const dot1Opacity = useRef(new Animated.Value(0.3)).current;
@@ -131,30 +123,6 @@ export default function InsightsScreen({ route }: any) {
     }
   }, [shouldOpenGraphs, setShouldOpenGraphs]);
 
-  // Initialize voice service subscription
-  useEffect(() => {
-    const unsubscribe = voiceService.subscribe((newVoiceState) => {
-      setVoiceState(newVoiceState);
-      
-      // Auto-fill input when voice results are available
-      if (newVoiceState.results.length > 0 && !newVoiceState.isListening) {
-        const bestResult = voiceService.getBestResult();
-        if (bestResult) {
-          setInputText(bestResult);
-        }
-      }
-      
-      // Show error alert if voice recognition fails
-      if (newVoiceState.error) {
-        Alert.alert('Voice Recognition Error', newVoiceState.error);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      voiceService.destroy();
-    };
-  }, []);
 
   // Combined useEffect for initialization
   useEffect(() => {
@@ -182,7 +150,6 @@ export default function InsightsScreen({ route }: any) {
       const smartSuggestions = await smartSuggestionEngine.generateSuggestions(user.id);
       setSuggestions(smartSuggestions);
     } catch (error) {
-      console.error('Error loading smart suggestions:', error);
       // Keep fallback suggestions if smart suggestions fail
     }
   };
@@ -246,8 +213,18 @@ export default function InsightsScreen({ route }: any) {
       setCacheStatus(status);
       
     } catch (error) {
-      console.error('Failed to load insights:', error);
-      setInsightError('Failed to load insights. Please try again.');
+      // Provide more specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          setInsightError('Loading took too long. Please check your connection and try again.');
+        } else if (error.message.includes('Service timeout')) {
+          setInsightError('Some services are taking too long to respond. Please try again.');
+        } else {
+          setInsightError('Failed to load insights. Please try again.');
+        }
+      } else {
+        setInsightError('Failed to load insights. Please try again.');
+      }
     } finally {
       setIsLoadingInsights(false);
       setIsLoadingFromCache(false);
@@ -278,7 +255,6 @@ export default function InsightsScreen({ route }: any) {
     try {
       return await operation();
     } catch (error) {
-      console.error('Operation failed:', error);
       return fallback;
     }
   }, []);
@@ -339,7 +315,6 @@ export default function InsightsScreen({ route }: any) {
         setSuggestions(prev => [...prev.slice(0, 2), ...(aiResponse.suggestions || []).slice(0, 2)]);
       }
     } catch (error) {
-      console.error('Error sending message:', error);
       const errorMessage: Message = {
         id: generateMessageId(),
         text: "Sorry, I'm having trouble connecting right now. Please try again.",
@@ -355,23 +330,6 @@ export default function InsightsScreen({ route }: any) {
   const handleSuggestionClick = useCallback((suggestion: string) => {
     sendMessage(suggestion);
   }, []);
-
-  // Voice input functions
-  const handleVoiceInput = useCallback(async () => {
-    if (voiceState.isListening) {
-      await voiceService.stopListening();
-    } else {
-      await voiceService.startListening();
-    }
-  }, [voiceState.isListening]);
-
-  const handleVoiceSubmit = useCallback(() => {
-    if (inputText.trim()) {
-      sendMessage(inputText.trim());
-      setInputText('');
-      voiceService.clearResults();
-    }
-  }, [inputText]);
 
   // Initialize chat with simple greeting
   const initializeChat = useCallback(() => {
@@ -719,7 +677,7 @@ export default function InsightsScreen({ route }: any) {
           <KeyboardAvoidingView 
             style={styles.content} 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
           >
         <ScrollView
           ref={scrollViewRef}
@@ -751,21 +709,6 @@ export default function InsightsScreen({ route }: any) {
             </View>
           ))}
           
-          {/* Voice Listening Indicator */}
-          {voiceState.isListening && (
-            <View style={styles.messageContainer}>
-              <View style={[styles.avatar, { backgroundColor: '#ff6b6b' }]}>
-                <Ionicons name="mic" size={16} color="#ffffff" />
-              </View>
-              <View style={getMessageBubbleStyle(false)}>
-                <View style={styles.voiceIndicator}>
-                  <Text style={[styles.voiceIndicatorText, { color: textSecondary }]}>
-                    Listening... Speak now
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
           
           {isTyping && (
             <View style={styles.messageContainer}>
@@ -839,24 +782,6 @@ export default function InsightsScreen({ route }: any) {
               spellCheck={true}
             />
             
-            {/* Voice Input Button - Inside Text Input */}
-            <TouchableOpacity
-              style={[
-                styles.voiceButtonInside,
-                { 
-                  backgroundColor: voiceState.isListening ? '#ff6b6b' : 'transparent',
-                  opacity: voiceState.isAvailable ? 0.7 : 0.3,
-                },
-              ]}
-              onPress={handleVoiceInput}
-              disabled={!voiceState.isAvailable}
-            >
-              <Ionicons 
-                name={voiceState.isListening ? "mic" : "mic-outline"} 
-                size={18} 
-                color={voiceState.isListening ? '#ffffff' : textSecondary} 
-              />
-            </TouchableOpacity>
           </View>
           
           <TouchableOpacity
@@ -877,14 +802,6 @@ export default function InsightsScreen({ route }: any) {
           </TouchableOpacity>
         </View>
         
-        {/* Voice Help Text */}
-        {!voiceState.isAvailable && (
-          <View style={styles.voiceHelpContainer}>
-            <Text style={[styles.voiceHelpText, { color: textSecondary }]}>
-              Voice input requires a development build (not available in Expo Go)
-            </Text>
-          </View>
-        )}
       </KeyboardAvoidingView>
         )}
 
@@ -1293,27 +1210,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 0,
   },
-  voiceButtonInside: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255, 255, 255, 0.2)',
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
-  },
   sendButton: {
     width: 44,
     height: 44,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.7,
-  },
-  voiceButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.7,
@@ -1372,23 +1272,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 16,
-  },
-  voiceIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  voiceIndicatorText: {
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  voiceHelpContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    alignItems: 'center',
-  },
-  voiceHelpText: {
-    fontSize: 12,
-    textAlign: 'center',
   },
 }); 

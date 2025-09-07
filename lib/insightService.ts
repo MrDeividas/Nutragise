@@ -46,7 +46,6 @@ class InsightService {
         expanded: false
       };
     } catch (error) {
-      console.error('Error generating today overview:', error);
       return this.getDefaultTodayOverview();
     }
   }
@@ -107,7 +106,6 @@ class InsightService {
         expanded: false
       };
     } catch (error) {
-      console.error('Error generating weekly patterns:', error);
       return this.getDefaultWeeklyPatterns();
     }
   }
@@ -159,7 +157,6 @@ class InsightService {
         expanded: false
       };
     } catch (error) {
-      console.error('Error generating correlation insights:', error);
       return this.getDefaultCorrelationInsights();
     }
   }
@@ -217,7 +214,6 @@ class InsightService {
         expanded: false
       };
     } catch (error) {
-      console.error('Error generating recommendations:', error);
       return this.getDefaultRecommendations();
     }
   }
@@ -227,11 +223,24 @@ class InsightService {
    */
   async generateBasicInsights(userId: string): Promise<InsightCard[]> {
     try {
+      // Add timeout wrapper for basic insights
+      const timeoutPromise = (promise: Promise<any>, timeoutMs: number = 15000) => {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Basic insights timeout after ${timeoutMs}ms`)), timeoutMs)
+          )
+        ]);
+      };
+
+      
       // Only load essential insights for immediate display
-      const todayOverview = await this.generateTodayOverview(userId);
+      const todayOverview = await timeoutPromise(this.generateTodayOverview(userId), 15000);
+      
+      
       return [todayOverview];
     } catch (error) {
-      console.error('Error generating basic insights:', error);
+      
       return [this.getDefaultTodayOverview()];
     }
   }
@@ -253,7 +262,6 @@ class InsightService {
         .sort((a, b) => b.priority - a.priority)
         .slice(0, 4);
     } catch (error) {
-      console.error('Error generating insights:', error);
       return [
         this.getDefaultTodayOverview(),
         this.getDefaultWeeklyPatterns(),

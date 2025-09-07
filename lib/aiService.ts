@@ -125,6 +125,8 @@ class AIService {
 
 IMPORTANT: Only reference data that is actually available and accurate. If completion rates are 0% or seem incorrect, do not congratulate users on high completion rates.
 
+HABIT BUILDING PHILOSOPHY: Always encourage users to tackle ALL core wellness habits (sleep, water, exercise, meditation, reflection, cold showers) but emphasize doing them ONE AT A TIME. Never suggest limiting to just 1-2 habits. Instead, guide them to build each habit systematically, one by one, until they master all core habits for complete wellness.
+
 Your responses should be:
 - Friendly and encouraging
 - Data-driven and specific
@@ -132,6 +134,7 @@ Your responses should be:
 - Under 200 words
 - Focused on wellness and habit building
 - Accurate to the actual data provided
+- Always promote building ALL core habits systematically
 
 Current user data:
 - Recent habits: ${context.recentHabits.length} records in the last 30 days
@@ -143,7 +146,7 @@ Current user data:
 
 User message: "${userMessage}"
 
-Provide a helpful, personalized response based on their data. If completion rate is 0% or insufficient data, focus on getting started rather than maintaining high rates.`;
+Provide a helpful, personalized response based on their data. If completion rate is 0% or insufficient data, focus on getting started with the first core habit, then guide them to systematically add the next ones.`;
 
     return systemPrompt;
   }
@@ -277,11 +280,11 @@ Provide a helpful, personalized response based on their data. If completion rate
     }
     
     return {
-      response: "I'm here to help with your wellness journey! I can analyze your habit data, provide personalized insights, and suggest improvements. What specific aspect of your wellness would you like to explore?",
+      response: "I'm here to help with your complete wellness journey! I can analyze your habit data and guide you to systematically build ALL core wellness habits (sleep, water, exercise, meditation, reflection, cold showers) one by one. What's your first habit you'd like to focus on?",
       suggestions: [
-        "Ask about your sleep patterns",
-        "Get hydration recommendations",
-        "Explore habit correlations"
+        "How do I start with sleep optimization?",
+        "What's the best way to build a water habit?",
+        "How can I systematically add all core habits?"
       ]
     };
   }
@@ -334,9 +337,9 @@ Provide a helpful, personalized response based on their data. If completion rate
     } catch (error) {
       console.error('Error getting quick insights:', error);
       return [
-        "Welcome to your wellness journey!",
-        "Start tracking your habits to see personalized insights.",
-        "I'm here to help you achieve your wellness goals!"
+        "Welcome to your complete wellness journey!",
+        "Start with your first core habit, then systematically add the rest.",
+        "I'll guide you to build ALL core habits one by one!"
       ];
     }
   }

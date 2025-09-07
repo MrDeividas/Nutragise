@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated, Easing } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -389,14 +388,12 @@ function ActionScreen({ navigation }: any) {
     }
   }, [user]);
 
-  // Refresh notification count when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (user) {
-        loadUnreadNotificationCount();
-      }
-    }, [user])
-  );
+  // Refresh notification count when component mounts
+  useEffect(() => {
+    if (user) {
+      loadUnreadNotificationCount();
+    }
+  }, [user]);
 
   // Sync animated values with store state on mount and when store changes
   useEffect(() => {
@@ -709,30 +706,28 @@ function ActionScreen({ navigation }: any) {
     };
   }, [user, userGoals.length]);
 
-  // Refresh data when screen comes into focus (e.g., after returning from GoalDetail)
-  useFocusEffect(
-    React.useCallback(() => {
-      if (user && userGoals.length > 0) {
-        // Only refresh progress-related data, not goals themselves to avoid loading flicker
-        fetchGoalProgress();
-        checkTodaysCheckIns();
-        checkForOverdueGoals();
-      }
-      
-      // Record login day (daily habits circle always shows today's data)
-      if (user) {
-        const recordLogin = async () => {
-          try {
-            const today = new Date().toISOString().split('T')[0];
-            await dailyHabitsService.recordLoginDay(user.id, today);
-          } catch (error) {
-            console.warn('Failed to record login day:', error);
-          }
-        };
-        recordLogin();
-      }
-    }, [user, userGoals.length])
-  );
+  // Refresh data when component mounts
+  useEffect(() => {
+    if (user && userGoals.length > 0) {
+      // Only refresh progress-related data, not goals themselves to avoid loading flicker
+      fetchGoalProgress();
+      checkTodaysCheckIns();
+      checkForOverdueGoals();
+    }
+    
+    // Record login day (daily habits circle always shows today's data)
+    if (user) {
+      const recordLogin = async () => {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          await dailyHabitsService.recordLoginDay(user.id, today);
+        } catch (error) {
+          console.warn('Failed to record login day:', error);
+        }
+      };
+      recordLogin();
+    }
+  }, [user, userGoals.length]);
 
   const fetchGoalProgress = useCallback(async () => {
     if (!user || userGoals.length === 0) return;
@@ -976,29 +971,27 @@ function ActionScreen({ navigation }: any) {
   }, [user, userGoals, fetchGoalProgress]);
 
   // Refresh check-ins when screen comes into focus (useful after deleting check-ins)
-  useFocusEffect(
-    React.useCallback(() => {
-      let isActive = true;
-      
-      const refreshData = async () => {
-        if (user && userGoals.length > 0 && isActive) {
-          try {
-            await checkTodaysCheckIns();
-          } catch (error) {
-            if (isActive) {
-              console.error('Error refreshing check-ins on focus:', error);
-            }
+  useEffect(() => {
+    let isActive = true;
+    
+    const refreshData = async () => {
+      if (user && userGoals.length > 0 && isActive) {
+        try {
+          await checkTodaysCheckIns();
+        } catch (error) {
+          if (isActive) {
+            console.error('Error refreshing check-ins:', error);
           }
         }
-      };
-      
-      refreshData();
-      
-      return () => {
-        isActive = false;
-      };
-    }, [user, userGoals, checkTodaysCheckIns])
-  );
+      }
+    };
+    
+    refreshData();
+    
+    return () => {
+      isActive = false;
+    };
+  }, [user, userGoals, checkTodaysCheckIns]);
 
   // Memoized helper functions for better performance
   const getDateForDayOfWeekInWeek = useCallback((dayOfWeek: number, weekDate: Date): Date => {

@@ -92,23 +92,23 @@ class SmartSuggestionEngine {
       }
     }
 
-    // Habit count suggestions - only suggest if we have some data
+    // Habit count suggestions - encourage building ALL core habits systematically
     if (context.patterns.habitCount === 0) {
       suggestions.push({
-        text: "What habits should I start tracking first?",
+        text: "How do I systematically build all core wellness habits?",
+        priority: 90,
+        category: 'general'
+      });
+    } else if (context.patterns.habitCount < 6) {
+      suggestions.push({
+        text: "What's the next core habit I should add to my routine?",
         priority: 85,
         category: 'general'
       });
-    } else if (context.patterns.habitCount < 3) {
+    } else if (context.patterns.habitCount >= 6) {
       suggestions.push({
-        text: "What additional habits would benefit my wellness routine?",
-        priority: 75,
-        category: 'general'
-      });
-    } else if (context.patterns.habitCount >= 5) {
-      suggestions.push({
-        text: "How can I balance all my different habits effectively?",
-        priority: 70,
+        text: "How can I optimize all my core habits for maximum wellness?",
+        priority: 80,
         category: 'general'
       });
     }
@@ -236,9 +236,9 @@ class SmartSuggestionEngine {
    */
   private getFallbackSuggestions(): string[] {
     return [
-      "What habits can I improve?",
-      "Summarise my week",
-      "How can I balance my habits better?",
+      "How do I systematically build all core wellness habits?",
+      "What's the best order to add habits to my routine?",
+      "How can I master each core habit one by one?",
       "What's my biggest wellness opportunity?"
     ];
   }

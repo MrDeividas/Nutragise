@@ -158,7 +158,7 @@ export default function LikeButton({
         />
       </Animated.View>
       
-      {showCount && (
+      {showCount && likeCount > 0 && (
         <Text style={[
           styles.count,
           { 
@@ -167,7 +167,7 @@ export default function LikeButton({
             marginLeft: 4
           }
         ]}>
-          {likeCount > 0 ? likeCount : ''}
+          {likeCount}
         </Text>
       )}
     </TouchableOpacity>

@@ -142,28 +142,28 @@ function MainTabs() {
       <Tab.Screen 
         name="Insights" 
         options={{ tabBarLabel: 'Insights' }}>
-        {() => (
+        {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
-            <InsightsScreen />
+            <InsightsScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>
       <Tab.Screen 
         name="Home" 
         options={{ tabBarLabel: 'Feed' }}>
-        {() => (
+        {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
-            <HomeScreen />
+            <HomeScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>
       <Tab.Screen name="Goals" component={GoalsStack} />
       <Tab.Screen 
-        name="Discover" 
+        name="Discover"
         options={{ tabBarLabel: 'Competitions' }}>
-        {() => (
+        {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
-            <CompetitionsScreen />
+            <CompetitionsScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>

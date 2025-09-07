@@ -144,14 +144,13 @@ export default function PostLikeButton({
         alignItems: 'center'
       }}>
         <Ionicons 
-          name="heart" 
+          name={isLiked ? "heart" : "heart-outline"}
           size={iconSize} 
           color={isLiked ? "#ef4444" : theme.textSecondary}
-          style={{ opacity: isLiked ? 1 : 0.3 }}
         />
       </Animated.View>
       
-      {showCount && (
+      {showCount && likeCount > 0 && (
         <Text style={[
           styles.countText, 
           { 
