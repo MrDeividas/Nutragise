@@ -7,8 +7,6 @@ class DailyHabitsService {
    */
   async upsertDailyHabits(userId: string, date: string, habitData: CreateDailyHabitsData): Promise<DailyHabits | null> {
     try {
-      console.log('upsertDailyHabits called with:', { userId, date, habitData });
-      
       const { data, error } = await supabase.rpc('upsert_daily_habits', {
         p_user_id: userId,
         p_date: date,
@@ -42,8 +40,7 @@ class DailyHabitsService {
         console.error('Error upserting daily habits:', error);
         throw error;
       }
-
-      console.log('upsertDailyHabits successful, returned:', data);
+      
       return data;
     } catch (error) {
       console.error('Error in upsertDailyHabits:', error);
@@ -393,8 +390,7 @@ class DailyHabitsService {
         console.error('Database connection test failed:', error);
         return false;
       }
-
-      console.log('Database connection test successful');
+      
       return true;
     } catch (error) {
       console.error('Database connection test error:', error);

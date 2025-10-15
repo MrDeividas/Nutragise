@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { useAuthStore } from '../state/authStore';
 import { Goal } from '../types/database';
 import { useTheme } from '../state/themeStore';
 import { useFocusEffect } from '@react-navigation/native';
+import NewGoalModal from '../components/NewGoalModal';
+import CreatePostModal from '../components/CreatePostModal';
 
 interface GoalsScreenProps {
   navigation: any;
@@ -26,6 +28,9 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const { user } = useAuthStore();
   const { goals, loading, error, fetchGoals, toggleGoalCompletion, deleteGoal } = useGoalsStore();
   const { theme } = useTheme();
+  const [showNewGoalModal, setShowNewGoalModal] = useState(false);
+  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
+  const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -33,8 +38,14 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     }
   }, [user]);
 
-  // Only fetch goals once when component mounts or user changes
-  // Removed useFocusEffect to prevent layout resets
+  // Fetch goals when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      if (user) {
+        fetchGoals(user.id);
+      }
+    }, [user])
+  );
 
   const handleRefresh = () => {
     if (user) {
@@ -74,7 +85,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     return diffDays;
   };
 
-  const renderGoalItem = ({ item: goal }: { item: Goal }) => {
+  const renderGoalItem = React.useCallback(({ item: goal }: { item: Goal }) => {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
@@ -123,7 +134,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
 
           <View style={styles.goalDateContainer}>
             <Text style={styles.goalDate}>
-              Started: {formatDate(goal.start_date)}
+              Started: {goal.start_date ? formatDate(goal.start_date) : 'Not set'}
             </Text>
             {goal.end_date && (
               <Text style={[
@@ -157,23 +168,24 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
       </TouchableOpacity>
         </View>
     );
-  };
+  }, [theme]);
 
-  const activeGoals = goals.filter(goal => !goal.completed);
-  const completedGoals = goals.filter(goal => goal.completed);
+  const activeGoals = React.useMemo(() => goals.filter(goal => !goal.completed), [goals]);
+  const completedGoals = React.useMemo(() => goals.filter(goal => goal.completed), [goals]);
+
 
   return (
-          <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-              <ScrollView 
-                style={styles.scrollView}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
-              >
+    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <ScrollView 
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Goals</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate('NewGoal')}
+            onPress={() => setShowNewGoalModal(true)}
             style={[styles.newGoalButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
           >
             <Ionicons name="add-outline" size={20} color="#ffffff" />
@@ -225,7 +237,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
                   Start your journey by creating your first goal
                 </Text>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('NewGoal')}
+                  onPress={() => setShowNewGoalModal(true)}
                   style={styles.createFirstGoalButton}
                 >
                   <Text style={styles.createFirstGoalButtonText}>Create Your First Goal</Text>
@@ -238,9 +250,9 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
               keyExtractor={(item) => item.id}
               renderItem={renderGoalItem}
               scrollEnabled={false}
-              removeClippedSubviews={false}
+              removeClippedSubviews={true}
               initialNumToRender={10}
-              maxToRenderPerBatch={10}
+              maxToRenderPerBatch={5}
               windowSize={10}
               refreshControl={
                 <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
@@ -249,6 +261,41 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
           )}
         </View>
       </ScrollView>
+
+      {/* New Goal Modal */}
+      <NewGoalModal
+        visible={showNewGoalModal}
+        onClose={() => setShowNewGoalModal(false)}
+        onGoalCreated={(goalId) => {
+          setNewlyCreatedGoalId(goalId);
+          setShowNewGoalModal(false);
+          // Open CreatePostModal with the new goal pre-selected
+          setShowCreatePostModal(true);
+          // Refresh goals after creation
+          if (user) {
+            fetchGoals(user.id);
+          }
+        }}
+      />
+
+      {/* Create Post Modal */}
+      <CreatePostModal
+        visible={showCreatePostModal}
+        onClose={() => {
+          setShowCreatePostModal(false);
+          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
+        }}
+        onPostCreated={() => {
+          setShowCreatePostModal(false);
+          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
+          // Refresh goals after creation
+          if (user) {
+            fetchGoals(user.id);
+          }
+        }}
+        userGoals={goals.filter(goal => !goal.completed)}
+        preSelectedGoal={newlyCreatedGoalId || undefined}
+      />
     </SafeAreaView>
   );
 }

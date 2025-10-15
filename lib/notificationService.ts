@@ -315,8 +315,15 @@ class NotificationService {
         .eq('id', commentId)
         .single();
 
-      if (commentError || !comment) {
-        console.error('Error fetching comment:', commentError);
+      if (commentError) {
+        // Suppress PGRST116 error (no rows found) - this is normal when comment doesn't exist in post_comments table
+        if (commentError.code !== 'PGRST116') {
+          console.error('Error fetching comment:', commentError);
+        }
+        return false;
+      }
+
+      if (!comment) {
         return false;
       }
 

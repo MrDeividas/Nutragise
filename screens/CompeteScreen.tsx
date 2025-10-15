@@ -7,6 +7,8 @@ import {
   ScrollView,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,13 +21,15 @@ interface LeaderboardUser {
   username: string;
   points: number;
   rank: number;
+  avatar_url?: string;
 }
 
-export default function CompetitionsScreen({ navigation }: any) {
+export default function CompeteScreen({ navigation }: any) {
   const { theme } = useTheme();
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeCompetitions = [
     {
@@ -85,6 +89,12 @@ export default function CompetitionsScreen({ navigation }: any) {
     loadLeaderboard();
   }, [leaderboardPeriod]);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadLeaderboard();
+    setRefreshing(false);
+  };
+
   const loadLeaderboard = async () => {
     try {
       setLoading(true);
@@ -92,36 +102,61 @@ export default function CompetitionsScreen({ navigation }: any) {
       // Fetch all users with profiles
       const { data: users, error: usersError } = await supabase
         .from('profiles')
-        .select('id, username')
+        .select('id, username, avatar_url')
         .not('username', 'is', null);
 
-      if (usersError) throw usersError;
-      if (!users || users.length === 0) {
+      if (usersError) {
+        console.error('[Leaderboard] Error fetching users:', usersError);
         setLeaderboardData([]);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[Leaderboard] Found users:', users?.length);
+      
+      if (!users || users.length === 0) {
+        console.log('[Leaderboard] No users found');
+        setLeaderboardData([]);
+        setLoading(false);
         return;
       }
 
       // Fetch points for each user
       const usersWithPoints = await Promise.all(
         users.map(async (user) => {
-          let points = 0;
-          
-          if (leaderboardPeriod === 'daily') {
-            // Get today's points
-            const todayPoints = await pointsService.getTodaysPoints(user.id);
-            points = todayPoints?.total_points_today || 0;
-          } else {
-            // Get total points for weekly/monthly
-            points = await pointsService.getTotalPoints(user.id);
-          }
+          try {
+            let points = 0;
+            
+            if (leaderboardPeriod === 'daily') {
+              // Get today's points
+              const todayPoints = await pointsService.getTodaysPoints(user.id);
+              points = todayPoints?.total || 0;
+              console.log(`[Leaderboard] User ${user.username} (${user.id}) daily points:`, points, 'Data:', todayPoints);
+            } else {
+              // Get total points for weekly/monthly
+              points = await pointsService.getTotalPoints(user.id);
+              console.log(`[Leaderboard] User ${user.username} (${user.id}) total points:`, points);
+            }
 
-          return {
-            id: user.id,
-            username: user.username || 'Unknown',
-            points,
-          };
+            return {
+              id: user.id,
+              username: user.username || 'Unknown',
+              points,
+              avatar_url: user.avatar_url,
+            };
+          } catch (err) {
+            console.error(`Error fetching points for user ${user.id}:`, err);
+            return {
+              id: user.id,
+              username: user.username || 'Unknown',
+              points: 0,
+              avatar_url: user.avatar_url,
+            };
+          }
         })
       );
+
+      console.log('[Leaderboard] All users with points:', usersWithPoints);
 
       // Filter out users with 0 points and sort by points
       const sortedUsers = usersWithPoints
@@ -132,6 +167,8 @@ export default function CompetitionsScreen({ navigation }: any) {
           rank: index + 1,
         }));
 
+      console.log('[Leaderboard] Filtered and sorted users:', sortedUsers);
+      console.log('[Leaderboard] Final count:', sortedUsers.length);
       setLeaderboardData(sortedUsers);
     } catch (error) {
       console.error('Error loading leaderboard:', error);
@@ -180,25 +217,36 @@ export default function CompetitionsScreen({ navigation }: any) {
         <Text style={[styles.rankText, { color: theme.textPrimary }]}>
           #{item.rank}
         </Text>
-        {item.rank <= 3 && (
-          <View style={[styles.medalContainer, { backgroundColor: item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32' }]}>
-            <Ionicons name="medal" size={12} color="#ffffff" />
-          </View>
-        )}
       </View>
       
+      {/* Avatar */}
+      {item.avatar_url ? (
+        <Image 
+          source={{ uri: item.avatar_url }} 
+          style={styles.avatar}
+        />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: 'rgba(128, 128, 128, 0.3)' }]}>
+          <Ionicons name="person" size={20} color={theme.textSecondary} />
+        </View>
+      )}
+      
       <View style={styles.userInfo}>
-        <Text style={[styles.userName, { color: theme.textPrimary }]}>
-          {item.username}
-        </Text>
+        <View style={styles.userNameRow}>
+          <Text style={[styles.userName, { color: theme.textPrimary }]}>
+            {item.username}
+          </Text>
+          {item.rank <= 3 && (
+            <View style={[styles.medalContainer, { backgroundColor: item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32' }]}>
+              <Ionicons name="medal" size={12} color="#ffffff" />
+            </View>
+          )}
+        </View>
       </View>
       
       <View style={styles.pointsContainer}>
         <Text style={[styles.pointsText, { color: theme.textPrimary }]}>
-          {item.points.toLocaleString()}
-        </Text>
-        <Text style={[styles.pointsLabel, { color: theme.textSecondary }]}>
-          pts
+          {item.points.toLocaleString()} <Text style={[styles.pointsLabel, { color: theme.textSecondary }]}>pts</Text>
         </Text>
       </View>
     </View>
@@ -228,7 +276,7 @@ export default function CompetitionsScreen({ navigation }: any) {
         <View style={styles.headerContent}>
           <View style={styles.titleSection}>
             <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-              Leaderboard
+              Compete
             </Text>
           </View>
         </View>
@@ -239,6 +287,14 @@ export default function CompetitionsScreen({ navigation }: any) {
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#EA580C"
+            colors={['#EA580C']}
+          />
+        }
       >
         {/* Leaderboard Section */}
         <View style={styles.section}>
@@ -442,32 +498,42 @@ const styles = StyleSheet.create({
   leaderboardItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     marginBottom: 8,
     borderRadius: 12,
   },
   rankContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 50,
+    marginRight: 8,
   },
   rankText: {
     fontSize: 16,
     fontWeight: '600',
-    marginRight: 4,
   },
-  medalContainer: {
-    width: 16,
-    height: 16,
+  avatar: {
+    width: 40,
+    height: 40,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  medalContainer: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
   userInfo: {
     flex: 1,
+    marginLeft: 12,
+  },
+  userNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 8,
   },
   userName: {
     fontSize: 16,
@@ -495,7 +561,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   pointsLabel: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 14,
+    fontWeight: '400',
   },
 }); 

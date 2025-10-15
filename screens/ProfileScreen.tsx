@@ -19,14 +19,17 @@ import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
 import { Ionicons } from '@expo/vector-icons';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
-import MediaUploadModal from './MediaUploadModal';
+import CreatePostModal from '../components/CreatePostModal';
 import { progressService } from '../lib/progressService';
 import { useTheme } from '../state/themeStore';
 import { useSocialStore } from '../state/socialStore';
 import { useActionStore } from '../state/actionStore';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
+import { pointsService } from '../lib/pointsService';
 import Svg, { Circle, Line, Text as SvgText, Polygon, Defs, LinearGradient, Stop, Path, Filter, FeGaussianBlur, FeOffset, FeMerge, FeMergeNode } from 'react-native-svg';
+import JourneyPreview from '../components/JourneyPreview';
+import FullJourneyModal from '../components/FullJourneyModal';
 
 const { width } = Dimensions.get('window');
 
@@ -212,15 +215,16 @@ function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
   const { theme } = useTheme();
-  const { segmentChecked, getActiveSegmentCount } = useActionStore();
+  const { segmentChecked, getActiveSegmentCount, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const weeklyTrackerRef = useRef<View>(null);
   const weeklyTrackerLayout = useRef<any>(null);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [showMediaUpload, setShowMediaUpload] = useState(false);
+  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
+  const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [checkedInGoals, setCheckedInGoals] = useState<Set<string>>(new Set());
   const [checkedInGoalsByDay, setCheckedInGoalsByDay] = useState<{[key: string]: Set<string>}>({});
@@ -244,6 +248,9 @@ function ProfileScreen({ navigation }: any) {
   });
   const [notificationCount, setNotificationCount] = useState(0);
   const profileCardAnimation = useRef(new Animated.Value(0)).current;
+  
+  // Journey modal state
+  const [showFullJourney, setShowFullJourney] = useState(false);
 
 
 
@@ -321,15 +328,14 @@ function ProfileScreen({ navigation }: any) {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('user_progress')
-        .select('points_earned')
-        .eq('user_id', user.id)
-        .eq('passed', true);
-
-      if (error) throw error;
-
-      const total = data?.reduce((sum, record) => sum + (record.points_earned || 0), 0) || 0;
+      const total = await pointsService.getTotalPoints(user.id);
+      const today = await pointsService.getTodaysPoints(user.id);
+      const status = await pointsService.getCoreHabitsStatus(user.id);
+      console.log('📊 Points breakdown:', {
+        total,
+        today,
+        coreHabitsStatus: status
+      });
       setTotalPoints(total);
     } catch (error) {
       console.error('Error fetching user points:', error);
@@ -387,13 +393,21 @@ function ProfileScreen({ navigation }: any) {
       loadProfileData();
       fetchUserPoints();
       fetchNotificationCount();
+      fetchGoalProgress();
+      checkTodaysCheckIns();
+      loadCoreHabitsStatus();
     }, [user])
   );
 
-  // Listen for navigation events to refresh points when returning from microlearning
+  // Listen for navigation events to refresh data when returning to profile
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
+      loadProfileData();
       fetchUserPoints();
+      fetchNotificationCount();
+      fetchGoalProgress();
+      checkTodaysCheckIns();
+      loadCoreHabitsStatus();
     });
 
     return unsubscribe;
@@ -406,7 +420,10 @@ function ProfileScreen({ navigation }: any) {
     
     for (const goal of userGoals) {
       if (!goal.completed) {
-        const checkInCount = await progressService.getCheckInCount(goal.id, user.id);
+        // Use range-based count filtered by frequency to match completion percentage logic
+        const checkInCount = goal.start_date 
+          ? await progressService.getCheckInCountInRange(goal.id, user.id, goal.start_date, goal.end_date, goal.frequency)
+          : await progressService.getCheckInCount(goal.id, user.id);
         progressData[goal.id] = checkInCount;
       }
     }
@@ -579,126 +596,17 @@ function ProfileScreen({ navigation }: any) {
   const handleCheckInPress = (goal: any, dayOfWeek: number) => {
     setSelectedGoal(goal);
     setExpandedDay(dayOfWeek); // Store the day being checked in for
-    setShowMediaUpload(true);
-  };
-
-  const handleMediaSelected = async (uri: string) => {
-    if (!selectedGoal || !user) return;
     
-    setIsCheckingIn(true);
-    try {
-      // Get the date for the expanded day (the day being checked in for)
-      const checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
-      
-      const success = await progressService.createCheckIn({
-        goalId: selectedGoal.id,
-        userId: user.id,
-        photoUri: uri,
-        checkInDate: checkInDate,
-      });
-
-      if (success) {
-        Alert.alert(
-          'Check-in Successful!',
-          `Great job! You've checked in for "${selectedGoal.title}".`,
-          [{ text: 'OK' }]
-        );
-        // Immediately update the checked-in state for this goal
-        setCheckedInGoals(prev => {
-          const newSet = new Set([...prev, selectedGoal.id]);
-          return newSet;
-        });
-        
-        setCheckedInGoalsByDay(prev => {
-          const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
-          const updated = { ...prev };
-          // Clone the set for the target day to trigger re-render
-          const prevSet = updated[targetDay.toString()] || new Set();
-          updated[targetDay.toString()] = new Set(prevSet);
-          updated[targetDay.toString()].add(selectedGoal.id);
-          return updated;
-        });
-        // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
-        fetchGoals(user.id);
-        fetchGoalProgress();
-      } else {
-        Alert.alert(
-          'Check-in Failed',
-          'There was an error saving your check-in. Please try again.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error during check-in:', error);
-      Alert.alert(
-        'Check-in Failed',
-        'There was an error saving your check-in. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsCheckingIn(false);
-      setSelectedGoal(null);
+    // Set target check-in date based on overdue date if available
+    if (goal.overdueDate) {
+      setTargetCheckInDate(goal.overdueDate);
+    } else {
+      setTargetCheckInDate(null); // Use today's date
     }
-  };
-
-  const handleSkipMedia = async () => {
-    if (!selectedGoal || !user) return;
     
-    setIsCheckingIn(true);
-    try {
-      // Get the date for the expanded day (the day being checked in for)
-      const checkInDate = expandedDay !== null ? getDateForDayOfWeekInWeek(expandedDay, selectedWeek) : new Date();
-      
-      const success = await progressService.createCheckIn({
-        goalId: selectedGoal.id,
-        userId: user.id,
-        checkInDate: checkInDate,
-      });
-
-      if (success) {
-        Alert.alert(
-          'Check-in Successful!',
-          `Great job! You've checked in for "${selectedGoal.title}".`,
-          [{ text: 'OK' }]
-        );
-        // Immediately update the checked-in state for this goal
-        setCheckedInGoals(prev => {
-          const newSet = new Set([...prev, selectedGoal.id]);
-          return newSet;
-        });
-        
-        setCheckedInGoalsByDay(prev => {
-          const targetDay = expandedDay !== null ? expandedDay : new Date().getDay();
-          const updated = { ...prev };
-          // Clone the set for the target day to trigger re-render
-          const prevSet = updated[targetDay.toString()] || new Set();
-          updated[targetDay.toString()] = new Set(prevSet);
-          updated[targetDay.toString()].add(selectedGoal.id);
-          return updated;
-        });
-        // Also refresh goals (removed checkTodaysCheckIns to prevent flickering)
-        fetchGoals(user.id);
-        fetchGoalProgress();
-      } else {
-        Alert.alert(
-          'Check-in Failed',
-          'There was an error saving your check-in. Please try again.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('Error during check-in:', error);
-      Alert.alert(
-        'Check-in Failed',
-        'There was an error saving your check-in. Please try again.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsCheckingIn(false);
-      setSelectedGoal(null);
-      setShowMediaUpload(false);
-    }
+    setShowCreatePostModal(true);
   };
+
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -725,7 +633,7 @@ function ProfileScreen({ navigation }: any) {
   const activeGoals = userGoals.filter(goal => !goal.completed).slice(0, 3); // Show max 3 goals
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
       <ScrollView style={styles.scrollView}>
         {/* Header with Settings */}
         <View style={styles.header}>
@@ -917,7 +825,7 @@ function ProfileScreen({ navigation }: any) {
                 </Text>
               </View>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Score</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Points</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
                   {totalPoints}
                 </Text>
@@ -1008,43 +916,54 @@ function ProfileScreen({ navigation }: any) {
             </View>
           </View>
           
-          {/* Pink Progress Bar - Now second, with narrower container */}
+          {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
             <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
               <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
-                {[...Array(5)].map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.leftBarSegment,
-                                              { 
-                          backgroundColor: i < 3 ? '#E91E63' : 'transparent', 
+                {[...Array(5)].map((_, i) => {
+                  const isCompleted = coreHabitsCompleted[i];
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.leftBarSegment,
+                        { 
+                          backgroundColor: isCompleted ? '#E91E63' : 'transparent', 
                           height: 2.59,
                           shadowColor: '#E91E63',
                           shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: 0.6,
+                          shadowOpacity: isCompleted ? 0.6 : 0,
                           shadowRadius: 3,
-                          elevation: 3,
+                          elevation: isCompleted ? 3 : 0,
                         },
-                      i === 4 && { marginRight: 0 },
-                      (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                      i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                      i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                      (i === 3 || i === 4) && { 
-                        backgroundColor: 'transparent', 
-                        borderWidth: 0.5, 
-                        borderColor: '#E91E63',
-                        shadowColor: 'transparent',
-                        shadowOpacity: 0,
-                        elevation: 0,
-                      },
-                    ]}
-                  />
-                ))}
+                        i === 4 && { marginRight: 0 },
+                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        !isCompleted && { 
+                          backgroundColor: 'transparent', 
+                          borderWidth: 0.5, 
+                          borderColor: '#E91E63',
+                          shadowColor: 'transparent',
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        },
+                      ]}
+                    />
+                  );
+                })}
               </View>
             </View>
           </View>
         </View>
+
+        {/* Journey Section */}
+        {user && (
+          <JourneyPreview 
+            userId={user.id}
+            onViewAll={() => setShowFullJourney(true)}
+          />
+        )}
 
         {/* Goals Section - Moved below pink progress bar */}
         <View style={[styles.keepTrackSection, { marginTop: 20 }]}>
@@ -1177,17 +1096,37 @@ function ProfileScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* Media Upload Modal */}
-      <MediaUploadModal
-        visible={showMediaUpload}
+      {/* Create Post Modal */}
+      <CreatePostModal
+        visible={showCreatePostModal}
         onClose={() => {
-          setShowMediaUpload(false);
+          setShowCreatePostModal(false);
           setSelectedGoal(null);
+          setTargetCheckInDate(null);
         }}
-        onMediaSelected={handleMediaSelected}
-        onSkip={handleSkipMedia}
-        goalTitle={selectedGoal?.title || ''}
+        onPostCreated={() => {
+          setShowCreatePostModal(false);
+          setSelectedGoal(null);
+          setTargetCheckInDate(null);
+          // Refresh goals and progress
+          fetchGoals(user.id);
+          fetchGoalProgress();
+          checkTodaysCheckIns(); // Add this to refresh check-in status
+          // Note: ProfileScreen doesn't have checkForOverdueGoals, but ActionScreen does
+        }}
+        userGoals={userGoals.filter(goal => !goal.completed)}
+        preSelectedGoal={selectedGoal?.id || undefined}
+        targetCheckInDate={targetCheckInDate || undefined}
       />
+
+      {/* Full Journey Modal */}
+      {user && (
+        <FullJourneyModal
+          visible={showFullJourney}
+          userId={user.id}
+          onClose={() => setShowFullJourney(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1207,7 +1146,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 60,
     paddingBottom: 20,
   },
   headerTitle: {
@@ -2236,5 +2175,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 8,
   },
-
 }); 

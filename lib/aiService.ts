@@ -56,13 +56,7 @@ class AIService {
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
       
-      console.log('🤖 [AI] Building context for user:', userId);
-      console.log('📅 [AI] Date range:', startDate, 'to', endDate);
-      
       const recentHabits = await dailyHabitsService.getHabitHistory(userId, 'all', startDate, endDate);
-      
-      console.log('📊 [AI] Recent habits found:', recentHabits.length);
-      console.log('📋 [AI] Habit dates:', recentHabits.map(h => h.date));
       
       // Get current streaks
       const sleepStreak = await dailyHabitsService.getHabitStreak(userId, 'sleep');
@@ -74,11 +68,8 @@ class AIService {
       
       const streaks = [sleepStreak, waterStreak, runStreak, gymStreak, reflectStreak, coldShowerStreak].filter(Boolean);
       
-      console.log('🔥 [AI] Streaks found:', streaks.map(s => `${s.habit_type}: ${s.current_streak}d`));
-      
       // Validate streaks to prevent false claims
       const validStreaks = streaks.filter(streak => streak.current_streak > 0);
-      console.log('✅ [AI] Valid streaks (streak > 0):', validStreaks.map(s => `${s.habit_type}: ${s.current_streak}d`));
       
       // Get patterns
       const sleepPatterns = await analyticsService.calculateWeeklyPatterns(userId, 'sleep', 4);
@@ -90,14 +81,7 @@ class AIService {
       // Get completion rate (always use week for AI context)
       const completionRate = await analyticsService.calculateHabitCompletionRate(userId, 'past7');
       
-      console.log('📈 [AI] Completion rate details:', {
-        overallCompletion: completionRate.overallCompletion,
-        weeklyCompleted: completionRate.weeklyCompleted,
-        weeklyGoal: completionRate.weeklyGoal,
-        habitBreakdown: completionRate.habitBreakdown
-      });
       
-      console.log('📈 [AI] Completion rate:', completionRate.overallCompletion?.toFixed(1) + '%');
       
       return {
         userId,

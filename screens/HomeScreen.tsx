@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,15 +33,20 @@ import CustomBackground from '../components/CustomBackground';
 import { LinearGradient } from 'expo-linear-gradient';
 import GoalInteractionBar from '../components/GoalInteractionBar';
 import PostInteractionBar from '../components/PostInteractionBar';
+import DailyPostInteractionBar from '../components/DailyPostInteractionBar';
 import CommentModal from '../components/CommentModal';
 import PostCommentModal from '../components/PostCommentModal';
 import CreatePostModal from '../components/CreatePostModal';
+import NewGoalModal from '../components/NewGoalModal';
 import GesturePhotoCarousel from '../components/GesturePhotoCarousel';
 import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
 import { notificationService } from '../lib/notificationService';
 import { goalInteractionsService } from '../lib/goalInteractions';
+import { dailyPostInteractionsService } from '../lib/dailyPostInteractions';
 import { formatLastUpdate } from '../lib/goalHelpers';
 import { postsService } from '../lib/postsService';
+import { dailyPostsService } from '../lib/dailyPostsService';
+import { DailyPost } from '../types/database';
 
 // Extended Goal type with user data
 interface GoalWithUser extends Goal {
@@ -78,6 +84,17 @@ interface PostWithUser {
   type: 'post'; // To distinguish from goals
 }
 
+// Extended DailyPost type with user data
+interface DailyPostWithUser extends DailyPost {
+  profiles?: {
+    id: string;
+    username: string;
+    display_name?: string;
+    avatar_url?: string;
+  };
+  type: 'daily_post'; // To distinguish from goals and posts
+}
+
 const { width, height } = Dimensions.get('window');
 
 interface HomeScreenProps {
@@ -91,11 +108,14 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<PostWithUser[]>([]);
+  const [dailyPosts, setDailyPosts] = useState<DailyPostWithUser[]>([]);
   const [filteredGoals, setFilteredGoals] = useState<GoalWithUser[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<PostWithUser[]>([]);
+  const [filteredDailyPosts, setFilteredDailyPosts] = useState<DailyPostWithUser[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [goalSearchResults, setGoalSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -118,6 +138,9 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   const [followingGoalsList, setFollowingGoalsList] = useState<GoalWithUser[]>([]);
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [showNewGoalModal, setShowNewGoalModal] = useState(false);
+  const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState<{[postId: string]: number}>({});
   const [showFullScreenModal, setShowFullScreenModal] = useState(false);
   const [fullScreenPhotos, setFullScreenPhotos] = useState<string[]>([]);
@@ -125,6 +148,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const { fetchSuggestedUsers, followUser, isLoading: socialLoading } = useSocialStore();
+
 
   // Categories data
   const categories = [
@@ -160,6 +184,17 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       loadUnreadNotificationCount();
     }
   }, [user]);
+
+  // Reset photo index when daily posts change to ensure most recent photo is shown first
+  useEffect(() => {
+    if (dailyPosts.length > 0) {
+      const resetPhotoIndex: {[postId: string]: number} = {};
+      dailyPosts.forEach(dailyPost => {
+        resetPhotoIndex[dailyPost.id] = 0; // Always start at first photo (most recent)
+      });
+      setCurrentPhotoIndex(resetPhotoIndex);
+    }
+  }, [dailyPosts]);
 
   // Load goals from people you're following when following tab is active
   useEffect(() => {
@@ -377,6 +412,16 @@ function HomeScreen({ navigation }: HomeScreenProps) {
     setFilteredGoals(exploreGoals);
   }, [exploreGoals]);
 
+  // Update filtered posts when explore posts change
+  useEffect(() => {
+    setFilteredPosts(explorePosts);
+  }, [explorePosts]);
+
+  // Update filtered daily posts when daily posts change
+  useEffect(() => {
+    setFilteredDailyPosts(dailyPosts);
+  }, [dailyPosts]);
+
 
 
   const handleSearchInput = useCallback(async (query: string) => {
@@ -404,9 +449,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         // Fetch follower counts for search results
         await fetchFollowerCounts(results);
       } else if (searchType === 'goals') {
-        console.log('Calling searchGoals...');
         const results = await socialService.searchGoals(query);
-        console.log('searchGoals returned:', results?.length || 0, 'results');
         setGoalSearchResults(results);
         setSearchResults([]);
       } else if (searchType === 'top') {
@@ -416,7 +459,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
           socialService.searchGoals(query)
         ]);
         
-        console.log('Top search - Users:', userResults.length, 'Goals:', goalResults.length);
         setSearchResults(userResults);
         setGoalSearchResults(goalResults);
         
@@ -581,7 +623,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   }, [followingStatus, followerCounts, theme, handleFollow]);
 
   const renderGoal = ({ item }: { item: any }) => {
-    console.log('Rendering goal:', item.title, 'with profiles:', item.profiles);
     return (
       <TouchableOpacity
         style={[styles.searchGoalItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
@@ -842,53 +883,117 @@ function HomeScreen({ navigation }: HomeScreenProps) {
 
   const loadExplorePosts = async (userIds: string[], profileMap: Map<string, any>, dailyHabitsMap: Map<string, any>) => {
     try {
-      // Fetch all public posts from the users we're following or that are public
-      const { data: posts, error } = await supabase
-        .from('posts')
+      // Fetch all public daily posts from the users we're following or that are public
+      const { data: dailyPostsData, error: dailyPostsError } = await supabase
+        .from('daily_posts')
         .select('*')
         .in('user_id', userIds)
-        .eq('is_public', true)
         .order('created_at', { ascending: false })
-        .limit(20); // Limit to 20 posts for performance
+        .limit(20); // Limit to 20 daily posts for performance
 
-      if (error) {
-        console.error('Error fetching explore posts:', error);
+      if (dailyPostsError) {
+        console.error('Error fetching explore daily posts:', dailyPostsError);
+        // Fallback to individual posts if daily posts fail
+        const { data: posts, error } = await supabase
+          .from('posts')
+          .select('*')
+          .in('user_id', userIds)
+          .eq('is_public', true)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error) {
+          console.error('Error fetching explore posts:', error);
+          return;
+        }
+
+        if (posts && posts.length > 0) {
+          // Attach profile data and daily habits to posts
+          const postsWithProfiles = posts.map(post => ({
+            ...post,
+            profiles: profileMap.get(post.user_id),
+            dailyHabits: dailyHabitsMap.get(post.user_id),
+            type: 'post' as const
+          }));
+
+          setExplorePosts(postsWithProfiles);
+          await loadPostInteractionData(postsWithProfiles);
+        } else {
+          setExplorePosts([]);
+        }
+        setDailyPosts([]);
         return;
       }
 
-      if (posts && posts.length > 0) {
-        // Attach profile data and daily habits to posts
-        const postsWithProfiles = posts.map(post => ({
-          ...post,
-          profiles: profileMap.get(post.user_id),
-          dailyHabits: dailyHabitsMap.get(post.user_id),
-          type: 'post' as const
+      if (dailyPostsData && dailyPostsData.length > 0) {
+        // Attach profile data to daily posts
+        const dailyPostsWithProfiles = dailyPostsData.map(dailyPost => ({
+          ...dailyPost,
+          profiles: profileMap.get(dailyPost.user_id),
+          type: 'daily_post' as const
         }));
 
-        setExplorePosts(postsWithProfiles);
-        
-        // Load post interaction data after posts are set
-        await loadPostInteractionData(postsWithProfiles);
+        setDailyPosts(dailyPostsWithProfiles);
+        // Load interaction data for daily posts
+        await loadDailyPostInteractionData(dailyPostsWithProfiles);
+        // Clear individual posts since we're now showing daily posts
+        setExplorePosts([]);
       } else {
+        setDailyPosts([]);
         setExplorePosts([]);
       }
     } catch (error) {
       console.error('Error loading explore posts:', error);
+      setDailyPosts([]);
       setExplorePosts([]);
     }
   };
 
-  // Merge goals and posts chronologically
+  // Load daily post interaction data (using same service pattern as goals!)
+  const loadDailyPostInteractionData = async (dailyPosts: DailyPostWithUser[]) => {
+    if (!user || dailyPosts.length === 0) return;
+
+    try {
+      const dailyPostIds = dailyPosts.map(dp => dp.id);
+      
+      // Use the same pattern as goals: get interaction counts and user like status
+      const [interactionCounts, userLikeStatuses] = await Promise.all([
+        dailyPostInteractionsService.getDailyPostsInteractionCounts(dailyPostIds),
+        Promise.all(dailyPostIds.map(dailyPostId => dailyPostInteractionsService.isDailyPostLikedByUser(dailyPostId)))
+      ]);
+
+      // Process interaction data (same as goals)
+      const interactionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }} = {};
+      
+      dailyPostIds.forEach((id, index) => {
+        const counts = interactionCounts[id] || { likes: 0, comments: 0 };
+        const isLiked = userLikeStatuses[index] || false;
+        
+        interactionData[id] = {
+          likes: counts.likes,
+          comments: counts.comments,
+          isLiked: isLiked
+        };
+      });
+
+      setPostInteractionData(prev => ({ ...prev, ...interactionData }));
+    } catch (error) {
+      console.error('Error loading daily post interaction data:', error);
+    }
+  };
+
+  // Merge goals, posts, and daily posts chronologically
   const getMergedFeed = useMemo(() => {
     const allItems = [
       ...exploreGoals.map(goal => ({ ...goal, type: 'goal' as const, sortDate: goal.created_at })),
-      ...explorePosts.map(post => ({ ...post, type: 'post' as const, sortDate: post.created_at }))
+      ...explorePosts.map(post => ({ ...post, type: 'post' as const, sortDate: post.created_at })),
+      ...dailyPosts.map(dailyPost => ({ ...dailyPost, type: 'daily_post' as const, sortDate: dailyPost.created_at }))
     ];
     
     return allItems.sort((a, b) => 
       new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime()
     );
-  }, [exploreGoals, explorePosts]);
+  }, [exploreGoals, explorePosts, dailyPosts]);
 
   // Load search history and suggested users when modal opens
   useEffect(() => {
@@ -954,7 +1059,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
     }
   };
 
-  // Handle post like changes
+  // Handle regular post like changes
   const handlePostLikeChange = async (postId: string, isLiked: boolean, newCount: number) => {
     if (!user) return;
     
@@ -1004,12 +1109,49 @@ function HomeScreen({ navigation }: HomeScreenProps) {
     }
   };
 
+  // Handle daily post like changes (using same service pattern as goals!)
+  const handleDailyPostLikeChange = async (dailyPostId: string, isLiked: boolean, newCount: number) => {
+    if (!user) return;
+    
+    try {
+      // Use the same service pattern as goals
+      const result = await dailyPostInteractionsService.toggleDailyPostLike(dailyPostId);
+      
+      if (result.success) {
+        // Get real count after toggle
+        const realCount = await dailyPostInteractionsService.getDailyPostLikeCount(dailyPostId);
+        
+        // Update local state with real data
+        setPostInteractionData(prev => ({
+          ...prev,
+          [dailyPostId]: {
+            ...prev[dailyPostId],
+            likes: realCount,
+            isLiked: result.isLiked
+          }
+        }));
+      } else {
+        console.error('Failed to toggle daily post like');
+      }
+    } catch (error) {
+      console.error('Error handling daily post like change:', error);
+    }
+  };
+
   const handlePostCommentPress = (postId: string) => {
     const posts = explorePosts.filter(p => p.id === postId);
     if (posts.length === 0) return;
     
     const post = posts[0];
     setSelectedPostForComment({ id: postId, title: post.content || 'Post' });
+    setPostCommentModalVisible(true);
+  };
+
+  const handleDailyPostCommentPress = (dailyPostId: string) => {
+    const dailyPost = dailyPosts.find(dp => dp.id === dailyPostId);
+    if (!dailyPost) return;
+    
+    setSelectedPostForComment({ id: dailyPostId, title: 'Daily Post' });
     setPostCommentModalVisible(true);
   };
 
@@ -1033,30 +1175,41 @@ function HomeScreen({ navigation }: HomeScreenProps) {
 
   // Handle goal comment press
   const handleGoalCommentPress = (goalId: string) => {
-    console.log('Comment button pressed for goal:', goalId);
     // Find the goal to get its title
     const goal = exploreGoals.find(g => g.id === goalId);
-    console.log('Found goal:', goal);
     if (goal) {
       setSelectedGoalForComment({ id: goalId, title: goal.title });
       setCommentModalVisible(true);
-      console.log('Opening comment modal for:', goal.title);
-    } else {
-      console.log('Goal not found in exploreGoals');
     }
   };
 
   // Load goals from people you're following
-  const loadFollowingGoals = async () => {
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
     if (!user) return;
     
+    setRefreshing(true);
+    try {
+      // Reload both explore and following data
+      await Promise.all([
+        loadExploreGoals(),
+        loadFollowingGoals(),
+        loadUnreadNotificationCount()
+      ]);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user]);
+
+  const loadFollowingGoals = async () => {
+    if (!user) return;
+
     setLoadingFollowing(true);
     try {
-      console.log('Loading goals from people you follow for user:', user.id);
-      
       // First get the people you're following
       const following = await socialService.getFollowing(user.id);
-      console.log('Following users loaded:', following);
       
       if (following.length === 0) {
         setFollowingGoalsList([]);
@@ -1087,8 +1240,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         setFollowingGoalsList([]);
         return;
       }
-      
-      console.log('Goals from following users loaded:', goals);
       
       // Get profile data for goal creators
       if (goals && goals.length > 0) {
@@ -1193,7 +1344,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
             
             <TouchableOpacity 
               style={styles.createPostButton}
-              onPress={() => setShowCreatePostModal(true)}
+              onPress={() => setShowActionModal(true)}
             >
               <Ionicons name="add" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
@@ -1402,7 +1553,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
                       style={styles.seeMoreButton}
                       onPress={() => {
                         // TODO: Implement see more functionality
-                        console.log('See more clicked');
                       }}
                     >
                       <Text style={[styles.seeMoreText, { color: theme.textSecondary }]}>
@@ -1514,10 +1664,19 @@ function HomeScreen({ navigation }: HomeScreenProps) {
               style={styles.scrollView}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={theme.primary}
+                  colors={[theme.primary]}
+                />
+              }
             >
               <ExploreContent 
                 goals={filteredGoals} 
                 posts={filteredPosts}
+                dailyPosts={filteredDailyPosts}
                 mergedFeed={getMergedFeed}
                 loading={loading} 
                 theme={theme}
@@ -1533,7 +1692,9 @@ function HomeScreen({ navigation }: HomeScreenProps) {
                 setCurrentPhotoIndex={setCurrentPhotoIndex}
                 postInteractionData={postInteractionData}
                 onPostLikeChange={handlePostLikeChange}
+                onDailyPostLikeChange={handleDailyPostLikeChange}
                 onPostCommentPress={handlePostCommentPress}
+                onDailyPostCommentPress={handleDailyPostCommentPress}
                 onPhotoPress={handlePhotoPress}
               />
             </ScrollView>
@@ -1543,6 +1704,14 @@ function HomeScreen({ navigation }: HomeScreenProps) {
             style={styles.scrollView}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={theme.primary}
+                colors={[theme.primary]}
+              />
+            }
           >
             <FollowingContent 
               theme={theme} 
@@ -1574,17 +1743,31 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         postTitle={selectedPostForComment?.title || ''}
         onClose={() => {
           const postId = selectedPostForComment?.id;
+          const isDaily = selectedPostForComment?.title === 'Daily Post';
           setPostCommentModalVisible(false);
           setSelectedPostForComment(null);
           // Refresh interaction data when modal closes to ensure count is updated
           if (postId) {
-            refreshPostInteractionData(postId);
+            if (isDaily) {
+              // For daily posts, reload all daily post interaction data
+              loadDailyPostInteractionData(dailyPosts);
+            } else {
+              // For regular posts, use the existing refresh function
+              refreshPostInteractionData(postId);
+            }
           }
         }}
         onCommentAdded={() => {
           // Refresh interaction data for the current post
           if (selectedPostForComment) {
-            refreshPostInteractionData(selectedPostForComment.id);
+            const isDaily = selectedPostForComment.title === 'Daily Post';
+            if (isDaily) {
+              // For daily posts, reload all daily post interaction data
+              loadDailyPostInteractionData(dailyPosts);
+            } else {
+              // For regular posts, use the existing refresh function
+              refreshPostInteractionData(selectedPostForComment.id);
+            }
           }
         }}
       />
@@ -1592,13 +1775,77 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       {/* Create Post Modal */}
       <CreatePostModal
         visible={showCreatePostModal}
-        onClose={() => setShowCreatePostModal(false)}
+        onClose={() => {
+          setShowCreatePostModal(false);
+          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
+        }}
         onPostCreated={() => {
           setShowCreatePostModal(false);
+          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
           loadExploreGoals(); // Reload goals and posts after creating post
         }}
         userGoals={exploreGoals.filter(goal => !goal.completed)}
+        preSelectedGoal={newlyCreatedGoalId || undefined}
       />
+
+      {/* New Goal Modal */}
+      <NewGoalModal
+        visible={showNewGoalModal}
+        onClose={() => setShowNewGoalModal(false)}
+        onGoalCreated={(goalId) => {
+          setNewlyCreatedGoalId(goalId);
+          setShowNewGoalModal(false);
+          // Open CreatePostModal with the new goal pre-selected
+          setShowCreatePostModal(true);
+        }}
+      />
+
+      {/* Action Modal - Create Goal or Update Daily Post */}
+      <Modal
+        visible={showActionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowActionModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={[styles.actionModal, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+                <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>
+                  What would you like to do?
+                </Text>
+                
+                <TouchableOpacity 
+                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowActionModal(false);
+                    setShowNewGoalModal(true);
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Create Goal</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowActionModal(false);
+                    setShowCreatePostModal(true);
+                  }}
+                >
+                  <Text style={styles.actionButtonText}>Update Daily Post</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.cancelButton, { borderColor: theme.borderSecondary }]}
+                  onPress={() => setShowActionModal(false)}
+                >
+                  <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {/* Full Screen Photo Modal */}
       <FullScreenPhotoModal
@@ -1621,6 +1868,7 @@ export default React.memo(HomeScreen);
 function ExploreContent({ 
   goals, 
   posts,
+  dailyPosts,
   mergedFeed,
   loading, 
   theme, 
@@ -1636,11 +1884,14 @@ function ExploreContent({
   setCurrentPhotoIndex,
   postInteractionData,
   onPostLikeChange,
+  onDailyPostLikeChange,
   onPostCommentPress,
+  onDailyPostCommentPress,
   onPhotoPress,
 }: { 
   goals: GoalWithUser[], 
   posts: PostWithUser[],
+  dailyPosts: DailyPostWithUser[],
   mergedFeed: any[],
   loading: boolean, 
   theme: any,
@@ -1656,7 +1907,9 @@ function ExploreContent({
   setCurrentPhotoIndex: React.Dispatch<React.SetStateAction<{[postId: string]: number}>>;
   postInteractionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }};
   onPostLikeChange: (postId: string, isLiked: boolean, newCount: number) => void;
+  onDailyPostLikeChange: (dailyPostId: string, isLiked: boolean, newCount: number) => void;
   onPostCommentPress: (postId: string) => void;
+  onDailyPostCommentPress: (dailyPostId: string) => void;
   onPhotoPress: (photos: string[], initialIndex: number) => void;
 }) {
   const getCategoryIcon = (category: string) => {
@@ -2019,6 +2272,150 @@ function ExploreContent({
                     </View>
                   </View>
                 );
+              } else if (item.type === 'daily_post') {
+                const dailyPost = item;
+                return (
+                  <View key={dailyPost.id} style={styles.goalCardContainer}>
+                    {/* Floating Profile Section */}
+                    <View style={styles.floatingProfileSection}>
+                      <View style={styles.profileInfo}>
+                        {dailyPost.profiles?.avatar_url ? (
+                          <Image 
+                            source={{ uri: dailyPost.profiles.avatar_url }} 
+                            style={styles.floatingAvatar}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.floatingAvatarPlaceholder}>
+                            <Text style={styles.floatingAvatarInitial}>
+                              {dailyPost.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.profileTextInfo}>
+                          <Text style={styles.floatingUsername}>@{dailyPost.profiles?.username || 'user'}</Text>
+                          <Text style={styles.floatingTime}>
+                            {formatLastUpdate(dailyPost.updated_at, dailyPost.created_at)}
+                          </Text>
+                        </View>
+                        {dailyPost.user_id !== user?.id && (
+                          <TouchableOpacity 
+                            onPress={() => onFollow(dailyPost.profiles?.id || '')}
+                            style={styles.floatingFollowButton}
+                          >
+                            <Text style={styles.floatingFollowText}>
+                              {dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'Followed' : 'Follow'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      
+                      {/* Mini Habit Icons */}
+                      <View style={styles.miniHabitIcons}>
+                        <Ionicons 
+                          name="book-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="leaf-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="snow-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="water-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="moon-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="walk-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="barbell-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                        <Ionicons 
+                          name="bulb-outline" 
+                          size={12} 
+                          color={dailyPost.habits_completed.includes('reflection') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                      </View>
+                    </View>
+
+                    {/* Main Content Area */}
+                    <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
+                      {/* Photo Gallery */}
+                      {dailyPost.photos && dailyPost.photos.length > 0 && (
+                        <View style={styles.postPhotoContainer}>
+                          <GesturePhotoCarousel
+                            photos={dailyPost.photos}
+                            currentIndex={currentPhotoIndex[dailyPost.id] ?? 0}
+                            onIndexChange={(index) => setCurrentPhotoIndex(prev => ({ ...prev, [dailyPost.id]: index }))}
+                            onPhotoPress={() => onPhotoPress(dailyPost.photos, currentPhotoIndex[dailyPost.id] || 0)}
+                          />
+                          {dailyPost.photos.length > 1 && (
+                            <View style={styles.photoCounter}>
+                              <Text style={styles.photoCounterText}>
+                                {(currentPhotoIndex[dailyPost.id] || 0) + 1} / {dailyPost.photos.length}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+
+                      {/* Content Section */}
+                      <View style={styles.contentSection}>
+                        {/* Caption and Interaction Bar - Same Line */}
+                        <View style={styles.dailyPostRow}>
+                          <View style={styles.dailyPostContent}>
+                            {(() => {
+                              const currentIndex = currentPhotoIndex[dailyPost.id] || 0;
+                              const currentCaption = dailyPost.captions?.[currentIndex];
+                              
+                              // Only show caption if it exists and is not empty
+                              if (currentCaption && currentCaption.trim() !== '') {
+                                return (
+                                  <Text style={styles.dailyPostTitle}>
+                                    {currentCaption}
+                                  </Text>
+                                );
+                              }
+                              return null; // Don't render anything if no caption
+                            })()}
+                            <Text style={styles.dailyPostStats}>
+                              {dailyPost.post_count} updates
+                            </Text>
+                          </View>
+                          
+                          {/* Interaction Bar - Right side, aligned with caption */}
+                          <DailyPostInteractionBar
+                            dailyPostId={dailyPost.id}
+                            initialLikeCount={postInteractionData[dailyPost.id]?.likes || 0}
+                            initialCommentCount={postInteractionData[dailyPost.id]?.comments || 0}
+                            initialIsLiked={postInteractionData[dailyPost.id]?.isLiked || false}
+                            onLikeChange={(isLiked, newCount) => onDailyPostLikeChange(dailyPost.id, isLiked, newCount)}
+                            onCommentPress={() => onDailyPostCommentPress(dailyPost.id)}
+                            size="medium"
+                            showCounts={true}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
               }
               return null;
             })}
@@ -2355,11 +2752,11 @@ const styles = StyleSheet.create({
   goalCardContainer: {
     position: 'relative',
     marginBottom: 24,
-    marginTop: 30,
+    marginTop: 10,
   },
   floatingProfileSection: {
     position: 'absolute',
-    top: -25,
+    top: -15,
     left: 12,
     right: 12,
     zIndex: 10,
@@ -2434,7 +2831,7 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 12,
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'ios' ? 32 : 20,
   },
   mediaSection: {
     marginBottom: 8,
@@ -2462,13 +2859,13 @@ const styles = StyleSheet.create({
   },
   contentSection: {
     paddingHorizontal: 12,
-    paddingBottom: 16,
+    paddingBottom: 0,
   },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 0,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -3259,5 +3656,114 @@ const styles = StyleSheet.create({
   },
   photoContainer: {
     position: 'relative',
+  },
+  // Daily Post Styles
+  dailyPostRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+  },
+  dailyPostContent: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  dailyPostTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  dailyPostStats: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '500',
+  },
+  dailyPostInteraction: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '500',
+  },
+  postPhotoContainer: {
+    marginBottom: 0,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  photoCounter: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  photoCounterText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  postContentContainer: {
+    marginBottom: 12,
+  },
+  postContent: {
+    fontSize: 14,
+    color: '#ffffff',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  postInteractionContainer: {
+    marginTop: 12,
+  },
+  postInteractionBar: {
+    alignItems: 'center',
+  },
+  // Action Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionModal: {
+    width: '100%',
+    maxWidth: 300,
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  actionModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 

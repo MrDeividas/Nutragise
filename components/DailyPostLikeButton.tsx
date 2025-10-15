@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
-import { supabase } from '../lib/supabase';
-import { notificationService } from '../lib/notificationService';
+import { dailyPostInteractionsService } from '../lib/dailyPostInteractions';
 import { useActionStore } from '../state/actionStore';
 
-interface PostLikeButtonProps {
-  postId: string;
+interface DailyPostLikeButtonProps {
+  dailyPostId: string;
   initialLikeCount?: number;
   initialIsLiked?: boolean;
   onLikeChange?: (isLiked: boolean, newCount: number) => void;
@@ -15,14 +14,14 @@ interface PostLikeButtonProps {
   showCount?: boolean;
 }
 
-export default function PostLikeButton({ 
-  postId, 
+export default function DailyPostLikeButton({ 
+  dailyPostId, 
   initialLikeCount = 0, 
   initialIsLiked = false,
   onLikeChange,
   size = 'medium',
   showCount = true
-}: PostLikeButtonProps) {
+}: DailyPostLikeButtonProps) {
   const { theme } = useTheme();
   const { trackCoreHabit } = useActionStore();
   const [isLiked, setIsLiked] = useState(initialIsLiked);
@@ -33,42 +32,18 @@ export default function PostLikeButton({
   const scaleAnim = useState(new Animated.Value(1))[0];
   const heartAnim = useState(new Animated.Value(isLiked ? 1 : 0))[0];
 
-  // Load initial state
+  // Update local state when props change (same pattern as LikeButton for goals)
   useEffect(() => {
-    const loadInitialState = async () => {
-      try {
-        const { data: likeData, error: likeError } = await supabase
-          .from('post_likes')
-          .select('*')
-          .eq('post_id', postId)
-          .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
-
-        const { count, error: countError } = await supabase
-          .from('post_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('post_id', postId);
-
-        if (!likeError && !countError) {
-          const currentIsLiked = likeData && likeData.length > 0;
-          const currentCount = count || 0;
-          
-          setIsLiked(currentIsLiked);
-          setLikeCount(currentCount);
-          
-          // Set animation value
-          Animated.timing(heartAnim, {
-            toValue: currentIsLiked ? 1 : 0,
-            duration: 0,
-            useNativeDriver: true,
-          }).start();
-        }
-      } catch (error) {
-        console.error('Error loading like state:', error);
-      }
-    };
-
-    loadInitialState();
-  }, [postId]);
+    setLikeCount(initialLikeCount);
+    setIsLiked(initialIsLiked);
+    
+    // Set animation value
+    Animated.timing(heartAnim, {
+      toValue: initialIsLiked ? 1 : 0,
+      duration: 0,
+      useNativeDriver: true,
+    }).start();
+  }, [initialLikeCount, initialIsLiked]);
 
   const handleLikePress = async () => {
     if (isLoading) return;
@@ -106,15 +81,15 @@ export default function PostLikeButton({
 
       // Track core habit if this is a like (not unlike)
       if (newIsLiked) {
-        trackCoreHabit('like');
+        await trackCoreHabit('like');
       }
 
-      // Call custom handler if provided
+      // Call parent handler (same pattern as LikeButton for goals)
       if (onLikeChange) {
         onLikeChange(newIsLiked, newCount);
       }
     } catch (error) {
-      console.error('Error toggling like:', error);
+      console.error('Error toggling daily post like:', error);
       // Revert on error
       setIsLiked(!isLiked);
       setLikeCount(!isLiked ? likeCount + 1 : likeCount - 1);

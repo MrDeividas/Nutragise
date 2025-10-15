@@ -256,13 +256,10 @@ export default function ProgressChart({ onClose }: Props) {
         });
       }
       
-      console.log('Loaded water intake data:', sleep.map(day => ({ date: day.date, waterIntake: day.waterIntake })));
-      console.log('Loaded distance data:', sleep.map(day => ({ date: day.date, distance: day.distance })));
       setSleepData(sleep);
       
       // Log distance chart configuration for debugging
       const maxDistance = Math.max(...sleep.map(day => day.distance).filter(d => d >= 0));
-      console.log('Distance chart - Max distance:', maxDistance, 'Chart config will be calculated dynamically');
     } catch (error) {
       console.error('Error loading sleep data:', error);
     } finally {

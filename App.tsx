@@ -14,7 +14,6 @@ import CustomBackground from './components/CustomBackground';
 import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
-import NewGoalScreen from './screens/NewGoalScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
@@ -28,7 +27,7 @@ const ActionScreen = lazy(() => import('./screens/ActionScreen'));
 const UserProfileScreen = lazy(() => import('./screens/UserProfileScreen'));
 const FollowersScreen = lazy(() => import('./screens/FollowersScreen'));
 const FollowingScreen = lazy(() => import('./screens/FollowingScreen'));
-const CompetitionsScreen = lazy(() => import('./screens/CompetitionsScreen'));
+const CompeteScreen = lazy(() => import('./screens/CompeteScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
@@ -61,7 +60,6 @@ function GoalsStack() {
         }}
       >
         <Stack.Screen name="GoalsList" component={GoalsScreen} />
-        <Stack.Screen name="NewGoal" component={NewGoalScreen} />
         <Stack.Screen name="GoalDetail" component={GoalDetailScreen as any} />
       </Stack.Navigator>
     </Suspense>
@@ -132,7 +130,7 @@ function MainTabs() {
           else if (route.name === 'Action') iconName = 'flash-outline';
           else if (route.name === 'Insights') iconName = 'trending-up';
           else if (route.name === 'Goals') iconName = 'walk-outline';
-          else if (route.name === 'Discover') iconName = 'trophy-outline';
+          else if (route.name === 'Discover') iconName = 'podium-outline';
           else if (route.name === 'Profile') iconName = 'person-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -160,10 +158,10 @@ function MainTabs() {
       <Tab.Screen name="Goals" component={GoalsStack} />
       <Tab.Screen 
         name="Discover"
-        options={{ tabBarLabel: 'Competitions' }}>
+        options={{ tabBarLabel: 'Compete' }}>
         {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
-            <CompetitionsScreen navigation={navigation} />
+            <CompeteScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>

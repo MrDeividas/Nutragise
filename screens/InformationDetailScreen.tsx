@@ -186,9 +186,8 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     try {
       const { correct, percentage } = calculateScore();
       const isPassed = percentage >= 80; // 4/5 or 5/5 = pass
-      const pointsEarned = isPassed ? 1 : 0;
 
-      // Save user progress
+      // Save user progress (removed points_earned)
       if (user) {
         const { error } = await supabase
           .from('user_progress')
@@ -200,7 +199,6 @@ export default function InformationDetailScreen({ route, navigation }: any) {
             score_percentage: percentage,
             correct_answers: correct,
             user_answers: userAnswers, // Save the actual user answers
-            points_earned: pointsEarned,
             completed_at: new Date().toISOString(),
             attempts_count: (userProgress.attempts_count || 0) + 1, // Increment attempts
           }, {
@@ -220,10 +218,10 @@ export default function InformationDetailScreen({ route, navigation }: any) {
       if (isPassed) {
         Alert.alert(
           'Congratulations! 🎉',
-          `You passed with ${percentage}%! You earned ${pointsEarned} point.`,
+          `You passed with ${percentage}%!`,
           [{ text: 'OK' }]
         );
-        // Refresh profile data to update points
+        // Refresh profile data
         navigation.setParams({ refreshProfile: true });
       } else {
         Alert.alert(

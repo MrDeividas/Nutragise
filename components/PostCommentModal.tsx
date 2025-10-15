@@ -21,12 +21,16 @@ import { supabase } from '../lib/supabase';
 import PostCommentLikeButton from './PostCommentLikeButton';
 import PostCommentReplyButton from './PostCommentReplyButton';
 import { notificationService } from '../lib/notificationService';
+import { dailyPostInteractionsService } from '../lib/dailyPostInteractions';
+import { useActionStore } from '../state/actionStore';
 
 interface PostComment {
   id: string;
-  post_id: string;
+  goal_id?: string; // For daily posts using goal_comments table
+  post_id?: string; // For regular posts using post_comments table
   user_id: string;
-  content: string;
+  comment_text?: string; // For daily posts (goal_comments table)
+  content?: string; // For regular posts (post_comments table)
   created_at: string;
   profiles?: {
     username: string;
@@ -59,6 +63,7 @@ interface PostCommentModalProps {
 export default function PostCommentModal({ visible, postId, postTitle, onClose, onCommentAdded }: PostCommentModalProps) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
+  const { trackCoreHabit } = useActionStore();
   const [comments, setComments] = useState<PostComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
@@ -81,12 +86,34 @@ export default function PostCommentModal({ visible, postId, postTitle, onClose, 
     
     setLoading(true);
     try {
-      // First get the comments
-      const { data: comments, error: commentsError } = await supabase
-        .from('post_comments')
-        .select('*')
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true });
+      // Check if this is a daily post (passed from daily post handler)
+      const isDailyPost = postTitle === 'Daily Post';
+      
+      let comments, commentsError;
+      
+      if (isDailyPost) {
+        // For daily posts, use the same service as goals
+        const dailyPostComments = await dailyPostInteractionsService.getDailyPostComments(postId);
+        comments = dailyPostComments.map(comment => ({
+          ...comment,
+          goal_id: comment.daily_post_id, // Map back to interface
+          profiles: comment.user_profile ? {
+            username: comment.user_profile.username,
+            display_name: comment.user_profile.display_name,
+            avatar_url: comment.user_profile.avatar_url
+          } : undefined
+        }));
+        commentsError = null;
+      } else {
+        // For regular posts, use post_comments table
+        const { data, error } = await supabase
+          .from('post_comments')
+          .select('*')
+          .eq('post_id', postId)
+          .order('created_at', { ascending: true });
+        comments = data;
+        commentsError = error;
+      }
 
       if (commentsError) {
         console.error('Error getting post comments:', commentsError);
@@ -314,16 +341,38 @@ export default function PostCommentModal({ visible, postId, postTitle, onClose, 
           commentId = data?.id || '';
         }
       } else {
-        // Add comment
-        const { data, error } = await supabase
-          .from('post_comments')
-          .insert({
-            post_id: postId,
-            user_id: user.id,
-            content: newComment.trim(),
-          })
-          .select()
-          .single();
+        // Determine if this is a daily post
+        const isDailyPost = postTitle === 'Daily Post';
+        
+        let data, error;
+        
+        if (isDailyPost) {
+          // For daily posts, use goal_comments table (same as goals)
+          const result = await supabase
+            .from('goal_comments')
+            .insert({
+              goal_id: postId,
+              user_id: user.id,
+              comment_text: newComment.trim(),
+            })
+            .select()
+            .single();
+          data = result.data;
+          error = result.error;
+        } else {
+          // For regular posts, use post_comments table
+          const result = await supabase
+            .from('post_comments')
+            .insert({
+              post_id: postId,
+              user_id: user.id,
+              content: newComment.trim(),
+            })
+            .select()
+            .single();
+          data = result.data;
+          error = result.error;
+        }
 
         if (error) {
           console.error('Error adding comment:', error);
@@ -337,6 +386,12 @@ export default function PostCommentModal({ visible, postId, postTitle, onClose, 
         setNewComment('');
         setReplyingToComment(null);
         setReplyingToCommentData(null);
+        
+        // Track core habit for commenting (only for new comments, not replies)
+        if (!replyingToComment) {
+          await trackCoreHabit('comment');
+        }
+        
         // Reload comments to show the new one
         await loadComments();
         
@@ -438,7 +493,7 @@ export default function PostCommentModal({ visible, postId, postTitle, onClose, 
               </View>
             </View>
             <Text style={[styles.commentText, { color: theme.textSecondary }]}>
-              {item.content}
+              {item.comment_text || item.content}
             </Text>
           </View>
         </View>

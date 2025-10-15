@@ -72,10 +72,7 @@ class ProgressService {
         return null;
       }
 
-      console.log('Upload successful, path:', data.path);
-
       // Verify uploaded file immediately  
-      console.log('Verifying uploaded file exists...');
       try {
         // Try to download a small chunk to verify file exists and has content
         const { data: downloadData, error: downloadError } = await supabase.storage
@@ -122,7 +119,6 @@ class ProgressService {
 
       // Upload photo if provided
       if (checkInData.photoUri) {
-        console.log('Uploading photo:', checkInData.photoUri);
         photoUrl = await this.uploadPhoto(
           checkInData.photoUri,
           'progress-photo.jpg',
@@ -149,8 +145,10 @@ class ProgressService {
 
       if (error) {
         console.error('Error saving check-in:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
         return false;
       }
+      
 
       // Invalidate related cache entries when a check-in is created
       const checkInCountKey = apiCache.generateKey('checkInCount', checkInData.goalId, checkInData.userId);
@@ -203,6 +201,7 @@ class ProgressService {
       const mm = String(checkDate.getMonth() + 1).padStart(2, '0');
       const dd = String(checkDate.getDate()).padStart(2, '0');
       const dateString = `${yyyy}-${mm}-${dd}`;
+      
 
       // Verify authenticated user matches
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -220,7 +219,9 @@ class ProgressService {
         console.error('Error checking if checked in:', error);
         return false;
       }
-      return (data && data.length > 0) || false;
+      
+      const hasCheckedIn = (data && data.length > 0) || false;
+      return hasCheckedIn;
     } catch (error) {
       console.error('Error in hasCheckedInToday:', error);
       return false;
@@ -259,6 +260,54 @@ class ProgressService {
   }
 
 
+
+  /**
+   * Get check-in count for a goal within its active range, filtered by frequency days
+   */
+  async getCheckInCountInRange(goalId: string, userId: string, startDate: string, endDate?: string, frequency?: boolean[]): Promise<number> {
+    try {
+      // Verify authenticated user matches
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const actualUserId = authUser?.id || userId;
+      
+      // Get all check-ins in the date range
+      let query = supabase
+        .from('progress_photos')
+        .select('check_in_date')
+        .eq('goal_id', goalId)
+        .eq('user_id', actualUserId)
+        .gte('check_in_date', startDate);
+        
+      if (endDate) {
+        query = query.lte('check_in_date', endDate);
+      }
+      
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error getting check-in count in range:', error);
+        return 0;
+      }
+
+      if (!data || !frequency) {
+        const result = data?.length || 0;
+        return result;
+      }
+
+      // Filter check-ins to only include frequency days
+      const validCheckIns = data.filter(checkIn => {
+        const checkInDate = new Date(checkIn.check_in_date);
+        const dayOfWeek = checkInDate.getDay();
+        return frequency[dayOfWeek];
+      });
+
+      const result = validCheckIns.length;
+      return result;
+    } catch (error) {
+      console.error('Error in getCheckInCountInRange:', error);
+      return 0;
+    }
+  }
 
   /**
    * Get check-in count for a goal (with caching)

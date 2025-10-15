@@ -15,13 +15,18 @@ import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
-import { postsService } from '../lib/postsService';
+import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
+import { progressService } from '../lib/progressService';
+import { getDailyPostDate } from '../lib/timeService';
+import { useActionStore } from '../state/actionStore';
 
 interface CreatePostModalProps {
   visible: boolean;
   onClose: () => void;
   onPostCreated: () => void;
   userGoals?: any[];
+  preSelectedGoal?: string;
+  targetCheckInDate?: Date; // Add target date for backdating check-ins
 }
 
 const habitOptions = [
@@ -37,10 +42,44 @@ export default function CreatePostModal({
   visible, 
   onClose, 
   onPostCreated,
-  userGoals = []
+  userGoals = [],
+  preSelectedGoal,
+  targetCheckInDate
 }: CreatePostModalProps) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
+  const { trackCoreHabit } = useActionStore();
+
+  // Check for existing daily post when modal opens
+  React.useEffect(() => {
+    if (visible && user) {
+      checkForExistingDailyPost();
+    }
+  }, [visible, user, targetCheckInDate]); // Add targetCheckInDate as dependency
+
+  // Set pre-selected goal when modal opens
+  React.useEffect(() => {
+    if (visible && preSelectedGoal) {
+      setSelectedGoal(preSelectedGoal);
+    }
+  }, [visible, preSelectedGoal]);
+
+  const checkForExistingDailyPost = async () => {
+    if (!user) return;
+    
+    setCheckingExistingPost(true);
+    try {
+      // Use targetCheckInDate if provided, otherwise use today
+      const dateToCheck = targetCheckInDate || new Date();
+      const dailyPostDate = getDailyPostDate(dateToCheck);
+      const existing = await dailyPostsService.getDailyPostByDate(user.id, dailyPostDate);
+      setExistingDailyPost(existing);
+    } catch (error) {
+      console.error('Error checking for existing daily post:', error);
+    } finally {
+      setCheckingExistingPost(false);
+    }
+  };
   const [content, setContent] = useState('');
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
   const [photoCaptions, setPhotoCaptions] = useState<string[]>([]);
@@ -49,8 +88,22 @@ export default function CreatePostModal({
   const [moodRating, setMoodRating] = useState<number>(3);
   const [energyLevel, setEnergyLevel] = useState<number>(3);
   const [isCreating, setIsCreating] = useState(false);
+  const [existingDailyPost, setExistingDailyPost] = useState<DailyPost | null>(null);
+  const [checkingExistingPost, setCheckingExistingPost] = useState(false);
   const [captionModalVisible, setCaptionModalVisible] = useState(false);
   const [editingCaptionIndex, setEditingCaptionIndex] = useState<number>(-1);
+
+  // Format the target date for display
+  const getPostDateString = () => {
+    const date = targetCheckInDate || new Date();
+    const options: Intl.DateTimeFormatOptions = { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+    };
+    const formatted = date.toLocaleDateString('en-US', options);
+    return formatted;
+  };
 
   const requestPermissions = async () => {
     const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
@@ -78,7 +131,7 @@ export default function CreatePostModal({
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
@@ -90,8 +143,8 @@ export default function CreatePostModal({
         // Upload photo to Supabase storage
         const photoUrl = await uploadPhotoToStorage(result.assets[0].uri);
         if (photoUrl) {
-          setSelectedPhotos(prev => [...prev, photoUrl]);
-          setPhotoCaptions(prev => [...prev, '']); // Add empty caption for new photo
+          setSelectedPhotos(prev => [photoUrl, ...prev]); // Add new photo at the beginning (most recent first)
+          setPhotoCaptions(prev => ['', ...prev]); // Add empty caption for new photo at the beginning
         }
       }
     } catch (error) {
@@ -111,7 +164,7 @@ export default function CreatePostModal({
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         exif: false,
@@ -122,8 +175,8 @@ export default function CreatePostModal({
         // Upload photo to Supabase storage
         const photoUrl = await uploadPhotoToStorage(result.assets[0].uri);
         if (photoUrl) {
-          setSelectedPhotos(prev => [...prev, photoUrl]);
-          setPhotoCaptions(prev => [...prev, '']); // Add empty caption for new photo
+          setSelectedPhotos(prev => [photoUrl, ...prev]); // Add new photo at the beginning (most recent first)
+          setPhotoCaptions(prev => ['', ...prev]); // Add empty caption for new photo at the beginning
         }
       }
     } catch (error) {
@@ -221,26 +274,73 @@ export default function CreatePostModal({
       return;
     }
 
+    // If there's an existing daily post, show confirmation
+    if (existingDailyPost) {
+      Alert.alert(
+        'Add to Today\'s Post',
+        `You already have a post for today with ${existingDailyPost.total_photos} photos and ${existingDailyPost.total_habits} habits. Add this content to your existing daily post?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Add to Today\'s Post', onPress: () => submitPost() }
+        ]
+      );
+    } else {
+      submitPost();
+    }
+  };
+
+  const submitPost = async () => {
     setIsCreating(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
-      
-      const postData = {
-        content: '', // Empty content since we removed the text box
-        goal_id: selectedGoal || undefined,
-        date: today,
+      const dailyPostData = {
         photos: selectedPhotos,
+        captions: photoCaptions,
         habits_completed: selectedHabits,
-        caption: photoCaptions.join(' | '), // Combine all captions
-        mood_rating: moodRating,
-        energy_level: energyLevel,
-        is_public: true,
       };
 
-      const result = await postsService.createPost(postData);
+      let result;
+      if (existingDailyPost) {
+        // Add to existing daily post
+        result = await dailyPostsService.addToDailyPost(existingDailyPost.id, dailyPostData);
+      } else {
+        // Create new daily post
+        // Use targetCheckInDate if provided, otherwise use today
+        const dateToUse = targetCheckInDate || new Date();
+        const dailyPostDate = getDailyPostDate(dateToUse);
+        result = await dailyPostsService.createDailyPost(user!.id, dailyPostDate, dailyPostData);
+      }
       
       if (result) {
-        Alert.alert('Success', `Post created successfully with ${selectedPhotos.length} photo(s) and ${selectedHabits.length} habit(s)!`);
+        // If a goal is selected and photos are uploaded, also create progress_photos entries
+        if (selectedGoal && selectedPhotos.length > 0) {
+          try {
+            // Create progress_photos entries for GoalDetailScreen
+            for (const photoUrl of selectedPhotos) {
+              const checkInResult = await progressService.createCheckIn({
+                goalId: selectedGoal,
+                userId: user!.id,
+                photoUri: photoUrl, // Use the same URL - no duplication
+                checkInDate: targetCheckInDate || new Date() // Use target date if provided, otherwise today
+              });
+            }
+          } catch (error) {
+            console.error('Error creating progress photos entries:', error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
+            // Don't fail the entire operation if progress photos creation fails
+          }
+        }
+
+        const actionText = existingDailyPost ? 'added to today\'s post' : 'created';
+        Alert.alert('Success', `Content ${actionText} successfully with ${selectedPhotos.length} photo(s) and ${selectedHabits.length} habit(s)!`);
+        
+        // Track core habits
+        // Note: Share is tracked when user clicks share button, not when creating post
+        
+        // If a goal was selected and photos were uploaded, track update_goal
+        if (selectedGoal && selectedPhotos.length > 0) {
+          trackCoreHabit('update_goal');
+        }
+        
         resetForm();
         onPostCreated();
         onClose();
@@ -248,6 +348,8 @@ export default function CreatePostModal({
         Alert.alert('Error', 'Failed to create post. Please try again.');
       }
     } catch (error: any) {
+      console.error('Error in submitPost:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       Alert.alert('Error', error.message || 'Failed to create post. Please try again.');
     } finally {
       setIsCreating(false);
@@ -267,7 +369,9 @@ export default function CreatePostModal({
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Create Post (Test)</Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+            {targetCheckInDate ? `${getPostDateString()} Post` : 'Create Post'}
+          </Text>
           <TouchableOpacity 
             onPress={createPost} 
             style={[styles.postButton, { opacity: isCreating ? 0.5 : 1 }]}
@@ -278,6 +382,26 @@ export default function CreatePostModal({
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Existing Daily Post Preview */}
+        {existingDailyPost && (
+          <View style={[styles.existingPostPreview, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+            <View style={styles.existingPostHeader}>
+              <Ionicons name="today" size={20} color={theme.primary} />
+              <Text style={[styles.existingPostTitle, { color: theme.textPrimary }]}>
+                {targetCheckInDate ? `${getPostDateString()}'s Post` : "Today's Post"}
+              </Text>
+            </View>
+            <Text style={[styles.existingPostInfo, { color: theme.textSecondary }]}>
+              {existingDailyPost.total_photos} photos • {existingDailyPost.total_habits} habits • {existingDailyPost.post_count} posts
+            </Text>
+            {existingDailyPost.captions.length > 0 && (
+              <Text style={[styles.existingPostCaption, { color: theme.textSecondary }]} numberOfLines={2}>
+                "{existingDailyPost.captions[existingDailyPost.captions.length - 1]}"
+              </Text>
+            )}
+          </View>
+        )}
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                     {/* Photo Upload */}
@@ -739,5 +863,29 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  existingPostPreview: {
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  existingPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  existingPostTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  existingPostInfo: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  existingPostCaption: {
+    fontSize: 12,
+    fontStyle: 'italic',
   },
 });

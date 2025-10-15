@@ -45,7 +45,21 @@ function CheckInList({
     if (!hasFrequency) return false;
     
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const todayDayOfWeek = today.getDay();
+    
+    // Check if today is within the goal's active date range
+    if (goal.start_date) {
+      const startDate = new Date(goal.start_date);
+      startDate.setHours(0, 0, 0, 0);
+      if (today < startDate) return false;
+    }
+    
+    if (goal.end_date) {
+      const endDate = new Date(goal.end_date);
+      endDate.setHours(0, 0, 0, 0);
+      if (today > endDate) return false; // Goal has ended
+    }
     
     // Due today = required today AND not checked in today
     return goal.frequency[todayDayOfWeek] && !checkedInGoals.has(goal.id);

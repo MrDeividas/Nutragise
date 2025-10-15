@@ -21,6 +21,7 @@ export interface Goal {
 export interface Post {
   id: string;
   user_id: string;
+  daily_post_id?: string;
   content: string;
   goal_id?: string;
   date: string;
@@ -30,6 +31,20 @@ export interface Post {
   mood_rating?: number;
   energy_level?: number;
   is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DailyPost {
+  id: string;
+  user_id: string;
+  date: string;
+  photos: string[];
+  captions: string[];
+  habits_completed: string[];
+  total_photos: number;
+  total_habits: number;
+  post_count: number;
   created_at: string;
   updated_at: string;
 }

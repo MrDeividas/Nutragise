@@ -6,14 +6,58 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import CustomBackground from '../components/CustomBackground';
+import { pointsService } from '../lib/pointsService';
+import { useAuthStore } from '../state/authStore';
+import { useActionStore } from '../state/actionStore';
+import { supabase } from '../lib/supabase';
 
 export default function MeditationScreen({ navigation }: any) {
   const { theme } = useTheme();
+  const { user } = useAuthStore();
+  
+  const handleCompleteMeditation = async () => {
+    try {
+      // Get user from auth store (same way actionStore does it)
+      const { user: authUser } = useAuthStore.getState();
+      const userId = authUser?.id;
+      
+      console.log('🧘 Button pressed, user from getState():', userId);
+      
+      if (!userId) {
+        console.error('❌ No user ID found');
+        Alert.alert('Error', 'You must be logged in. Please try restarting the app.');
+        return;
+      }
+      
+      console.log('🧘 Completing meditation for user:', userId);
+      const success = await pointsService.trackDailyHabit(userId, 'meditation');
+      
+      if (success) {
+        // Reload daily habits to update the segments properly
+        const today = new Date();
+        const hour = today.getHours();
+        const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
+        const dateString = dateToUse.toISOString().split('T')[0];
+        
+        await useActionStore.getState().loadDailyHabits(dateString);
+        
+        Alert.alert('Success', 'Meditation completed! +15 points\n\nCheck the Action page to see it highlighted.');
+        console.log('✅ Meditation tracked successfully and daily habits reloaded');
+      } else {
+        Alert.alert('Info', 'Meditation already completed today or not eligible for points');
+        console.log('ℹ️ Meditation tracking returned false');
+      }
+    } catch (error) {
+      console.error('Error completing meditation:', error);
+      Alert.alert('Error', 'Failed to complete meditation: ' + error);
+    }
+  };
 
   const meditationSessions = [
     {
@@ -89,6 +133,32 @@ export default function MeditationScreen({ navigation }: any) {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* TEST BUTTON - Complete Meditation */}
+        <View style={{ padding: 20, backgroundColor: 'rgba(255, 193, 7, 0.1)', margin: 16, borderRadius: 12 }}>
+          <Text style={{ color: theme.textPrimary, fontSize: 16, fontWeight: 'bold', marginBottom: 8 }}>
+            TEST MODE
+          </Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
+            User: {user ? user.id.substring(0, 8) + '...' : 'Not loaded'}
+          </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#4CAF50',
+              padding: 16,
+              borderRadius: 8,
+              alignItems: 'center',
+            }}
+            onPress={handleCompleteMeditation}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+              ✓ Complete Meditation (+15 pts)
+            </Text>
+          </TouchableOpacity>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+            Click to mark meditation as complete and award points
+          </Text>
+        </View>
+        
         {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>

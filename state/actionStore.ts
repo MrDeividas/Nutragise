@@ -1,13 +1,21 @@
 import { create } from 'zustand';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
+import { pointsService } from '../lib/pointsService';
 import { DailyHabits, CreateDailyHabitsData } from '../types/database';
 import { useAuthStore } from './authStore';
+import { supabase } from '../lib/supabase';
 
 interface ActionState {
 	segmentChecked: boolean[];
 	setSegmentChecked: (segments: boolean[]) => void;
 	toggleSegment: (index: number) => void;
 	getActiveSegmentCount: () => number;
+	
+	// Core habits state (5 segments for pink bar)
+	coreHabitsCompleted: boolean[];
+	setCoreHabitsCompleted: (segments: boolean[]) => void;
+	loadCoreHabitsStatus: () => Promise<void>;
+	trackCoreHabit: (habitType: 'like' | 'comment' | 'share' | 'update_goal') => Promise<void>;
 	
 	// Daily habits state
 	dailyHabits: DailyHabits | null;
@@ -22,13 +30,16 @@ interface ActionState {
 	clearDailyHabitsError: () => void;
 	clearHabitForDate: (date: string, habitType: string) => Promise<boolean>;
 	setSelectedDate: (date: string) => void;
-	syncSegmentsWithData: (dailyHabits: DailyHabits) => void;
+	syncSegmentsWithData: (dailyHabits: DailyHabits, pointsData?: { meditation_completed?: boolean; microlearn_completed?: boolean } | null) => void;
 	setShouldOpenGraphs: (shouldOpen: boolean) => void;
 	clearStore: () => void;
 }
 
 export const useActionStore = create<ActionState>((set, get) => ({
 	segmentChecked: [false, false, false, false, false, false, false, false], // All segments start unchecked each day
+	
+	// Core habits state (Like, Comment, Share, Update Goal, Bonus)
+	coreHabitsCompleted: [false, false, false, false, false],
 	
 	// Daily habits state
 	dailyHabits: null,
@@ -49,6 +60,7 @@ export const useActionStore = create<ActionState>((set, get) => ({
 				// User logged out, clear the action store
 				set({
 					segmentChecked: [false, false, false, false, false, false, false, false],
+					coreHabitsCompleted: [false, false, false, false, false],
 					dailyHabits: null,
 					dailyHabitsLoading: false,
 					dailyHabitsError: null,
@@ -78,6 +90,45 @@ export const useActionStore = create<ActionState>((set, get) => ({
 		const state = get();
 		return state.segmentChecked.filter(checked => checked).length;
 	},
+	
+	setCoreHabitsCompleted: (segments: boolean[]) => {
+		set({ coreHabitsCompleted: segments });
+	},
+	
+	loadCoreHabitsStatus: async () => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) return;
+			
+			const status = await pointsService.getCoreHabitsStatus(user.id);
+			set({
+				coreHabitsCompleted: [
+					status.liked,
+					status.commented,
+					status.shared,
+					status.updatedGoal,
+					status.bonus
+				]
+			});
+		} catch (error) {
+			console.error('Error loading core habits status:', error);
+		}
+	},
+	
+	trackCoreHabit: async (habitType: 'like' | 'comment' | 'share' | 'update_goal') => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) return;
+			
+			const success = await pointsService.trackCoreHabit(user.id, habitType);
+			if (success) {
+				// Reload status to update UI
+				await get().loadCoreHabitsStatus();
+			}
+		} catch (error) {
+			console.error('Error tracking core habit:', error);
+		}
+	},
 
 	// Save daily habits to Supabase
 	saveDailyHabits: async (habitData: CreateDailyHabitsData) => {
@@ -100,6 +151,10 @@ export const useActionStore = create<ActionState>((set, get) => ({
 					dailyHabitsLoading: false,
 					dailyHabitsError: null 
 				});
+				
+				// Update points for the daily habits
+				await pointsService.updateDailyHabitsPoints(userId, result, habitData.date);
+				
 				return true;
 			} else {
 				throw new Error('Failed to save daily habits');
@@ -128,15 +183,23 @@ export const useActionStore = create<ActionState>((set, get) => ({
 
 			const result = await dailyHabitsService.getDailyHabits(userId, date);
 			
+			// Also load meditation/microlearn status from user_points_daily
+			const { data: pointsData } = await supabase
+				.from('user_points_daily')
+				.select('meditation_completed, microlearn_completed')
+				.eq('user_id', userId)
+				.eq('date', date)
+				.single();
+			
 			set({ 
 				dailyHabits: result, 
 				dailyHabitsLoading: false,
 				dailyHabitsError: null 
 			});
 
-			// Sync segments with loaded data
+			// Sync segments with loaded data (pass points data for meditation/microlearn)
 			if (result) {
-				get().syncSegmentsWithData(result);
+				get().syncSegmentsWithData(result, pointsData);
 			}
 		} catch (error: any) {
 			set({ 
@@ -176,14 +239,12 @@ export const useActionStore = create<ActionState>((set, get) => ({
 	},
 
 	// Sync segments with loaded daily habits data
-	syncSegmentsWithData: (dailyHabits: DailyHabits) => {
+	syncSegmentsWithData: (dailyHabits: DailyHabits, pointsData?: { meditation_completed?: boolean; microlearn_completed?: boolean } | null) => {
 		const segments = new Array(8).fill(false);
 		
-		// Check which habits are completed based on loaded data
-		// Note: Meditation (index 0) and Micro-learn (index 1) don't store data in DB
-		// They should always start as false (uncompleted) for each new day
-		segments[0] = false; // Meditation - always fresh each day
-		segments[1] = false; // Micro-learn - always fresh each day
+		// Check meditation and microlearn from points data
+		segments[0] = pointsData?.meditation_completed || false; // Meditation (index 0)
+		segments[1] = pointsData?.microlearn_completed || false; // Micro-learn (index 1)
 		
 		if (dailyHabits?.sleep_hours || dailyHabits?.sleep_quality) {
 			segments[2] = true; // Sleep (index 2)
@@ -214,6 +275,7 @@ export const useActionStore = create<ActionState>((set, get) => ({
 	clearStore: () => {
 		set({
 			segmentChecked: [false, false, false, false, false, false, false, false],
+			coreHabitsCompleted: [false, false, false, false, false],
 			dailyHabits: null,
 			dailyHabitsLoading: false,
 			dailyHabitsError: null,

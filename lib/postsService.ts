@@ -1,28 +1,51 @@
 import { supabase } from './supabase';
 import { Post, CreatePostData, UpdatePostData, DailyPostGroup } from '../types/database';
+import { dailyPostsService, CreateDailyPostData } from './dailyPostsService';
+import { getDailyPostDate } from './timeService';
 
 class PostsService {
   /**
-   * Create a new post
+   * Create a new post with daily post grouping
    */
   async createPost(postData: CreatePostData): Promise<Post | null> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Check daily post limit
-      const canPost = await this.checkDailyPostLimit(user.id, postData.date);
-      if (!canPost) {
-        throw new Error('Daily post limit reached (30 posts per day)');
+      // Get daily post date based on UK timezone and 4 AM cutoff
+      const dailyPostDate = getDailyPostDate(new Date());
+      
+      // Check if daily post exists for this date
+      const existingDailyPost = await dailyPostsService.getDailyPostByDate(user.id, dailyPostDate);
+      
+      let dailyPost;
+      const dailyPostData: CreateDailyPostData = {
+        photos: postData.photos,
+        captions: postData.caption ? [postData.caption] : [],
+        habits_completed: postData.habits_completed
+      };
+      
+      if (existingDailyPost) {
+        // Add to existing daily post
+        dailyPost = await dailyPostsService.addToDailyPost(existingDailyPost.id, dailyPostData);
+      } else {
+        // Create new daily post
+        dailyPost = await dailyPostsService.createDailyPost(user.id, dailyPostDate, dailyPostData);
+      }
+      
+      if (!dailyPost) {
+        throw new Error('Failed to create or update daily post');
       }
 
+      // Create individual post record
       const { data, error } = await supabase
         .from('posts')
         .insert({
           user_id: user.id,
+          daily_post_id: dailyPost.id,
           content: postData.content,
           goal_id: postData.goal_id,
-          date: postData.date,
+          date: dailyPostDate,
           photos: postData.photos,
           habits_completed: postData.habits_completed,
           caption: postData.caption,
@@ -34,7 +57,7 @@ class PostsService {
         .single();
 
       if (error) {
-        console.error('Error creating post:', error);
+        console.error('Error creating individual post:', error);
         return null;
       }
 

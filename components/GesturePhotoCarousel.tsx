@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, Image, TouchableOpacity, FlatList } from 'react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -19,6 +19,15 @@ export default function GesturePhotoCarousel({
   style 
 }: GesturePhotoCarouselProps) {
   const flatListRef = useRef<FlatList>(null);
+
+  // Scroll to the correct index when currentIndex changes
+  useEffect(() => {
+    if (flatListRef.current && photos.length > 0 && currentIndex >= 0 && currentIndex < photos.length) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: currentIndex, animated: false });
+      }, 100); // Small delay to ensure the FlatList is ready
+    }
+  }, [currentIndex, photos.length]);
 
   if (!photos || photos.length === 0) return null;
 
@@ -57,6 +66,7 @@ export default function GesturePhotoCarousel({
         ref={flatListRef}
         data={photos}
         renderItem={renderItem}
+        keyExtractor={(item, index) => `photo_${index}_${item}`}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -69,6 +79,10 @@ export default function GesturePhotoCarousel({
           index,
         })}
         initialScrollIndex={currentIndex}
+        removeClippedSubviews={false}
+        decelerationRate="fast"
+        snapToInterval={screenWidth}
+        snapToAlignment="start"
       />
       
       {/* Navigation Dots */}

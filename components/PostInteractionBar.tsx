@@ -28,10 +28,7 @@ export default function PostInteractionBar({
   const { theme } = useTheme();
 
   return (
-    <View style={[
-      styles.container,
-      { borderTopColor: theme.border }
-    ]}>
+    <View style={styles.container}>
       <View style={styles.buttonContainer}>
         <PostLikeButton
           postId={postId}
@@ -58,11 +55,13 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 0,
     paddingBottom: 0,
+    borderTopWidth: 0,
+    backgroundColor: 'transparent',
   },
   buttonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
     paddingHorizontal: 0,
   },
 });

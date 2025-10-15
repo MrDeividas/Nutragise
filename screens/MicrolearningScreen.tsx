@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,8 @@ import { useTheme } from '../state/themeStore';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../state/authStore';
 import CustomBackground from '../components/CustomBackground';
+import { pointsService } from '../lib/pointsService';
+import { useActionStore } from '../state/actionStore';
 
 export default function MicrolearningScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -23,6 +26,44 @@ export default function MicrolearningScreen({ navigation }: any) {
   const [userProgress, setUserProgress] = useState<{[key: string]: any}>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const handleCompleteMicrolearn = async () => {
+    try {
+      // Get user from auth store (same way actionStore does it)
+      const { user: authUser } = useAuthStore.getState();
+      const userId = authUser?.id;
+      
+      console.log('📚 Button pressed, user from getState():', userId);
+      
+      if (!userId) {
+        console.error('❌ No user ID found');
+        Alert.alert('Error', 'You must be logged in. Please try restarting the app.');
+        return;
+      }
+      
+      console.log('📚 Completing microlearn for user:', userId);
+      const success = await pointsService.trackDailyHabit(userId, 'microlearn');
+      
+      if (success) {
+        // Reload daily habits to update the segments properly
+        const today = new Date();
+        const hour = today.getHours();
+        const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
+        const dateString = dateToUse.toISOString().split('T')[0];
+        
+        await useActionStore.getState().loadDailyHabits(dateString);
+        
+        Alert.alert('Success', 'Microlearn completed! +15 points\n\nCheck the Action page to see it highlighted.');
+        console.log('✅ Microlearn tracked successfully and daily habits reloaded');
+      } else {
+        Alert.alert('Info', 'Microlearn already completed today or not eligible for points');
+        console.log('ℹ️ Microlearn tracking returned false');
+      }
+    } catch (error) {
+      console.error('Error completing microlearn:', error);
+      Alert.alert('Error', 'Failed to complete microlearn: ' + error);
+    }
+  };
 
   // Optimized initialization - move heavy operations to background
   useEffect(() => {
@@ -192,6 +233,32 @@ export default function MicrolearningScreen({ navigation }: any) {
             Quick insights for personal growth
           </Text>
         </View>
+      </View>
+
+      {/* TEST BUTTON - Complete Microlearn */}
+      <View style={{ padding: 20, backgroundColor: 'rgba(255, 193, 7, 0.1)', margin: 16, borderRadius: 12 }}>
+        <Text style={{ color: theme.textPrimary, fontSize: 16, fontWeight: 'bold', marginBottom: 8 }}>
+          TEST MODE
+        </Text>
+        <Text style={{ color: theme.textSecondary, fontSize: 12, marginBottom: 8 }}>
+          User: {user ? user.id.substring(0, 8) + '...' : 'Not loaded'}
+        </Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#2196F3',
+            padding: 16,
+            borderRadius: 8,
+            alignItems: 'center',
+          }}
+          onPress={handleCompleteMicrolearn}
+        >
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+            ✓ Complete Microlearn (+15 pts)
+          </Text>
+        </TouchableOpacity>
+        <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+          Click to mark microlearn as complete and award points
+        </Text>
       </View>
 
       {/* Content */}
