@@ -27,9 +27,11 @@ import { useActionStore } from '../state/actionStore';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
 import { pointsService } from '../lib/pointsService';
+import { dmService } from '../lib/dmService';
 import Svg, { Circle, Line, Text as SvgText, Polygon, Defs, LinearGradient, Stop, Path, Filter, FeGaussianBlur, FeOffset, FeMerge, FeMergeNode } from 'react-native-svg';
 import JourneyPreview from '../components/JourneyPreview';
 import FullJourneyModal from '../components/FullJourneyModal';
+import LevelInfoModal from '../components/LevelInfoModal';
 
 const { width } = Dimensions.get('window');
 
@@ -247,10 +249,21 @@ function ProfileScreen({ navigation }: any) {
     following: 0
   });
   const [notificationCount, setNotificationCount] = useState(0);
+  const [dmUnreadCount, setDmUnreadCount] = useState(0);
   const profileCardAnimation = useRef(new Animated.Value(0)).current;
   
   // Journey modal state
   const [showFullJourney, setShowFullJourney] = useState(false);
+  
+  // Level system state
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [levelProgress, setLevelProgress] = useState({ 
+    currentLevel: 1, 
+    nextLevel: 2, 
+    segmentsFilled: 0,
+    pointsInCurrentLevel: 0,
+    pointsNeededForNext: 4000
+  });
 
 
 
@@ -331,12 +344,17 @@ function ProfileScreen({ navigation }: any) {
       const total = await pointsService.getTotalPoints(user.id);
       const today = await pointsService.getTodaysPoints(user.id);
       const status = await pointsService.getCoreHabitsStatus(user.id);
+      const progress = pointsService.getLevelProgress(total);
+      
       console.log('📊 Points breakdown:', {
         total,
         today,
-        coreHabitsStatus: status
+        coreHabitsStatus: status,
+        levelProgress: progress
       });
+      
       setTotalPoints(total);
+      setLevelProgress(progress);
     } catch (error) {
       console.error('Error fetching user points:', error);
       setTotalPoints(0);
@@ -388,11 +406,19 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
+  const loadDmUnreadCount = async () => {
+    if (user) {
+      const count = await dmService.getTotalUnreadCount(user.id);
+      setDmUnreadCount(count);
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
       loadProfileData();
       fetchUserPoints();
       fetchNotificationCount();
+      loadDmUnreadCount();
       fetchGoalProgress();
       checkTodaysCheckIns();
       loadCoreHabitsStatus();
@@ -639,6 +665,37 @@ function ProfileScreen({ navigation }: any) {
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Profile</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('DM' as never)} 
+              style={{ marginRight: 12 }}
+            >
+              <View style={{ position: 'relative' }}>
+                <Ionicons name="chatbubble-outline" size={24} color="#ffffff" />
+                {dmUnreadCount > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -6,
+                    right: -8,
+                    backgroundColor: '#ff5a5f',
+                    borderRadius: 10,
+                    minWidth: 18,
+                    height: 18,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    paddingHorizontal: 4,
+                  }}>
+                    <Text style={{
+                      color: '#fff',
+                      fontSize: 12,
+                      fontWeight: '700',
+                    }}>
+                      {dmUnreadCount > 99 ? '99+' : dmUnreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+
             <TouchableOpacity onPress={() => {
               navigation.navigate('Notifications');
               markNotificationsAsRead(); // Mark notifications as read
@@ -750,6 +807,9 @@ function ProfileScreen({ navigation }: any) {
                   navigation.navigate('Followers', {
                     userId: user.id,
                     username: user.email || 'User'
+                  }, {
+                    animation: 'slide_from_bottom',
+                    presentation: 'modal'
                   });
                 }
               }}
@@ -838,35 +898,42 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
                 {/* Progress Bar */}
-        <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-          {/* Main Progress Bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>1</Text>
-            <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
-                {[...Array(20)].map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      {
-                        width: '4.3%', // 100% / 20 segments, adjusted for spacing
-                        height: '100%',
-                        backgroundColor: 'white',
-                        marginRight: i === 19 ? 0 : '0.7%', // increased spacing between segments
-                        borderRadius: 2,
-                        transform: [{ skewX: '-18deg' }],
-                      },
-                      (i > 0 && i < 19) && { borderRadius: 0 },
-                                            i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                                              i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                                            (i >= 12) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'white' },
-                    ]}
-                  />
-                ))}
+        <TouchableOpacity 
+          onPress={() => {
+            console.log('Progress bar clicked, opening level modal');
+            setShowLevelModal(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
+            {/* Main Progress Bar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
+              <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
+                <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
+                  {[...Array(20)].map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        {
+                          width: '4.3%', // 100% / 20 segments, adjusted for spacing
+                          height: '100%',
+                          backgroundColor: 'white',
+                          marginRight: i === 19 ? 0 : '0.7%', // increased spacing between segments
+                          borderRadius: 2,
+                          transform: [{ skewX: '-18deg' }],
+                        },
+                        (i > 0 && i < 19) && { borderRadius: 0 },
+                                              i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                                                i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                                              (i >= levelProgress.segmentsFilled) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'white' },
+                      ]}
+                    />
+                  ))}
+                </View>
               </View>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
             </View>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>2</Text>
-          </View>
           
           {/* Green Progress Bar - Now first */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
@@ -956,6 +1023,7 @@ function ProfileScreen({ navigation }: any) {
             </View>
           </View>
         </View>
+        </TouchableOpacity>
 
         {/* Journey Section */}
         {user && (
@@ -1127,6 +1195,16 @@ function ProfileScreen({ navigation }: any) {
           onClose={() => setShowFullJourney(false)}
         />
       )}
+
+      {/* Level Info Modal */}
+      <LevelInfoModal
+        visible={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        currentLevel={levelProgress.currentLevel}
+        totalPoints={totalPoints}
+        dailyHabits={segmentChecked}
+        coreHabits={coreHabitsCompleted}
+      />
     </SafeAreaView>
   );
 }

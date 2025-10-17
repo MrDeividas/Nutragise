@@ -230,4 +230,46 @@ export interface HabitStreak {
   current_streak: number;
   longest_streak: number;
   last_completed_date?: string;
+}
+
+// DM (Direct Messaging) Types
+export interface Chat {
+  id: string;
+  participant_1: string;
+  participant_2: string;
+  last_message_id?: string;
+  last_message_preview?: string;
+  last_message_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  content: string;
+  message_type: 'text' | 'image';
+  is_read: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatWithProfile extends Chat {
+  other_user: {
+    id: string;
+    username: string;
+    display_name?: string;
+    avatar_url?: string;
+  };
+  unread_count: number;
+  is_following: boolean;
+}
+
+export interface TypingIndicator {
+  id: string;
+  chat_id: string;
+  user_id: string;
+  is_typing: boolean;
+  updated_at: string;
 } 

@@ -697,6 +697,45 @@ class PointsService {
       return { liked: false, commented: false, shared: false, updatedGoal: false, bonus: false };
     }
   }
+
+  /**
+   * Get current level based on total points
+   * Level 1: 0-3999 pts
+   * Level 2: 4000-7999 pts
+   * Level 3: 8000-11999 pts
+   * Level 4: 12000+ pts
+   */
+  getCurrentLevel(totalPoints: number): number {
+    if (totalPoints >= 12000) return 4;
+    if (totalPoints >= 8000) return 3;
+    if (totalPoints >= 4000) return 2;
+    return 1;
+  }
+
+  /**
+   * Get level progress information
+   * Returns current level, next level, points within current level, and segments filled
+   */
+  getLevelProgress(totalPoints: number): {
+    currentLevel: number;
+    nextLevel: number;
+    pointsInCurrentLevel: number;
+    pointsNeededForNext: number;
+    segmentsFilled: number; // out of 20
+  } {
+    const currentLevel = this.getCurrentLevel(totalPoints);
+    const levelStartPoints = (currentLevel - 1) * 4000;
+    const pointsInCurrentLevel = totalPoints - levelStartPoints;
+    const segmentsFilled = Math.floor(pointsInCurrentLevel / 200);
+    
+    return {
+      currentLevel,
+      nextLevel: currentLevel < 4 ? currentLevel + 1 : 4,
+      pointsInCurrentLevel,
+      pointsNeededForNext: currentLevel < 4 ? 4000 - pointsInCurrentLevel : 0,
+      segmentsFilled: Math.min(segmentsFilled, 20)
+    };
+  }
 }
 
 export const pointsService = new PointsService();

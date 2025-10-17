@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   Alert,
   RefreshControl,
@@ -19,6 +18,7 @@ import { useTheme } from '../state/themeStore';
 import { useFocusEffect } from '@react-navigation/native';
 import NewGoalModal from '../components/NewGoalModal';
 import CreatePostModal from '../components/CreatePostModal';
+import CustomBackground from '../components/CustomBackground';
 
 interface GoalsScreenProps {
   navigation: any;
@@ -32,17 +32,16 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      fetchGoals(user.id);
-    }
-  }, [user]);
-
-  // Fetch goals when screen comes into focus
+  // Optimized: Only fetch on focus, avoid duplicate fetches
   useFocusEffect(
     React.useCallback(() => {
       if (user) {
-        fetchGoals(user.id);
+        // Defer to next tick for smooth navigation
+        const timer = setTimeout(() => {
+          fetchGoals(user.id);
+        }, 0);
+        
+        return () => clearTimeout(timer);
       }
     }, [user])
   );
@@ -85,11 +84,11 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     return diffDays;
   };
 
-  const renderGoalItem = React.useCallback(({ item: goal }: { item: Goal }) => {
+  const renderGoalItem = React.useCallback((goal: Goal) => {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
-      <View style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)', ...(Platform.OS === 'android' ? { borderWidth: 1, borderColor: theme.borderSecondary, overflow: 'hidden' } : {}) }]}>
+      <View key={goal.id} style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
         <TouchableOpacity
           onPress={() => {
             navigation.navigate('GoalDetail', { goal });
@@ -175,12 +174,16 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
 
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      >
+    <CustomBackground>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+        <ScrollView 
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
+          }
+        >
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Goals</Text>
@@ -245,23 +248,14 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
               </View>
             </View>
           ) : (
-            <FlatList
-              data={[...activeGoals, ...completedGoals]}
-              keyExtractor={(item) => item.id}
-              renderItem={renderGoalItem}
-              scrollEnabled={false}
-              removeClippedSubviews={true}
-              initialNumToRender={10}
-              maxToRenderPerBatch={5}
-              windowSize={10}
-              refreshControl={
-                <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
-              }
-            />
+            <View>
+              {[...activeGoals, ...completedGoals].map(renderGoalItem)}
+            </View>
           )}
         </View>
-      </ScrollView>
-
+        </ScrollView>
+      </SafeAreaView>
+      
       {/* New Goal Modal */}
       <NewGoalModal
         visible={showNewGoalModal}
@@ -296,7 +290,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         userGoals={goals.filter(goal => !goal.completed)}
         preSelectedGoal={newlyCreatedGoalId || undefined}
       />
-    </SafeAreaView>
+    </CustomBackground>
   );
 }
 

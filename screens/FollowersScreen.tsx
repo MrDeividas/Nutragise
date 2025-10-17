@@ -15,6 +15,7 @@ import { useAuthStore } from '../state/authStore';
 import { useSocialStore } from '../state/socialStore';
 import { Profile } from '../lib/socialService';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import CustomBackground from '../components/CustomBackground';
 
 type FollowersStackParamList = {
   Followers: { userId: string; username: string };
@@ -29,8 +30,14 @@ export default function FollowersScreen({ navigation, route }: Props) {
   const { user } = useAuthStore();
   const { followers, fetchFollowers, isLoading } = useSocialStore();
 
+  // Optimized initialization - defer data fetching to avoid blocking navigation animation
   useEffect(() => {
-    fetchFollowers(userId);
+    // Use setTimeout to move heavy operations to next tick
+    const timer = setTimeout(() => {
+      fetchFollowers(userId);
+    }, 0);
+    
+    return () => clearTimeout(timer);
   }, [userId]);
 
   const renderFollower = ({ item }: { item: Profile }) => (
@@ -82,40 +89,42 @@ export default function FollowersScreen({ navigation, route }: Props) {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          Followers
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {/* Content */}
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading followers...
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+            Followers
           </Text>
+          <View style={styles.headerSpacer} />
         </View>
-      ) : (
-        <FlatList
-          data={followers}
-          renderItem={renderFollower}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={renderEmpty}
-        />
-      )}
-    </SafeAreaView>
+
+        {/* Content */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Loading followers...
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={followers}
+            renderItem={renderFollower}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={renderEmpty}
+          />
+        )}
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 

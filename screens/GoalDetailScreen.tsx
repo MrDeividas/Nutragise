@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { progressService, ProgressPhoto } from '../lib/progressService';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
+import CustomBackground from '../components/CustomBackground';
 
 // Define the navigation param list for the Goals stack
 export type GoalsStackParamList = {
@@ -55,10 +56,10 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (user) {
-      // Use setTimeout to allow the navigation animation to complete first
+      // Use setTimeout to defer heavy operations to next tick
       const timer = setTimeout(() => {
         loadProgressPhotos();
-      }, 100);
+      }, 0);
       
       return () => clearTimeout(timer);
     }
@@ -126,8 +127,9 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: 'transparent' }]}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <CustomBackground>
+      <View style={styles.container}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -277,7 +279,8 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
           )}
         </View>
       </ScrollView>
-    </View>
+      </View>
+    </CustomBackground>
   );
 }
 
