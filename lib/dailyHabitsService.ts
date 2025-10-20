@@ -34,7 +34,12 @@ class DailyHabitsService {
         p_reflect_friction: habitData.reflect_friction,
         p_reflect_one_tweak: habitData.reflect_one_tweak,
         p_reflect_nothing_to_change: habitData.reflect_nothing_to_change,
-        p_cold_shower_completed: habitData.cold_shower_completed
+        p_cold_shower_completed: habitData.cold_shower_completed,
+        p_focus_duration: habitData.focus_duration,
+        p_focus_start_time: habitData.focus_start_time,
+        p_focus_end_time: habitData.focus_end_time,
+        p_focus_notes: habitData.focus_notes,
+        p_focus_completed: habitData.focus_completed
       });
 
       if (error) {

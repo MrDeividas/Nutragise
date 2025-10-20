@@ -77,7 +77,10 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
         });
         return prev.filter(h => h !== habitId);
       } else {
-        // Selecting - check if it's a new habit
+        // Selecting - always add to selected habits first
+        const newSelected = [...prev, habitId];
+        
+        // Check if it's a new habit (no existing schedule)
         const wasPreviouslySelected = habitSchedules[habitId];
         if (!wasPreviouslySelected) {
           // New habit - show inline schedule picker
@@ -87,11 +90,9 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
           const defaultDays = new Array(7).fill(false);
           defaultDays[today] = true;
           setTempSchedule(defaultDays);
-          return prev; // Don't add yet, wait for schedule
-        } else {
-          // Existing habit - add immediately
-          return [...prev, habitId];
         }
+        
+        return newSelected; // Always add the habit
       }
     });
   };
@@ -137,8 +138,7 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
         [habitId]: tempSchedule
       }));
       
-      // Add habit to selected habits locally
-      setSelectedHabits(prev => [...prev, habitId]);
+      // Habit is already in selectedHabits from toggleHabit, so no need to add again
       
       // Close the inline picker
       setExpandedHabit(null);
@@ -149,12 +149,17 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
   };
 
   const handleInlineScheduleCancel = () => {
+    const habitId = expandedHabit;
     setExpandedHabit(null);
-    // Clear any pending schedule for this habit
-    if (expandedHabit) {
+    
+    // Remove the habit from selectedHabits since user cancelled
+    if (habitId) {
+      setSelectedHabits(prev => prev.filter(h => h !== habitId));
+      
+      // Clear any pending schedule for this habit
       setPendingSchedules(prevSchedules => {
         const newSchedules = { ...prevSchedules };
-        delete newSchedules[expandedHabit];
+        delete newSchedules[habitId];
         return newSchedules;
       });
     }

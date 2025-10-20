@@ -27,7 +27,7 @@ export const AVAILABLE_HABITS = [
   { id: 'meditation', name: 'Meditation', icon: { name: 'om', solid: false } },
   { id: 'microlearn', name: 'Microlearn', icon: { name: 'book', solid: false } },
   { id: 'cold_shower', name: 'Cold Shower', icon: { name: 'snowflake', solid: false } },
-  { id: 'detox', name: 'Detox', icon: { name: 'mobile-alt', solid: false } }
+  { id: 'screen_time', name: 'Screen Time Limit', icon: { name: 'mobile-alt', solid: false } }
 ];
 
 export const DEFAULT_HABITS = ['gym', 'reflect', 'focus', 'sleep', 'water', 'run', 'microlearn', 'cold_shower'];

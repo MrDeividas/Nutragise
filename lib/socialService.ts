@@ -15,7 +15,7 @@ export interface Profile {
 }
 
 export interface CreateProfileData {
-  username: string;
+  username: string;  // Required - we now use user ID as username
   display_name?: string;
   bio?: string;
   avatar_url?: string;
@@ -23,6 +23,7 @@ export interface CreateProfileData {
   age?: number;
   completed_competitions?: number;
   won_awards?: number;
+  onboarding_completed?: boolean;
 }
 
 export interface UpdateProfileData {

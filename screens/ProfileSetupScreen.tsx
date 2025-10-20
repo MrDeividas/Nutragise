@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import { socialService } from '../lib/socialService';
+import { supabase } from '../lib/supabase';
 
 export default function ProfileSetupScreen() {
   const { theme } = useTheme();
@@ -67,7 +68,17 @@ export default function ProfileSetupScreen() {
           bio: bio.trim(),
           avatar_url: avatarUri || undefined,
         });
+
+        // Mark onboarding as complete AFTER all operations are done
+        await supabase
+          .from('profiles')
+          .update({ onboarding_completed: true })
+          .eq('id', user.id);
       }
+
+      // Show success message and let App.tsx handle the navigation
+      Alert.alert('Success', 'Profile completed! Welcome to Nutrapp!');
+      
     } catch (error) {
       console.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

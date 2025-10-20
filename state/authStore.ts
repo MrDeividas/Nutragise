@@ -80,7 +80,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           if (!profileData && userData) {
             // Create profile if it doesn't exist
             await socialService.createProfile(session.user.id, {
-              username: userData.username || userData.email?.split('@')[0] || 'user',
+              username: session.user.id,  // Use unique user ID as username (random UUID)
               display_name: userData.username || userData.email?.split('@')[0] || 'User',
               bio: userData.bio,
               avatar_url: userData.avatar_url
@@ -117,15 +117,50 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // Insert user into users table immediately after successful sign up
       const user = signUpData?.user;
       if (user) {
+        console.log('👤 Creating user and profile for:', user.id, user.email);
+        
         await supabase.from('users').upsert({
           id: user.id,
           email: user.email
         });
         
-        // Also create a profile record for social features
-        await socialService.createProfile(user.id, {
-          username: user.email?.split('@')[0] || 'user',
-          display_name: user.email?.split('@')[0] || 'User'
+        // Also create a profile record for social features with onboarding_completed = false
+        const profile = await socialService.createProfile(user.id, {
+          username: user.id,  // Use unique user ID as username (random UUID)
+          display_name: user.email?.split('@')[0] || 'User',
+          onboarding_completed: false
+        });
+        
+        if (!profile) {
+          console.error('❌ Failed to create profile for user:', user.id);
+          // Try direct insert as fallback
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              username: user.id,  // Use unique user ID as username (random UUID)
+              display_name: user.email?.split('@')[0] || 'User',
+              onboarding_completed: false
+            });
+          
+          if (profileError) {
+            console.error('❌ Profile creation error:', profileError);
+          } else {
+            console.log('✅ Profile created via fallback');
+          }
+        } else {
+          console.log('✅ Profile created successfully');
+        }
+
+        // Update the store immediately with the new user
+        set({
+          user: {
+            id: user.id,
+            email: user.email!,
+            created_at: user.created_at
+          },
+          session: signUpData.session,
+          loading: false
         });
       }
       return { error: null };
@@ -136,12 +171,36 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signIn: async (data: SignInData) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password
       });
 
-      return { error };
+      if (error) return { error };
+
+      // Set user state immediately after successful sign-in
+      if (signInData?.user) {
+        console.log('✅ Sign-in successful for user:', signInData.user.id);
+        
+        // Fetch user data from database
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', signInData.user.id)
+          .single();
+
+        // Set user state immediately
+        set({
+          user: userData || {
+            id: signInData.user.id,
+            email: signInData.user.email!,
+            created_at: signInData.user.created_at
+          },
+          session: signInData.session
+        });
+      }
+
+      return { error: null };
     } catch (error) {
       return { error };
     }

@@ -263,18 +263,7 @@ class AnalyticsService {
       const uniqueDays = new Set(allHistory.map(record => record.date)).size;
       totalPossible = uniqueDays * habitTypes.length;
 
-      console.log(`🔧 [Completion Rate Debug - ${period}]`, {
-        period: timePeriod.label,
-        startDate: timePeriod.startDate,
-        endDate: timePeriod.endDate,
-        allHistoryLength: allHistory.length,
-        uniqueDays,
-        habitTypesCount: habitTypes.length,
-        totalPossible,
-        totalCompleted,
-        calculatedRate: totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0,
-        uniqueDates: Array.from(new Set(allHistory.map(record => record.date)))
-      });
+      // Debug log removed for production cleanliness
 
       // Find top performing and needs attention habits
       const sortedHabits = Object.entries(habitBreakdown)

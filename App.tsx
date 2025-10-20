@@ -1,4 +1,4 @@
-import React, { useEffect, Suspense, lazy } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,18 +8,20 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
+import { supabase } from './lib/supabase';
 import CustomBackground from './components/CustomBackground';
 
 // Core screens (loaded immediately)
 import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
+import OnboardingScreen from './screens/OnboardingScreen';
+import GoalsScreen from './screens/GoalsScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
 const ProfileSettingsScreen = lazy(() => import('./screens/ProfileSettingsScreen'));
 const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
-const GoalsScreen = lazy(() => import('./screens/GoalsScreen'));
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const HomeScreen = lazy(() => import('./screens/HomeScreen'));
@@ -31,6 +33,7 @@ const CompeteScreen = lazy(() => import('./screens/CompeteScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
+const FocusScreen = lazy(() => import('./screens/FocusScreen'));
 const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
 const DMScreen = lazy(() => import('./screens/DMScreen'));
 const ChatWindowScreen = lazy(() => import('./screens/ChatWindowScreen'));
@@ -52,28 +55,26 @@ function LoadingScreen() {
   );
 }
 
-// Goals Stack with Suspense wrapper
+// Goals Stack
 function GoalsStack() {
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <Stack.Navigator 
-        screenOptions={{ 
-          headerShown: false
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+      }}
+    >
+      <Stack.Screen name="GoalsList" component={GoalsScreen} />
+      <Stack.Screen 
+        name="GoalDetail" 
+        component={GoalDetailScreen as any}
+        options={{
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'vertical'
         }}
-      >
-        <Stack.Screen name="GoalsList" component={GoalsScreen} />
-        <Stack.Screen 
-          name="GoalDetail" 
-          component={GoalDetailScreen as any}
-          options={{
-            animation: 'slide_from_bottom',
-            animationDuration: 200,
-            gestureEnabled: true,
-            gestureDirection: 'vertical'
-          }}
-        />
-      </Stack.Navigator>
-    </Suspense>
+      />
+    </Stack.Navigator>
   );
 }
 
@@ -227,6 +228,21 @@ function MainTabs() {
   );
 }
 
+// Onboarding Stack Navigator
+function OnboardingStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: false
+      }}
+    >
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+    </Stack.Navigator>
+  );
+}
+
 // Root App Stack Navigator
 function AppStack() {
   return (
@@ -256,6 +272,16 @@ function AppStack() {
           animation: 'slide_from_bottom',
           animationDuration: 200,
           gestureEnabled: true,
+          gestureDirection: 'vertical'
+        }}
+      />
+      <Stack.Screen 
+        name="Focus" 
+        component={FocusScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: false,
           gestureDirection: 'vertical'
         }}
       />
@@ -300,7 +326,25 @@ function AuthStack() {
       }}
     >
       <Stack.Screen name="SignIn" component={SignInScreen} />
-      <Stack.Screen name="SignUp" component={SignUpScreen} />
+      <Stack.Screen 
+        name="SignUp" 
+        component={SignUpScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: true,
+          presentation: 'modal',
+          headerShown: false
+        }}
+      />
+      <Stack.Screen 
+        name="Onboarding" 
+        component={OnboardingScreen}
+        options={{
+          headerShown: false,
+          gestureEnabled: false,
+        }}
+      />
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
     </Stack.Navigator>
   );
@@ -309,12 +353,42 @@ function AuthStack() {
 export default function App() {
   const { user, loading, initialize } = useAuthStore();
   const { theme } = useTheme();
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
 
   useEffect(() => {
     initialize();
   }, []);
 
-  if (loading) {
+  useEffect(() => {
+    // Check if user has completed onboarding
+    const checkOnboarding = async () => {
+      if (user) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('id', user.id)
+          .single();
+        
+        console.log('🔍 Checking onboarding status for user:', user.id);
+        console.log('📊 Profile data:', data);
+        console.log('❌ Error:', error);
+        
+        const isComplete = data?.onboarding_completed || false;
+        console.log('✅ Onboarding complete:', isComplete);
+        
+        // Add small delay to prevent navigation stack conflicts
+        setTimeout(() => {
+          setOnboardingComplete(isComplete);
+        }, 100);
+      } else {
+        setOnboardingComplete(null);
+      }
+    };
+    
+    checkOnboarding();
+  }, [user]);
+
+  if (loading || (user && onboardingComplete === null)) {
     return (
       <CustomBackground>
         <View style={[styles.loadingContainer, { backgroundColor: 'rgba(20, 19, 19, 0.8)' }]}>
@@ -324,9 +398,6 @@ export default function App() {
       </CustomBackground>
     );
   }
-
-  // Check if user needs to complete profile setup
-  const needsProfileSetup = user && (!user.username || !user.bio);
 
   return (
     <CustomBackground>
@@ -363,11 +434,9 @@ export default function App() {
             },
           }}
         >
-          {user ? (
-            needsProfileSetup ? <ProfileSetupScreen /> : <AppStack />
-          ) : (
-            <AuthStack />
-          )}
+          {user && onboardingComplete === true ? <AppStack /> : 
+           user && onboardingComplete === false ? <OnboardingStack /> : 
+           <AuthStack />}
         </NavigationContainer>
       </SafeAreaProvider>
     </CustomBackground>

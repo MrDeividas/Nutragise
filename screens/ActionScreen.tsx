@@ -10,7 +10,7 @@ import { useGoalsStore } from '../state/goalsStore';
 import { useActionStore } from '../state/actionStore';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import { progressService } from '../lib/progressService';
-import Svg, { Circle, Defs, LinearGradient, Stop, Path, G, Rect, Text as SvgText, TextPath } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import CheckInList from '../components/CheckInList';
 import DateNavigator from '../components/DateNavigator';
 import DailyHabitsSummary, { DEFAULT_HABITS, AVAILABLE_HABITS } from '../components/DailyHabitsSummary';
@@ -24,49 +24,8 @@ import NewGoalModal from '../components/NewGoalModal';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-// Daily Habits Circle Configuration Constants
-const DAILY_HABITS_CONFIG = {
-  SEGMENT_ARC: 40,        // Each segment covers 40°
-  GAP_ARC: 5,             // Each gap is 5°
-  RADIUS: 150,            // Circle radius (increased by 50% from 100)
-  THICKNESS: 8,           // Segment thickness
-  ICON_RADIUS: 110,       // Icon positioning radius (closer to center)
-  HITBOX_EXTENSION: 25,   // How far beyond circle the hitbox extends
-  START_ANGLE: -90,       // Start at top (-90°)
-  ICON_SIZE: 20,          // Icon size
-  LABEL_FONT_SIZE: 14,    // Text label font size
-  LABEL_GAP: 16,          // Distance from circle edge to label start
-  SVG_SIZE: 400           // SVG container size (reduced from 540 for compact layout)
-};
 
-// Helper function to calculate segment angles
-const calculateSegmentAngles = (index: number) => {
-  const startAngle = DAILY_HABITS_CONFIG.START_ANGLE + (index * (DAILY_HABITS_CONFIG.SEGMENT_ARC + DAILY_HABITS_CONFIG.GAP_ARC));
-  const endAngle = startAngle + DAILY_HABITS_CONFIG.SEGMENT_ARC;
-  const midAngle = (startAngle + endAngle) / 2;
-  return { startAngle, endAngle, midAngle };
-};
-
-// Helper function to convert degrees to radians
-const degreesToRadians = (degrees: number) => (degrees * Math.PI) / 180;
-
-// Helper function to calculate coordinates on a circle
-const calculateCircleCoordinates = (center: number, radius: number, angleRad: number) => ({
-  x: center + radius * Math.cos(angleRad),
-  y: center + radius * Math.sin(angleRad)
-});
-
-// Helper function for segment animations
-const animateSegment = (segmentAnim: Animated.Value, toValue: number) => {
-  Animated.timing(segmentAnim, {
-    toValue,
-    duration: 280,
-    easing: Easing.out(Easing.cubic),
-    useNativeDriver: false,
-  }).start();
-};
 
 // Days constants
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -303,6 +262,7 @@ function ActionScreen({ navigation }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
+  const { selectedDate, setSelectedDate, dailyHabits } = useActionStore();
   
   // Calendar state variables
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
@@ -394,16 +354,6 @@ function ActionScreen({ navigation }: any) {
 
 
 
-  // Segmented circle labels and toggle state (visuals only for now)
-  const segmentLabels = useMemo(
-    () => [
-      'Meditation', 'Micro-learn', 'Sleep', 'Water', 'Run', 'Reflect', 'Cold-shower', 'Gym'
-    ],
-    []
-  );
-
-  const { segmentChecked, toggleSegment: toggleSegmentStore } = useActionStore();
-  const segmentAnim = useRef(segmentLabels.map(() => new Animated.Value(0))).current; // 0 -> inactive, 1 -> active
 
   // Load today's daily habits data when component mounts
   useEffect(() => {
@@ -436,16 +386,6 @@ function ActionScreen({ navigation }: any) {
     }
   }, [user]);
 
-  // Sync animated values with store state on mount and when store changes
-  useEffect(() => {
-    segmentChecked.forEach((isChecked, index) => {
-      if (isChecked) {
-        segmentAnim[index].setValue(1);
-      } else {
-        segmentAnim[index].setValue(0);
-      }
-    });
-  }, [segmentChecked, segmentAnim]);
 
   // Load selected habits on mount
   useEffect(() => {
@@ -456,19 +396,40 @@ function ActionScreen({ navigation }: any) {
     syncCompletedHabits();
   }, [user]);
 
+  // Re-sync completed habits whenever today's stored data loads/changes
+  useEffect(() => {
+    syncCompletedHabits();
+  }, [dailyHabits]);
+
   // Sync completed habits with existing data
   const syncCompletedHabits = () => {
     const { dailyHabits } = useActionStore.getState();
     const completedSet = new Set<string>();
     
     if (dailyHabits) {
-      // Check each habit type for completion
-      if (dailyHabits.gym_day_type) completedSet.add('gym');
-      if (dailyHabits.run_day_type) completedSet.add('run');
-      if (dailyHabits.sleep_quality !== undefined) completedSet.add('sleep');
-      if (dailyHabits.water_intake !== undefined) completedSet.add('water');
-      if (dailyHabits.reflect_mood !== undefined) completedSet.add('reflect');
-      if (dailyHabits.cold_shower_completed) completedSet.add('cold_shower');
+      // Only mark as completed if the habit was actually completed (not just data exists)
+      // This matches the old circle's behavior - only completed when questionnaire was finished
+      
+      // Gym: Only completed if it was an active day (not rest day)
+      if (dailyHabits.gym_day_type === 'active') completedSet.add('gym');
+      
+      // Run: Only completed if it was an active day (not rest day)  
+      if (dailyHabits.run_day_type === 'active') completedSet.add('run');
+      
+      // Sleep: Only completed if quality is reasonable (not terrible sleep)
+      if (dailyHabits.sleep_quality !== undefined && dailyHabits.sleep_quality >= 50) completedSet.add('sleep');
+      
+      // Water: Only completed if intake is reasonable (not zero)
+      if (dailyHabits.water_intake !== undefined && dailyHabits.water_intake > 0) completedSet.add('water');
+      
+      // Reflect: Only completed if mood is reasonable (not terrible mood)
+      if (dailyHabits.reflect_mood !== undefined && dailyHabits.reflect_mood >= 3) completedSet.add('reflect');
+      
+      // Cold Shower: Only completed if explicitly marked as completed
+      if (dailyHabits.cold_shower_completed === true) completedSet.add('cold_shower');
+      
+      // Focus: Only completed if explicitly marked
+      if (dailyHabits.focus_completed === true) completedSet.add('focus');
     }
     
     setCompletedHabits(completedSet);
@@ -549,6 +510,13 @@ function ActionScreen({ navigation }: any) {
 
       case 'microlearn':
         navigation.navigate('Microlearning', {}, {
+          animation: 'slide_from_bottom',
+          presentation: 'modal'
+        });
+        return;
+
+      case 'focus':
+        navigation.navigate('Focus', {}, {
           animation: 'slide_from_bottom',
           presentation: 'modal'
         });
@@ -673,7 +641,7 @@ function ActionScreen({ navigation }: any) {
 
       case 'focus':
       case 'update_goal':
-      case 'detox':
+      case 'screen_time':
         // Not implemented yet
         console.log(`${habitId} modal not implemented yet`);
         return;
@@ -786,177 +754,7 @@ function ActionScreen({ navigation }: any) {
     return '#10B981'; // Always green
   };
 
-  const toggleSegment = useCallback((index: number) => {
-    // Special handling for specific segments when checking them
-    if (!segmentChecked[index]) {
-      switch (index) {
-        case 0: // Meditation
-          navigation.navigate('Meditation', {}, {
-            animation: 'slide_from_bottom',
-            presentation: 'modal'
-          });
-          return;
 
-        case 1: // Micro-learn
-          navigation.navigate('Microlearning', {}, {
-            animation: 'slide_from_bottom',
-            presentation: 'modal'
-          });
-          return;
-        case 2: // Sleep
-          // Load existing data if available
-          const { dailyHabits } = useActionStore.getState();
-          if (dailyHabits && dailyHabits.sleep_quality) {
-            setSleepQuestionnaire({
-              sleepQuality: dailyHabits.sleep_quality || 50,
-              bedtimeHours: dailyHabits.sleep_bedtime_hours || 22,
-              bedtimeMinutes: dailyHabits.sleep_bedtime_minutes || 0,
-              wakeupHours: dailyHabits.sleep_wakeup_hours || 6,
-              wakeupMinutes: dailyHabits.sleep_wakeup_minutes || 0,
-              sleepNotes: dailyHabits.sleep_notes || ''
-            });
-          } else {
-            setSleepQuestionnaire({
-              sleepQuality: 50,
-              bedtimeHours: 22,
-              bedtimeMinutes: 0,
-              wakeupHours: 6,
-              wakeupMinutes: 0,
-              sleepNotes: ''
-            });
-          }
-          modalPosition.setValue(0);
-          setShowSleepModal(true);
-          return;
-        case 3: // Water
-          // Load existing data if available
-          const { dailyHabits: waterHabits } = useActionStore.getState();
-          if (waterHabits && waterHabits.water_intake) {
-            setWaterQuestionnaire({
-              waterIntake: waterHabits.water_intake || 16,
-              waterGoal: waterHabits.water_goal || '',
-              waterNotes: waterHabits.water_notes || ''
-            });
-          } else {
-            setWaterQuestionnaire({ waterIntake: 16, waterGoal: '', waterNotes: '' });
-          }
-          modalPosition.setValue(0);
-          setShowWaterModal(true);
-          return;
-        case 4: // Run
-          // Load existing data if available
-          const { dailyHabits: runHabits } = useActionStore.getState();
-          if (runHabits && runHabits.run_day_type) {
-            setRunQuestionnaire({
-              dayType: runHabits.run_day_type || '',
-              activityType: runHabits.run_activity_type || '',
-              runType: runHabits.run_type || '',
-              distance: runHabits.run_distance ? Math.round(runHabits.run_distance * 2) : 5, // Convert back to slider value
-              durationHours: 0,
-              durationMinutes: 30,
-              durationSeconds: 0,
-              runNotes: runHabits.run_notes || ''
-            });
-          } else {
-            setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
-          }
-          modalPosition.setValue(0);
-          setShowRunModal(true);
-          return;
-
-        case 5: // Reflect
-          // Load existing data if available
-          const { dailyHabits: reflectHabits } = useActionStore.getState();
-          if (reflectHabits && reflectHabits.reflect_mood) {
-            setReflectQuestionnaire({
-              mood: reflectHabits.reflect_mood || 3,
-              energy: reflectHabits.reflect_energy || 3,
-              whatWentWell: reflectHabits.reflect_what_went_well || '',
-              friction: reflectHabits.reflect_friction || '',
-              oneTweak: reflectHabits.reflect_one_tweak || '',
-              nothingToChange: reflectHabits.reflect_nothing_to_change || false,
-              currentStep: 1
-            });
-          } else {
-            setReflectQuestionnaire({
-              mood: 3,
-              energy: 3,
-              whatWentWell: '',
-              friction: '',
-              oneTweak: '',
-              nothingToChange: false,
-              currentStep: 1
-            });
-          }
-          modalPosition.setValue(0);
-          setShowReflectModal(true);
-          return;
-
-        case 6: // Cold Shower
-          // Load existing data if available
-          const { dailyHabits: coldShowerHabits } = useActionStore.getState();
-          if (coldShowerHabits && coldShowerHabits.cold_shower_completed) {
-            // If already completed, just show the modal briefly then close
-            setShowColdShowerModal(true);
-            setTimeout(() => {
-              setShowColdShowerModal(false);
-            }, 1000);
-            return;
-          }
-          setShowColdShowerModal(true);
-          return;
-
-        case 7: // Gym
-          // Load existing data if available
-          const { dailyHabits: gymHabits } = useActionStore.getState();
-          if (gymHabits && gymHabits.gym_day_type) {
-            setGymQuestionnaire({
-              dayType: gymHabits.gym_day_type || '',
-              selectedTrainingTypes: gymHabits.gym_training_types || [],
-              customTrainingType: gymHabits.gym_custom_type || ''
-            });
-          } else {
-            setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
-          }
-          modalPosition.setValue(0);
-          setShowGymModal(true);
-          return;
-      }
-    } else {
-      // If trying to untick a completed habit, show confirmation dialog
-      setSegmentToUntick(index);
-      setShowUntickConfirmation(true);
-      return;
-    }
-    
-    toggleSegmentStore(index);
-    // Animate value
-    animateSegment(segmentAnim[index], !segmentChecked[index] ? 1 : 0);
-  }, [segmentAnim, segmentChecked, toggleSegmentStore]);
-
-  // SVG sizing for circle + labels (extra padding to prevent text clipping)
-  const svgSize = DAILY_HABITS_CONFIG.SVG_SIZE;
-  const center = svgSize / 2;
-
-  // Memoized segment data calculation to avoid recalculation on every render
-  const segmentData = useMemo(() => {
-    return [...Array(8)].map((_, i) => {
-      const { startAngle, endAngle, midAngle } = calculateSegmentAngles(i);
-      const startRad = degreesToRadians(startAngle);
-      const endRad = degreesToRadians(endAngle);
-      const midRad = degreesToRadians(midAngle);
-      
-      return {
-        startAngle,
-        endAngle,
-        midAngle,
-        startRad,
-        endRad,
-        midRad,
-        index: i
-      };
-    });
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1464,258 +1262,6 @@ function ActionScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
           </View>
-          
-          {/* Circular Progress Indicator */}
-          <View style={styles.circularProgressContainer}>
-            <Svg width={svgSize} height={svgSize}>
-              <Defs>
-                <LinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <Stop offset="0%" stopColor="#EA580C" />
-                  <Stop offset="100%" stopColor="#9C27B0" />
-                </LinearGradient>
-                
-                {/* Label paths for each segment */}
-                {segmentData.map((segment) => {
-                  const { startAngle, endAngle, midAngle, startRad, endRad, index: i } = segment;
-                  
-                  // Calculate arc path coordinates for labels - add spacing outward from arc
-                  let labelRadius = DAILY_HABITS_CONFIG.RADIUS + 8; // Move labels 8px outward from the arc (default)
-                  
-                  // For Reflect, Run, Water, and Sleep segments, move labels further outward
-                  if (i === 2 || i === 3 || i === 4 || i === 5) { // Sleep, Water, Run, Reflect
-                    labelRadius = DAILY_HABITS_CONFIG.RADIUS + 16; // Move labels 16px outward from the arc (more spacing)
-                  }
-                  
-                  let x1 = center + labelRadius * Math.cos(startRad);
-                  let y1 = center + labelRadius * Math.sin(startRad);
-                  let x2 = center + labelRadius * Math.cos(endRad);
-                  let y2 = center + labelRadius * Math.sin(endRad);
-                  
-                  // Determine if we need large arc flag (for arcs > 180°)
-                  const largeArcFlag = DAILY_HABITS_CONFIG.SEGMENT_ARC > 180 ? 1 : 0;
-                  
-                  // Create label path - always start from outer edge and follow outer arc
-                  // For bottom half, reverse sweep to keep text upright
-                  const isBottomHalf = midAngle >= 90 && midAngle <= 270;
-                  let sweepFlag = isBottomHalf ? 0 : 1;
-                  
-                  // Fix text direction for specific segments that wrap incorrectly
-                  // Gym, Cold Shower, Reflect, and Run segments need reversed direction
-                  if (i === 5 || i === 6 || i === 7 || i === 4) { // Gym, Cold Shower, Reflect, Run
-                    sweepFlag = sweepFlag === 1 ? 0 : 1; // Flip the sweep flag
-                  }
-                  
-                  // Fix text orientation for Reflect, Run, Water, and Sleep segments ONLY
-                  // Make text wrap around the top of the arc instead of bottom to keep it right-side up
-                  if (i === 2 || i === 3 || i === 4 || i === 5) { // Sleep, Water, Run, Reflect
-                    // For these segments, we want text to follow the top arc (reverse the path direction)
-                    const tempX1 = x1;
-                    const tempY1 = y1;
-                    x1 = x2;
-                    y1 = y2;
-                    x2 = tempX1;
-                    y2 = tempY1;
-                    // Also flip the sweep flag to maintain proper text flow
-                    sweepFlag = sweepFlag === 1 ? 0 : 1;
-                  }
-                  
-                  // Always start from the outer edge (x1, y1) and follow the outer arc
-                  // Use labelRadius for consistent spacing across all segments
-                  const labelPathData = `M ${x1} ${y1} A ${labelRadius} ${labelRadius} 0 ${largeArcFlag} ${sweepFlag} ${x2} ${y2}`;
-                  
-                  return (
-                    <Path
-                      key={`label-path-${i}`}
-                      id={`seg-${i}`}
-                      d={labelPathData}
-                      fill="none"
-                      stroke="none"
-                    />
-                  );
-                })}
-              </Defs>
-              
-
-              {/* Progress segments - 8 segments with precise 40° segments and 5° gaps */}
-              {segmentData.map((segment) => {
-                const { startAngle, endAngle, midAngle, startRad, endRad, midRad, index: i } = segment;
-                
-                // Calculate arc path coordinates
-                const radius = DAILY_HABITS_CONFIG.RADIUS;
-                const { x: x1, y: y1 } = calculateCircleCoordinates(center, radius, startRad);
-                const { x: x2, y: y2 } = calculateCircleCoordinates(center, radius, endRad);
-                
-                // Determine if we need large arc flag (for arcs > 180°)
-                const largeArcFlag = DAILY_HABITS_CONFIG.SEGMENT_ARC > 180 ? 1 : 0;
-                
-                // Create the arc path
-                const thickness = DAILY_HABITS_CONFIG.THICKNESS;
-                const innerRadius = radius - thickness;
-                const { x: ixStart, y: iyStart } = calculateCircleCoordinates(center, innerRadius, startRad);
-                const { x: ixEnd, y: iyEnd } = calculateCircleCoordinates(center, innerRadius, endRad);
-
-                // Closed annular segment (outer arc → radial in → inner arc back → close)
-                const pathDataClosed = [
-                  `M ${x1} ${y1}`,
-                  `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
-                  `L ${ixEnd} ${iyEnd}`,
-                  `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${ixStart} ${iyStart}`,
-                  'Z'
-                ].join(' ');
-
-                // Large hitbox path that covers the full segment area (center to outer labels)
-                const hitboxRadius = radius + DAILY_HABITS_CONFIG.HITBOX_EXTENSION;
-                const { x: hitboxX1, y: hitboxY1 } = calculateCircleCoordinates(center, hitboxRadius, startRad);
-                const { x: hitboxX2, y: hitboxY2 } = calculateCircleCoordinates(center, hitboxRadius, endRad);
-
-                // Create a pie slice hitbox from center to outer edge
-                const hitboxPathData = [
-                  `M ${center} ${center}`, // Start from center
-                  `L ${hitboxX1} ${hitboxY1}`, // Line to outer edge
-                  `A ${hitboxRadius} ${hitboxRadius} 0 ${largeArcFlag} 1 ${hitboxX2} ${hitboxY2}`, // Arc to next edge
-                  'Z' // Close back to center
-                ].join(' ');
-                
-                // Visual state from UI checkbox
-                const anim = segmentAnim[i];
-                
-                // Colors
-                const activeColor = "#10B981"; // Torquoise/green
-                const inactiveColor = "#10B981"; // Solid green outline for inactive segments
-                
-                // Interpolations
-                const fillColor = anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['rgba(0,0,0,0)', activeColor],
-                });
-                const fillOpacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
-                const strokeColor = inactiveColor;
-                const strokeWidth = 1; // Fixed stroke width of 1
-
-                // Label + checkbox polar position outside ring
-                const baseLabelGap = DAILY_HABITS_CONFIG.LABEL_GAP;
-                const labelRadius = radius + baseLabelGap;
-                const { x: labelX, y: labelY } = calculateCircleCoordinates(center, labelRadius, midRad);
-                const anchor = Math.cos(midRad) > 0.25 ? 'start' : (Math.cos(midRad) < -0.25 ? 'end' : 'middle');
-                const labelText = segmentLabels[i];
-                const labelFontSize = 11;
-                const approxCharWidth = labelFontSize * 0.56;
-                const estimatedTextWidth = labelText.length * approxCharWidth;
-                const circleCx = anchor === 'start' ? labelX + estimatedTextWidth / 2 : anchor === 'end' ? labelX - estimatedTextWidth / 2 : labelX;
-
-                const checkboxSize = 16;
-                const checkboxHalf = checkboxSize / 2;
-
-                return (
-                  <G key={i}>
-                    {/* Large invisible hitbox that covers the full segment area */}
-                    <Path
-                      d={hitboxPathData}
-                      fill="transparent"
-                      onPress={() => toggleSegment(i)}
-                    />
-                    
-                    {/* Visual segment path */}
-                    <AnimatedPath
-                      d={pathDataClosed}
-                      stroke={strokeColor as any}
-                      strokeWidth={strokeWidth as any}
-                      fill={fillColor as any}
-                      fillOpacity={fillOpacity as any}
-                    />
-
-
-                    
-                    {/* Text label on arc path */}
-                    <SvgText
-                      fontSize={14}
-                      fontWeight="600"
-                      fill={segmentChecked[i] ? '#10B981' : '#ffffff'}
-                    >
-                      <TextPath 
-                        href={`#seg-${i}`} 
-                        startOffset={`${(DAILY_HABITS_CONFIG.SEGMENT_ARC - (segmentLabels[i].length * 0.6)) / 2}%`}
-                        textAnchor="middle"
-                      >
-                        {segmentLabels[i]}
-                      </TextPath>
-                    </SvgText>
-                  </G>
-                );
-              })}
-            </Svg>
-            
-            {/* Icon Overlay - positioned absolutely over the SVG */}
-            <View style={[StyleSheet.absoluteFillObject, { 
-              width: svgSize, 
-              height: svgSize, 
-              left: '49.5%',
-              marginLeft: -svgSize / 2,
-              top: 0
-            }]} pointerEvents="box-none">
-              {segmentData.map((segment) => {
-                const { midAngle, midRad, index: i } = segment;
-                
-                // Position icons at segment midpoints (closer to center)
-                const iconRadius = DAILY_HABITS_CONFIG.ICON_RADIUS;
-                const { x: iconX, y: iconY } = calculateCircleCoordinates(0, iconRadius, midRad);
-                
-                // Icon size and offset for centering
-                const iconSize = DAILY_HABITS_CONFIG.ICON_SIZE;
-                const iconOffset = iconSize / 2;
-                
-                // Define icons for each segment using Ionicons
-                const getSegmentIcon = (index: number) => {
-                  const iconColor = segmentChecked[i] ? '#10B981' : '#ffffff';
-                  
-                  switch (index) {
-                    case 0: // Meditation
-                      return <Ionicons name="leaf" size={iconSize} color={iconColor} />;
-                    case 1: // Micro-learn
-                      return <Ionicons name="book" size={iconSize} color={iconColor} />;
-                    case 2: // Sleep
-                      return <Ionicons name="moon" size={iconSize} color={iconColor} />;
-                    case 3: // Water
-                      return <Ionicons name="water" size={iconSize} color={iconColor} />;
-                    case 4: // Run
-                      return <Ionicons name="walk" size={iconSize} color={iconColor} />;
-                    case 5: // Reflect
-                      return <Ionicons name="bulb" size={iconSize} color={iconColor} />;
-                    case 6: // Cold-shower
-                      return <Ionicons name="snow" size={iconSize} color={iconColor} />;
-                    case 7: // Gym
-                      return <Ionicons name="barbell" size={iconSize} color={iconColor} />;
-                    default:
-                      return null;
-                  }
-                };
-                
-                return (
-                  <View
-                    key={`overlay-icon-${i}`}
-                    style={{
-                      position: 'absolute',
-                      left: (svgSize / 2) + iconX - iconOffset,
-                      top: (svgSize / 2) + iconY - iconOffset,
-                      width: iconSize,
-                      height: iconSize,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                    pointerEvents="none"
-                  >
-                    {getSegmentIcon(i)}
-                  </View>
-                );
-              })}
-            </View>
-            
-            <View style={styles.circularProgressText}>
-              <Text style={[styles.circularProgressTitle, { color: segmentChecked.filter(Boolean).length === 8 ? '#10B981' : theme.textPrimary }]}>Daily Habits</Text>
-              <Text style={[styles.circularProgressValue, { color: segmentChecked.filter(Boolean).length === 8 ? '#10B981' : theme.textPrimary }]}>{segmentChecked.filter(Boolean).length}/8</Text>
-              <Text style={[styles.circularProgressValue, { color: segmentChecked.filter(Boolean).length === 8 ? '#10B981' : theme.textSecondary }]}>Completed</Text>
-            </View>
-          </View>
         </View>
 
         {/* New Circular Progress Component */}
@@ -1770,9 +1316,9 @@ function ActionScreen({ navigation }: any) {
         {/* Date Navigator with Integrated Daily Habits Summary */}
         <View style={styles.section}>
           <DateNavigator
-            selectedDate={useActionStore.getState().selectedDate}
+            selectedDate={selectedDate}
             onDateChange={(date) => {
-              useActionStore.getState().setSelectedDate(date);
+              setSelectedDate(date);
               // Don't update global dailyHabits - only update local DateNavigator data
             }}
             onViewHistory={() => {
@@ -1784,7 +1330,7 @@ function ActionScreen({ navigation }: any) {
               setShowHabitInfoModal(true);
             }}
 
-            dailyHabitsData={useActionStore.getState().dailyHabits}
+            dailyHabitsData={dailyHabits}
           />
         </View>
 

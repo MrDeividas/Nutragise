@@ -189,6 +189,13 @@ export interface DailyHabits {
   // Cold shower habit data
   cold_shower_completed?: boolean;
   
+  // Focus habit data
+  focus_duration?: number;  // in minutes
+  focus_start_time?: string;  // ISO timestamp
+  focus_end_time?: string;  // ISO timestamp
+  focus_notes?: string;
+  focus_completed?: boolean;
+  
   // Metadata
   created_at: string;
   updated_at: string;
@@ -221,6 +228,11 @@ export interface CreateDailyHabitsData {
   reflect_one_tweak?: string;
   reflect_nothing_to_change?: boolean;
   cold_shower_completed?: boolean;
+  focus_duration?: number;
+  focus_start_time?: string;
+  focus_end_time?: string;
+  focus_notes?: string;
+  focus_completed?: boolean;
 }
 
 export interface UpdateDailyHabitsData extends Partial<CreateDailyHabitsData> {}

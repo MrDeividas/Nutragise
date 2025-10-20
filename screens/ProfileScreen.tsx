@@ -347,12 +347,7 @@ function ProfileScreen({ navigation }: any) {
       const status = await pointsService.getCoreHabitsStatus(user.id);
       const progress = pointsService.getLevelProgress(total);
       
-      console.log('📊 Points breakdown:', {
-        total,
-        today,
-        coreHabitsStatus: status,
-        levelProgress: progress
-      });
+      // Debug log removed for production cleanliness
       
       setTotalPoints(total);
       setLevelProgress(progress);
@@ -901,7 +896,6 @@ function ProfileScreen({ navigation }: any) {
                 {/* Progress Bar */}
         <TouchableOpacity 
           onPress={() => {
-            console.log('Progress bar clicked, opening level modal');
             setShowLevelModal(true);
           }}
           activeOpacity={0.7}

@@ -1,4 +1,5 @@
 // Configuration for API keys and environment variables
+import { DEEPSEEK_API_KEY } from '@env';
 export const config = {
   // DeepSeek API Configuration
   deepseek: {
@@ -45,9 +46,6 @@ export const setApiKey = (apiKey: string): void => {
 // Initialize with the provided API key from environment variables
 export const initializeAI = (): void => {
   try {
-    // Import environment variables
-    const { DEEPSEEK_API_KEY } = require('@env');
-    
     if (DEEPSEEK_API_KEY) {
       setApiKey(DEEPSEEK_API_KEY);
       console.log('✅ DeepSeek API key loaded from environment variables');
