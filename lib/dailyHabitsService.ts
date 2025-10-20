@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { DailyHabits, CreateDailyHabitsData, UpdateDailyHabitsData, HabitStreak } from '../types/database';
+import { DEFAULT_HABITS } from '../components/DailyHabitsSummary';
 
 class DailyHabitsService {
   /**
@@ -453,6 +454,131 @@ class DailyHabitsService {
         longest_streak: 0,
         last_completed_date: undefined
       };
+    }
+  }
+
+  /**
+   * Update user's selected daily habits
+   */
+  async updateSelectedHabits(userId: string, habitIds: string[]): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ selected_daily_habits: habitIds })
+        .eq('id', userId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating selected habits:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user's selected daily habits
+   */
+  async getSelectedHabits(userId: string): Promise<string[]> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('selected_daily_habits')
+        .eq('id', userId)
+        .single();
+      
+      if (error) throw error;
+      return data?.selected_daily_habits || DEFAULT_HABITS;
+    } catch (error) {
+      console.error('Error getting selected habits:', error);
+      return DEFAULT_HABITS;
+    }
+  }
+
+  /**
+   * Get habit schedules for a user
+   */
+  async getHabitSchedules(userId: string): Promise<Record<string, boolean[]>> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('habit_schedules')
+        .eq('id', userId)
+        .single();
+      
+      if (error) {
+        // If column doesn't exist, return empty object
+        if (error.code === '42703' || error.code === 'PGRST204') {
+          return {};
+        }
+        throw error;
+      }
+      return data?.habit_schedules || {};
+    } catch (error) {
+      console.error('Error getting habit schedules:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Update habit schedule for a user
+   */
+  async updateHabitSchedule(userId: string, habitId: string, days: boolean[]): Promise<void> {
+    try {
+      // First get current schedules
+      const currentSchedules = await this.getHabitSchedules(userId);
+      
+      // Update the specific habit schedule
+      const updatedSchedules = {
+        ...currentSchedules,
+        [habitId]: days
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ habit_schedules: updatedSchedules })
+        .eq('id', userId);
+      
+      if (error) {
+        // If column doesn't exist, we'll need to create it or use a different approach
+        if (error.code === '42703' || error.code === 'PGRST204') {
+          console.warn('habit_schedules column does not exist. Schedules will not be persisted.');
+          return;
+        }
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error updating habit schedule:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove habit schedule for a user
+   */
+  async removeHabitSchedule(userId: string, habitId: string): Promise<void> {
+    try {
+      // First get current schedules
+      const currentSchedules = await this.getHabitSchedules(userId);
+      
+      // Remove the specific habit schedule
+      const updatedSchedules = { ...currentSchedules };
+      delete updatedSchedules[habitId];
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ habit_schedules: updatedSchedules })
+        .eq('id', userId);
+      
+      if (error) {
+        // If column doesn't exist, we'll need to create it or use a different approach
+        if (error.code === '42703' || error.code === 'PGRST204') {
+          console.warn('habit_schedules column does not exist. Schedules will not be persisted.');
+          return;
+        }
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error removing habit schedule:', error);
+      throw error;
     }
   }
 }

@@ -13,6 +13,8 @@ import { progressService } from '../lib/progressService';
 import Svg, { Circle, Defs, LinearGradient, Stop, Path, G, Rect, Text as SvgText, TextPath } from 'react-native-svg';
 import CheckInList from '../components/CheckInList';
 import DateNavigator from '../components/DateNavigator';
+import DailyHabitsSummary, { DEFAULT_HABITS, AVAILABLE_HABITS } from '../components/DailyHabitsSummary';
+import EditHabitsModal from '../components/EditHabitsModal';
 
 import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
@@ -374,6 +376,12 @@ function ActionScreen({ navigation }: any) {
 
   const [showReflectModal, setShowReflectModal] = useState(false);
   const [showColdShowerModal, setShowColdShowerModal] = useState(false);
+  const [showEditHabitsModal, setShowEditHabitsModal] = useState(false);
+  const [selectedHabits, setSelectedHabits] = useState<string[]>(DEFAULT_HABITS);
+  const [habitSchedules, setHabitSchedules] = useState<Record<string, boolean[]>>({});
+  const [todayOverrides, setTodayOverrides] = useState<Set<string>>(new Set());
+  const [completedHabits, setCompletedHabits] = useState<Set<string>>(new Set());
+  const [habitToUntick, setHabitToUntick] = useState<string | null>(null);
   const [reflectQuestionnaire, setReflectQuestionnaire] = useState({
     mood: 3,
     energy: 3,
@@ -438,6 +446,243 @@ function ActionScreen({ navigation }: any) {
       }
     });
   }, [segmentChecked, segmentAnim]);
+
+  // Load selected habits on mount
+  useEffect(() => {
+    if (user) {
+      loadSelectedHabits();
+    }
+    // Also sync completed habits on mount
+    syncCompletedHabits();
+  }, [user]);
+
+  // Sync completed habits with existing data
+  const syncCompletedHabits = () => {
+    const { dailyHabits } = useActionStore.getState();
+    const completedSet = new Set<string>();
+    
+    if (dailyHabits) {
+      // Check each habit type for completion
+      if (dailyHabits.gym_day_type) completedSet.add('gym');
+      if (dailyHabits.run_day_type) completedSet.add('run');
+      if (dailyHabits.sleep_quality !== undefined) completedSet.add('sleep');
+      if (dailyHabits.water_intake !== undefined) completedSet.add('water');
+      if (dailyHabits.reflect_mood !== undefined) completedSet.add('reflect');
+      if (dailyHabits.cold_shower_completed) completedSet.add('cold_shower');
+    }
+    
+    setCompletedHabits(completedSet);
+  };
+
+  const loadSelectedHabits = async () => {
+    try {
+      if (user) {
+        const [habits, schedules] = await Promise.all([
+          dailyHabitsService.getSelectedHabits(user.id),
+          dailyHabitsService.getHabitSchedules(user.id)
+        ]);
+        setSelectedHabits(habits);
+        setHabitSchedules(schedules);
+        
+        // Sync completed habits with existing data
+        syncCompletedHabits();
+      }
+    } catch (error) {
+      console.error('Error loading habits:', error);
+    }
+  };
+
+  // Compute which habits are enabled today
+  const getEnabledTodayHabits = () => {
+    const today = new Date().getDay();
+    const enabledFromSchedule = new Set<string>();
+    
+    selectedHabits.forEach(habitId => {
+      const schedule = habitSchedules[habitId];
+      if (schedule && schedule[today]) {
+        enabledFromSchedule.add(habitId);
+      }
+    });
+    
+    // Add today overrides
+    const enabledTodaySetEffective = new Set([...enabledFromSchedule, ...todayOverrides]);
+    return enabledTodaySetEffective;
+  };
+
+  const handleUnlockToday = (habitId: string) => {
+    setTodayOverrides(prev => new Set([...prev, habitId]));
+  };
+
+  // Mark habit as completed in the new ring
+  const markHabitCompleted = (habitId: string) => {
+    setCompletedHabits(prev => new Set([...prev, habitId]));
+  };
+
+  // Mark habit as uncompleted in the new ring
+  const markHabitUncompleted = (habitId: string) => {
+    setCompletedHabits(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(habitId);
+      return newSet;
+    });
+  };
+
+  // Handle habit press from the new ring
+  const handleHabitPress = useCallback((habitId: string) => {
+    // Check if habit is already completed
+    if (completedHabits.has(habitId)) {
+      // Show untick confirmation
+      setHabitToUntick(habitId);
+      setShowUntickConfirmation(true);
+      return;
+    }
+
+    const { dailyHabits } = useActionStore.getState();
+    
+    switch (habitId) {
+      case 'meditation':
+        navigation.navigate('Meditation', {}, {
+          animation: 'slide_from_bottom',
+          presentation: 'modal'
+        });
+        return;
+
+      case 'microlearn':
+        navigation.navigate('Microlearning', {}, {
+          animation: 'slide_from_bottom',
+          presentation: 'modal'
+        });
+        return;
+
+      case 'sleep':
+        if (dailyHabits && dailyHabits.sleep_quality) {
+          setSleepQuestionnaire({
+            sleepQuality: dailyHabits.sleep_quality || 50,
+            bedtimeHours: dailyHabits.sleep_bedtime_hours || 22,
+            bedtimeMinutes: dailyHabits.sleep_bedtime_minutes || 0,
+            wakeupHours: dailyHabits.sleep_wakeup_hours || 6,
+            wakeupMinutes: dailyHabits.sleep_wakeup_minutes || 0,
+            sleepNotes: dailyHabits.sleep_notes || ''
+          });
+        } else {
+          setSleepQuestionnaire({
+            sleepQuality: 50,
+            bedtimeHours: 22,
+            bedtimeMinutes: 0,
+            wakeupHours: 6,
+            wakeupMinutes: 0,
+            sleepNotes: ''
+          });
+        }
+        modalPosition.setValue(0);
+        setShowSleepModal(true);
+        return;
+
+      case 'water':
+        if (dailyHabits && dailyHabits.water_intake) {
+          setWaterQuestionnaire({
+            waterIntake: dailyHabits.water_intake || 16,
+            waterGoal: dailyHabits.water_goal || '',
+            waterNotes: dailyHabits.water_notes || ''
+          });
+        } else {
+          setWaterQuestionnaire({ waterIntake: 16, waterGoal: '', waterNotes: '' });
+        }
+        modalPosition.setValue(0);
+        setShowWaterModal(true);
+        return;
+
+      case 'run':
+        if (dailyHabits && dailyHabits.run_day_type) {
+          setRunQuestionnaire({
+            dayType: dailyHabits.run_day_type || '',
+            activityType: dailyHabits.run_activity_type || '',
+            runType: dailyHabits.run_type || '',
+            distance: dailyHabits.run_distance ? Math.round(dailyHabits.run_distance * 2) : 5,
+            durationHours: 0,
+            durationMinutes: 30,
+            durationSeconds: 0,
+            runNotes: dailyHabits.run_notes || ''
+          });
+        } else {
+          setRunQuestionnaire({ 
+            dayType: '', 
+            activityType: '', 
+            runType: '', 
+            distance: 5, 
+            durationHours: 0, 
+            durationMinutes: 30, 
+            durationSeconds: 0, 
+            runNotes: '' 
+          });
+        }
+        modalPosition.setValue(0);
+        setShowRunModal(true);
+        return;
+
+      case 'reflect':
+        if (dailyHabits && dailyHabits.reflect_mood) {
+          setReflectQuestionnaire({
+            mood: dailyHabits.reflect_mood || 3,
+            energy: dailyHabits.reflect_energy || 3,
+            whatWentWell: dailyHabits.reflect_what_went_well || '',
+            friction: dailyHabits.reflect_friction || '',
+            oneTweak: dailyHabits.reflect_one_tweak || '',
+            nothingToChange: dailyHabits.reflect_nothing_to_change || false,
+            currentStep: 1
+          });
+        } else {
+          setReflectQuestionnaire({
+            mood: 3,
+            energy: 3,
+            whatWentWell: '',
+            friction: '',
+            oneTweak: '',
+            nothingToChange: false,
+            currentStep: 1
+          });
+        }
+        modalPosition.setValue(0);
+        setShowReflectModal(true);
+        return;
+
+      case 'cold_shower':
+        if (dailyHabits && dailyHabits.cold_shower_completed) {
+          setShowColdShowerModal(true);
+          setTimeout(() => {
+            setShowColdShowerModal(false);
+          }, 1000);
+          return;
+        }
+        setShowColdShowerModal(true);
+        return;
+
+      case 'gym':
+        if (dailyHabits && dailyHabits.gym_day_type) {
+          setGymQuestionnaire({
+            dayType: dailyHabits.gym_day_type || '',
+            selectedTrainingTypes: dailyHabits.gym_training_types || [],
+            customTrainingType: dailyHabits.gym_custom_type || ''
+          });
+        } else {
+          setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
+        }
+        modalPosition.setValue(0);
+        setShowGymModal(true);
+        return;
+
+      case 'focus':
+      case 'update_goal':
+      case 'detox':
+        // Not implemented yet
+        console.log(`${habitId} modal not implemented yet`);
+        return;
+
+      default:
+        console.log(`Unknown habit: ${habitId}`);
+        return;
+    }
+  }, [navigation, modalPosition, completedHabits]);
 
   // Keyboard event listeners for modal positioning
   useEffect(() => {
@@ -1473,6 +1718,18 @@ function ActionScreen({ navigation }: any) {
           </View>
         </View>
 
+        {/* New Circular Progress Component */}
+        <DailyHabitsSummary
+          data={null}
+          onHabitPress={handleHabitPress}
+          selectedHabits={selectedHabits}
+          completedCount={completedHabits.size}
+          onEditPress={() => setShowEditHabitsModal(true)}
+          enabledTodaySet={getEnabledTodayHabits()}
+          onUnlockToday={handleUnlockToday}
+          completedHabits={completedHabits}
+        />
+
         {/* Combined Check-ins Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Check-ins</Text>
@@ -1705,7 +1962,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(7); // Check the gym segment
+                    markHabitCompleted('gym'); // Mark gym as completed in new ring
                     setShowGymActiveModal(false);
                     setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
                   } else {
@@ -1764,7 +2021,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(7); // Check the gym segment
+                    markHabitCompleted('gym'); // Mark gym as completed in new ring
                     setShowGymRestModal(false);
                     setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
                   } else {
@@ -2161,7 +2418,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(2); // Check the sleep segment
+                    markHabitCompleted('sleep'); // Mark sleep as completed in new ring
                     setShowSleepModal(false);
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
                   } else {
@@ -2279,7 +2536,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(3); // Check the water segment
+                    markHabitCompleted('water'); // Mark water as completed in new ring
                     setShowWaterModal(false);
                     setWaterQuestionnaire({ waterIntake: 5, waterGoal: '', waterNotes: '' });
                   } else {
@@ -2623,7 +2880,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(4); // Check the run segment
+                    markHabitCompleted('run'); // Mark run as completed in new ring
                     setShowRunActiveModal(false);
                     setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
                   } else {
@@ -2684,7 +2941,7 @@ function ActionScreen({ navigation }: any) {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    toggleSegmentStore(4); // Check the run segment
+                    markHabitCompleted('run'); // Mark run as completed in new ring
                     setShowRunRestModal(false);
                     setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
                   } else {
@@ -2976,7 +3233,7 @@ function ActionScreen({ navigation }: any) {
                           
                           const success = await useActionStore.getState().saveDailyHabits(habitData);
                           if (success) {
-                            toggleSegmentStore(5); // Check the reflect segment
+                            markHabitCompleted('reflect'); // Mark reflect as completed in new ring
                             setShowReflectModal(false);
                             setReflectQuestionnaire({ mood: 3, energy: 3, whatWentWell: '', friction: '', oneTweak: '', nothingToChange: false, currentStep: 1 });
                           } else {
@@ -3037,7 +3294,7 @@ function ActionScreen({ navigation }: any) {
                       
                       const success = await useActionStore.getState().saveDailyHabits(habitData);
                       if (success) {
-                        toggleSegmentStore(6); // Check the cold shower segment
+                        markHabitCompleted('cold_shower'); // Mark cold shower as completed in new ring
                         setShowColdShowerModal(false);
                       } else {
                         console.error('Failed to save cold shower data');
@@ -3076,7 +3333,7 @@ function ActionScreen({ navigation }: any) {
                   Are you sure you want to remove this completed habit?
                 </Text>
                 <Text style={[styles.questionText, { fontSize: 14, color: '#666', marginTop: 8 }]}>
-                  This will mark it as incomplete for today.
+                  This will mark "{habitToUntick ? AVAILABLE_HABITS.find(h => h.id === habitToUntick)?.name || habitToUntick : 'this habit'}" as incomplete for today.
                 </Text>
               </View>
 
@@ -3092,24 +3349,23 @@ function ActionScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={[styles.optionButton, { backgroundColor: '#ef4444' }]}
                   onPress={async () => {
-                    if (segmentToUntick !== null) {
-                      // First update UI
-                      toggleSegmentStore(segmentToUntick);
-                      animateSegment(segmentAnim[segmentToUntick], 0);
+                    if (habitToUntick !== null) {
+                      // Mark habit as uncompleted in new ring
+                      markHabitUncompleted(habitToUntick);
 
-                      // Then clear persisted data for this habit if applicable
-                      const habitType = segmentIndexToHabit[segmentToUntick];
-                      if (habitType && habitType !== 'meditation' && habitType !== 'micro_learn') {
+                      // Clear persisted data for this habit if applicable
+                      if (habitToUntick !== 'meditation' && habitToUntick !== 'microlearn') {
                         try {
                           const date = getTodayDateString();
-                          await useActionStore.getState().clearHabitForDate(date, habitType);
+                          await useActionStore.getState().clearHabitForDate(date, habitToUntick);
                         } catch (e) {
                           console.warn('Failed to clear habit data:', e);
                         }
                       }
                     }
+                    
                     setShowUntickConfirmation(false);
-                    setSegmentToUntick(null);
+                    setHabitToUntick(null);
                   }}
                 >
                   <Text style={[styles.optionButtonText, { color: '#ffffff' }]}>
@@ -3164,6 +3420,26 @@ function ActionScreen({ navigation }: any) {
         userGoals={userGoals.filter(goal => !goal.completed)}
         preSelectedGoal={newlyCreatedGoalId || selectedGoal?.id || undefined}
         targetCheckInDate={targetCheckInDate || undefined}
+      />
+
+      {/* Edit Habits Modal */}
+      <EditHabitsModal
+        visible={showEditHabitsModal}
+        onClose={() => setShowEditHabitsModal(false)}
+        onSave={async () => {
+          try {
+            if (user) {
+              const [updatedHabits, updatedSchedules] = await Promise.all([
+                dailyHabitsService.getSelectedHabits(user.id),
+                dailyHabitsService.getHabitSchedules(user.id)
+              ]);
+              setSelectedHabits(updatedHabits);
+              setHabitSchedules(updatedSchedules);
+            }
+          } catch (error) {
+            console.error('Error refreshing habits:', error);
+          }
+        }}
       />
 
       {/* New Goal Modal */}

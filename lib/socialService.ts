@@ -155,10 +155,13 @@ class SocialService {
 
   async searchUsers(query: string): Promise<Profile[]> {
     try {
+      // SECURITY: Escape special characters to prevent SQL injection
+      const sanitizedQuery = query.replace(/[%_]/g, '\\$&');
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+        .or(`username.ilike.%${sanitizedQuery}%,display_name.ilike.%${sanitizedQuery}%`)
         .limit(20);
 
       if (error) {
@@ -490,6 +493,9 @@ class SocialService {
       }
       
       // Now try the search
+      // SECURITY: Escape special characters to prevent SQL injection
+      const sanitizedQuery = query.replace(/[%_]/g, '\\$&');
+      
       const { data, error } = await supabase
         .from('goals')
         .select(`
@@ -500,7 +506,7 @@ class SocialService {
             avatar_url
           )
         `)
-        .or(`title.ilike.%${query}%,description.ilike.%${query}%,category.ilike.%${query}%`)
+        .or(`title.ilike.%${sanitizedQuery}%,description.ilike.%${sanitizedQuery}%,category.ilike.%${sanitizedQuery}%`)
         .order('created_at', { ascending: false })
         .limit(20);
       

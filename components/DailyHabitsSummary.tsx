@@ -1,111 +1,286 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import { useTheme } from '../state/themeStore';
 import { DailyHabits } from '../types/database';
+import Svg, { Path } from 'react-native-svg';
 
 interface Props {
   data: DailyHabits | null;
   onHabitPress: (habitType: string) => void;
+  selectedHabits?: string[];
+  completedCount?: number;
+  onEditPress?: () => void;
+  enabledTodaySet?: Set<string>;
+  onUnlockToday?: (habitId: string) => void;
 }
 
-const rows: Array<{ key: keyof DailyHabits | 'gym_training_types' | 'cold_shower_completed'; label: string; habitType: string; isCompleted: (d: DailyHabits) => boolean; icon: any }>= [
-  { key: 'sleep_hours', label: 'Sleep', habitType: 'sleep', isCompleted: d => d.sleep_hours != null, icon: 'moon' },
-  { key: 'water_intake', label: 'Water', habitType: 'water', isCompleted: d => d.water_intake != null, icon: 'water' },
-  { key: 'run_day_type', label: 'Run', habitType: 'run', isCompleted: d => d.run_day_type != null, icon: 'walk' },
-  { key: 'gym_day_type', label: 'Gym', habitType: 'gym', isCompleted: d => d.gym_day_type != null, icon: 'barbell' },
-  { key: 'reflect_mood', label: 'Reflect', habitType: 'reflect', isCompleted: d => d.reflect_mood != null, icon: 'sparkles' },
-  { key: 'cold_shower_completed', label: 'Cold Shower', habitType: 'cold_shower', isCompleted: d => d.cold_shower_completed === true, icon: 'snow' },
+export const AVAILABLE_HABITS = [
+  { id: 'gym', name: 'Gym', icon: { name: 'dumbbell', solid: false } },
+  { id: 'run', name: 'Run', icon: { name: 'running', solid: false } },
+  { id: 'sleep', name: 'Sleep', icon: { name: 'moon', solid: false } },
+  { id: 'water', name: 'Water', icon: { name: 'tint', solid: false } },
+  { id: 'reflect', name: 'Reflect', icon: { name: 'star', solid: true } },
+  { id: 'focus', name: 'Focus', icon: { name: 'crosshairs', solid: false } },
+  { id: 'update_goal', name: 'Update Goal', icon: { name: 'flag', solid: false } },
+  { id: 'meditation', name: 'Meditation', icon: { name: 'om', solid: false } },
+  { id: 'microlearn', name: 'Microlearn', icon: { name: 'book', solid: false } },
+  { id: 'cold_shower', name: 'Cold Shower', icon: { name: 'snowflake', solid: false } },
+  { id: 'detox', name: 'Detox', icon: { name: 'mobile-alt', solid: false } }
 ];
 
-export default function DailyHabitsSummary({ data, onHabitPress }: Props) {
-  const { theme } = useTheme();
+export const DEFAULT_HABITS = ['gym', 'reflect', 'focus', 'sleep', 'water', 'run', 'microlearn', 'cold_shower'];
+
+
+// Segmented Ring Component
+function SegmentedRing({ 
+  theme, 
+  selectedHabits = DEFAULT_HABITS,
+  completedCount = 0,
+  onEditPress,
+  onHabitPress,
+  enabledTodaySet = new Set(),
+  onUnlockToday,
+  completedHabits = new Set()
+}: { 
+  theme: any; 
+  selectedHabits?: string[]; 
+  completedCount?: number;
+  onEditPress?: () => void;
+  onHabitPress?: (habitType: string) => void;
+  enabledTodaySet?: Set<string>;
+  onUnlockToday?: (habitId: string) => void;
+  completedHabits?: Set<string>;
+}) {
+
+  const icons = selectedHabits
+    .map(id => AVAILABLE_HABITS.find(h => h.id === id))
+    .filter(Boolean)
+    .map(h => h!.icon);
+
+  const centerX = 180;
+  const centerY = 180;
+  const outerRadius = 150;
+  const innerRadius = 105;
+  const segmentCount = selectedHabits.length;
+  const gapAngle = 5; // Gap between segments is 5 degrees
+  const segmentAngle = (360 - segmentCount * gapAngle) / segmentCount;
+  const totalAngle = segmentAngle + gapAngle; // Total angle per segment including gap
+
+  const toggleHabit = (habitId: string) => {
+    // Call the onHabitPress callback if provided
+    if (onHabitPress) {
+      onHabitPress(habitId);
+    }
+  };
+
+  const createSegmentPath = (index: number) => {
+    const startAngle = (index * totalAngle - 90) * (Math.PI / 180);
+    const endAngle = (index * totalAngle + segmentAngle - 90) * (Math.PI / 180);
+    
+    const x1 = centerX + outerRadius * Math.cos(startAngle);
+    const y1 = centerY + outerRadius * Math.sin(startAngle);
+    const x2 = centerX + outerRadius * Math.cos(endAngle);
+    const y2 = centerY + outerRadius * Math.sin(endAngle);
+    
+    const x3 = centerX + innerRadius * Math.cos(endAngle);
+    const y3 = centerY + innerRadius * Math.sin(endAngle);
+    const x4 = centerX + innerRadius * Math.cos(startAngle);
+    const y4 = centerY + innerRadius * Math.sin(startAngle);
+    
+    const largeArcFlag = segmentAngle > 180 ? 1 : 0;
+    
+    return `M ${x1} ${y1} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x2} ${y2} L ${x3} ${y3} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${x4} ${y4} Z`;
+  };
 
   return (
-    <View style={[styles.container, { borderColor: theme.borderSecondary, backgroundColor: theme.cardBackground }]}> 
-      <Text style={[styles.title, { color: theme.textPrimary }]}>Daily Habits Summary</Text>
-      {rows.map((row) => {
-        const completed = data ? row.isCompleted(data) : false;
+    <View style={styles.ringContainer}>
+      <Svg width={360} height={360}>
+        {/* Dynamic ring segments */}
+        {Array.from({ length: segmentCount }).map((_, index) => {
+          const habitId = selectedHabits[index];
+          const isCompleted = completedHabits.has(habitId);
+          const isEnabled = enabledTodaySet.has(habitId);
+          const isLocked = !isEnabled;
+          
+          return (
+            <Path
+              key={index}
+              d={createSegmentPath(index)}
+              stroke={isCompleted ? '#10B981' : (isLocked ? '#999999' : (theme.borderSecondary || '#E5E5E5'))}
+              strokeWidth={1}
+              fill={isCompleted ? '#10B981' : (isLocked ? '#B0B0B0' : '#D0D0D0')}
+            />
+          );
+        })}
+      </Svg>
+      
+      {/* Icons positioned around the ring */}
+      {icons.map((icon, index) => {
+        const habitId = selectedHabits[index];
+        const isCompleted = completedHabits.has(habitId);
+        const isEnabled = enabledTodaySet.has(habitId);
+        const isLocked = !isEnabled;
+        const angle = (index * totalAngle + segmentAngle / 2) - 90; // Center of each segment
+        const radius = 127.5; // Distance from center (between inner and outer radius)
+        const x = Math.cos(angle * Math.PI / 180) * radius;
+        const y = Math.sin(angle * Math.PI / 180) * radius;
+        
+        const handlePress = () => {
+          if (isLocked && onUnlockToday) {
+            // Show unlock confirmation
+            Alert.alert(
+              'Habit Not Scheduled',
+              'This habit is not scheduled for today. Would you like to unlock it for today?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Unlock Today', 
+                  onPress: () => onUnlockToday(habitId),
+                  style: 'default'
+                }
+              ]
+            );
+          } else {
+            // Open the modal/screen for this habit
+            if (onHabitPress) {
+              onHabitPress(habitId);
+            }
+          }
+        };
+        
         return (
-          <TouchableOpacity 
-            key={row.label} 
-            style={styles.itemRow}
-            onPress={() => onHabitPress(row.habitType)}
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.iconContainer,
+              {
+                left: centerX + x - 12, // Center at 180, offset by icon size
+                top: centerY + y - 12,
+              }
+            ]}
+            onPress={handlePress}
             activeOpacity={0.7}
           >
-            <View style={[styles.iconWrap, { backgroundColor: completed ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.06)' }]}>
-              <Ionicons name={row.icon as any} size={16} color={completed ? '#10B981' : theme.textSecondary} />
-            </View>
-            <Text style={[styles.itemLabel, { color: theme.textPrimary }]}>{row.label}</Text>
-            <Text style={[styles.itemStatus, { color: completed ? '#10B981' : theme.textSecondary }]}>
-              {completed ? 'Completed' : 'Not recorded'}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} style={styles.chevron} />
+            <FontAwesome5 
+              name={icon.name} 
+              size={18} 
+              color={isCompleted ? '#FFFFFF' : (isLocked ? '#888888' : '#2D2D2D')}
+              solid={icon.solid}
+            />
+            {isLocked && (
+              <View style={styles.lockOverlay}>
+                <Ionicons name="lock-closed" size={8} color="#666666" />
+              </View>
+            )}
           </TouchableOpacity>
         );
       })}
-      {!data && (
-        <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={24} color={theme.textSecondary} />
-          <Text style={[styles.emptyHint, { color: theme.textSecondary }]}>No data for this date yet</Text>
-          <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>Tap any habit to start recording</Text>
-        </View>
-      )}
+      
+      {/* Central text */}
+      <TouchableOpacity 
+        style={styles.centralTextContainer}
+        onPress={onEditPress}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.centralTitle, { color: theme.textPrimary }]}>Today's</Text>
+        <Text style={[styles.centralTitle, { color: theme.textPrimary }]}>Scheduled Habits</Text>
+        <Text style={[styles.centralSubtitle, { color: theme.textSecondary }]}>
+          {completedHabits.size}/{enabledTodaySet.size} Completed
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+export default function DailyHabitsSummary({ 
+  data, 
+  onHabitPress, 
+  selectedHabits = DEFAULT_HABITS, 
+  completedCount = 0, 
+  onEditPress,
+  enabledTodaySet = new Set(),
+  onUnlockToday,
+  completedHabits = new Set()
+}: {
+  data: any;
+  onHabitPress?: (habitType: string) => void;
+  selectedHabits?: string[];
+  completedCount?: number;
+  onEditPress?: () => void;
+  enabledTodaySet?: Set<string>;
+  onUnlockToday?: (habitId: string) => void;
+  completedHabits?: Set<string>;
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <View>
+      {/* Segmented Ring Component Only */}
+      <View style={styles.circularWrapper}>
+        <SegmentedRing 
+          theme={theme} 
+          selectedHabits={selectedHabits}
+          completedCount={completedCount}
+          onEditPress={onEditPress}
+          onHabitPress={onHabitPress}
+          enabledTodaySet={enabledTodaySet}
+          onUnlockToday={onUnlockToday}
+          completedHabits={completedHabits}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // Ring component styles
+  circularWrapper: {
     marginHorizontal: 16,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  iconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    padding: 45,
+    marginBottom: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    minHeight: 420,
   },
-  itemLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  itemStatus: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  emptyHint: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  emptyState: {
+  ringContainer: {
+    width: 360,
+    height: 360,
     alignItems: 'center',
-    paddingVertical: 16,
+    justifyContent: 'center',
+    position: 'relative',
   },
-  emptySubtext: {
-    fontSize: 10,
+  iconContainer: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockOverlay: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 6,
+    padding: 1,
+  },
+  centralTextContainer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // No background, no border, just text positioning
+  },
+  centralTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     textAlign: 'center',
-    marginTop: 4,
-    opacity: 0.7,
+    marginBottom: 4,
   },
-  chevron: {
-    marginLeft: 8,
-  }
+  centralSubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
 }); 

@@ -25,6 +25,7 @@ const LEVELS = [
     minPoints: 4000,
     maxPoints: 7999,
     unlocks: "Streak tracker + habit analytics dashboard",
+    comingSoon: ["Create challenges between friends"],
     rewards: ["1 free 'Accountability Boost' (double points for 1 day)", "15% referral commission"]
   },
   {
@@ -33,6 +34,7 @@ const LEVELS = [
     minPoints: 8000,
     maxPoints: 11999,
     unlocks: "Access to advanced challenges (e.g., 7-day cold shower streaks)",
+    comingSoon: ["Public challenges"],
     rewards: ["Entry into monthly prize draw (rewards up to £50)"]
   },
   {
@@ -41,6 +43,7 @@ const LEVELS = [
     minPoints: 12000,
     maxPoints: Infinity,
     unlocks: "Custom progress report + leaderboard spotlight",
+    comingSoon: ["Become a mentor - create events, sell courses etc"],
     rewards: ["Entry into premium prize draw (rewards up to £150)"]
   }
 ];
@@ -126,12 +129,25 @@ export default function LevelInfoModal({
           </Text>
         </View>
 
+        {levelData.comingSoon && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>🚀 Coming Soon:</Text>
+            {levelData.comingSoon.map((feature, index) => (
+              <View key={index} style={styles.bulletItem}>
+                <Text style={[styles.bulletPoint, { color: theme.textSecondary }]}>•</Text>
+                <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{feature}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>🎯 Rewards:</Text>
           {levelData.rewards.map((reward, index) => (
-            <Text key={index} style={[styles.rewardItem, { color: theme.textSecondary }]}>
-              • {reward}
-            </Text>
+            <View key={index} style={styles.bulletItem}>
+              <Text style={[styles.bulletPoint, { color: theme.textSecondary }]}>•</Text>
+              <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{reward}</Text>
+            </View>
           ))}
         </View>
       </View>
@@ -156,7 +172,7 @@ export default function LevelInfoModal({
           onPress={onClose}
         />
         <View style={styles.modalWrapper}>
-          <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={[styles.modalContainer, { backgroundColor: 'rgba(50, 50, 50, 1)' }]}>
             {/* Header */}
             <View style={styles.header}>
               <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
@@ -345,6 +361,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginLeft: 8,
+  },
+  bulletItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  bulletPoint: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginRight: 8,
+    width: 12,
+  },
+  bulletText: {
+    fontSize: 14,
+    lineHeight: 20,
+    flex: 1,
   },
   progressSection: {
     marginBottom: 16,

@@ -184,10 +184,18 @@ class DailyPostsService {
    */
   async deleteDailyPost(dailyPostId: string): Promise<boolean> {
     try {
+      // SECURITY: Verify user owns this daily post before deleting
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('User not authenticated');
+        return false;
+      }
+
       const { error } = await supabase
         .from('daily_posts')
         .delete()
-        .eq('id', dailyPostId);
+        .eq('id', dailyPostId)
+        .eq('user_id', user.id); // SECURITY: Only delete if user owns this post
 
       if (error) {
         console.error('Error deleting daily post:', error);
@@ -326,10 +334,18 @@ class DailyPostsService {
    */
   async deleteDailyPost(dailyPostId: string): Promise<boolean> {
     try {
+      // SECURITY: Verify user owns this daily post before deleting
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('User not authenticated');
+        return false;
+      }
+
       const { error } = await supabase
         .from('daily_posts')
         .delete()
-        .eq('id', dailyPostId);
+        .eq('id', dailyPostId)
+        .eq('user_id', user.id); // SECURITY: Only delete if user owns this post
       
       if (error) {
         console.error('Error deleting daily post:', error);

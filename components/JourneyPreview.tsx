@@ -217,136 +217,129 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <View style={styles.overlay}>
         <TouchableOpacity 
-          style={styles.modalOverlayTouchable}
+          style={styles.overlayTouchable}
           activeOpacity={1}
           onPress={onClose}
         />
         <View style={styles.modalWrapper}>
-            <View style={[styles.modalContainer, { backgroundColor: 'rgba(50, 50, 50, 1)' }]}>
-              {/* Header */}
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={[styles.modalTitle, { color: '#ffffff' }]}>
-                    Day {dayNumber}
-                  </Text>
-                  <Text style={[styles.modalDate, { color: '#ffffff' }]}>
-                    {formatJourneyDate(day.date)}
-                  </Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={[styles.headerTitle, { color: '#ffffff' }]}>
+              Day {dayNumber}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={28} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.scrollContent}
+            style={styles.scrollView}
+          >
+            {/* Photos */}
+            {day.photos.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Progress Photos ({day.photos.length})
+                </Text>
+                <View style={styles.photoCarouselContainer}>
+                  <GesturePhotoCarousel 
+                    photos={day.photos}
+                    currentIndex={currentPhotoIndex}
+                    onIndexChange={setCurrentPhotoIndex}
+                  />
                 </View>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <Ionicons name="close" size={28} color="#ffffff" />
-                </TouchableOpacity>
               </View>
+            )}
 
-              <ScrollView 
-                showsVerticalScrollIndicator={true}
-                contentContainerStyle={styles.modalContent}
-                style={styles.modalScrollView}
-              >
-                {/* Photos */}
-                {day.photos.length > 0 && (
-                  <View style={styles.modalSection}>
-                    <Text style={[styles.modalSectionTitle, { color: '#ffffff' }]}>
-                      Progress Photos ({day.photos.length})
-                    </Text>
-                    <View style={styles.photoCarouselContainer}>
-                      <GesturePhotoCarousel 
-                        photos={day.photos}
-                        currentIndex={currentPhotoIndex}
-                        onIndexChange={setCurrentPhotoIndex}
-                      />
+            {/* Daily Habits */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                Daily Habits ({completedHabits}/8)
+              </Text>
+              <View style={styles.habitsGrid}>
+                {habitsList.map((habit) => (
+                  <View 
+                    key={habit.key} 
+                    style={[
+                      styles.habitItemCompact,
+                      { backgroundColor: habit.value ? 'rgba(16, 185, 129, 0.1)' : 'rgba(128, 128, 128, 0.1)' }
+                    ]}
+                  >
+                    <View style={[
+                      styles.habitCheckbox, 
+                      { backgroundColor: habit.value ? '#10B981' : 'rgba(128, 128, 128, 0.3)' }
+                    ]}>
+                      {habit.value && <Ionicons name="checkmark" size={12} color="#ffffff" />}
                     </View>
-                  </View>
-                )}
-
-                {/* Daily Habits */}
-                <View style={styles.modalSection}>
-                  <Text style={[styles.modalSectionTitle, { color: '#ffffff' }]}>
-                    Daily Habits ({completedHabits}/8)
-                  </Text>
-                  <View style={styles.habitsGrid}>
-                    {habitsList.map((habit) => (
-                      <View 
-                        key={habit.key} 
-                        style={[
-                          styles.habitItem,
-                          { backgroundColor: habit.value ? 'rgba(16, 185, 129, 0.1)' : 'rgba(128, 128, 128, 0.1)' }
-                        ]}
-                      >
-                        <Text style={[
-                          styles.habitLabel,
-                          { color: habit.value ? '#10B981' : '#ffffff' }
-                        ]}>
-                          {habit.label}
-                        </Text>
-                        {habit.value && (
-                          <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Mood & Energy */}
-                {(day.mood_rating || day.energy_level) && (
-                  <View style={styles.modalSection}>
-                    <Text style={[styles.modalSectionTitle, { color: '#ffffff' }]}>
-                      Mood & Energy
-                    </Text>
-                    <View style={styles.moodEnergyContainer}>
-                      {day.mood_rating && (
-                        <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                          <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
-                            Mood
-                          </Text>
-                          <View style={styles.ratingStars}>
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Ionicons
-                                key={star}
-                                name={star <= day.mood_rating! ? "star" : "star-outline"}
-                                size={20}
-                                color="#F59E0B"
-                              />
-                            ))}
-                          </View>
-                        </View>
-                      )}
-                      {day.energy_level && (
-                        <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                          <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
-                            Energy
-                          </Text>
-                          <View style={styles.ratingStars}>
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Ionicons
-                                key={star}
-                                name={star <= day.energy_level! ? "flash" : "flash-outline"}
-                                size={20}
-                                color="#10B981"
-                              />
-                            ))}
-                          </View>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* Caption */}
-                {day.caption && (
-                  <View style={styles.modalSection}>
-                    <Text style={[styles.modalSectionTitle, { color: '#ffffff' }]}>
-                      Note
-                    </Text>
-                    <Text style={[styles.captionText, { color: '#ffffff' }]}>
-                      {day.caption}
+                    <Text style={[styles.habitTextCompact, { color: '#ffffff' }]}>
+                      {habit.label}
                     </Text>
                   </View>
-                )}
-              </ScrollView>
+                ))}
+              </View>
             </View>
+
+            {/* Mood & Energy */}
+            {(day.mood_rating || day.energy_level) && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Mood & Energy
+                </Text>
+                <View style={styles.moodEnergyContainer}>
+                  {day.mood_rating && (
+                    <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
+                      <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
+                        Mood
+                      </Text>
+                      <View style={styles.ratingStars}>
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Ionicons
+                            key={star}
+                            name={star <= day.mood_rating! ? "star" : "star-outline"}
+                            size={20}
+                            color="#F59E0B"
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  {day.energy_level && (
+                    <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
+                      <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
+                        Energy
+                      </Text>
+                      <View style={styles.ratingStars}>
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Ionicons
+                            key={star}
+                            name={star <= day.energy_level! ? "flash" : "flash-outline"}
+                            size={20}
+                            color="#10B981"
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Caption */}
+            {day.caption && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
+                  Note
+                </Text>
+                <Text style={[styles.sectionContent, { color: '#ffffff' }]}>
+                  {day.caption}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -427,14 +420,14 @@ const styles = StyleSheet.create({
     color: '#ffffff', // Match other section text
   },
   // Modal Styles
-  modalOverlay: {
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  modalOverlayTouchable: {
+  overlayTouchable: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -442,11 +435,10 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   modalWrapper: {
-    width: '95%',
-    maxWidth: 600,
-    maxHeight: '85%',
-  },
-  modalContainer: {
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    backgroundColor: 'rgba(50, 50, 50, 1)',
     borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -457,31 +449,71 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minHeight: 300,
   },
-  modalHeader: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
   },
-  modalTitle: {
+  headerTitle: {
     fontSize: 24,
     fontWeight: '700',
-  },
-  modalDate: {
-    fontSize: 14,
-    marginTop: 4,
   },
   closeButton: {
     padding: 4,
   },
-  modalScrollView: {
+  scrollView: {
     maxHeight: 600,
   },
-  modalContent: {
+  scrollContent: {
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 20,
+  },
+  content: {
+    flex: 1,
+  },
+  levelCard: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  section: {
+    marginTop: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  sectionContent: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  habitItemCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    borderRadius: 8,
+    minWidth: '45%',
+    flex: 0,
+  },
+  habitCheckbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitTextCompact: {
+    fontSize: 13,
+    flex: 1,
   },
   modalSection: {
     marginBottom: 20,

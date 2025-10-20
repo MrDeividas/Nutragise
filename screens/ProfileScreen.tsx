@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import CreatePostModal from '../components/CreatePostModal';
 import { progressService } from '../lib/progressService';
@@ -659,7 +660,7 @@ function ProfileScreen({ navigation }: any) {
   const activeGoals = userGoals.filter(goal => !goal.completed).slice(0, 3); // Show max 3 goals
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ScrollView style={styles.scrollView}>
         {/* Header with Settings */}
         <View style={styles.header}>
@@ -1039,7 +1040,7 @@ function ProfileScreen({ navigation }: any) {
             onPress={() => navigation.navigate('Goals')}
             style={styles.goalsSectionHeader}
           >
-            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Pinned Goals</Text>
+            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
             <Ionicons name="chevron-forward-outline" size={20} color="#ffffff" />
           </TouchableOpacity>
           <View style={[styles.weeklyTrackerCard, { backgroundColor: 'transparent' }]}>
@@ -1141,13 +1142,71 @@ function ProfileScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Radar Chart Section */}
+        {/* Progress Bars Section */}
         <View style={styles.keepTrackSection}>
           <View style={styles.keepTrackHeader}>
-            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Focus Chart</Text>
+            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Progression</Text>
           </View>
-          <ModernRadarChart theme={theme} />
+          <View style={[styles.progressBarsContainer, { marginTop: 20 }]}>
+            {[
+              { index: 1, progress: 35, color: '#ffffff' }, // White
+              { index: 2, progress: 35, color: '#ffffff' }, // White
+              { index: 3, progress: 35, color: '#ffffff' }, // White
+              { index: 4, progress: 35, color: '#ffffff' }, // White
+              { index: 5, progress: 35, color: '#ffffff' }  // White
+            ].map((bar) => (
+              <View key={bar.index} style={styles.progressBarColumn}>
+                <View style={styles.progressBarContainer}>
+                  {/* Background bar */}
+                  <View style={[styles.progressBarBackground, { backgroundColor: bar.color, opacity: 0.2 }]} />
+                  {/* Filled progress */}
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        backgroundColor: bar.color,
+                        height: `${bar.progress}%`,
+                        opacity: 0.7
+                      }
+                    ]}
+                  />
+                  {/* Avatar at bottom - cut-out effect */}
+                  <View style={[styles.progressBarAvatar, { 
+                    backgroundColor: 'transparent',
+                    overflow: 'hidden'
+                  }]}>
+                    <View style={{
+                      position: 'absolute',
+                      width: 28,
+                      height: 28,
+                      backgroundColor: 'transparent',
+                      borderRadius: 14,
+                      zIndex: 1
+                    }} />
+                    {bar.index === 1 ? (
+                      <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                    ) : bar.index === 2 ? (
+                      <FontAwesome5 name="brain" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                    ) : bar.index === 3 ? (
+                      <FontAwesome5 name="lock" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                    ) : bar.index === 4 ? (
+                      <FontAwesome5 name="star" size={20} color="rgba(0,0,0,0.5)" solid style={{ zIndex: 2 }} />
+                    ) : (
+                      <FontAwesome5 name="fire" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                    )}
+                  </View>
+                  {/* Number at top of filled section */}
+                  <View style={styles.progressBarLabel}>
+                    <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
+                      {bar.progress}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
+
 
         {/* Tasks Section */}
         <View style={styles.keepTrackSection}>
@@ -1224,7 +1283,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
     paddingBottom: 20,
   },
   headerTitle: {
@@ -2252,5 +2310,81 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+  },
+  // Progress Bars Styles
+  progressBarsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 12,
+    height: 200,
+  },
+  progressBarColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: '100%',
+  },
+  progressBarContainer: {
+    position: 'relative',
+    width: 40,
+    height: 180,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  progressBarBackground: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    opacity: 0.3,
+  },
+  progressBarFill: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    borderRadius: 20,
+  },
+  progressBarAvatar: {
+    position: 'absolute',
+    bottom: 8,
+    left: '50%',
+    transform: [{ translateX: -14 }],
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+  },
+  chevronContainer: {
+    position: 'absolute',
+    flexDirection: 'column',
+    alignItems: 'center',
+    left: '50%',
+    transform: [{ translateX: -6 }],
+    gap: 2,
+  },
+  progressBarLabel: {
+    position: 'absolute',
+    top: 8,
+    left: '50%',
+    transform: [{ translateX: -15 }],
+    width: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  progressBarNumber: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  blankAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
 }); 

@@ -386,6 +386,12 @@ class ProgressService {
    */
   async deleteCheckIn(checkInId: string, photoUrl?: string): Promise<boolean> {
     try {
+      // SECURITY: Verify user owns this check-in before deleting
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('User not authenticated');
+        return false;
+      }
 
       // Delete photo from storage if it exists and is not a placeholder
       if (photoUrl && photoUrl !== 'no-photo' && photoUrl.includes('users/')) {
@@ -410,11 +416,12 @@ class ProgressService {
         }
       }
 
-      // Delete check-in record from database
+      // Delete check-in record from database - with user ownership verification
       const { error } = await supabase
         .from('progress_photos')
         .delete()
-        .eq('id', checkInId);
+        .eq('id', checkInId)
+        .eq('user_id', user.id); // SECURITY: Only delete if user owns this check-in
 
       if (error) {
         console.error('Error deleting check-in from database:', error);

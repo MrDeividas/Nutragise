@@ -286,7 +286,7 @@ export default function ChatWindowScreen() {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
+        {/* Header - Fixed position on Android */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color="#ffffff" />
@@ -317,29 +317,31 @@ export default function ChatWindowScreen() {
           </View>
         )}
 
-        {/* Messages */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messagesList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          keyboardDismissMode="interactive"
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                Start your conversation with {otherUser.display_name || otherUser.username}
-              </Text>
-            </View>
-          }
-        />
-
-        {/* Input */}
+        {/* Chat Content - Wraps Messages + Input for Android */}
         <KeyboardAvoidingView
+          style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
+          {/* Messages */}
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            keyboardDismissMode="interactive"
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  Start your conversation with {otherUser.display_name || otherUser.username}
+                </Text>
+              </View>
+            }
+          />
+
+          {/* Input */}
           <View style={[
             styles.inputContainer, 
             { 

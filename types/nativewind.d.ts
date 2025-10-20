@@ -1,1 +1,3 @@
-/// <reference types="nativewind/types" /> 
+/// <reference types="nativewind/types" />
+
+declare module 'react-native-vector-icons/FontAwesome5'; 

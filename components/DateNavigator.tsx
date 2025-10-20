@@ -178,10 +178,10 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
         </TouchableOpacity>
       </View>
 
-            {/* Daily Habits Summary */}
+            {/* Scheduled Habits Summary */}
       <View style={styles.summarySection}>
         <Text style={[styles.summaryTitle, { color: theme.textPrimary }]}>
-          Daily Habits Summary - {formatDisplayDate(selectedDate)}
+          Today's Scheduled Habits Summary - {formatDisplayDate(selectedDate)}
         </Text>
         
         {/* Always render the habits list structure to prevent jitter */}

@@ -42,7 +42,20 @@ export const setApiKey = (apiKey: string): void => {
   config.deepseek.apiKey = apiKey;
 };
 
-// Initialize with the provided API key
+// Initialize with the provided API key from environment variables
 export const initializeAI = (): void => {
-  setApiKey('sk-641a791ecb6d48e3bbc3f41711c7646c');
+  try {
+    // Import environment variables
+    const { DEEPSEEK_API_KEY } = require('@env');
+    
+    if (DEEPSEEK_API_KEY) {
+      setApiKey(DEEPSEEK_API_KEY);
+      console.log('✅ DeepSeek API key loaded from environment variables');
+    } else {
+      console.warn('⚠️ DEEPSEEK_API_KEY not found in environment variables');
+    }
+  } catch (error) {
+    console.error('❌ Error loading environment variables:', error);
+    console.warn('⚠️ Make sure to create a .env file with DEEPSEEK_API_KEY');
+  }
 };
