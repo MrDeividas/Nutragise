@@ -17,6 +17,7 @@ import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import GoalsScreen from './screens/GoalsScreen';
+import UserProfileScreen from './screens/UserProfileScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
@@ -26,7 +27,6 @@ const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const HomeScreen = lazy(() => import('./screens/HomeScreen'));
 const ActionScreen = lazy(() => import('./screens/ActionScreen'));
-const UserProfileScreen = lazy(() => import('./screens/UserProfileScreen'));
 const FollowersScreen = lazy(() => import('./screens/FollowersScreen'));
 const FollowingScreen = lazy(() => import('./screens/FollowingScreen'));
 const CompeteScreen = lazy(() => import('./screens/CompeteScreen'));
@@ -106,16 +106,25 @@ function ActionStack() {
 // Profile Stack
 function ProfileStack() {
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <Stack.Navigator 
-        screenOptions={{ 
-          headerShown: false
-        }}
-      >
+    <Stack.Navigator 
+      screenOptions={{ 
+        headerShown: false
+      }}
+    >
         <Stack.Screen name="ProfileMain" component={ProfileScreen} />
         <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
         <Stack.Screen name="ProfileCard" component={ProfileCardScreen} />
-        <Stack.Screen name="UserProfile" component={UserProfileScreen as any} />
+        <Stack.Screen 
+          name="UserProfile" 
+          component={UserProfileScreen as any}
+          options={{
+            animation: 'slide_from_bottom',
+            animationDuration: 200,
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
+            presentation: 'modal'
+          }}
+        />
         <Stack.Screen 
         name="Followers" 
         component={FollowersScreen as any}
@@ -123,7 +132,8 @@ function ProfileStack() {
           animation: 'slide_from_bottom',
           animationDuration: 200,
           gestureEnabled: true,
-          gestureDirection: 'vertical'
+          gestureDirection: 'vertical',
+          presentation: 'modal'
         }}
       />
         <Stack.Screen name="Following" component={FollowingScreen as any} />
@@ -158,7 +168,6 @@ function ProfileStack() {
           }}
         />
       </Stack.Navigator>
-    </Suspense>
   );
 }
 

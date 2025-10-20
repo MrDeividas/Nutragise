@@ -15,7 +15,6 @@ import { useGoalsStore } from '../state/goalsStore';
 import { useAuthStore } from '../state/authStore';
 import { Goal } from '../types/database';
 import { useTheme } from '../state/themeStore';
-import { useFocusEffect } from '@react-navigation/native';
 import NewGoalModal from '../components/NewGoalModal';
 import CreatePostModal from '../components/CreatePostModal';
 import CustomBackground from '../components/CustomBackground';
@@ -32,19 +31,12 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
 
-  // Optimized: Only fetch on focus, avoid duplicate fetches
-  useFocusEffect(
-    React.useCallback(() => {
-      if (user) {
-        // Defer to next tick for smooth navigation
-        const timer = setTimeout(() => {
-          fetchGoals(user.id);
-        }, 0);
-        
-        return () => clearTimeout(timer);
-      }
-    }, [user])
-  );
+  // Only fetch on first load, not on every focus
+  useEffect(() => {
+    if (user && goals.length === 0) {
+      fetchGoals(user.id);
+    }
+  }, [user]);
 
   const handleRefresh = () => {
     if (user) {
