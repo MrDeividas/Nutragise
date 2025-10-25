@@ -18,6 +18,10 @@ import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import GoalsScreen from './screens/GoalsScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
+import FollowersScreen from './screens/FollowersScreen';
+import FollowingScreen from './screens/FollowingScreen';
+import ChallengeDetailScreen from './screens/ChallengeDetailScreen';
+import LeaderboardScreen from './screens/LeaderboardScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
@@ -27,8 +31,6 @@ const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const HomeScreen = lazy(() => import('./screens/HomeScreen'));
 const ActionScreen = lazy(() => import('./screens/ActionScreen'));
-const FollowersScreen = lazy(() => import('./screens/FollowersScreen'));
-const FollowingScreen = lazy(() => import('./screens/FollowingScreen'));
 const CompeteScreen = lazy(() => import('./screens/CompeteScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
@@ -126,17 +128,27 @@ function ProfileStack() {
           }}
         />
         <Stack.Screen 
-        name="Followers" 
-        component={FollowersScreen as any}
-        options={{
-          animation: 'slide_from_bottom',
-          animationDuration: 200,
-          gestureEnabled: true,
-          gestureDirection: 'vertical',
-          presentation: 'modal'
-        }}
-      />
-        <Stack.Screen name="Following" component={FollowingScreen as any} />
+          name="Followers" 
+          component={FollowersScreen as any}
+          options={{
+            animation: 'slide_from_bottom',
+            animationDuration: 200,
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
+            presentation: 'modal'
+          }}
+        />
+        <Stack.Screen 
+          name="Following" 
+          component={FollowingScreen as any}
+          options={{
+            animation: 'slide_from_bottom',
+            animationDuration: 200,
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
+            presentation: 'modal'
+          }}
+        />
         <Stack.Screen name="Notifications" component={NotificationsScreen as any} />
         <Stack.Screen 
           name="DM" 
@@ -320,6 +332,26 @@ function AppStack() {
           animation: 'slide_from_right',
           gestureEnabled: true,
           gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="ChallengeDetail" 
+        component={ChallengeDetailScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Leaderboard" 
+        component={LeaderboardScreen}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'vertical'
         }}
       />
     </Stack.Navigator>

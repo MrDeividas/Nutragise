@@ -376,8 +376,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e5e7eb',
   },
   headerTitle: {
-    fontSize: 20, // match ProfileScreen
-    fontWeight: '600', // match ProfileScreen
+    fontSize: 28,
+    fontWeight: '700',
     color: '#1f2937',
     textAlign: 'center',
     flex: 1,

@@ -36,183 +36,6 @@ import LevelInfoModal from '../components/LevelInfoModal';
 
 const { width } = Dimensions.get('window');
 
-// Custom Radar Chart Component for React Native
-const ModernRadarChart = ({ theme }: { theme: any }) => {
-  const chartSize = 300;
-  const center = chartSize / 2;
-  const radius = 110;
-  
-  // Sample data for the 5 categories to create smooth star shape
-  const categories = ['Body', 'Mind', 'Skill', 'Hustle', 'Vision'];
-  const values = [90, 85, 50, 85, 40]; // Body, Mind, Skill, Hustle, Vision (min 20% adjusted)
-  
-  // Generate points for the radar shape
-  const generateRadarPoints = (data: number[]) => {
-    return data.map((value, index) => {
-      const angle = (index * 2 * Math.PI) / categories.length - Math.PI / 2;
-      const distance = (value / 100) * radius;
-      const x = center + distance * Math.cos(angle);
-      const y = center + distance * Math.sin(angle);
-      return { x, y, value };
-    });
-  };
-
-  const radarPoints = generateRadarPoints(values);
-  
-  // Generate smooth star shape with curved indentations
-  const generateSmoothPath = (points: { x: number; y: number; value: number }[]) => {
-    if (points.length === 0) return '';
-    
-    // Create smooth star shape with indented curves between points
-    const expandedPoints = [];
-    for (let i = 0; i < points.length; i++) {
-      const current = points[i];
-      const next = points[(i + 1) % points.length];
-      
-      // Add the main point (star tip)
-      expandedPoints.push(current);
-      
-             // Add indented curve point between main points
-       const midAngle = (i + 0.5) * (2 * Math.PI) / points.length - Math.PI / 2;
-       const indentFactor = 0.55; // Reduced indentation for 30% thicker spikes
-       const avgValue = (current.value + next.value) / 2;
-       const indentRadius = avgValue * indentFactor; // Much smaller radius for indentation
-      const indentDistance = (indentRadius / 100) * radius;
-      
-      const indentX = center + indentDistance * Math.cos(midAngle);
-      const indentY = center + indentDistance * Math.sin(midAngle);
-      
-      expandedPoints.push({ x: indentX, y: indentY, value: indentRadius });
-    }
-    
-    // Start from the second point and curve back to first to ensure all points get smooth treatment
-    let path = `M ${expandedPoints[0].x} ${expandedPoints[0].y}`;
-    
-    // Process all points including wrapping back to the first point for consistent curves
-    for (let i = 1; i <= expandedPoints.length; i++) {
-      const current = expandedPoints[i % expandedPoints.length];
-      const previous = expandedPoints[(i - 1) % expandedPoints.length];
-      const next = expandedPoints[(i + 1) % expandedPoints.length];
-      
-      // Smooth curves with higher tension for clean star shape
-      const tension = 0.5;
-      
-      const dx1 = (current.x - previous.x) * tension;
-      const dy1 = (current.y - previous.y) * tension;
-      const dx2 = (next.x - current.x) * tension;
-      const dy2 = (next.y - current.y) * tension;
-      
-      const cp1x = previous.x + dx1;
-      const cp1y = previous.y + dy1;
-      const cp2x = current.x - dx2;
-      const cp2y = current.y - dy2;
-      
-      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${current.x} ${current.y}`;
-    }
-    
-    return path + ' Z';
-  };
-  
-  const smoothPath = generateSmoothPath(radarPoints);
-
-    return (
-    <View style={styles.radarChartContainer}>
-      <View style={styles.chartWrapper}>
-        <Svg width={chartSize} height={chartSize}>
-          {/* Gradient and glow effect definitions */}
-          <Defs>
-            <LinearGradient id="radarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <Stop offset="0%" stopColor="#FF6B35" stopOpacity="0.7" />
-              <Stop offset="30%" stopColor="#FF8C42" stopOpacity="0.6" />
-              <Stop offset="70%" stopColor="#FF69B4" stopOpacity="0.6" />
-              <Stop offset="100%" stopColor="#9C27B0" stopOpacity="0.5" />
-            </LinearGradient>
-            
-            {/* Glow filter for the radar shape */}
-            <Filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-              <FeGaussianBlur stdDeviation="3" result="coloredBlur"/>
-              <FeMerge> 
-                <FeMergeNode in="coloredBlur"/>
-                <FeMergeNode in="SourceGraphic"/>
-              </FeMerge>
-            </Filter>
-            
-            {/* Shadow filter */}
-            <Filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-              <FeOffset in="SourceGraphic" dx="2" dy="2" result="offset" />
-              <FeGaussianBlur in="offset" stdDeviation="2" result="blur" />
-              <FeMerge>
-                <FeMergeNode in="blur" />
-                <FeMergeNode in="SourceGraphic" />
-              </FeMerge>
-            </Filter>
-          </Defs>
-
-          {/* Grid circles */}
-          {[0.2, 0.4, 0.6, 0.8, 1.0].map((scale, index) => (
-            <Circle
-              key={index}
-              cx={center}
-              cy={center}
-              r={radius * scale}
-              stroke="#2a2a2a"
-              strokeWidth="0.5"
-              fill="transparent"
-            />
-          ))}
-          
-          {/* Radial lines */}
-          {categories.map((_, index) => {
-            const angle = (index * 2 * Math.PI) / categories.length - Math.PI / 2;
-            const x = center + radius * Math.cos(angle);
-            const y = center + radius * Math.sin(angle);
-            return (
-              <Line
-                key={index}
-                x1={center}
-                y1={center}
-                x2={x}
-                y2={y}
-                stroke="#2a2a2a"
-                strokeWidth="0.5"
-              />
-            );
-          })}
-          
-          {/* Category labels */}
-          {categories.map((category, index) => {
-            const angle = (index * 2 * Math.PI) / categories.length - Math.PI / 2;
-            const x = center + (radius + 25) * Math.cos(angle);
-            const y = center + (radius + 25) * Math.sin(angle);
-            return (
-              <SvgText
-                key={index}
-                x={x}
-                y={y}
-                fontSize="12"
-                fill={theme.textSecondary}
-                textAnchor="middle"
-                fontWeight="500"
-              >
-                {category}
-              </SvgText>
-            );
-          })}
-          
-          {/* Organic blob shape with gradient */}
-          <Path
-            d={smoothPath}
-            fill="url(#radarGradient)"
-            stroke="none"
-            filter="url(#glow)"
-          />
-          
-
-        </Svg>
-      </View>
-    </View>
-  );
-};
 
 function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuthStore();
@@ -265,6 +88,9 @@ function ProfileScreen({ navigation }: any) {
     pointsInCurrentLevel: 0,
     pointsNeededForNext: 4000
   });
+  
+  // Stats visibility toggle
+  const [statsVisible, setStatsVisible] = useState(true);
 
 
 
@@ -295,8 +121,29 @@ function ProfileScreen({ navigation }: any) {
         setProfileData(JSON.parse(savedProfileData));
       }
       
-      // Load social counts
+      // Load stats visibility preference from database first, then fall back to AsyncStorage
       if (user) {
+        try {
+          const { data: profile, error: statsError } = await supabase
+            .from('profiles')
+            .select('stats_visible')
+            .eq('id', user.id)
+            .single();
+          
+          if (!statsError && profile && profile.stats_visible !== undefined) {
+            setStatsVisible(profile.stats_visible);
+          } else {
+            // Fall back to AsyncStorage
+            const savedStatsVisibility = await AsyncStorage.getItem('statsVisible');
+            if (savedStatsVisibility !== null) {
+              setStatsVisible(JSON.parse(savedStatsVisibility));
+            }
+          }
+        } catch (err) {
+          console.log('Stats visibility column may not exist yet, defaulting to visible');
+        }
+        
+        // Load social counts
         const followers = await socialService.getFollowerCount(user.id);
         const following = await socialService.getFollowingCount(user.id);
         setSocialCounts({ followers, following });
@@ -305,6 +152,34 @@ function ProfileScreen({ navigation }: any) {
   
     } catch (error) {
       console.error('Error loading profile data:', error);
+    }
+  };
+
+  const toggleStatsVisibility = async () => {
+    const newVisibility = !statsVisible;
+    setStatsVisible(newVisibility);
+    
+    try {
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('statsVisible', JSON.stringify(newVisibility));
+      
+      // Save to database profile
+      if (user) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ stats_visible: newVisibility })
+          .eq('id', user.id);
+        
+        if (error) {
+          console.error('Error updating stats_visible in database:', error);
+          Alert.alert(
+            'Database Update Issue',
+            'Your preference is saved locally but may not sync. Please run the database migration to add the stats_visible column.'
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error saving stats visibility:', error);
     }
   };
 
@@ -1140,6 +1015,17 @@ function ProfileScreen({ navigation }: any) {
         <View style={styles.keepTrackSection}>
           <View style={styles.keepTrackHeader}>
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Progression</Text>
+            <TouchableOpacity 
+              onPress={toggleStatsVisibility}
+              style={styles.eyeIconButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name={statsVisible ? "eye-outline" : "eye-off-outline"} 
+                size={20} 
+                color={theme.textSecondary} 
+              />
+            </TouchableOpacity>
           </View>
           <View style={[styles.progressBarsContainer, { marginTop: 20 }]}>
             {[
@@ -1277,12 +1163,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 10,
     paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1f2937',
   },
   settingsIcon: {
     fontSize: 20,
@@ -2090,56 +1976,14 @@ const styles = StyleSheet.create({
   },
   keepTrackHeader: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
     gap: 8,
   },
-  radarChartContainer: {
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 1,
-  },
-  radarChartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-    textAlign: 'left',
-  },
-  chartWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 20,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendText: {
-    fontSize: 12,
-  },
-  overallScore: {
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  scoreLabel: {
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  scoreValue: {
-    fontSize: 24,
-    fontWeight: '700',
+  eyeIconButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   // New Profile Picture Component Styles
   profilePictureContainer: {

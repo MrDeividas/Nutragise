@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import { useTheme } from '../state/themeStore';
 import { DailyHabits } from '../types/database';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 interface Props {
   data: DailyHabits | null;
@@ -97,20 +97,29 @@ function SegmentedRing({
   return (
     <View style={styles.ringContainer}>
       <Svg width={360} height={360}>
+        <Defs>
+          {/* Glass morphism gradient for uncompleted segments */}
+          <LinearGradient id="glassGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.15" />
+            <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.05" />
+          </LinearGradient>
+        </Defs>
+        
         {/* Dynamic ring segments */}
         {Array.from({ length: segmentCount }).map((_, index) => {
           const habitId = selectedHabits[index];
           const isCompleted = completedHabits.has(habitId);
           const isEnabled = enabledTodaySet.has(habitId);
-          const isLocked = !isEnabled;
+          const isNotScheduled = !isEnabled;
           
           return (
             <Path
               key={index}
               d={createSegmentPath(index)}
-              stroke={isCompleted ? '#10B981' : (isLocked ? '#999999' : (theme.borderSecondary || '#E5E5E5'))}
+              stroke={isCompleted ? '#10B981' : (isNotScheduled ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.2)')}
               strokeWidth={1}
-              fill={isCompleted ? '#10B981' : (isLocked ? '#B0B0B0' : '#D0D0D0')}
+              fill={isCompleted ? '#10B981' : 'url(#glassGradient)'}
+              opacity={isNotScheduled && !isCompleted ? 0.5 : 1}
             />
           );
         })}
@@ -121,22 +130,22 @@ function SegmentedRing({
         const habitId = selectedHabits[index];
         const isCompleted = completedHabits.has(habitId);
         const isEnabled = enabledTodaySet.has(habitId);
-        const isLocked = !isEnabled;
+        const isNotScheduled = !isEnabled;
         const angle = (index * totalAngle + segmentAngle / 2) - 90; // Center of each segment
         const radius = 127.5; // Distance from center (between inner and outer radius)
         const x = Math.cos(angle * Math.PI / 180) * radius;
         const y = Math.sin(angle * Math.PI / 180) * radius;
         
         const handlePress = () => {
-          if (isLocked && onUnlockToday) {
+          if (isNotScheduled && onUnlockToday) {
             // Show unlock confirmation
             Alert.alert(
               'Habit Not Scheduled',
-              'This habit is not scheduled for today. Would you like to unlock it for today?',
+              'This habit is not scheduled for today. Would you like to log it anyway?',
               [
                 { text: 'Cancel', style: 'cancel' },
                 { 
-                  text: 'Unlock Today', 
+                  text: 'Log Today', 
                   onPress: () => onUnlockToday(habitId),
                   style: 'default'
                 }
@@ -158,6 +167,7 @@ function SegmentedRing({
               {
                 left: centerX + x - 12, // Center at 180, offset by icon size
                 top: centerY + y - 12,
+                opacity: isNotScheduled ? 0.4 : 1, // Dim non-scheduled habits
               }
             ]}
             onPress={handlePress}
@@ -166,14 +176,9 @@ function SegmentedRing({
             <FontAwesome5 
               name={icon.name} 
               size={18} 
-              color={isCompleted ? '#FFFFFF' : (isLocked ? '#888888' : '#2D2D2D')}
+              color={isCompleted ? '#FFFFFF' : '#10B981'}
               solid={icon.solid}
             />
-            {isLocked && (
-              <View style={styles.lockOverlay}>
-                <Ionicons name="lock-closed" size={8} color="#666666" />
-              </View>
-            )}
           </TouchableOpacity>
         );
       })}
@@ -257,14 +262,6 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lockOverlay: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 6,
-    padding: 1,
   },
   centralTextContainer: {
     position: 'absolute',

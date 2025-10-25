@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
     color: '#ffffff',
   },

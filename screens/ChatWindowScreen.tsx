@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Keyboard
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../state/authStore';
@@ -28,6 +28,7 @@ export default function ChatWindowScreen() {
   const { chatId, otherUserId } = route.params as { chatId: string; otherUserId: string };
   const { user } = useAuthStore();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +37,7 @@ export default function ChatWindowScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const lastTypingUpdateRef = useRef<number>(0);
 
   // Load other user profile
@@ -285,7 +286,7 @@ export default function ChatWindowScreen() {
 
   return (
     <CustomBackground>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header - Fixed position on Android */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -293,7 +294,7 @@ export default function ChatWindowScreen() {
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.headerUser}
-            onPress={() => navigation.navigate('UserProfile' as never, { userId: otherUserId } as never)}
+            onPress={() => (navigation as any).navigate('UserProfile', { userId: otherUserId })}
           >
             <Image
               source={{ uri: otherUser.avatar_url || 'https://via.placeholder.com/36' }}
@@ -320,8 +321,8 @@ export default function ChatWindowScreen() {
         {/* Chat Content - Wraps Messages + Input for Android */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
+          behavior="padding"
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 50 : 10}
         >
           {/* Messages */}
           <FlatList
@@ -346,7 +347,7 @@ export default function ChatWindowScreen() {
             styles.inputContainer, 
             { 
               borderTopColor: theme.border,
-              marginBottom: Platform.OS === 'android' ? 10 : 0 
+              paddingBottom: insets.bottom || 0,
             }
           ]}>
             <TextInput
@@ -479,7 +480,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderTopWidth: 1,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },

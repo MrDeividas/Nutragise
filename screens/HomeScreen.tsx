@@ -1317,101 +1317,68 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       {/* Modern Header Design */}
       <View style={styles.header}>
         {/* Top Row - Title and Action Buttons */}
-        <View style={styles.headerTopRow}>
-          <View style={styles.headerTitleContainer}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Feed</Text>
-            <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-              {activeTab === 'explore' ? 'Discover new content' : 'From people you follow'}
-            </Text>
-          </View>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Feed</Text>
+        <View style={styles.headerActionButtons}>
+          <TouchableOpacity 
+            onPress={() => setShowCategoryPicker(true)}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="filter-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
           
-          <View style={styles.headerActionButtons}>
-            <TouchableOpacity 
-              style={[styles.headerActionButton, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}
-              onPress={() => setShowCategoryPicker(true)}
-            >
-              <Ionicons name="filter-outline" size={18} color={theme.textPrimary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.headerActionButton, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}
-              onPress={() => setActiveTab(activeTab === 'explore' ? 'following' : 'explore')}
-            >
-              <Ionicons 
-                name={activeTab === 'explore' ? "globe-outline" : "people-outline"} 
-                size={18} 
-                color={theme.textPrimary} 
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.headerActionButton, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}
-              onPress={() => setShowSearchModal(true)}
-            >
-              <Ionicons name="search-outline" size={18} color={theme.textPrimary} />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.headerActionButton, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}
-              onPress={() => {
-                if (navigation && navigation.navigate) {
-                  navigation.navigate('Notifications');
-                } else {
-                  console.error('Navigation not available');
-                }
-              }}
-            >
-              <Ionicons name="notifications-outline" size={18} color={theme.textPrimary} />
+          <TouchableOpacity 
+            onPress={() => setActiveTab(activeTab === 'explore' ? 'following' : 'explore')}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons 
+              name={activeTab === 'explore' ? "globe-outline" : "people-outline"} 
+              size={24} 
+              color={theme.textPrimary} 
+            />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={() => setShowSearchModal(true)}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="search-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={() => {
+              if (navigation && navigation.navigate) {
+                navigation.navigate('Notifications');
+              } else {
+                console.error('Navigation not available');
+              }
+            }}
+          >
+            <View style={{ position: 'relative' }}>
+              <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
               {unreadNotificationCount > 0 && (
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>
+                <View style={{
+                  position: 'absolute',
+                  top: -6,
+                  right: -8,
+                  backgroundColor: '#ff5a5f',
+                  borderRadius: 10,
+                  minWidth: 18,
+                  height: 18,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  paddingHorizontal: 4,
+                }}>
+                  <Text style={{
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: '700',
+                  }}>
                     {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
                   </Text>
                 </View>
               )}
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        {/* Spotlight Section */}
-        <View style={styles.spotlightContainer}>
-          <View style={styles.spotlightHeader}>
-            <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>
-              Spotlight
-            </Text>
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.spotlightList}
-          >
-            {youMayLikeUsers.slice(0, 8).map((profile) => (
-              <TouchableOpacity 
-                key={profile.id}
-                style={styles.spotlightItem}
-                onPress={() => {
-                  // Navigate to spotlight view
-                  console.log('View spotlight:', profile.username);
-                }}
-              >
-                <View style={styles.spotlightRing}>
-                  <View style={[styles.spotlightAvatar, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}>
-                    {profile.avatar_url ? (
-                      <Image source={{ uri: profile.avatar_url }} style={styles.spotlightImage} />
-                    ) : (
-                      <Text style={[styles.spotlightInitial, { color: theme.textPrimary }]}>
-                        {profile.username?.charAt(0)?.toUpperCase() || 'U'}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-                <Text style={[styles.spotlightUsername, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {profile.display_name || profile.username}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </View>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -1812,6 +1779,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
                 onPostCommentPress={handlePostCommentPress}
                 onDailyPostCommentPress={handleDailyPostCommentPress}
                 onPhotoPress={handlePhotoPress}
+                youMayLikeUsers={youMayLikeUsers}
               />
             </ScrollView>
           )
@@ -2004,6 +1972,7 @@ function ExploreContent({
   onPostCommentPress,
   onDailyPostCommentPress,
   onPhotoPress,
+  youMayLikeUsers,
 }: { 
   goals: GoalWithUser[], 
   posts: PostWithUser[],
@@ -2027,6 +1996,7 @@ function ExploreContent({
   onPostCommentPress: (postId: string) => void;
   onDailyPostCommentPress: (dailyPostId: string) => void;
   onPhotoPress: (photos: string[], initialIndex: number) => void;
+  youMayLikeUsers: Profile[];
 }) {
   const getCategoryIcon = (category: string) => {
     switch (category?.toLowerCase()) {
@@ -2106,7 +2076,48 @@ function ExploreContent({
 
   return (
           <View style={styles.content}>
-        <View style={styles.section}>
+        {/* Spotlight Section */}
+        <View style={styles.spotlightContainer}>
+          <View style={styles.spotlightHeader}>
+            <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>
+              Spotlight
+            </Text>
+          </View>
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.spotlightList}
+          >
+            {youMayLikeUsers.slice(0, 8).map((profile) => (
+              <TouchableOpacity 
+                key={profile.id}
+                style={styles.spotlightItem}
+                onPress={() => {
+                  // Navigate to spotlight view
+                  console.log('View spotlight:', profile.username);
+                }}
+              >
+                <View style={styles.spotlightRing}>
+                  <View style={[styles.spotlightAvatar, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}>
+                    {profile.avatar_url ? (
+                      <Image source={{ uri: profile.avatar_url }} style={styles.spotlightImage} />
+                    ) : (
+                      <Text style={[styles.spotlightInitial, { color: theme.textPrimary }]}>
+                        {profile.username?.charAt(0)?.toUpperCase() || 'U'}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <Text style={[styles.spotlightUsername, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {profile.display_name || profile.username}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        
+        <View style={[styles.section, { marginTop: 24 }]}>
           
           {loading ? (
           <View style={styles.loadingContainer}>
@@ -2758,47 +2769,23 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  headerTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  headerTitleContainer: {
-    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    marginBottom: 2,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    opacity: 0.8,
   },
   headerActionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  headerActionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   spotlightContainer: {
-    marginTop: 8,
+    marginTop: 2,
   },
   spotlightHeader: {
     paddingHorizontal: 20,

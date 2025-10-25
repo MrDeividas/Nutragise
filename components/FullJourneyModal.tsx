@@ -22,9 +22,10 @@ interface FullJourneyModalProps {
   visible: boolean;
   userId: string;
   onClose: () => void;
+  readOnly?: boolean; // New prop to make the modal read-only (for public profiles)
 }
 
-export default function FullJourneyModal({ visible, userId, onClose }: FullJourneyModalProps) {
+export default function FullJourneyModal({ visible, userId, onClose, readOnly = false }: FullJourneyModalProps) {
   const [allDays, setAllDays] = useState<DailyPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -166,12 +167,13 @@ export default function FullJourneyModal({ visible, userId, onClose }: FullJourn
             allDays.map((day, index) => {
               const dayNumber = baseDate ? calculateDayNumber(baseDate, day.date) : allDays.length - index;
               return (
-                <JourneyDayCard 
+                <JourneyDayCard
                   key={day.id}
                   day={day}
                   dayNumber={dayNumber}
                   theme={theme}
                   onDelete={() => handleDeleteDay(day.id, dayNumber)}
+                  readOnly={readOnly}
                 />
               );
             })
@@ -187,9 +189,10 @@ interface JourneyDayCardProps {
   dayNumber: number;
   theme: any;
   onDelete: () => void;
+  readOnly?: boolean;
 }
 
-function JourneyDayCard({ day, dayNumber, theme, onDelete }: JourneyDayCardProps) {
+function JourneyDayCard({ day, dayNumber, theme, onDelete, readOnly = false }: JourneyDayCardProps) {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
   // Get habit icons
@@ -240,10 +243,12 @@ function JourneyDayCard({ day, dayNumber, theme, onDelete }: JourneyDayCardProps
             </Text>
           </View>
           
-          {/* Delete Button */}
-          <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
-            <Ionicons name="trash-outline" size={18} color="#ef4444" />
-          </TouchableOpacity>
+          {/* Delete Button - Only show if not read-only */}
+          {!readOnly && (
+            <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
+              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
       

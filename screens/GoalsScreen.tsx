@@ -298,13 +298,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1f2937',
   },
   newGoalButton: {
     paddingHorizontal: 16,

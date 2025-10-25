@@ -5,31 +5,28 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
+import { useAuthStore } from '../state/authStore';
+import { socialService } from '../lib/socialService';
+import { challengesService } from '../lib/challengesService';
 import { supabase } from '../lib/supabase';
-import { pointsService } from '../lib/pointsService';
-
-interface LeaderboardUser {
-  id: string;
-  username: string;
-  points: number;
-  rank: number;
-  avatar_url?: string;
-}
+import ChallengeCard from '../components/ChallengeCard';
+import { Challenge } from '../types/challenges';
 
 export default function CompeteScreen({ navigation }: any) {
   const { theme } = useTheme();
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user, initialize, loading } = useAuthStore();
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challengesLoading, setChallengesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   const activeCompetitions = [
     {
@@ -58,124 +55,74 @@ export default function CompeteScreen({ navigation }: any) {
     },
   ];
 
-  const upcomingCompetitions = [
-    {
-      id: '1',
-      title: 'Weight Loss Challenge',
-      duration: 'Starts in 3 days',
-      category: 'Health',
-      participants: 67,
-      icon: '⚖️',
-    },
-    {
-      id: '2',
-      title: 'Coding Bootcamp',
-      duration: 'Starts in 1 week',
-      category: 'Technology',
-      participants: 123,
-      icon: '💻',
-    },
-    {
-      id: '3',
-      title: 'Art Challenge',
-      duration: 'Starts in 5 days',
-      category: 'Creativity',
-      participants: 45,
-      icon: '🎨',
-    },
-  ];
+  useEffect(() => {
+    // Initialize auth store if needed
+    if (!user && !loading) {
+      initialize();
+    }
+    
+    // Only load data when auth is ready
+    if (!loading) {
+      loadChallenges();
+      loadUserProfile();
+    }
+  }, [loading]);
 
   useEffect(() => {
-    loadLeaderboard();
-  }, [leaderboardPeriod]);
+    loadUserProfile();
+  }, [user]);
+
+  const loadUserProfile = async () => {
+    if (user?.id) {
+      try {
+        const profile = await socialService.getProfile(user.id);
+        
+        if (!profile) {
+          // Try direct database query as fallback
+          const { data: directProfile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          
+          if (directProfile) {
+            setUserProfile(directProfile);
+          }
+        } else {
+          setUserProfile(profile);
+        }
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+      }
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLeaderboard();
+    await loadChallenges();
     setRefreshing(false);
   };
 
-  const loadLeaderboard = async () => {
+
+  const loadChallenges = async () => {
     try {
-      setLoading(true);
+      setChallengesLoading(true);
       
-      // Fetch all users with profiles
-      const { data: users, error: usersError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .not('username', 'is', null);
-
-      if (usersError) {
-        console.error('[Leaderboard] Error fetching users:', usersError);
-        setLeaderboardData([]);
-        setLoading(false);
-        return;
-      }
+      // Handle recurring challenges first
+      await challengesService.handleRecurringChallenges();
       
-      console.log('[Leaderboard] Found users:', users?.length);
-      
-      if (!users || users.length === 0) {
-        console.log('[Leaderboard] No users found');
-        setLeaderboardData([]);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch points for each user
-      const usersWithPoints = await Promise.all(
-        users.map(async (user) => {
-          try {
-            let points = 0;
-            
-            if (leaderboardPeriod === 'daily') {
-              // Get today's points
-              const todayPoints = await pointsService.getTodaysPoints(user.id);
-              points = todayPoints?.total || 0;
-              console.log(`[Leaderboard] User ${user.username} (${user.id}) daily points:`, points, 'Data:', todayPoints);
-            } else {
-              // Get total points for weekly/monthly
-              points = await pointsService.getTotalPoints(user.id);
-              console.log(`[Leaderboard] User ${user.username} (${user.id}) total points:`, points);
-            }
-
-            return {
-              id: user.id,
-              username: user.username || 'Unknown',
-              points,
-              avatar_url: user.avatar_url,
-            };
-          } catch (err) {
-            console.error(`Error fetching points for user ${user.id}:`, err);
-            return {
-              id: user.id,
-              username: user.username || 'Unknown',
-              points: 0,
-              avatar_url: user.avatar_url,
-            };
-          }
-        })
-      );
-
-      console.log('[Leaderboard] All users with points:', usersWithPoints);
-
-      // Filter out users with 0 points and sort by points
-      const sortedUsers = usersWithPoints
-        .filter(user => user.points > 0)
-        .sort((a, b) => b.points - a.points)
-        .map((user, index) => ({
-          ...user,
-          rank: index + 1,
-        }));
-
-      console.log('[Leaderboard] Filtered and sorted users:', sortedUsers);
-      console.log('[Leaderboard] Final count:', sortedUsers.length);
-      setLeaderboardData(sortedUsers);
+      const activeChallenges = await challengesService.getChallenges('active');
+      setChallenges(activeChallenges);
     } catch (error) {
-      console.error('Error loading leaderboard:', error);
-      setLeaderboardData([]);
+      console.error('Error loading challenges:', error);
+      setChallenges([]);
     } finally {
-      setLoading(false);
+      setChallengesLoading(false);
     }
+  };
+
+  const handleChallengePress = (challenge: Challenge) => {
+    navigation.navigate('ChallengeDetail', { challengeId: challenge.id });
   };
 
   const renderCompetitionCard = (competition: any) => (
@@ -183,7 +130,7 @@ export default function CompeteScreen({ navigation }: any) {
       key={competition.id}
       style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
       onPress={() => {
-        console.log('Open competition:', competition.title);
+        // Handle competition press
       }}
     >
       <View style={styles.cardHeader}>
@@ -211,74 +158,20 @@ export default function CompeteScreen({ navigation }: any) {
     </TouchableOpacity>
   );
 
-  const renderLeaderboardItem = ({ item, index }: { item: LeaderboardUser; index: number }) => (
-    <View style={[styles.leaderboardItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
-      <View style={styles.rankContainer}>
-        <Text style={[styles.rankText, { color: theme.textPrimary }]}>
-          #{item.rank}
-        </Text>
-      </View>
-      
-      {/* Avatar */}
-      {item.avatar_url ? (
-        <Image 
-          source={{ uri: item.avatar_url }} 
-          style={styles.avatar}
-        />
-      ) : (
-        <View style={[styles.avatar, { backgroundColor: 'rgba(128, 128, 128, 0.3)' }]}>
-          <Ionicons name="person" size={20} color={theme.textSecondary} />
-        </View>
-      )}
-      
-      <View style={styles.userInfo}>
-        <View style={styles.userNameRow}>
-          <Text style={[styles.userName, { color: theme.textPrimary }]}>
-            {item.username}
-          </Text>
-          {item.rank <= 3 && (
-            <View style={[styles.medalContainer, { backgroundColor: item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32' }]}>
-              <Ionicons name="medal" size={12} color="#ffffff" />
-            </View>
-          )}
-        </View>
-      </View>
-      
-      <View style={styles.pointsContainer}>
-        <Text style={[styles.pointsText, { color: theme.textPrimary }]}>
-          {item.points.toLocaleString()} <Text style={[styles.pointsLabel, { color: theme.textSecondary }]}>pts</Text>
-        </Text>
-      </View>
-    </View>
-  );
-
-  const renderLeaderboardTab = (period: 'daily' | 'weekly' | 'monthly', label: string) => (
-    <TouchableOpacity
-      style={[
-        styles.leaderboardTab,
-        leaderboardPeriod === period && styles.leaderboardTabActive
-      ]}
-      onPress={() => setLeaderboardPeriod(period)}
-    >
-      <Text style={[
-        styles.leaderboardTabText,
-        { color: leaderboardPeriod === period ? '#EA580C' : theme.textSecondary }
-      ]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.titleSection}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-              Compete
-            </Text>
-          </View>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+          Compete
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity 
+            onPress={() => navigation.getParent()?.navigate('Leaderboard')}
+          >
+            <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -296,82 +189,100 @@ export default function CompeteScreen({ navigation }: any) {
           />
         }
       >
-        {/* Leaderboard Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Leaderboard
-            </Text>
-          </View>
-          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-            Top performers and rankings
-          </Text>
-
-          {/* Leaderboard Tabs */}
-          <View style={styles.leaderboardTabs}>
-            {renderLeaderboardTab('daily', 'Daily')}
-            {renderLeaderboardTab('weekly', 'Weekly')}
-            {renderLeaderboardTab('monthly', 'Monthly')}
-          </View>
-
-          {/* Leaderboard List */}
-          <View style={styles.leaderboardContainer}>
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#EA580C" />
+        {/* Create Your Own Game Button */}
+        <View style={styles.createGameSection}>
+          <TouchableOpacity 
+            style={[styles.createGameButton, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
+            onPress={() => Alert.alert('Coming Soon', 'Create your own game feature is coming soon!')}
+          >
+            <View style={styles.createGameContent}>
+              <View style={styles.profilePicContainer}>
+                {/* Circular dashed outline */}
+                <View style={styles.dashedCircleOutline} />
+                
+                {(() => {
+                  const avatarUrl = userProfile?.avatar_url || user?.avatar_url;
+                  
+                  // If no user is logged in, show a default placeholder
+                  if (!user) {
+                    return (
+                      <View style={[styles.profilePicPlaceholder, { backgroundColor: 'rgba(128, 128, 128, 0.3)' }]}>
+                        <Ionicons name="person" size={20} color={theme.textSecondary} />
+                      </View>
+                    );
+                  }
+                  
+                  return avatarUrl ? (
+                    <Image 
+                      source={{ uri: avatarUrl }} 
+                      style={styles.profilePic}
+                      onError={(error) => {
+                        // Handle image load error silently
+                      }}
+                      onLoad={() => {
+                        // Image loaded successfully
+                      }}
+                    />
+                  ) : (
+                    <View style={[styles.profilePicPlaceholder, { backgroundColor: 'rgba(128, 128, 128, 0.3)' }]}>
+                      <Ionicons name="person" size={20} color={theme.textSecondary} />
+                    </View>
+                  );
+                })()}
+                <View style={styles.plusIconContainer}>
+                  <Ionicons name="add" size={12} color="#000000" />
+                </View>
               </View>
-            ) : leaderboardData.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  No users with points yet
-                </Text>
-              </View>
-            ) : (
-              <FlatList
-                data={leaderboardData}
-                keyExtractor={(item) => item.id}
-                renderItem={renderLeaderboardItem}
-                scrollEnabled={false}
-                showsVerticalScrollIndicator={false}
-              />
-            )}
+              <Text style={[styles.createGameText, { color: theme.textPrimary }]}>
+                Create Your Own Game
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Challenges Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              Everyone Can Play
+            </Text>
+            <TouchableOpacity style={styles.seeAllButton}>
+              <Text style={[styles.seeAllText, { color: theme.textSecondary }]}>
+                See all
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.challengesContent}>
+            {challengesLoading ? (
+            <View style={styles.challengesLoadingContainer}>
+              <ActivityIndicator size="large" color="#EA580C" />
+            </View>
+          ) : challenges.length === 0 ? (
+            <View style={styles.emptyChallengesContainer}>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                No active challenges available
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.challengesScrollContent}
+            >
+              {challenges.map((challenge) => (
+                <ChallengeCard
+                  key={challenge.id}
+                  challenge={challenge}
+                  onPress={handleChallengePress}
+                />
+              ))}
+            </ScrollView>
+          )}
           </View>
         </View>
 
-        {/* Active Competitions Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="flame-outline" size={24} color={theme.textPrimary} />
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Active Competitions
-            </Text>
-          </View>
-          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-            Join ongoing challenges and compete with others
-          </Text>
-          
-          <View style={styles.cardsContainer}>
-            {activeCompetitions.map(renderCompetitionCard)}
-          </View>
-        </View>
-
-        {/* Upcoming Competitions Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="calendar-outline" size={24} color={theme.textPrimary} />
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Upcoming Competitions
-            </Text>
-          </View>
-          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-            Get ready for future challenges and events
-          </Text>
-          
-          <View style={styles.cardsContainer}>
-            {upcomingCompetitions.map(renderCompetitionCard)}
-          </View>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -382,23 +293,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 24,
-    borderBottomWidth: 0,
-  },
-  headerContent: {
-    alignItems: 'flex-start',
-  },
-  titleSection: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 20,
+    borderBottomWidth: 0,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    marginLeft: 12,
   },
   headerSubtitle: {
     fontSize: 16,
@@ -415,10 +320,71 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 32,
   },
+  createGameSection: {
+    marginBottom: 24,
+  },
+  createGameButton: {
+    borderRadius: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  createGameContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profilePicContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+  },
+  profilePicPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashedCircleOutline: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f5f5f5',
+    borderStyle: 'dashed',
+    top: -4,
+    left: -4,
+  },
+  plusIconContainer: {
+    position: 'absolute',
+    bottom: -10,
+    right: -10,
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(128, 128, 128, 0.15)',
+  },
+  createGameText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  challengesContent: {
+    marginTop: 10,
   },
   sectionTitle: {
     fontSize: 20,
@@ -563,5 +529,27 @@ const styles = StyleSheet.create({
   pointsLabel: {
     fontSize: 14,
     fontWeight: '400',
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  seeAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  challengesLoadingContainer: {
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyChallengesContainer: {
+    height: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengesScrollContent: {
+    paddingRight: 24,
   },
 }); 

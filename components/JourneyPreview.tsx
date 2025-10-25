@@ -74,7 +74,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: '#ffffff' }]}>Journey</Text>
         </View>
         <ActivityIndicator size="small" color={theme.primary} />
       </View>
@@ -85,7 +85,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: '#ffffff' }]}>Journey</Text>
         </View>
         <Text style={[styles.emptyText, { color: '#ffffff' }]}>
           Start your journey by posting your first daily update!
