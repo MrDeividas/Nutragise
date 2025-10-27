@@ -1217,48 +1217,17 @@ function ActionScreen({ navigation }: any) {
 
         {/* Header with Settings */}
         <View style={styles.header}>
+          <TouchableOpacity onPress={() => setShowStreakModal(true)}>
+            <Ionicons name="flame-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
             Day {user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setShowStreakModal(true)} style={{ marginRight: 12 }}>
-              <View style={{ position: 'relative' }}>
-                <Ionicons name="flame-outline" size={24} color="#ffffff" />
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity onPress={() => navigation.navigate('Notifications')} style={{ marginRight: 12 }}>
-              <View style={{ position: 'relative', width: 24, height: 24 }}>
-                <Ionicons name="notifications-outline" size={24} color="#ffffff" />
-                {unreadNotificationCount > 0 && (
-                  <View style={{
-                    position: 'absolute',
-                    top: -6,
-                    right: -6,
-                    backgroundColor: '#ff5a5f',
-                    borderRadius: 10,
-                    minWidth: 16,
-                    height: 16,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    paddingHorizontal: 3,
-                  }}>
-                    <Text style={{
-                      color: '#fff',
-                      fontSize: 9,
-                      fontWeight: '700',
-                    }}>
-                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setShowActionModal(true)}>
-              <Ionicons name="add" size={24} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
+          
+          <TouchableOpacity onPress={() => setShowActionModal(true)}>
+            <Ionicons name="add" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
         </View>
 
         {/* Greeting Section */}
@@ -3161,11 +3130,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 10,
     paddingBottom: 20,
+    position: 'relative',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1f2937',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
   },
   headerSubtitle: {
     fontSize: 16,
@@ -4657,5 +4631,8 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  emptyText: {
+    fontSize: 14,
   },
 }); 

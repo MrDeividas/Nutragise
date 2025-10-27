@@ -109,7 +109,11 @@ function ProfileStack() {
   return (
     <Stack.Navigator 
       screenOptions={{ 
-        headerShown: false
+        headerShown: false,
+        animation: 'slide_from_right',
+        animationDuration: 200,
+        gestureEnabled: true,
+        gestureDirection: 'horizontal'
       }}
     >
         <Stack.Screen name="ProfileMain" component={ProfileScreen} />

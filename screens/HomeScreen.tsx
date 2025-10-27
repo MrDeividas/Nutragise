@@ -1316,9 +1316,8 @@ function HomeScreen({ navigation }: HomeScreenProps) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Modern Header Design */}
       <View style={styles.header}>
-        {/* Top Row - Title and Action Buttons */}
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Feed</Text>
-        <View style={styles.headerActionButtons}>
+        {/* Left side buttons */}
+        <View style={styles.headerLeftButtons}>
           <TouchableOpacity 
             onPress={() => setShowCategoryPicker(true)}
             style={{ marginRight: 12 }}
@@ -1336,6 +1335,13 @@ function HomeScreen({ navigation }: HomeScreenProps) {
               color={theme.textPrimary} 
             />
           </TouchableOpacity>
+        </View>
+
+        {/* Center title */}
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Feed</Text>
+
+        {/* Right side buttons */}
+        <View style={styles.headerActionButtons}>
           
           <TouchableOpacity 
             onPress={() => setShowSearchModal(true)}
@@ -2116,6 +2122,13 @@ function ExploreContent({
             ))}
           </ScrollView>
         </View>
+
+        {/* Activity Section */}
+        <View style={styles.activityHeader}>
+          <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>
+            Activity
+          </Text>
+        </View>
         
         <View style={[styles.section, { marginTop: 24 }]}>
           
@@ -2147,21 +2160,25 @@ function ExploreContent({
                       </View>
                     )}
                     <View style={styles.profileTextInfo}>
-                      <Text style={styles.floatingUsername}>@{goal.profiles?.username || 'user'}</Text>
+                      <View style={styles.usernameWithFollow}>
+                        <Text style={styles.floatingUsername}>@{goal.profiles?.username || 'user'}</Text>
+                        {goal.user_id !== user?.id && (
+                          <TouchableOpacity 
+                            onPress={() => onFollow(goal.profiles?.id || '')}
+                            style={styles.followIconButton}
+                          >
+                            <Ionicons 
+                              name={goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'checkmark' : 'add'} 
+                              size={14} 
+                              color="#FFFFFF" 
+                            />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                       <Text style={styles.floatingTime}>
                         {formatLastUpdate(goal.last_updated_at, goal.created_at)}
                       </Text>
                     </View>
-                    {goal.user_id !== user?.id && (
-                      <TouchableOpacity 
-                        onPress={() => onFollow(goal.profiles?.id || '')}
-                        style={styles.floatingFollowButton}
-                      >
-                        <Text style={styles.floatingFollowText}>
-                          {goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'Followed' : 'Follow'}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
                   
                   {/* Mini Habit Icons - moved outside profileInfo */}
@@ -2279,21 +2296,25 @@ function ExploreContent({
                           </View>
                         )}
                         <View style={styles.profileTextInfo}>
-                          <Text style={styles.floatingUsername}>@{post.profiles?.username || 'user'}</Text>
+                          <View style={styles.usernameWithFollow}>
+                            <Text style={styles.floatingUsername}>@{post.profiles?.username || 'user'}</Text>
+                            {post.user_id !== user?.id && (
+                              <TouchableOpacity 
+                                onPress={() => onFollow(post.profiles?.id || '')}
+                                style={styles.followIconButton}
+                              >
+                                <Ionicons 
+                                  name={post.profiles?.id && followingStatus.get(post.profiles.id) ? 'checkmark' : 'add'} 
+                                  size={14} 
+                                  color="#FFFFFF" 
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
                           <Text style={styles.floatingTime}>
                             {formatLastUpdate(post.created_at, post.created_at)}
                           </Text>
                         </View>
-                        {post.user_id !== user?.id && (
-                          <TouchableOpacity 
-                            onPress={() => onFollow(post.profiles?.id || '')}
-                            style={styles.floatingFollowButton}
-                          >
-                            <Text style={styles.floatingFollowText}>
-                              {post.profiles?.id && followingStatus.get(post.profiles.id) ? 'Followed' : 'Follow'}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
                       </View>
                       
                       {/* Mini Habit Icons - moved outside profileInfo */}
@@ -2420,21 +2441,25 @@ function ExploreContent({
                           </View>
                         )}
                         <View style={styles.profileTextInfo}>
-                          <Text style={styles.floatingUsername}>@{dailyPost.profiles?.username || 'user'}</Text>
+                          <View style={styles.usernameWithFollow}>
+                            <Text style={styles.floatingUsername}>@{dailyPost.profiles?.username || 'user'}</Text>
+                            {dailyPost.user_id !== user?.id && (
+                              <TouchableOpacity 
+                                onPress={() => onFollow(dailyPost.profiles?.id || '')}
+                                style={styles.followIconButton}
+                              >
+                                <Ionicons 
+                                  name={dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'checkmark' : 'add'} 
+                                  size={14} 
+                                  color="#FFFFFF" 
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
                           <Text style={styles.floatingTime}>
                             {formatLastUpdate(dailyPost.updated_at, dailyPost.created_at)}
                           </Text>
                         </View>
-                        {dailyPost.user_id !== user?.id && (
-                          <TouchableOpacity 
-                            onPress={() => onFollow(dailyPost.profiles?.id || '')}
-                            style={styles.floatingFollowButton}
-                          >
-                            <Text style={styles.floatingFollowText}>
-                              {dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'Followed' : 'Follow'}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
                       </View>
                       
                       {/* Mini Habit Icons */}
@@ -2768,23 +2793,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 10,
     paddingBottom: 20,
+    position: 'relative',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
+  },
+  headerLeftButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
   },
   headerActionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
+    zIndex: 1,
   },
   spotlightContainer: {
     marginTop: 2,
+    marginBottom: 20,
   },
   spotlightHeader: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 30,
     marginBottom: 12,
   },
   spotlightTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  activityHeader: {
+    paddingHorizontal: 30,
+    marginTop: 0,
+    marginBottom: 12,
+  },
+  activityTitle: {
     fontSize: 18,
     fontWeight: '600',
   },
@@ -2899,10 +2946,10 @@ const styles = StyleSheet.create({
   floatingProfileSection: {
     position: 'absolute',
     top: -15,
-    left: 12,
-    right: 12,
+    left: 30,
+    right: 30,
     zIndex: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     paddingLeft: 0,
     paddingRight: 0,
@@ -2918,14 +2965,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   floatingAvatar: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
     borderRadius: 8,
     marginLeft: 0,
   },
   floatingAvatarPlaceholder: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
@@ -2933,14 +2980,14 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   floatingAvatarInitial: {
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#ffffff',
   },
   profileTextInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 2,
   },
   floatingUsername: {
     fontSize: 12,
@@ -2952,16 +2999,18 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
     fontWeight: '400',
   },
-  floatingFollowButton: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 10,
+  usernameWithFollow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  floatingFollowText: {
-    fontSize: 10,
-    color: '#ffffff',
-    fontWeight: '500',
+  followIconButton: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   miniHabitIcons: {
     flexDirection: 'row-reverse',
@@ -3000,7 +3049,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   contentSection: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 30,
     paddingBottom: 0,
   },
   titleRow: {

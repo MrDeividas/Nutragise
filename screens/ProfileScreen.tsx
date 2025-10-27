@@ -47,7 +47,6 @@ function ProfileScreen({ navigation }: any) {
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const weeklyTrackerRef = useRef<View>(null);
   const weeklyTrackerLayout = useRef<any>(null);
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
   const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
@@ -534,8 +533,16 @@ function ProfileScreen({ navigation }: any) {
       <ScrollView style={styles.scrollView}>
         {/* Header with Settings */}
         <View style={styles.header}>
+          {/* Left side - Settings */}
+          <TouchableOpacity onPress={() => navigation.navigate('ProfileSettings')} style={{ zIndex: 1 }}>
+            <Ionicons name="settings-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+
+          {/* Center title */}
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Profile</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+
+          {/* Right side - DM and Notifications */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', zIndex: 1 }}>
             <TouchableOpacity 
               onPress={() => navigation.navigate('DM' as never)} 
               style={{ marginRight: 12 }}
@@ -597,42 +604,9 @@ function ProfileScreen({ navigation }: any) {
                 )}
               </View>
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setShowSettingsMenu(true)}>
-              <Ionicons name="settings-outline" size={24} color="#ffffff" />
-            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Settings Dropdown Modal */}
-        <Modal
-          visible={showSettingsMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowSettingsMenu(false)}
-        >
-          <TouchableOpacity
-            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.1)' }}
-            activeOpacity={1}
-            onPress={() => setShowSettingsMenu(false)}
-          >
-            <View style={{ position: 'absolute', top: 70, right: 32, backgroundColor: 'rgba(128, 128, 128, 0.15)', borderRadius: 10, shadowColor: theme.shadow, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4, minWidth: 120 }}>
-              <TouchableOpacity
-                style={{ padding: 16 }}
-                onPress={() => { setShowSettingsMenu(false); navigation.navigate('ProfileSettings', { user }); }}
-              >
-                <Text style={{ color: theme.primary, fontWeight: '600', fontSize: 16 }}>Profile settings</Text>
-              </TouchableOpacity>
-              <View style={{ height: 1, backgroundColor: theme.border, marginHorizontal: 8 }} />
-              <TouchableOpacity
-                style={{ padding: 16 }}
-                onPress={async () => { setShowSettingsMenu(false); await handleSignOut(); }}
-              >
-                <Text style={{ color: '#d32f2f', fontWeight: '600', fontSize: 16 }}>Log out</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
 
         {/* New Profile Picture Component */}
         <View style={styles.profilePictureContainer}>
@@ -1165,10 +1139,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 10,
     paddingBottom: 20,
+    position: 'relative',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
   },
   settingsIcon: {
     fontSize: 20,

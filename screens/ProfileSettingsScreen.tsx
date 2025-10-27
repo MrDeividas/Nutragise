@@ -8,25 +8,45 @@ import { supabase } from '../lib/supabase';
 
 export default function ProfileSettingsScreen({ navigation, route }: any) {
   const { theme, isDark, toggleTheme } = useTheme();
-  const { user, updateProfile } = useAuthStore();
+  const { user, updateProfile, signOut } = useAuthStore();
 
-  
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Log Out', 
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+          }
+        }
+      ]
+    );
+  };
 
-
-
-      
   let joinDateText = 'Joined';
   if (user?.created_at) {
     const date = new Date(user.created_at);
     const options = { year: 'numeric', month: 'long' } as const;
     joinDateText = `Joined ${date.toLocaleDateString(undefined, options)}`;
   }
+  
   return (
-    <View style={styles.container}>
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Profile Settings</Text>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Header */}
+      <View style={[styles.headerRow, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
+        <TouchableOpacity 
+          onPress={() => navigation.goBack()} 
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
+        <View style={styles.headerSpacer} />
       </View>
-      <Text style={[styles.joinDate, { color: theme.textTertiary }]}>{joinDateText}</Text>
       <ScrollView contentContainerStyle={styles.optionsContainer}>
         <TouchableOpacity 
           style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]} 
@@ -72,6 +92,14 @@ export default function ProfileSettingsScreen({ navigation, route }: any) {
         <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           <Text style={[styles.optionText, { color: theme.primary }]}>Delete Account</Text>
         </TouchableOpacity>
+        
+        {/* Log Out Button */}
+        <TouchableOpacity 
+          style={[styles.logoutButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={handleSignOut}
+        >
+          <Text style={[styles.logoutText, { color: '#d32f2f' }]}>Log Out</Text>
+        </TouchableOpacity>
       </ScrollView>
 
 
@@ -82,17 +110,29 @@ export default function ProfileSettingsScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingBottom: 34,
   },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
+    textAlign: 'center',
+    flex: 1,
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  headerSpacer: {
+    width: 40,
   },
   optionsContainer: {
     padding: 24,
@@ -125,5 +165,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 8,
+  },
+  logoutButton: {
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    marginTop: 20,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 }); 

@@ -178,13 +178,13 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         >
         {/* Header */}
         <View style={styles.header}>
+          <View style={styles.headerLeftSpacer} />
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>My Goals</Text>
           <TouchableOpacity
             onPress={() => setShowNewGoalModal(true)}
-            style={[styles.newGoalButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
+            style={styles.newGoalButton}
           >
-            <Ionicons name="add-outline" size={20} color="#ffffff" />
-            <Text style={styles.newGoalButtonText}>New Goal</Text>
+            <Ionicons name="add" size={28} color={theme.textPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -300,22 +300,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 10,
     paddingBottom: 20,
+    position: 'relative',
+  },
+  headerLeftSpacer: {
+    width: 32,
+    zIndex: 1,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
   },
   newGoalButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    flexDirection: 'row',
     alignItems: 'center',
-  },
-  newGoalButtonText: {
-    color: 'white',
-    fontWeight: '500',
-    marginLeft: 4,
+    justifyContent: 'center',
+    zIndex: 1,
   },
   keepTrackSection: {
     paddingHorizontal: 24,

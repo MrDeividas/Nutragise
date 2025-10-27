@@ -110,6 +110,7 @@ export default function CompeteScreen({ navigation }: any) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
+        <View style={styles.headerLeftSpacer} />
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
           Compete
         </Text>
@@ -247,10 +248,20 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
     borderBottomWidth: 0,
+    position: 'relative',
+  },
+  headerLeftSpacer: {
+    width: 24,
+    zIndex: 1,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
   },
   headerSubtitle: {
     fontSize: 16,
