@@ -2493,13 +2493,6 @@ function ExploreContent({
                             onIndexChange={(index) => setCurrentPhotoIndex(prev => ({ ...prev, [dailyPost.id]: index }))}
                             onPhotoPress={() => onPhotoPress(dailyPost.photos, currentPhotoIndex[dailyPost.id] || 0)}
                           />
-                          {dailyPost.photos.length > 1 && (
-                            <View style={styles.photoCounter}>
-                              <Text style={styles.photoCounterText}>
-                                {(currentPhotoIndex[dailyPost.id] || 0) + 1} / {dailyPost.photos.length}
-                              </Text>
-                            </View>
-                          )}
                         </View>
                       )}
 

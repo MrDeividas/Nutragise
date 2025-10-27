@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated, Easing } from 'react-native';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +23,8 @@ import NewGoalModal from '../components/NewGoalModal';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
+import { challengesService } from '../lib/challengesService';
+import { Challenge } from '../types/challenges';
 
 
 
@@ -298,6 +300,9 @@ function ActionScreen({ navigation }: any) {
   const [showNewGoalModal, setShowNewGoalModal] = useState(false);
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
+  const [loadingChallenges, setLoadingChallenges] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   
   // Keyboard state for modal positioning
@@ -1074,6 +1079,47 @@ function ActionScreen({ navigation }: any) {
     };
   }, [user, userGoals, checkTodaysCheckIns]);
 
+  // Load my active challenges
+  const loadMyActiveChallenges = useCallback(async () => {
+    if (!user?.id) return;
+    
+    setLoadingChallenges(true);
+    try {
+      const challenges = await challengesService.getUserChallenges(user.id);
+      const now = new Date();
+      
+      // Only show challenges that are currently ACTIVE (started but not ended)
+      const active = challenges.filter(challenge => {
+        const startDate = new Date(challenge.start_date);
+        const endDate = new Date(challenge.end_date);
+        
+        // Only show if currently active (started and not ended yet)
+        return now >= startDate && now <= endDate;
+      });
+      setMyActiveChallenges(active);
+    } catch (error) {
+      console.error('Error loading active challenges:', error);
+      setMyActiveChallenges([]);
+    } finally {
+      setLoadingChallenges(false);
+    }
+  }, [user?.id]);
+
+  // Load challenges when user changes
+  useEffect(() => {
+    loadMyActiveChallenges();
+  }, [loadMyActiveChallenges]);
+
+  // Handle pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadMyActiveChallenges();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadMyActiveChallenges]);
+
   // Memoized helper functions for better performance
   const getDateForDayOfWeekInWeek = useCallback((dayOfWeek: number, weekDate: Date): Date => {
     const weekStart = new Date(weekDate);
@@ -1161,7 +1207,13 @@ function ActionScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
-      <ScrollView style={[styles.scrollView, { backgroundColor: 'transparent' }]} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={[styles.scrollView, { backgroundColor: 'transparent' }]} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
 
         {/* Header with Settings */}
         <View style={styles.header}>
@@ -1276,9 +1328,50 @@ function ActionScreen({ navigation }: any) {
           completedHabits={completedHabits}
         />
 
+        {/* Active Challenges Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              Active Challenges
+            </Text>
+          </View>
+          {myActiveChallenges.length > 0 ? (
+            <View style={styles.challengesContainer}>
+              {myActiveChallenges.map((challenge) => (
+                <TouchableOpacity
+                  key={challenge.id}
+                  style={[styles.challengeCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
+                  onPress={() => navigation.navigate('ChallengeDetail', { challengeId: challenge.id })}
+                >
+                  <View style={styles.challengeCardContent}>
+                    <View style={styles.challengeHeader}>
+                      <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                        {challenge.title}
+                      </Text>
+                      <Text style={[styles.challengeTime, { color: theme.textSecondary }]}>
+                        Ends {new Date(challenge.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Text>
+                    </View>
+                    <Text style={[styles.challengeCategory, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {challenge.category}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <View style={[styles.challengesContainer, { paddingVertical: 20, alignItems: 'center' }]}>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                No active challenges. Join a challenge on the Compete page!
+              </Text>
+            </View>
+          )}
+        </View>
+
         {/* Combined Check-ins Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Check-ins</Text>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
           <View key={`checkins-${refreshTrigger}`} style={[styles.todaysCheckinsContainer, { borderColor: theme.borderSecondary }]}>
             <CheckInList
               userGoals={userGoals}
@@ -3086,6 +3179,51 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 0,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  challengesContainer: {
+    gap: 12,
+  },
+  challengeCard: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  challengeCardContent: {
+    flex: 1,
+    gap: 4,
+  },
+  challengeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  challengeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  challengeTime: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  challengeCategory: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  challengeRequirement: {
+    fontSize: 13,
+    fontWeight: '400',
   },
   quickActionsGrid: {
     flexDirection: 'row',

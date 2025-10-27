@@ -227,12 +227,12 @@ export const getCurrentRecurringPeriod = (challenge: Challenge): { start: Date; 
   // Calculate the start of the current week (Monday 00:01)
   const currentWeekStart = new Date(originalStart);
   currentWeekStart.setDate(originalStart.getDate() + (weeksSinceStart * 7));
-  currentWeekStart.setHours(0, 1, 0, 0);
+  currentWeekStart.setUTCHours(0, 1, 0, 0);
   
   // Calculate the end of the current week (Sunday 23:59)
   const currentWeekEnd = new Date(currentWeekStart);
   currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
-  currentWeekEnd.setHours(23, 59, 59, 999);
+  currentWeekEnd.setUTCHours(23, 59, 59, 999);
   
   return {
     start: currentWeekStart,

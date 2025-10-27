@@ -20,15 +20,6 @@ export default function GesturePhotoCarousel({
 }: GesturePhotoCarouselProps) {
   const flatListRef = useRef<FlatList>(null);
 
-  // Scroll to the correct index when currentIndex changes
-  useEffect(() => {
-    if (flatListRef.current && photos.length > 0 && currentIndex >= 0 && currentIndex < photos.length) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: currentIndex, animated: false });
-      }, 100); // Small delay to ensure the FlatList is ready
-    }
-  }, [currentIndex, photos.length]);
-
   if (!photos || photos.length === 0) return null;
 
   const renderItem = ({ item }: { item: string }) => (
@@ -68,20 +59,20 @@ export default function GesturePhotoCarousel({
         renderItem={renderItem}
         keyExtractor={(item, index) => `photo_${index}_${item}`}
         horizontal
-        pagingEnabled
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         style={styles.carousel}
+        contentContainerStyle={{ paddingHorizontal: 20 }}
         getItemLayout={(_, index) => ({
-          length: screenWidth,
-          offset: screenWidth * index,
+          length: screenWidth - 40,
+          offset: (screenWidth - 40) * index,
           index,
         })}
         initialScrollIndex={currentIndex}
         removeClippedSubviews={false}
         decelerationRate="fast"
-        snapToInterval={screenWidth}
+        snapToInterval={screenWidth - 40}
         snapToAlignment="start"
       />
       
@@ -117,15 +108,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   photoContainer: {
-    width: screenWidth,
-    height: screenWidth * 0.75, // 4:3 aspect ratio (3/4 = 0.75)
+    width: screenWidth - 60,
+    height: (screenWidth - 60) * 0.75,
     borderRadius: 8,
     overflow: 'hidden',
+    marginHorizontal: 10,
   },
   photo: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover', // Cover the 4:3 container properly
+    resizeMode: 'cover',
   },
   dotsContainer: {
     flexDirection: 'row',

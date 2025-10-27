@@ -39,7 +39,6 @@ const FocusScreen = lazy(() => import('./screens/FocusScreen'));
 const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
 const DMScreen = lazy(() => import('./screens/DMScreen'));
 const ChatWindowScreen = lazy(() => import('./screens/ChatWindowScreen'));
-// const TestScreen = lazy(() => import('./screens/TestScreen'));
 
 import { GoalsStackParamList } from './screens/GoalDetailScreen';
 

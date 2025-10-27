@@ -25,10 +25,7 @@ class ChallengesService {
     try {
       let query = supabase
         .from('challenges')
-        .select(`
-          *,
-          challenge_participants!inner(count)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (status) {
@@ -42,11 +39,24 @@ class ChallengesService {
         throw error;
       }
 
-      // Transform the data to include participant count
-      let challenges = data?.map(challenge => ({
-        ...challenge,
-        participant_count: challenge.challenge_participants?.[0]?.count || 0,
-      })) || [];
+      // Get participant counts for each challenge separately
+      let challenges = await Promise.all(
+        (data || []).map(async (challenge) => {
+          const { count, error: countError } = await supabase
+            .from('challenge_participants')
+            .select('*', { count: 'exact', head: true })
+            .eq('challenge_id', challenge.id);
+          
+          if (countError) {
+            console.error(`Error getting participant count for challenge ${challenge.id}:`, countError);
+          }
+          
+          return {
+            ...challenge,
+            participant_count: count || 0,
+          };
+        })
+      );
 
       // Filter recurring challenges to only show current week's instances
       const now = new Date();
@@ -54,13 +64,27 @@ class ChallengesService {
       const recurringTitles = new Set<string>();
 
       for (const challenge of challenges) {
+        
         if (challenge.is_recurring) {
           // For recurring challenges, only show the current week's instance
           const challengeStart = new Date(challenge.start_date);
           const challengeEnd = new Date(challenge.end_date);
           
-          // Check if this challenge is for the current week
-          if (now >= challengeStart && now <= challengeEnd) {
+          // If end date is set to midnight (00:00), it's actually the end of the previous day
+          // So we need to set it to the end of that day (23:59:59.999)
+          if (challengeEnd.getUTCHours() === 0 && challengeEnd.getUTCMinutes() === 0 && challengeEnd.getUTCSeconds() === 0) {
+            challengeEnd.setUTCHours(23, 59, 59, 999);
+          }
+          
+          // Check if this challenge is currently active OR upcoming within the next week
+          const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+          
+          const isActive = (now >= challengeStart && now <= challengeEnd);
+          const isUpcoming = (now < challengeStart && challengeStart <= oneWeekFromNow);
+          const isRecentlyEnded = (now > challengeEnd && now <= oneWeekFromNow);
+          
+          // Show if active, upcoming, or recently ended (to bridge gaps)
+          if (isActive || isUpcoming || isRecentlyEnded) {
             // Only add if we haven't already added a challenge with this title
             if (!recurringTitles.has(challenge.title)) {
               filteredChallenges.push(challenge);
@@ -178,7 +202,6 @@ class ChallengesService {
         .single();
 
       if (existing) {
-        console.log('User already participating in this challenge');
         return false;
       }
 
@@ -310,6 +333,25 @@ class ChallengesService {
     submissionNotes?: string
   ): Promise<boolean> {
     try {
+      // Get challenge to check start date
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('start_date, end_date')
+        .eq('id', challengeId)
+        .single();
+
+      if (!challenge) {
+        throw new Error('Challenge not found');
+      }
+
+      // Check if challenge has started
+      const now = new Date();
+      const startDate = new Date(challenge.start_date);
+      
+      if (now < startDate) {
+        throw new Error('This challenge has not started yet. You cannot submit photos until the challenge begins.');
+      }
+
       // Verify user is participating in the challenge
       const { data: participation } = await supabase
         .from('challenge_participants')
@@ -561,6 +603,50 @@ class ChallengesService {
   }
 
   /**
+   * Get all participants for a specific challenge with their profile info
+   */
+  async getChallengeParticipants(challengeId: string): Promise<ChallengeParticipant[]> {
+    try {
+      // Get participants
+      const { data: participants, error: participantsError } = await supabase
+        .from('challenge_participants')
+        .select('*')
+        .eq('challenge_id', challengeId);
+
+      if (participantsError) {
+        console.error('Error fetching participants:', participantsError);
+        return [];
+      }
+
+      if (!participants || participants.length === 0) {
+        return [];
+      }
+
+      // Get user profiles for participants
+      const userIds = participants.map(p => p.user_id);
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, display_name')
+        .in('id', userIds);
+
+      if (profilesError) {
+        console.error('Error fetching participant profiles:', profilesError);
+      }
+
+      // Combine participants with their profile data
+      const participantsWithProfiles = participants.map(participant => ({
+        ...participant,
+        user: profiles?.find(profile => profile.id === participant.user_id)
+      }));
+
+      return participantsWithProfiles;
+    } catch (error) {
+      console.error('Error in getChallengeParticipants:', error);
+      return [];
+    }
+  }
+
+  /**
    * Handle recurring challenge logic - create new instances for recurring challenges
    */
   async handleRecurringChallenges(): Promise<void> {
@@ -581,36 +667,39 @@ class ChallengesService {
       const now = new Date();
 
       for (const challenge of recurringChallenges || []) {
-        const nextRecurrence = new Date(challenge.next_recurrence);
+        const endDate = new Date(challenge.end_date);
         
-        // If it's time to create a new instance
-        if (now >= nextRecurrence) {
-          // Check if a challenge for this week already exists
-          const currentPeriod = getCurrentRecurringPeriod(challenge);
-          const weekStart = currentPeriod.start;
-          const weekEnd = currentPeriod.end;
-          
+        // Simple: next Monday after the end date
+        // end_date is Sunday 23:59:59, so next day is Monday
+        const nextWeekStart = new Date(endDate);
+        nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday (next day after Sunday)
+        nextWeekStart.setUTCHours(0, 1, 0, 0);
+        
+        // End is 6 days later (Sunday)
+        const nextWeekEnd = new Date(nextWeekStart);
+        nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+        nextWeekEnd.setUTCHours(23, 59, 59, 999);
+        
+        // Check if it's time to create the next instance
+        // Create if:
+        // 1. The current instance has ended OR
+        // 2. It's within 7 days of the next instance starting
+        const shouldCreate = now >= endDate || (nextWeekStart.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000);
+        
+        if (shouldCreate) {
+          // Check if next week's challenge already exists
           const { data: existingChallenge } = await supabase
             .from('challenges')
             .select('id')
             .eq('title', challenge.title)
             .eq('is_recurring', true)
-            .gte('start_date', weekStart.toISOString())
-            .lte('end_date', weekEnd.toISOString())
+            .gte('start_date', nextWeekStart.toISOString())
+            .lte('end_date', nextWeekEnd.toISOString())
             .single();
 
-          // Only create if no challenge exists for this week
+          // Only create if no challenge exists for next week
           if (!existingChallenge) {
             await this.createRecurringInstance(challenge);
-          } else {
-            // Update the next_recurrence to prevent repeated checks
-            const nextWeekStart = new Date(weekEnd.getTime() + 24 * 60 * 60 * 1000);
-            nextWeekStart.setHours(0, 1, 0, 0);
-            
-            await supabase
-              .from('challenges')
-              .update({ next_recurrence: nextWeekStart.toISOString() })
-              .eq('id', challenge.id);
           }
         }
       }
@@ -624,9 +713,18 @@ class ChallengesService {
    */
   private async createRecurringInstance(originalChallenge: Challenge): Promise<void> {
     try {
-      const currentPeriod = getCurrentRecurringPeriod(originalChallenge);
+      // Simple: next Monday after the end date
+      const endDate = new Date(originalChallenge.end_date);
+      const nextWeekStart = new Date(endDate);
+      nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday
+      nextWeekStart.setUTCHours(0, 1, 0, 0);
       
-      // Create new challenge instance
+      // End is 6 days later (Sunday)
+      const nextWeekEnd = new Date(nextWeekStart);
+      nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+      nextWeekEnd.setUTCHours(23, 59, 59, 999);
+      
+      // Create new challenge instance for next week
       const { data: newChallenge, error: challengeError } = await supabase
         .from('challenges')
         .insert({
@@ -636,14 +734,14 @@ class ChallengesService {
           duration_weeks: originalChallenge.duration_weeks,
           entry_fee: originalChallenge.entry_fee,
           verification_type: originalChallenge.verification_type,
-          start_date: currentPeriod.start.toISOString(),
-          end_date: currentPeriod.end.toISOString(),
+          start_date: nextWeekStart.toISOString(),
+          end_date: nextWeekEnd.toISOString(),
           created_by: originalChallenge.created_by,
           status: 'active',
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: originalChallenge.recurring_schedule,
-          next_recurrence: new Date(currentPeriod.end.getTime() + 24 * 60 * 60 * 1000).toISOString(), // Next Monday
+          next_recurrence: new Date(nextWeekEnd.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
         .single();
@@ -674,15 +772,13 @@ class ChallengesService {
       }
 
       // Update the original challenge's next_recurrence
-      const nextWeekStart = new Date(currentPeriod.end.getTime() + 24 * 60 * 60 * 1000);
-      nextWeekStart.setHours(0, 1, 0, 0);
+      const nextRecurrenceDate = new Date(nextWeekEnd.getTime() + 24 * 60 * 60 * 1000);
+      nextRecurrenceDate.setUTCHours(0, 1, 0, 0);
 
       await supabase
         .from('challenges')
-        .update({ next_recurrence: nextWeekStart.toISOString() })
+        .update({ next_recurrence: nextRecurrenceDate.toISOString() })
         .eq('id', originalChallenge.id);
-
-      console.log(`Created new recurring challenge instance: ${newChallenge.title}`);
     } catch (error) {
       console.error('Error creating recurring instance:', error);
     }

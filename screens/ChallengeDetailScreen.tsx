@@ -29,6 +29,7 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
   const [progress, setProgress] = useState<ChallengeProgress | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [isParticipating, setIsParticipating] = useState(false);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(1);
@@ -86,7 +87,56 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
   };
 
   const handleUploadPhoto = () => {
+    // Check if challenge has started
+    const now = new Date();
+    const startDate = new Date(challenge.start_date);
+    
+    if (now < startDate) {
+      Alert.alert(
+        'Challenge Not Started',
+        'This challenge has not started yet. You cannot submit photos until the challenge begins.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
     setShowSubmissionModal(true);
+  };
+
+  const handleLeaveChallenge = async () => {
+    if (!user || !challenge) return;
+    
+    try {
+      setLeaving(true);
+      
+      const now = new Date();
+      const startDate = new Date(challenge.start_date);
+      
+      if (now >= startDate) {
+        Alert.alert(
+          'Cannot Leave',
+          'This challenge has already started. You cannot leave an active challenge.'
+        );
+        setLeaving(false);
+        return;
+      }
+      
+      const success = await challengesService.leaveChallenge(challenge.id, user.id);
+      
+      if (success) {
+        Alert.alert('Success', 'You have left the challenge');
+        setIsParticipating(false);
+        setProgress(null);
+        navigation.goBack(); // Go back to list since user is no longer participating
+      } else {
+        Alert.alert('Error', 'Failed to leave challenge');
+      }
+    } catch (error) {
+      console.error('Error leaving challenge:', error);
+      Alert.alert('Error', (error as Error).message || 'Failed to leave challenge');
+    } finally {
+      setLeaving(false);
+    }
   };
 
   const handleSubmitPhoto = async (photoUrl: string, notes?: string) => {
@@ -113,6 +163,21 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
       console.error('Error submitting photo:', error);
       Alert.alert('Error', (error as Error).message || 'Failed to submit photo');
     }
+  };
+
+  const hasTodaysSubmission = () => {
+    if (!progress || !challenge) return false;
+    
+    const today = new Date();
+    const todayStr = today.toDateString();
+    
+    // Check all submissions across all weeks
+    const allSubmissions = Object.values(progress.submissions_by_week).flat();
+    
+    return allSubmissions.some(sub => {
+      const subDate = new Date(sub.submitted_at);
+      return subDate.toDateString() === todayStr;
+    });
   };
 
   const getCategoryColor = (category: string) => {
@@ -146,12 +211,33 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
     return `£${fee}`;
   };
 
-  const getDaysRemaining = () => {
-    if (!challenge) return 0;
+  const getTimeRemaining = () => {
+    if (!challenge) return { days: 0, hours: 0, minutes: 0, ended: true };
     const now = new Date();
+    const startDate = new Date(challenge.start_date);
     const endDate = new Date(challenge.end_date);
-    const diffTime = endDate.getTime() - now.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    // Check if challenge is upcoming
+    if (now.getTime() < startDate.getTime()) {
+      const diffMs = startDate.getTime() - now.getTime();
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      return { days, hours, minutes, ended: false, upcoming: true };
+    }
+    
+    // Active challenge - calculate time until end
+    const diffMs = endDate.getTime() - now.getTime();
+    
+    if (diffMs <= 0) {
+      return { days: 0, hours: 0, minutes: 0, ended: true };
+    }
+    
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return { days, hours, minutes, ended: false, upcoming: false };
   };
 
   const formatDateRange = () => {
@@ -175,7 +261,7 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#EA580C" />
+          <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading challenge details...
           </Text>
@@ -198,7 +284,6 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
   }
 
   const categoryColor = getCategoryColor(challenge.category);
-  const daysRemaining = getDaysRemaining();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
@@ -237,18 +322,18 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
         </View>
         
         {/* Stats Card */}
-        <View style={styles.statsCard}>
+        <View style={[styles.statsCard, { backgroundColor: theme.cardBackground }]}>
           <View style={styles.statColumn}>
-            <Text style={styles.statValue}>£{challenge.entry_fee || 0}</Text>
-            <Text style={styles.statLabel}>investment</Text>
+            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>£{challenge.entry_fee || 0}</Text>
+            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>investment</Text>
           </View>
           <View style={styles.statColumn}>
-            <Text style={styles.statValue}>£{(challenge.participants?.length || 0) * (challenge.entry_fee || 0)}</Text>
-            <Text style={styles.statLabel}>shared pot</Text>
+            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>£{(challenge.participants?.length || 0) * (challenge.entry_fee || 0)}</Text>
+            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>shared pot</Text>
           </View>
           <View style={styles.statColumn}>
-            <Text style={styles.statValue}>{challenge.participants?.length || 0}</Text>
-            <Text style={styles.statLabel}>players</Text>
+            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{challenge.participants?.length || 0}</Text>
+            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>players</Text>
           </View>
         </View>
 
@@ -331,27 +416,35 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
                 </View>
               </View>
 
-              {/* Days Remaining */}
+              {/* Time Remaining */}
               <View style={[styles.daysRemainingContainer, { backgroundColor: `${categoryColor}20` }]}>
                 <Ionicons name="calendar-outline" size={16} color={categoryColor} />
                 <Text style={[styles.daysRemainingText, { color: categoryColor }]}>
-                  {daysRemaining > 0 ? `${daysRemaining} days remaining` : 'Challenge ended'}
+                  {(() => {
+                    const timeRemaining = getTimeRemaining();
+                    if (timeRemaining.ended) {
+                      return 'Challenge ended';
+                    }
+                    if (timeRemaining.upcoming) {
+                      if (timeRemaining.days > 0) {
+                        return `Starts in ${timeRemaining.days}d ${timeRemaining.hours}h ${timeRemaining.minutes}m`;
+                      } else if (timeRemaining.hours > 0) {
+                        return `Starts in ${timeRemaining.hours}h ${timeRemaining.minutes}m`;
+                      } else {
+                        return `Starts in ${timeRemaining.minutes}m`;
+                      }
+                    }
+                    if (timeRemaining.days > 0) {
+                      return `${timeRemaining.days}d ${timeRemaining.hours}h ${timeRemaining.minutes}m left`;
+                    } else if (timeRemaining.hours > 0) {
+                      return `${timeRemaining.hours}h ${timeRemaining.minutes}m left`;
+                    } else if (timeRemaining.minutes > 0) {
+                      return `${timeRemaining.minutes}m left`;
+                    } else {
+                      return 'Less than 1m left';
+                    }
+                  })()}
                 </Text>
-              </View>
-
-              {/* Requirements */}
-              <View style={styles.requirementsContainer}>
-                <Text style={[styles.requirementsTitle, { color: theme.textPrimary }]}>
-                  Requirements
-                </Text>
-                {challenge.requirements?.map((req, index) => (
-                  <View key={index} style={styles.requirementItem}>
-                    <Ionicons name="checkmark-circle" size={16} color={categoryColor} />
-                    <Text style={[styles.requirementText, { color: theme.textSecondary }]}>
-                      {req.requirement_text}
-                    </Text>
-                  </View>
-                ))}
               </View>
 
               {/* Host Info */}
@@ -371,6 +464,42 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
                   </Text>
                 </View>
               </View>
+
+              {/* Leave Challenge Button (only if participating and not started) */}
+              {isParticipating && (() => {
+                const now = new Date();
+                const startDate = new Date(challenge.start_date);
+                const hasStarted = now >= startDate;
+                
+                if (!hasStarted) {
+                  return (
+                    <TouchableOpacity
+                      style={[styles.leaveButtonSmall, { borderColor: '#EF4444' }]}
+                      onPress={() => {
+                        Alert.alert(
+                          'Leave Challenge',
+                          'Are you sure you want to leave this challenge?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Leave', style: 'destructive', onPress: handleLeaveChallenge }
+                          ]
+                        );
+                      }}
+                      disabled={leaving}
+                    >
+                      {leaving ? (
+                        <ActivityIndicator size="small" color="#EF4444" />
+                      ) : (
+                        <>
+                          <Ionicons name="close-outline" size={16} color="#EF4444" />
+                          <Text style={styles.leaveButtonTextSmall}>Leave Challenge</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }
+                return null;
+              })()}
             </View>
           </View>
         )}
@@ -378,32 +507,54 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
         {activeTab === 'schedule' && (
           <View style={styles.tabContent}>
             <View style={styles.scheduleContainer}>
-              {Array.from({ length: challenge.duration_weeks }, (_, weekIndex) => (
-                <View key={weekIndex} style={styles.weekSection}>
-                  <View style={styles.weekHeader}>
-                    <Text style={[styles.weekTitle, { color: theme.textPrimary }]}>
-                      Week {weekIndex + 1}
-                    </Text>
-                    <View style={styles.weekSeparator} />
-                    <Text style={[styles.weekActivityCount, { color: theme.textSecondary }]}>
-                      7 Activities
-                    </Text>
-                  </View>
-                  
-                  {Array.from({ length: 7 }, (_, dayIndex) => (
-                    <View key={dayIndex} style={styles.activityItem}>
-                      <View style={styles.activityContent}>
-                        <Text style={[styles.activityNumber, { color: theme.textSecondary }]}>
-                          Activity {dayIndex + 1}
-                        </Text>
-                        <Text style={[styles.activityName, { color: theme.textPrimary }]}>
-                          10k steps a day
-                        </Text>
-                      </View>
+              {Array.from({ length: challenge.duration_weeks }, (_, weekIndex) => {
+                const challengeStartDate = new Date(challenge.start_date);
+                const weekStartDate = new Date(challengeStartDate);
+                weekStartDate.setDate(challengeStartDate.getDate() + (weekIndex * 7));
+                
+                return (
+                  <View key={weekIndex} style={styles.weekSection}>
+                    <View style={styles.weekHeader}>
+                      <Text style={[styles.weekTitle, { color: theme.textPrimary }]}>
+                        Week {weekIndex + 1}
+                      </Text>
+                      <View style={styles.weekSeparator} />
+                      <Text style={[styles.weekActivityCount, { color: theme.textSecondary }]}>
+                        7 Activities
+                      </Text>
                     </View>
-                  ))}
-                </View>
-              ))}
+                    
+                    {Array.from({ length: 7 }, (_, dayIndex) => {
+                      const activityDate = new Date(weekStartDate);
+                      activityDate.setDate(weekStartDate.getDate() + dayIndex);
+                      
+                      // Check if submission exists for this date
+                      const hasSubmission = progress?.submissions_by_week[weekIndex + 1]?.some(sub => {
+                        const subDate = new Date(sub.submitted_at);
+                        return subDate.toDateString() === activityDate.toDateString();
+                      });
+                      
+                      return (
+                        <View key={dayIndex} style={styles.activityItem}>
+                          <View style={styles.activityContent}>
+                            <Text style={[styles.activityNumber, { color: theme.textSecondary }]}>
+                              Activity {dayIndex + 1}
+                            </Text>
+                            <Text style={[styles.activityName, { color: theme.textPrimary }]}>
+                              10k steps a day
+                            </Text>
+                          </View>
+                          {hasSubmission && (
+                            <View style={[styles.submissionCheck, { backgroundColor: categoryColor }]}>
+                              <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
             </View>
           </View>
         )}
@@ -413,43 +564,29 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
             <View style={styles.detailsContainer}>
               <View style={styles.detailSection}>
                 <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
-                  Challenge Information
+                  How to Win
                 </Text>
-                <View style={styles.detailItem}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Category:</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{challenge.category}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Duration:</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{formatDuration(challenge.duration_weeks)}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Entry Fee:</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{formatEntryFee(challenge.entry_fee)}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Participants:</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{challenge.participant_count}</Text>
-                </View>
+                <Text style={[styles.detailText, { color: theme.textSecondary }]}>
+                  Complete all daily activities for the entire challenge duration. Each day you must complete the required 10k steps and upload verification proof. Missing any day will disqualify you from winning the pot.
+                </Text>
               </View>
 
               <View style={styles.detailSection}>
                 <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
-                  Requirements Details
+                  How to Verify
                 </Text>
-                {challenge.requirements?.map((req, index) => (
-                  <View key={index} style={styles.requirementDetail}>
-                    <Text style={[styles.requirementDetailTitle, { color: theme.textPrimary }]}>
-                      Requirement {index + 1}
-                    </Text>
-                    <Text style={[styles.requirementDetailText, { color: theme.textSecondary }]}>
-                      {req.requirement_text}
-                    </Text>
-                    <Text style={[styles.requirementDetailMeta, { color: theme.textSecondary }]}>
-                      Frequency: {req.frequency} • Target: {req.target_count} times
-                    </Text>
-                  </View>
-                ))}
+                <Text style={[styles.detailText, { color: theme.textSecondary }]}>
+                  Upload a photo of your step counter or fitness app showing 10,000+ steps each day. Photos must be clear and show the date. You can upload one verification photo per day during the challenge period.
+                </Text>
+              </View>
+
+              <View style={styles.detailSection}>
+                <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
+                  How the Pot is Split
+                </Text>
+                <Text style={[styles.detailText, { color: theme.textSecondary }]}>
+                  At the end of the challenge, all participants who completed every single day will split the total pot equally. If you miss any day, you forfeit your entry fee and are not eligible for any winnings. The more people who complete the challenge, the bigger the pot!
+                </Text>
               </View>
             </View>
           </View>
@@ -459,13 +596,40 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
       {/* Bottom Action */}
       <View style={[styles.bottomAction, { borderTopColor: theme.border }]}>
         {isParticipating ? (
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: categoryColor }]}
-            onPress={handleUploadPhoto}
-          >
-            <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Upload Photo</Text>
-          </TouchableOpacity>
+          (() => {
+            const now = new Date();
+            const startDate = new Date(challenge.start_date);
+            const hasStarted = now >= startDate;
+            const hasSubmittedToday = hasTodaysSubmission();
+            
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton, 
+                  { 
+                    backgroundColor: hasSubmittedToday ? '#10B981' : (hasStarted ? categoryColor : theme.textSecondary),
+                    opacity: hasSubmittedToday || !hasStarted ? 0.8 : 1
+                  }
+                ]}
+                onPress={handleUploadPhoto}
+                disabled={!hasStarted || hasSubmittedToday}
+              >
+                {hasSubmittedToday ? (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.actionButtonText}>Done</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.actionButtonText}>
+                      {hasStarted ? 'Upload Photo' : 'Challenge Not Started'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })()
         ) : (
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: categoryColor }]}
@@ -665,6 +829,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  leaveButtonSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    backgroundColor: 'transparent',
+    marginTop: 16,
+  },
+  leaveButtonTextSmall: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -759,6 +940,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  submissionCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   detailsContainer: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -770,6 +958,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
+  },
+  detailText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7280',
   },
   detailItem: {
     flexDirection: 'row',
@@ -805,7 +998,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   statsCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 8,
@@ -816,8 +1008,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
     marginHorizontal: 60,
     marginTop: -20,
   },

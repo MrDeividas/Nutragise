@@ -57,10 +57,7 @@ export default function LeaderboardScreen({ navigation }: any) {
         return;
       }
       
-      console.log('[Leaderboard] Found users:', users?.length);
-      
       if (!users || users.length === 0) {
-        console.log('[Leaderboard] No users found');
         setLeaderboardData([]);
         setLoading(false);
         return;
@@ -76,11 +73,9 @@ export default function LeaderboardScreen({ navigation }: any) {
               // Get today's points
               const todayPoints = await pointsService.getTodaysPoints(user.id);
               points = todayPoints?.total || 0;
-              console.log(`[Leaderboard] User ${user.username} (${user.id}) daily points:`, points, 'Data:', todayPoints);
             } else {
               // Get total points for weekly/monthly
               points = await pointsService.getTotalPoints(user.id);
-              console.log(`[Leaderboard] User ${user.username} (${user.id}) total points:`, points);
             }
 
             return {
@@ -101,8 +96,6 @@ export default function LeaderboardScreen({ navigation }: any) {
         })
       );
 
-      console.log('[Leaderboard] All users with points:', usersWithPoints);
-
       // Filter out users with 0 points and sort by points
       const sortedUsers = usersWithPoints
         .filter(user => user.points > 0)
@@ -112,8 +105,6 @@ export default function LeaderboardScreen({ navigation }: any) {
           rank: index + 1,
         }));
 
-      console.log('[Leaderboard] Filtered and sorted users:', sortedUsers);
-      console.log('[Leaderboard] Final count:', sortedUsers.length);
       setLeaderboardData(sortedUsers);
     } catch (error) {
       console.error('Error loading leaderboard:', error);

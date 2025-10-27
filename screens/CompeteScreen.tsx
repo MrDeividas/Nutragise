@@ -28,33 +28,6 @@ export default function CompeteScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
 
-  const activeCompetitions = [
-    {
-      id: '1',
-      title: '30-Day Fitness Challenge',
-      duration: '15 days left',
-      category: 'Fitness',
-      participants: 156,
-      icon: '💪',
-    },
-    {
-      id: '2',
-      title: 'Reading Marathon',
-      duration: '7 days left',
-      category: 'Learning',
-      participants: 89,
-      icon: '📚',
-    },
-    {
-      id: '3',
-      title: 'Meditation Streak',
-      duration: '21 days left',
-      category: 'Wellness',
-      participants: 234,
-      icon: '🧘‍♀️',
-    },
-  ];
-
   useEffect(() => {
     // Initialize auth store if needed
     if (!user && !loading) {
@@ -111,8 +84,16 @@ export default function CompeteScreen({ navigation }: any) {
       // Handle recurring challenges first
       await challengesService.handleRecurringChallenges();
       
-      const activeChallenges = await challengesService.getChallenges('active');
-      setChallenges(activeChallenges);
+      const allChallenges = await challengesService.getChallenges();
+      const now = new Date();
+      
+      // Only show upcoming challenges (challenges that haven't started yet)
+      const upcoming = allChallenges.filter(challenge => {
+        const startDate = new Date(challenge.start_date);
+        return now < startDate;
+      });
+      
+      setChallenges(upcoming);
     } catch (error) {
       console.error('Error loading challenges:', error);
       setChallenges([]);
@@ -124,40 +105,6 @@ export default function CompeteScreen({ navigation }: any) {
   const handleChallengePress = (challenge: Challenge) => {
     navigation.navigate('ChallengeDetail', { challengeId: challenge.id });
   };
-
-  const renderCompetitionCard = (competition: any) => (
-    <TouchableOpacity
-      key={competition.id}
-      style={[styles.card, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
-      onPress={() => {
-        // Handle competition press
-      }}
-    >
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardIcon}>{competition.icon}</Text>
-        <View style={styles.cardMeta}>
-          <Text style={[styles.cardDuration, { color: theme.textSecondary }]}>
-            {competition.duration}
-          </Text>
-          <Text style={[styles.cardCategory, { color: theme.textTertiary }]}>
-            {competition.category}
-          </Text>
-        </View>
-      </View>
-      <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
-        {competition.title}
-      </Text>
-      <View style={styles.cardFooter}>
-        <View style={styles.participantsContainer}>
-          <Ionicons name="people-outline" size={16} color={theme.textSecondary} />
-          <Text style={[styles.participantsText, { color: theme.textSecondary }]}>
-            {competition.participants} participants
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -262,7 +209,7 @@ export default function CompeteScreen({ navigation }: any) {
           ) : challenges.length === 0 ? (
             <View style={styles.emptyChallengesContainer}>
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No active challenges available
+                No upcoming challenges available
               </Text>
             </View>
           ) : (
@@ -395,49 +342,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 32,
     marginBottom: 16,
-  },
-  cardsContainer: {
-    gap: 12,
-  },
-  card: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  cardIcon: {
-    fontSize: 24,
-  },
-  cardMeta: {
-    alignItems: 'flex-end',
-  },
-  cardDuration: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  cardCategory: {
-    fontSize: 10,
-    marginTop: 2,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cardFooter: {
-    marginTop: 8,
-  },
-  participantsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  participantsText: {
-    fontSize: 12,
-    marginLeft: 4,
   },
   leaderboardTabs: {
     flexDirection: 'row',

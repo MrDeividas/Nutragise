@@ -69,6 +69,48 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
     return `£${fee}`;
   };
 
+  // Calculate time until start (for upcoming) or until end (for active)
+  const getTimeRemaining = () => {
+    const now = new Date();
+    const startDate = new Date(challenge.start_date);
+    const endDate = new Date(challenge.end_date);
+    
+    // Check if challenge is upcoming
+    if (now < startDate) {
+      // Time until start
+      const diffMs = startDate.getTime() - now.getTime();
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (days > 0) {
+        return `Starts in ${days}d ${hours}h ${minutes}m`;
+      } else if (hours > 0) {
+        return `Starts in ${hours}h ${minutes}m`;
+      } else {
+        return `Starts in ${minutes}m`;
+      }
+    } else {
+      // Time until end (active challenge)
+      const diffMs = endDate.getTime() - now.getTime();
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (diffMs <= 0) return 'Challenge ended';
+      
+      if (days > 0) {
+        return `${days}d ${hours}h ${minutes}m left`;
+      } else if (hours > 0) {
+        return `${hours}h ${minutes}m left`;
+      } else if (minutes > 0) {
+        return `${minutes}m left`;
+      } else {
+        return 'Less than 1m left';
+      }
+    }
+  };
+
   const categoryColor = getCategoryColor(challenge.category);
   const categoryIcon = getCategoryIcon(challenge.category);
 
@@ -105,7 +147,10 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
           </View>
         </View>
 
-        {/* Duration */}
+        {/* Time Remaining / Duration */}
+        <Text style={[styles.timeRemaining, { color: categoryColor }]}>
+          {getTimeRemaining()}
+        </Text>
         <Text style={[styles.duration, { color: theme.textSecondary }]}>
           {formatDuration(challenge.duration_weeks)}
         </Text>
@@ -184,6 +229,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  timeRemaining: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   duration: {
     fontSize: 12,
