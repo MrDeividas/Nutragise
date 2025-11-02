@@ -12,15 +12,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { challengesService } from '../lib/challengesService';
 import { ChallengeWithDetails, ChallengeProgress } from '../types/challenges';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
+import CustomBackground from '../components/CustomBackground';
 
 const { width } = Dimensions.get('window');
 
-export default function ChallengeDetailScreen({ navigation, route }: any) {
+export default function ChallengeDetailScreen({ route }: any) {
+  const navigation = useNavigation() as any;
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { challengeId } = route.params;
@@ -259,36 +262,41 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading challenge details...
-          </Text>
-        </View>
-      </SafeAreaView>
+      <CustomBackground>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Loading challenge details...
+            </Text>
+          </View>
+        </SafeAreaView>
+      </CustomBackground>
     );
   }
 
   if (!challenge) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={theme.textSecondary} />
-          <Text style={[styles.errorText, { color: theme.textSecondary }]}>
-            Challenge not found
-          </Text>
-        </View>
-      </SafeAreaView>
+      <CustomBackground>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color={theme.textSecondary} />
+            <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+              Challenge not found
+            </Text>
+          </View>
+        </SafeAreaView>
+      </CustomBackground>
     );
   }
 
   const categoryColor = getCategoryColor(challenge.category);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
@@ -656,7 +664,8 @@ export default function ChallengeDetailScreen({ navigation, route }: any) {
         onClose={() => setShowSubmissionModal(false)}
         onSubmit={handleSubmitPhoto}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 

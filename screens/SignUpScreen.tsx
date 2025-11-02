@@ -22,17 +22,31 @@ export default function SignUpScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState<{ message: string; isBounce?: boolean; isInvalidEmail?: boolean } | null>(null);
+  const [showResendOption, setShowResendOption] = useState(false);
   const signUp = useAuthStore(state => state.signUp);
+  const resendVerificationEmail = useAuthStore(state => state.resendVerificationEmail);
   const user = useAuthStore(state => state.user);
 
-  // Navigate to onboarding when user is set after sign-up
+  // Reset auth method to 'none' when screen mounts if no user (first time visiting)
+  useEffect(() => {
+    // Only reset if there's no user (first time sign-up, not returning user)
+    if (!user && authMethod !== 'none') {
+      setAuthMethod('none');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+    }
+  }, []); // Only run on mount
+
+  // Reset loading when user is set (App.tsx will handle navigation)
   useEffect(() => {
     if (user) {
-      console.log('✅ User created, navigating to onboarding');
+      console.log('✅ User created, App.tsx will handle navigation to onboarding');
       setLoading(false);
-      navigation.replace('Onboarding');
+      // Don't navigate here - let App.tsx handle stack switching
     }
-  }, [user, navigation]);
+  }, [user]);
 
   const handleGoogleSignUp = async () => {
     Alert.alert('Coming Soon', 'Google sign-up will be available soon!');
@@ -63,13 +77,55 @@ export default function SignUpScreen({ navigation }: any) {
     }
 
     setLoading(true);
+    setEmailError(null);
+    setShowResendOption(false);
+    
     const { error } = await signUp({ email, password });
     
     if (error) {
       setLoading(false);
-      Alert.alert('Sign Up Error', error.message);
+      
+      // Check if it's an email bounce or invalid email error
+      const isEmailRelatedError = error.isBounce || error.isInvalidEmail;
+      
+      if (isEmailRelatedError) {
+        setEmailError({
+          message: error.message,
+          isBounce: error.isBounce,
+          isInvalidEmail: error.isInvalidEmail,
+        });
+        setShowResendOption(true);
+      } else {
+        Alert.alert('Sign Up Error', error.message);
+      }
+    } else {
+      // Success - clear any previous errors
+      setEmailError(null);
+      setShowResendOption(false);
     }
     // Navigation will happen automatically via useEffect when user state is set
+  };
+
+  const handleResendEmail = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await resendVerificationEmail(email);
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      Alert.alert(
+        'Email Sent',
+        'Please check your inbox for the verification email. If you don\'t see it, check your spam folder.'
+      );
+      setShowResendOption(false);
+      setEmailError(null);
+    }
   };
 
   return (
@@ -195,6 +251,22 @@ export default function SignUpScreen({ navigation }: any) {
               />
             </View>
 
+            {emailError && (
+              <View style={[styles.errorContainer, { backgroundColor: 'rgba(255, 107, 107, 0.1)', borderColor: '#FF6B6B' }]}>
+                <Ionicons name="warning-outline" size={20} color="#FF6B6B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.errorText, { color: '#FF6B6B' }]}>
+                    {emailError.message}
+                  </Text>
+                  {emailError.isInvalidEmail && (
+                    <Text style={[styles.errorHint, { color: theme.textSecondary }]}>
+                      Please check your email address and try again.
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity
               style={[
                 styles.button, 
@@ -209,6 +281,19 @@ export default function SignUpScreen({ navigation }: any) {
                 <Text style={styles.buttonText}>Sign Up</Text>
               )}
             </TouchableOpacity>
+
+            {showResendOption && (
+              <TouchableOpacity
+                style={[styles.resendButton, { borderColor: theme.primary }]}
+                onPress={handleResendEmail}
+                disabled={loading}
+              >
+                <Ionicons name="mail-outline" size={20} color={theme.primary} />
+                <Text style={[styles.resendButtonText, { color: theme.primary }]}>
+                  Resend Verification Email
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -331,5 +416,38 @@ const styles = StyleSheet.create({
   backToOptionsText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  errorHint: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  resendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    marginTop: 8,
+  },
+  resendButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

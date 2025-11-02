@@ -117,8 +117,24 @@ function ProfileStack() {
       }}
     >
         <Stack.Screen name="ProfileMain" component={ProfileScreen} />
-        <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-        <Stack.Screen name="ProfileCard" component={ProfileCardScreen} />
+        <Stack.Screen 
+          name="ProfileSettings" 
+          component={ProfileSettingsScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal'
+          }}
+        />
+        <Stack.Screen 
+          name="ProfileCard" 
+          component={ProfileCardScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal'
+          }}
+        />
         <Stack.Screen 
           name="UserProfile" 
           component={UserProfileScreen as any}
@@ -152,7 +168,15 @@ function ProfileStack() {
             presentation: 'modal'
           }}
         />
-        <Stack.Screen name="Notifications" component={NotificationsScreen as any} />
+        <Stack.Screen 
+          name="Notifications" 
+          component={NotificationsScreen as any}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal'
+          }}
+        />
         <Stack.Screen 
           name="DM" 
           component={DMScreen as any}
@@ -357,6 +381,26 @@ function AppStack() {
           gestureDirection: 'vertical'
         }}
       />
+      <Stack.Screen 
+        name="Onboarding" 
+        component={OnboardingScreen}
+        options={{
+          headerShown: false,
+          gestureEnabled: false,
+          animation: 'slide_from_right',
+          animationDuration: 200,
+        }}
+      />
+      <Stack.Screen 
+        name="ProfileSetup" 
+        component={ProfileSetupScreen}
+        options={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 200,
+          gestureEnabled: true,
+        }}
+      />
     </Stack.Navigator>
   );
 }
@@ -409,7 +453,7 @@ export default function App() {
       if (user) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('onboarding_completed, onboarding_last_step')
           .eq('id', user.id)
           .single();
         
@@ -417,13 +461,22 @@ export default function App() {
         console.log('📊 Profile data:', data);
         console.log('❌ Error:', error);
         
+        // If onboarding is completed, or if user has progressed past step 1 (has exited), show main app
         const isComplete = data?.onboarding_completed || false;
+        const hasPartialProgress = data?.onboarding_last_step && data.onboarding_last_step > 1;
+        
+        // Show main app if completed OR if user has partial progress (exited onboarding)
+        const shouldShowMainApp = isComplete || hasPartialProgress;
+        
         console.log('✅ Onboarding complete:', isComplete);
+        console.log('📍 Has partial progress:', hasPartialProgress);
+        console.log('🏠 Show main app:', shouldShowMainApp);
         
         // Add small delay to prevent navigation stack conflicts
+        // Longer delay for new sign-ups to ensure SignUpScreen can be seen
         setTimeout(() => {
-          setOnboardingComplete(isComplete);
-        }, 100);
+          setOnboardingComplete(shouldShowMainApp);
+        }, 500);
       } else {
         setOnboardingComplete(null);
       }

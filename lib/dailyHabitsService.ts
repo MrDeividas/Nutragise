@@ -469,7 +469,10 @@ class DailyHabitsService {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ selected_daily_habits: habitIds })
+        .update({ 
+          selected_daily_habits: habitIds,
+          habits_last_changed: new Date().toISOString()
+        })
         .eq('id', userId);
       
       if (error) throw error;
@@ -539,7 +542,10 @@ class DailyHabitsService {
 
       const { error } = await supabase
         .from('profiles')
-        .update({ habit_schedules: updatedSchedules })
+        .update({ 
+          habit_schedules: updatedSchedules,
+          habits_last_changed: new Date().toISOString()
+        })
         .eq('id', userId);
       
       if (error) {
@@ -584,6 +590,48 @@ class DailyHabitsService {
     } catch (error) {
       console.error('Error removing habit schedule:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Check if habits are locked (cannot be changed for 6 weeks)
+   * Returns true if locked, false if can be edited
+   */
+  async areHabitsLocked(userId: string): Promise<{ locked: boolean; daysRemaining?: number; unlockDate?: Date }> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('habits_last_changed')
+        .eq('id', userId)
+        .single();
+
+      if (error || !data?.habits_last_changed) {
+        // If no timestamp exists, habits are not locked (first time setup)
+        return { locked: false };
+      }
+
+      const lastChanged = new Date(data.habits_last_changed);
+      const now = new Date();
+      const sixWeeksInMs = 6 * 7 * 24 * 60 * 60 * 1000; // 42 days in milliseconds
+      const timeSinceLastChange = now.getTime() - lastChanged.getTime();
+      const daysRemaining = Math.ceil((sixWeeksInMs - timeSinceLastChange) / (24 * 60 * 60 * 1000));
+
+      if (timeSinceLastChange >= sixWeeksInMs) {
+        // 6 weeks have passed, habits can be edited
+        return { locked: false };
+      } else {
+        // Still locked, calculate unlock date
+        const unlockDate = new Date(lastChanged.getTime() + sixWeeksInMs);
+        return { 
+          locked: true, 
+          daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
+          unlockDate 
+        };
+      }
+    } catch (error) {
+      console.error('Error checking habits lock status:', error);
+      // On error, allow editing (fail open)
+      return { locked: false };
     }
   }
 }

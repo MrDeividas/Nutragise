@@ -1,14 +1,57 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
+import CustomBackground from '../components/CustomBackground';
 
 import { supabase } from '../lib/supabase';
 
-export default function ProfileSettingsScreen({ navigation, route }: any) {
-  const { theme, isDark, toggleTheme } = useTheme();
-  const { user, updateProfile, signOut } = useAuthStore();
+export default function ProfileSettingsScreen() {
+  const navigation = useNavigation();
+  const { theme } = useTheme();
+  const { user, updateProfile, signOut, resendVerificationEmail, checkEmailVerification } = useAuthStore();
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [resendingEmail, setResendingEmail] = useState(false);
+
+  // Check email verification status
+  const checkEmailStatus = async () => {
+    const verified = await checkEmailVerification();
+    setEmailVerified(verified);
+  };
+
+  // Check on mount and when screen comes into focus
+  useEffect(() => {
+    checkEmailStatus();
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      checkEmailStatus();
+    }, [])
+  );
+
+  const handleResendVerification = async () => {
+    if (!user?.email) {
+      Alert.alert('Error', 'No email address found');
+      return;
+    }
+
+    setResendingEmail(true);
+    const { error } = await resendVerificationEmail(user.email);
+    setResendingEmail(false);
+
+    if (error) {
+      Alert.alert('Error', error.message || 'Failed to send verification email');
+    } else {
+      Alert.alert(
+        'Email Sent',
+        'Please check your inbox for the verification email. If you don\'t see it, check your spam folder.'
+      );
+    }
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -35,9 +78,10 @@ export default function ProfileSettingsScreen({ navigation, route }: any) {
   }
   
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.headerRow, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
+        <View style={[styles.headerRow, { borderBottomColor: theme.border }]}>
         <TouchableOpacity 
           onPress={() => navigation.goBack()} 
           style={styles.backButton}
@@ -48,25 +92,35 @@ export default function ProfileSettingsScreen({ navigation, route }: any) {
         <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.optionsContainer}>
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]} 
-          onPress={toggleTheme}
-        >
-          <View style={styles.optionContent}>
-            <View style={styles.optionLeft}>
-              <Ionicons 
-                name={isDark ? "sunny" : "moon"} 
-                size={20} 
-                color={theme.primary} 
-                style={styles.optionIcon}
-              />
-              <Text style={[styles.optionText, { color: theme.primary }]}>
-                {isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              </Text>
+        {/* Email Verification Reminder */}
+        {emailVerified === false && (
+          <View style={[styles.emailVerificationContainer, { backgroundColor: 'rgba(255, 193, 7, 0.1)', borderColor: '#FFC107' }]}>
+            <View style={styles.emailVerificationContent}>
+              <Ionicons name="mail-unread-outline" size={24} color="#FFC107" />
+              <View style={styles.emailVerificationText}>
+                <Text style={[styles.emailVerificationTitle, { color: '#FFC107' }]}>
+                  Verify Your Email
+                </Text>
+                <Text style={[styles.emailVerificationSubtitle, { color: theme.textSecondary }]}>
+                  Please verify your email address to secure your account
+                </Text>
+              </View>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+            <TouchableOpacity
+              style={[styles.resendButton, { backgroundColor: '#FFC107' }]}
+              onPress={handleResendVerification}
+              disabled={resendingEmail}
+            >
+              {resendingEmail ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <Text style={[styles.resendButtonText, { color: '#000' }]}>
+                  Resend Email
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           <Text style={[styles.optionText, { color: theme.primary }]}>Change Username</Text>
@@ -101,24 +155,21 @@ export default function ProfileSettingsScreen({ navigation, route }: any) {
           <Text style={[styles.logoutText, { color: '#d32f2f' }]}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
-
-
-    </View>
+    </SafeAreaView>
+    </CustomBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingBottom: 34,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
   },
   headerTitle: {
@@ -177,5 +228,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  emailVerificationContainer: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    marginBottom: 24,
+    gap: 12,
+  },
+  emailVerificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  emailVerificationText: {
+    flex: 1,
+  },
+  emailVerificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  emailVerificationSubtitle: {
+    fontSize: 14,
+  },
+  resendButton: {
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  resendButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

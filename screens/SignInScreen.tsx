@@ -31,7 +31,34 @@ export default function SignInScreen({ navigation }: any) {
     setLoading(false);
 
     if (error) {
-      Alert.alert('Sign In Error', error.message);
+      console.error('❌ Sign-in error:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      
+      // Check if it's an email confirmation error
+      if (error.code === 'email_not_confirmed' || 
+          (error.message?.toLowerCase().includes('email') && 
+           (error.message?.toLowerCase().includes('confirm') || 
+            error.message?.toLowerCase().includes('not confirmed')))) {
+        Alert.alert(
+          'Email Not Verified',
+          'Your email address needs to be verified before you can sign in. This setting is currently enabled in your Supabase project.\n\nPlease check your inbox for the verification email, or contact support to verify your account.',
+          [
+            { text: 'OK', style: 'default' },
+            {
+              text: 'Need Help?',
+              onPress: () => {
+                Alert.alert(
+                  'Troubleshooting',
+                  'To disable email confirmation requirement:\n\n1. Go to Supabase Dashboard\n2. Authentication → Settings\n3. Disable "Confirm email" option\n4. Save changes\n5. Wait 1-2 minutes for changes to propagate\n\nIf this persists, the setting may not have saved correctly. Try toggling it off/on again.'
+                );
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Sign In Error', error.message || 'Failed to sign in. Please check your credentials and try again.');
+      }
     }
   };
 

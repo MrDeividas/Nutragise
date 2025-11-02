@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
+import { emailService } from '../lib/emailService';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
 
 interface AuthStore extends AuthState {
@@ -8,6 +9,8 @@ interface AuthStore extends AuthState {
   signIn: (data: SignInData) => Promise<{ error: any | null }>;
   signOut: () => Promise<void>;
   updateProfile: (data: ProfileData) => Promise<{ error: any | null }>;
+  resendVerificationEmail: (email: string) => Promise<{ error: any | null }>;
+  checkEmailVerification: () => Promise<boolean>;
   initialize: () => Promise<void>;
 }
 
@@ -112,7 +115,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         password: data.password
       });
 
-      if (error) return { error };
+      if (error) {
+        // Parse email errors to detect bounces
+        const emailError = emailService.parseEmailError(error);
+        const friendlyMessage = emailService.getErrorMessage(emailError);
+        
+        // Return enhanced error with bounce detection
+        return { 
+          error: { 
+            ...error, 
+            message: friendlyMessage,
+            isBounce: emailError.isBounce,
+            isInvalidEmail: emailError.isInvalidEmail
+          } 
+        };
+      }
 
       // Insert user into users table immediately after successful sign up
       const user = signUpData?.user;
@@ -171,12 +188,20 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signIn: async (data: SignInData) => {
     try {
+      console.log('🔐 Attempting sign-in for:', data.email);
       const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password
       });
 
-      if (error) return { error };
+      if (error) {
+        console.error('❌ Sign-in error:', error);
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error message:', error.message);
+        return { error };
+      }
+
+      console.log('✅ Sign-in successful. User email confirmed?', signInData?.user?.email_confirmed_at ? 'Yes' : 'No');
 
       // Set user state immediately after successful sign-in
       if (signInData?.user) {
@@ -219,17 +244,54 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const { user } = get();
       if (!user) return { error: new Error('No user logged in') };
 
-      // Update users table
-      const { error: usersError } = await supabase
-        .from('users')
-        .upsert({
-          id: user.id,
-          username: data.username,
-          bio: data.bio,
-          avatar_url: data.avatar_url
-        });
+      // Try to update users table, but don't fail if it's blocked by RLS
+      // The profiles table is what's actually used for social features
+      let usersError = null;
+      try {
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', user.id)
+          .single();
 
-      // Update profiles table for social features
+        if (existingUser) {
+          // User exists, use UPDATE
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({
+              username: data.username,
+              bio: data.bio,
+              avatar_url: data.avatar_url
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            console.warn('⚠️ Failed to update users table (RLS may be blocking):', updateError.message);
+            usersError = updateError;
+          }
+        } else {
+          // User doesn't exist, try INSERT (may fail due to RLS, but that's okay)
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: user.id,
+              email: user.email,
+              username: data.username,
+              bio: data.bio,
+              avatar_url: data.avatar_url
+            });
+          
+          if (insertError) {
+            console.warn('⚠️ Failed to insert into users table (RLS may be blocking):', insertError.message);
+            usersError = insertError;
+          }
+        }
+      } catch (usersTableError: any) {
+        console.warn('⚠️ Error accessing users table (RLS may be blocking):', usersTableError?.message);
+        usersError = usersTableError;
+      }
+
+      // Update profiles table for social features (this is the critical one)
       const { error: profilesError } = await supabase
         .from('profiles')
         .upsert({
@@ -240,8 +302,23 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           avatar_url: data.avatar_url
         });
 
-      if (!usersError && !profilesError) {
-        // Fetch fresh user data from database
+      // Only fail if profiles update fails - users table is secondary
+      if (profilesError) {
+        return { error: profilesError };
+      }
+
+      // Update local state with new data even if users table update failed
+      set({
+        user: {
+          ...user,
+          username: data.username,
+          bio: data.bio,
+          avatar_url: data.avatar_url
+        }
+      });
+
+      // Try to fetch fresh user data, but don't fail if it's blocked
+      try {
         const { data: freshUserData, error: fetchError } = await supabase
           .from('users')
           .select('*')
@@ -252,22 +329,42 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           set({
             user: freshUserData
           });
-        } else {
-          set({
-            user: {
-              ...user,
-              username: data.username,
-              bio: data.bio,
-              avatar_url: data.avatar_url
-            }
-          });
         }
+      } catch (fetchError) {
+        // Ignore fetch errors - we've already updated local state
+        console.warn('⚠️ Could not fetch fresh user data:', fetchError);
       }
 
-      return { error: usersError || profilesError };
+      // Return success even if users table update failed (profiles is what matters)
+      return { error: null };
     } catch (error) {
       console.error('Update profile error:', error);
       return { error };
+    }
+  },
+
+  resendVerificationEmail: async (email: string) => {
+    try {
+      const result = await emailService.resendVerificationEmail(email);
+      
+      if (result.error) {
+        // Return a user-friendly error message
+        const friendlyMessage = emailService.getErrorMessage(result.error);
+        return { error: { ...result.error, message: friendlyMessage } };
+      }
+
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  },
+
+  checkEmailVerification: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user?.email_confirmed_at !== null;
+    } catch {
+      return false;
     }
   }
 })); 

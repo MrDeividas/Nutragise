@@ -36,14 +36,26 @@ class OnboardingService {
       
       console.log('✅ Profile updated successfully');
 
-      // Save selected habits
+      // Save selected habits (this will also set habits_last_changed timestamp)
       if (data.selectedHabits.length > 0) {
         await dailyHabitsService.updateSelectedHabits(userId, data.selectedHabits);
       }
 
-      // Save habit frequencies/schedules
+      // Save habit frequencies/schedules (this will also update habits_last_changed timestamp)
       for (const [habitId, schedule] of Object.entries(data.habitFrequencies)) {
         await dailyHabitsService.updateHabitSchedule(userId, habitId, schedule);
+      }
+      
+      // If habits were saved, ensure habits_last_changed is set (backup in case only schedules were updated)
+      if (data.selectedHabits.length > 0 || Object.keys(data.habitFrequencies).length > 0) {
+        const { error: timestampError } = await supabase
+          .from('profiles')
+          .update({ habits_last_changed: new Date().toISOString() })
+          .eq('id', userId);
+        
+        if (timestampError) {
+          console.warn('Failed to set habits_last_changed timestamp:', timestampError);
+        }
       }
 
       return true;
@@ -82,6 +94,50 @@ class OnboardingService {
     } catch (error) {
       console.error('Error in createInitialGoal:', error);
       return null;
+    }
+  }
+
+  /**
+   * Save partial onboarding data (for users who exit early)
+   */
+  async savePartialOnboardingData(userId: string, data: Partial<OnboardingData>, currentStep: number): Promise<boolean> {
+    try {
+      console.log('💾 Saving partial onboarding data for user:', userId);
+      console.log('📊 Partial data to save:', JSON.stringify(data, null, 2));
+      console.log('📍 Current step:', currentStep);
+      
+      // Build update object with only provided fields
+      const updateData: any = {
+        onboarding_completed: false,
+        onboarding_last_step: currentStep,
+      };
+
+      // Only add fields that have actual values
+      if (data.referralCode !== undefined && data.referralCode !== null) {
+        updateData.referral_code = data.referralCode;
+      }
+      if (data.isPremium !== undefined && data.isPremium !== null) {
+        updateData.is_premium = data.isPremium;
+      }
+
+      // Update profile with partial onboarding fields
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (profileError) {
+        console.error('❌ Error updating profile:', profileError);
+        console.error('Error details:', JSON.stringify(profileError, null, 2));
+        return false;
+      }
+      
+      console.log('✅ Profile updated successfully with partial data');
+
+      return true;
+    } catch (error) {
+      console.error('Error saving partial onboarding data:', error);
+      return false;
     }
   }
 

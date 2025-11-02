@@ -12,17 +12,17 @@ interface Habit {
 }
 
 const ALL_HABITS: Habit[] = [
+  { id: 'sleep', name: 'Sleep', icon: '😴', isPremium: false, isCore: false },
+  { id: 'water', name: 'Water', icon: '💧', isPremium: false, isCore: true },
+  { id: 'update_goal', name: 'Update Goal', icon: '📝', isPremium: false, isCore: false },
+  { id: 'reflect', name: 'Reflect', icon: '✨', isPremium: true, isCore: false },
   { id: 'meditation', name: 'Meditation', icon: '🧘', isPremium: true, isCore: true },
   { id: 'microlearn', name: 'Microlearning', icon: '📚', isPremium: true, isCore: true },
   { id: 'gym', name: 'Gym', icon: '💪', isPremium: false, isCore: true },
   { id: 'run', name: 'Run', icon: '🏃', isPremium: false, isCore: true },
-  { id: 'screen_time', name: 'Screen Time Limit', icon: '📱', isPremium: false, isCore: true },
-  { id: 'water', name: 'Water', icon: '💧', isPremium: false, isCore: true },
   { id: 'focus', name: 'Focus', icon: '🎯', isPremium: false, isCore: false },
-  { id: 'update_goal', name: 'Update Goal', icon: '📝', isPremium: false, isCore: false },
-  { id: 'reflect', name: 'Reflect', icon: '✨', isPremium: true, isCore: false },
+  { id: 'screen_time', name: 'Screen Time Limit', icon: '📱', isPremium: false, isCore: true },
   { id: 'cold_shower', name: 'Cold Shower', icon: '🚿', isPremium: false, isCore: false },
-  { id: 'sleep', name: 'Sleep', icon: '😴', isPremium: false, isCore: false },
 ];
 
 interface HabitSelectionStepProps {
@@ -34,6 +34,14 @@ interface HabitSelectionStepProps {
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+// Habits that should auto-set to all 7 days and be non-editable
+const FIXED_FREQUENCY_HABITS = ['sleep', 'water'];
+// Habits that are compulsory and cannot be deselected
+const COMPULSORY_HABITS = ['sleep', 'water', 'update_goal', 'reflect'];
+// Habits that are auto-selected on mount
+const AUTO_SELECTED_HABITS = ['sleep', 'water'];
+const ALL_7_DAYS = [true, true, true, true, true, true, true];
+
 export default function HabitSelectionStep({
   selectedHabits,
   habitFrequencies,
@@ -41,43 +49,76 @@ export default function HabitSelectionStep({
   onChange
 }: HabitSelectionStepProps) {
   const { theme } = useTheme();
-  const [expandedHabit, setExpandedHabit] = useState<string | null>(null);
-  const [tempFrequency, setTempFrequency] = useState<boolean[]>([]);
+  const [collapsedHabits, setCollapsedHabits] = useState<Set<string>>(new Set());
 
-  // Initialize with NO habits preselected, just show recommended tags
+  // Auto-select compulsory habits (sleep and water) on mount if they're not already selected
+  // Note: update_goal is compulsory but NOT auto-selected - user must select it manually
   useEffect(() => {
-    if (selectedHabits.length === 0) {
-      // Don't preselect any habits, just show recommended tags
-      onChange({ selectedHabits: [], habitFrequencies: {}, isPremium: false });
+    const autoSelectedPresent = AUTO_SELECTED_HABITS.every(id => selectedHabits.includes(id));
+    
+    if (!autoSelectedPresent) {
+      const newSelected = [...new Set([...selectedHabits, ...AUTO_SELECTED_HABITS])];
+      const newFrequencies = { ...habitFrequencies };
+      
+      // Auto-set auto-selected habits to all 7 days
+      AUTO_SELECTED_HABITS.forEach(habitId => {
+        if (!newFrequencies[habitId]) {
+          newFrequencies[habitId] = ALL_7_DAYS;
+        }
+      });
+      
+      onChange({ selectedHabits: newSelected, habitFrequencies: newFrequencies, isPremium });
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
   const toggleHabit = (habitId: string) => {
+    // Prevent deselecting compulsory habits
+    if (COMPULSORY_HABITS.includes(habitId) && selectedHabits.includes(habitId)) {
+      return; // Cannot deselect compulsory habits
+    }
+    
     if (selectedHabits.includes(habitId)) {
-      // If already selected, open frequency picker
-      openFrequencyPicker(habitId);
+      // If already selected, deselect it (unless it's compulsory)
+      deselectHabit(habitId);
     } else {
-      // Select - add to selected and immediately open frequency picker
+      // Select - add to selected
       const newSelected = [...selectedHabits, habitId];
+      const newFrequencies = { ...habitFrequencies };
       
       // Auto-switch to premium if selecting premium habit
       const habit = ALL_HABITS.find(h => h.id === habitId);
-      const newIsPremium = isPremium || habit?.isPremium;
+      const newIsPremium = isPremium || (habit?.isPremium ?? false);
       
-      onChange({ selectedHabits: newSelected, habitFrequencies, isPremium: newIsPremium });
+      // For fixed frequency habits, auto-set to all 7 days
+      if (FIXED_FREQUENCY_HABITS.includes(habitId)) {
+        newFrequencies[habitId] = ALL_7_DAYS;
+      } else if (habitId === 'update_goal') {
+        // Update Goal requires at least 1 day, set default to Monday only
+        newFrequencies[habitId] = [false, true, false, false, false, false, false]; // S, M, T, W, T, F, S
+      } else if (habitId === 'reflect') {
+        // Reflect requires at least 2 days, set default to Monday and Wednesday
+        newFrequencies[habitId] = [false, true, false, true, false, false, false]; // S, M, T, W, T, F, S
+      } else {
+        // For non-fixed habits, auto-set default to 3 days (Mon, Wed, Fri)
+        // This ensures validation passes immediately
+        newFrequencies[habitId] = [false, true, false, true, false, true, false]; // S, M, T, W, T, F, S
+      }
       
-      // Immediately open frequency picker for the new habit
-      openFrequencyPicker(habitId);
+      onChange({ selectedHabits: newSelected, habitFrequencies: newFrequencies, isPremium: newIsPremium });
     }
   };
 
   const deselectHabit = (habitId: string) => {
-    console.log('🗑️ Deselecting habit:', habitId);
+    // Prevent deselecting compulsory habits
+    if (COMPULSORY_HABITS.includes(habitId)) {
+      return;
+    }
+    
     // Deselect - remove from selected and remove frequency
     const newSelected = selectedHabits.filter(id => id !== habitId);
     const newFrequencies = { ...habitFrequencies };
     delete newFrequencies[habitId];
-    setExpandedHabit(null);
     
     // Auto-switch premium if needed
     const newIsPremium = newSelected.some(id => {
@@ -85,34 +126,46 @@ export default function HabitSelectionStep({
       return habit?.isPremium;
     });
     
-    console.log('📊 New selected habits:', newSelected);
     onChange({ selectedHabits: newSelected, habitFrequencies: newFrequencies, isPremium: newIsPremium });
   };
 
-  const openFrequencyPicker = (habitId: string) => {
-    setExpandedHabit(habitId);
-    // Load existing frequency or default to empty
-    setTempFrequency(habitFrequencies[habitId] || [false, false, false, false, false, false, false]);
-  };
-
-  const toggleDay = (dayIndex: number) => {
-    const newFreq = [...tempFrequency];
+  const toggleDay = (habitId: string, dayIndex: number) => {
+    // Prevent editing fixed frequency habits
+    if (FIXED_FREQUENCY_HABITS.includes(habitId)) {
+      return;
+    }
+    
+    // Get current frequency or create default
+    const currentFreq = habitFrequencies[habitId] || [false, false, false, false, false, false, false];
+    const newFreq = [...currentFreq];
     newFreq[dayIndex] = !newFreq[dayIndex];
-    setTempFrequency(newFreq);
+    
+    // Update immediately - no need for save button
+    const newFrequencies = { ...habitFrequencies, [habitId]: newFreq };
+    onChange({ selectedHabits, habitFrequencies: newFrequencies, isPremium });
+    
+    // Expand the schedule when editing (uncollapse)
+    const newCollapsed = new Set(collapsedHabits);
+    newCollapsed.delete(habitId);
+    setCollapsedHabits(newCollapsed);
   };
 
-  const saveFrequency = () => {
-    if (expandedHabit && tempFrequency.some(day => day)) {
-      const newFrequencies = { ...habitFrequencies, [expandedHabit]: tempFrequency };
-      onChange({ selectedHabits, habitFrequencies: newFrequencies, isPremium });
-      setExpandedHabit(null);
-      setTempFrequency([]);
+  const toggleHabitWithExpand = (habitId: string) => {
+    // If already selected and collapsed, toggle to expand
+    if (selectedHabits.includes(habitId) && collapsedHabits.has(habitId) && !FIXED_FREQUENCY_HABITS.includes(habitId)) {
+      const newCollapsed = new Set(collapsedHabits);
+      newCollapsed.delete(habitId);
+      setCollapsedHabits(newCollapsed);
+    } else {
+      // Normal toggle
+      toggleHabit(habitId);
     }
   };
 
-  const cancelFrequency = () => {
-    setExpandedHabit(null);
-    setTempFrequency([]);
+  const collapseSchedule = (habitId: string) => {
+    const newCollapsed = new Set(collapsedHabits);
+    newCollapsed.add(habitId);
+    setCollapsedHabits(newCollapsed);
   };
 
   const togglePremium = () => {
@@ -143,24 +196,43 @@ export default function HabitSelectionStep({
     return habitFrequencies[habitId] && habitFrequencies[habitId].some(day => day);
   };
 
-  const needsFrequency = (habitId: string) => {
-    return selectedHabits.includes(habitId) && !hasFrequency(habitId);
+  const getDayCount = (habitId: string) => {
+    const freq = habitFrequencies[habitId];
+    return freq ? freq.filter(day => day).length : 0;
+  };
+
+  const isValidFrequency = (habitId: string) => {
+    if (FIXED_FREQUENCY_HABITS.includes(habitId)) {
+      return true; // Fixed habits are always valid (7 days)
+    }
+    if (habitId === 'update_goal') {
+      return getDayCount(habitId) >= 1; // Update Goal requires at least 1 day
+    }
+    if (habitId === 'reflect') {
+      return getDayCount(habitId) >= 2; // Reflect requires at least 2 days
+    }
+    return getDayCount(habitId) >= 3; // Other habits require at least 3 days
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={[styles.title, { color: theme.textPrimary }]}>
-        Great! We're here to help you! 🎉
+        Your new journey begins here
       </Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-        Select habits and set their weekly schedule
+        Select at least 6 habits and customise the schedule
       </Text>
 
       <View style={styles.habitsContainer}>
         {ALL_HABITS.map((habit) => {
           const isSelected = selectedHabits.includes(habit.id);
-          const isExpanded = expandedHabit === habit.id;
-          const needsFreq = needsFrequency(habit.id);
+          const isFixed = FIXED_FREQUENCY_HABITS.includes(habit.id);
+          const isCompulsory = COMPULSORY_HABITS.includes(habit.id);
+          const isCollapsed = collapsedHabits.has(habit.id);
+          const shouldExpand = isSelected && !isFixed && !isCollapsed;
+          const currentFrequency = habitFrequencies[habit.id] || [false, false, false, false, false, false, false];
+          const dayCount = getDayCount(habit.id);
+          const isValid = isValidFrequency(habit.id);
 
           return (
             <View key={habit.id}>
@@ -169,26 +241,20 @@ export default function HabitSelectionStep({
                   styles.habitCard,
                   {
                     backgroundColor: isSelected
-                      ? theme.primary // Use theme primary color for consistency
+                      ? theme.primary
                       : 'rgba(128, 128, 128, 0.1)',
-                    // Remove border completely
                   }
                 ]}
               >
                 <View style={styles.habitHeader}>
                   <TouchableOpacity 
                     style={styles.habitInfo}
-                    onPress={() => toggleHabit(habit.id)}
+                    onPress={() => toggleHabitWithExpand(habit.id)}
                   >
                     <Text style={styles.habitIcon}>{habit.icon}</Text>
                     <Text style={[styles.habitName, { color: isSelected ? '#FFFFFF' : theme.textPrimary }]}>
                       {habit.name}
                     </Text>
-                    {habit.isCore && !isSelected && (
-                      <View style={[styles.badge, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.badgeText}>Recommended</Text>
-                      </View>
-                    )}
                     {habit.isPremium && (
                       <View style={[styles.badge, { backgroundColor: theme.primary }]}>
                         <Text style={styles.badgeText}>
@@ -196,86 +262,110 @@ export default function HabitSelectionStep({
                         </Text>
                       </View>
                     )}
+                    {habit.id === 'reflect' && (
+                      <View style={[styles.badge, { backgroundColor: theme.primary, marginLeft: 4 }]}>
+                        <Text style={styles.badgeText}>PRO</Text>
+                      </View>
+                    )}
+                    {isCompulsory && (
+                      <View style={[styles.badge, { backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.2)' : '#FF6B6B' }]}>
+                        <Text style={[styles.badgeText, { color: isSelected ? '#FFFFFF' : '#FFFFFF' }]}>
+                          Compulsory
+                        </Text>
+                      </View>
+                    )}
+                    {isSelected && isFixed && (
+                      <View style={[styles.fixedBadge, { backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.2)' : theme.primary }]}>
+                        <Text style={[styles.fixedBadgeText, { color: isSelected ? '#FFFFFF' : theme.textPrimary }]}>
+                          7 days/week
+                        </Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                  <View style={styles.habitActions}>
-                    {needsFreq && (
-                      <TouchableOpacity
-                        onPress={() => openFrequencyPicker(habit.id)}
-                        style={styles.warningButton}
-                      >
-                        <Ionicons name="warning" size={20} color="#FF6B6B" />
-                      </TouchableOpacity>
-                    )}
-                    {isSelected && hasFrequency(habit.id) && (
-                      <TouchableOpacity
-                        onPress={() => openFrequencyPicker(habit.id)}
-                        style={styles.editButton}
-                      >
-                        <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity onPress={() => deselectHabit(habit.id)}>
-                      <Ionicons
-                        name={isSelected ? "checkmark-circle" : "ellipse-outline"}
-                        size={24}
-                        color={isSelected ? '#FFFFFF' : theme.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity 
+                    onPress={() => toggleHabitWithExpand(habit.id)}
+                    disabled={isCompulsory && isSelected}
+                    style={{ opacity: isCompulsory && isSelected ? 0.5 : 1 }}
+                  >
+                    <Ionicons
+                      name={isSelected ? "checkmark-circle" : "ellipse-outline"}
+                      size={24}
+                      color={isSelected ? '#FFFFFF' : theme.textSecondary}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
 
-              {isExpanded && (
-                <View style={[styles.frequencyPicker, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
-                  <Text style={[styles.frequencyLabel, { color: theme.textPrimary }]}>
-                    Select days for {habit.name}:
-                  </Text>
+              {/* Inline schedule selector - only for non-fixed habits that are selected and not collapsed */}
+              {shouldExpand && (
+                <View style={[styles.inlineSchedule, { backgroundColor: 'rgba(128, 128, 128, 0.05)', borderColor: theme.borderSecondary }]}>
                   <View style={styles.daysRow}>
-                    {DAYS.map((day, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.dayButton,
-                          {
-                            backgroundColor: tempFrequency[index]
-                              ? theme.primary
-                              : 'transparent',
-                            borderColor: tempFrequency[index]
-                              ? theme.primary
-                              : theme.borderSecondary,
-                          }
-                        ]}
-                        onPress={() => toggleDay(index)}
-                      >
-                        <Text style={[
-                          styles.dayText,
-                          { color: tempFrequency[index] ? '#fff' : theme.textSecondary }
-                        ]}>
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <View style={styles.pickerActions}>
-                    <TouchableOpacity
-                      style={[styles.cancelButton, { borderColor: theme.borderSecondary }]}
-                      onPress={cancelFrequency}
-                    >
-                      <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
-                    </TouchableOpacity>
+                    {DAYS.map((day, index) => {
+                      const daySelected = currentFrequency[index];
+                      return (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.dayButton,
+                            {
+                              backgroundColor: daySelected
+                                ? theme.primary
+                                : 'transparent',
+                              borderColor: daySelected
+                                ? theme.primary
+                                : theme.borderSecondary,
+                            }
+                          ]}
+                          onPress={() => toggleDay(habit.id, index)}
+                        >
+                          <Text style={[
+                            styles.dayText,
+                            { color: daySelected ? '#fff' : theme.textSecondary }
+                          ]}>
+                            {day}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {/* Done button - circle with checkmark */}
                     <TouchableOpacity
                       style={[
-                        styles.doneButton,
+                        styles.doneButtonCircle,
                         {
-                          backgroundColor: tempFrequency.some(d => d) ? theme.primary : 'rgba(128, 128, 128, 0.3)',
+                          backgroundColor: isValid ? theme.primary : 'rgba(128, 128, 128, 0.3)',
+                          borderColor: isValid ? theme.primary : theme.borderSecondary,
                         }
                       ]}
-                      onPress={saveFrequency}
-                      disabled={!tempFrequency.some(d => d)}
+                      onPress={() => collapseSchedule(habit.id)}
+                      disabled={!isValid}
                     >
-                      <Text style={styles.doneButtonText}>Done</Text>
+                      <Ionicons
+                        name="checkmark"
+                        size={20}
+                        color={isValid ? '#FFFFFF' : theme.textSecondary}
+                      />
                     </TouchableOpacity>
                   </View>
+                  {!isValid && habit.id === 'update_goal' && (
+                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
+                      Please select at least 1 day per week
+                    </Text>
+                  )}
+                  {!isValid && habit.id === 'reflect' && (
+                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
+                      Please select at least 2 days per week
+                    </Text>
+                  )}
+                  {!isValid && habit.id !== 'update_goal' && habit.id !== 'reflect' && (
+                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
+                      Please select at least 3 days per week
+                    </Text>
+                  )}
+                  {isValid && dayCount > 0 && (
+                    <Text style={[styles.dayCountText, { color: theme.textSecondary }]}>
+                      {dayCount} {dayCount === 1 ? 'day' : 'days'} selected
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
@@ -361,70 +451,54 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  habitActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  warningButton: {
-    padding: 4,
-  },
-  editButton: {
-    padding: 4,
-  },
-  frequencyPicker: {
+  inlineSchedule: {
     padding: 16,
     borderRadius: 8,
     marginTop: 8,
     borderWidth: 1,
   },
-  frequencyLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
   daysRow: {
     flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 8,
+    justifyContent: 'center',
   },
   dayButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
   dayText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  doneButtonCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  fixedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  fixedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  dayCountText: {
     fontSize: 12,
-    fontWeight: '600',
-  },
-  pickerActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  doneButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  doneButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
+    fontWeight: '500',
   },
   toggleContainer: {
     marginTop: 16,
@@ -439,5 +513,11 @@ const styles = StyleSheet.create({
   toggleText: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  warningText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
   },
 });

@@ -63,6 +63,7 @@ interface OnboardingStore {
   goPrevious: () => void;
   updateField: <K extends keyof OnboardingData>(field: K, value: OnboardingData[K]) => void;
   updateData: (updates: Partial<OnboardingData>) => void;
+  loadSavedData: (data: Partial<OnboardingData>, step: number) => void;
   reset: () => void;
 }
 
@@ -96,6 +97,11 @@ export const useOnboardingStore = create<OnboardingStore>((set) => ({
   updateData: (updates) => set((state) => ({
     data: { ...state.data, ...updates }
   })),
+  
+  loadSavedData: (savedData, step) => set({
+    currentStep: step,
+    data: { ...initialData, ...savedData }
+  }),
   
   reset: () => set({
     currentStep: 1,

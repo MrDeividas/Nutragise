@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -7,6 +7,7 @@ import { useOnboardingStore } from '../state/onboardingStore';
 import { useAuthStore } from '../state/authStore';
 import { onboardingService } from '../lib/onboardingService';
 import { supabase } from '../lib/supabase';
+import { dailyHabitsService } from '../lib/dailyHabitsService';
 import CustomBackground from '../components/CustomBackground';
 
 // Import step components
@@ -35,28 +36,153 @@ export default function OnboardingScreen({ navigation }: any) {
     goPrevious,
     updateField,
     updateData,
-    reset
+    reset,
+    loadSavedData
   } = useOnboardingStore();
   const [saving, setSaving] = useState(false);
+  const [exiting, setExiting] = useState(false);
+
+  // Check for saved onboarding data on mount
+  useEffect(() => {
+    const loadSavedOnboarding = async () => {
+      const { user: currentUser } = useAuthStore.getState();
+      if (!currentUser) return;
+
+      try {
+        // Get profile data
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('onboarding_completed, onboarding_last_step, referral_code, is_premium')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (profileData && !profileData.onboarding_completed && profileData.onboarding_last_step) {
+          // Restore saved step and data
+          const savedData: any = {};
+          
+          if (profileData.referral_code) savedData.referralCode = profileData.referral_code;
+          if (profileData.is_premium !== null && profileData.is_premium !== undefined) {
+            savedData.isPremium = profileData.is_premium;
+          }
+          
+          // Don't load saved habits when resuming onboarding
+          // Step 2 should always start fresh with no habits selected
+          // User will need to select habits again when they reach step 2
+
+          if (Object.keys(savedData).length > 0 || profileData.onboarding_last_step) {
+            loadSavedData(savedData, profileData.onboarding_last_step || 1);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading saved onboarding data:', error);
+      }
+    };
+
+    loadSavedOnboarding();
+  }, []);
 
   const canGoNext = () => {
     switch (currentStep) {
-      case 2: return !!data.dateOfBirth;
-      case 3: return !!data.lifeDescription;
-      case 4: return !!data.changeReason;
-      case 5: return !!data.proudMoment;
-      case 6: return !!data.morningMotivation;
-      case 7: return !!data.currentState;
-      case 8: {
-        // Must have at least 6 habits and ALL selected habits must have frequencies
+      case 2: {
+        // Step 2: Habit Selection - Must have at least 6 habits and ALL selected habits must have frequencies
+        // Compulsory habits: sleep, water (auto-selected), update_goal and reflect (must be selected manually)
+        // For fixed habits (sleep, water), they should have all 7 days
+        // For update_goal: needs at least 1 day per week
+        // For reflect: needs at least 2 days per week
+        // For other habits, they need at least 3 days per week
+        
+        // Check if compulsory habits are selected
+        const hasUpdateGoal = data.selectedHabits.includes('update_goal');
+        const hasReflect = data.selectedHabits.includes('reflect');
+        if (!hasUpdateGoal) {
+          console.log('❌ update_goal (compulsory) not selected');
+          return false;
+        }
+        if (!hasReflect) {
+          console.log('❌ reflect (compulsory) not selected');
+          return false;
+        }
+        
         const hasMinHabits = data.selectedHabits.length >= 6;
-        const allHaveFrequencies = data.selectedHabits.every(habitId => {
+        
+        if (!hasMinHabits) {
+          console.log('❌ Not enough habits:', data.selectedHabits.length);
+          return false;
+        }
+        
+        // Check that every selected habit has a valid frequency
+        const invalidHabits: string[] = [];
+        const allHaveValidFrequencies = data.selectedHabits.every(habitId => {
           const freq = data.habitFrequencies[habitId];
-          return freq && freq.some(day => day);
+          
+          // If no frequency array exists, it's invalid
+          if (!freq || !Array.isArray(freq) || freq.length !== 7) {
+            invalidHabits.push(`${habitId}: no frequency array`);
+            return false;
+          }
+          
+          // Check if at least one day is selected
+          if (!freq.some(day => day === true)) {
+            invalidHabits.push(`${habitId}: no days selected`);
+            return false;
+          }
+          
+          const dayCount = freq.filter(day => day === true).length;
+          const isFixed = ['sleep', 'water'].includes(habitId);
+          
+          // Fixed habits must have all 7 days selected
+          if (isFixed) {
+            if (dayCount !== 7) {
+              invalidHabits.push(`${habitId}: fixed habit should have 7 days, has ${dayCount}`);
+              return false;
+            }
+            return true;
+          }
+          
+          // update_goal needs at least 1 day
+          if (habitId === 'update_goal') {
+            if (dayCount < 1) {
+              invalidHabits.push(`${habitId}: needs at least 1 day, has ${dayCount}`);
+              return false;
+            }
+            return true;
+          }
+          
+          // reflect needs at least 2 days
+          if (habitId === 'reflect') {
+            if (dayCount < 2) {
+              invalidHabits.push(`${habitId}: needs at least 2 days, has ${dayCount}`);
+              return false;
+            }
+            return true;
+          }
+          
+          // Other habits need at least 3 days
+          if (dayCount < 3) {
+            invalidHabits.push(`${habitId}: needs at least 3 days, has ${dayCount}`);
+            return false;
+          }
+          return true;
         });
-        return hasMinHabits && allHaveFrequencies;
+        
+        if (!allHaveValidFrequencies && invalidHabits.length > 0) {
+          console.log('❌ Invalid habits:', invalidHabits);
+          console.log('📊 Selected habits:', data.selectedHabits);
+          console.log('📊 Frequencies:', JSON.stringify(data.habitFrequencies, null, 2));
+        }
+        
+        const result = allHaveValidFrequencies;
+        console.log('✅ Validation result:', result, '| Habits:', data.selectedHabits.length, '| All valid:', result);
+        
+        return result;
       }
-      case 10: return data.goals.length > 0;
+      case 5: return !!data.dateOfBirth;
+      case 6: return !!data.lifeDescription;
+      case 7: return !!data.changeReason;
+      case 8: return !!data.proudMoment;
+      case 9: return !!data.morningMotivation;
+      case 10: return !!data.currentState;
+      case 11: return data.goals.length > 0;
       case 13: return data.affirmationSigned;
       default: return true;
     }
@@ -72,6 +198,98 @@ export default function OnboardingScreen({ navigation }: any) {
       handleComplete();
     } else {
       goNext();
+    }
+  };
+
+  const handleExitOnboarding = async () => {
+    setExiting(true);
+    try {
+      const { user: currentUser } = useAuthStore.getState();
+      
+      if (!currentUser) {
+        Alert.alert('Error', 'Session expired. Please sign in again.');
+        setExiting(false);
+        return;
+      }
+
+      // Prepare partial data with only entered fields
+      const partialData: any = {};
+      if (data.referralCode) partialData.referralCode = data.referralCode;
+      if (data.selectedHabits && data.selectedHabits.length > 0) {
+        partialData.selectedHabits = data.selectedHabits;
+      }
+      if (data.habitFrequencies && Object.keys(data.habitFrequencies).length > 0) {
+        partialData.habitFrequencies = data.habitFrequencies;
+      }
+      if (data.isPremium !== undefined && data.isPremium !== null) {
+        partialData.isPremium = data.isPremium;
+      }
+
+      // Save partial data
+      const success = await onboardingService.savePartialOnboardingData(
+        currentUser.id, 
+        partialData, 
+        currentStep
+      );
+
+      if (!success) {
+        Alert.alert('Error', 'Failed to save your progress. Please try again.');
+        setExiting(false);
+        return;
+      }
+
+      // Save habits if they exist
+      if (data.selectedHabits && data.selectedHabits.length > 0) {
+        await dailyHabitsService.updateSelectedHabits(currentUser.id, data.selectedHabits);
+      }
+
+      // Save habit frequencies
+      if (data.habitFrequencies && Object.keys(data.habitFrequencies).length > 0) {
+        for (const [habitId, schedule] of Object.entries(data.habitFrequencies)) {
+          await dailyHabitsService.updateHabitSchedule(currentUser.id, habitId, schedule);
+        }
+      }
+
+      setExiting(false);
+      
+      // Check if user already has a username/profile set up
+      // Check both profiles and users tables
+      const [profileResult, userResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', currentUser.id)
+          .single(),
+        supabase
+          .from('users')
+          .select('username')
+          .eq('id', currentUser.id)
+          .single()
+      ]);
+
+      const profileData = profileResult.data;
+      const userData = userResult.data;
+      const username = profileData?.username || userData?.username;
+
+      // Check if username exists and is not just a UUID or email prefix (default placeholders)
+      // If username matches the user ID (UUID format) or email prefix, it's a placeholder
+      const hasRealUsername = username && 
+                             username !== currentUser.id &&
+                             username !== currentUser.email?.split('@')[0];
+
+      if (hasRealUsername) {
+        // User already has a profile set up, just go back to main app
+        console.log('✅ Profile already set up, navigating back to main app');
+        navigation.goBack();
+      } else {
+        // User doesn't have a profile yet, navigate to ProfileSetup
+        console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
+        navigation.navigate('ProfileSetup');
+      }
+    } catch (error) {
+      console.error('Error exiting onboarding:', error);
+      Alert.alert('Error', 'Failed to exit onboarding');
+      setExiting(false);
     }
   };
 
@@ -120,8 +338,38 @@ export default function OnboardingScreen({ navigation }: any) {
       reset();
       setSaving(false);
 
-      // Navigate to profile setup to complete profile
-      navigation.navigate('ProfileSetup');
+      // Check if user already has a username/profile set up
+      const [profileResult, userResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('username, display_name')
+          .eq('id', currentUser.id)
+          .single(),
+        supabase
+          .from('users')
+          .select('username')
+          .eq('id', currentUser.id)
+          .single()
+      ]);
+
+      const profileData = profileResult.data;
+      const userData = userResult.data;
+      const username = profileData?.username || userData?.username;
+
+      // Check if username exists and is not just a UUID or email prefix (default placeholders)
+      const hasRealUsername = username && 
+                             username !== currentUser.id &&
+                             username !== currentUser.email?.split('@')[0];
+
+      if (hasRealUsername) {
+        // User already has a profile set up, let App.tsx handle navigation to main app
+        console.log('✅ Profile already set up, onboarding complete');
+        // Don't navigate - App.tsx will detect onboarding_completed: true and show main app
+      } else {
+        // User doesn't have a profile yet, navigate to ProfileSetup
+        console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
+        navigation.navigate('ProfileSetup');
+      }
     } catch (error) {
       console.error('Error completing onboarding:', error);
       Alert.alert('Error', 'Failed to complete onboarding');
@@ -141,48 +389,6 @@ export default function OnboardingScreen({ navigation }: any) {
         );
       case 2:
         return (
-          <DateOfBirthStep
-            value={data.dateOfBirth || ''}
-            onChange={(v) => updateField('dateOfBirth', v)}
-          />
-        );
-      case 3:
-        return (
-          <LifeDescriptionStep
-            value={data.lifeDescription || ''}
-            onChange={(v) => updateField('lifeDescription', v)}
-          />
-        );
-      case 4:
-        return (
-          <ChangeReasonStep
-            value={data.changeReason || ''}
-            onChange={(v) => updateField('changeReason', v)}
-          />
-        );
-      case 5:
-        return (
-          <ProudMomentStep
-            value={data.proudMoment || ''}
-            onChange={(v) => updateField('proudMoment', v)}
-          />
-        );
-      case 6:
-        return (
-          <MorningMotivationStep
-            value={data.morningMotivation || ''}
-            onChange={(v) => updateField('morningMotivation', v)}
-          />
-        );
-      case 7:
-        return (
-          <CurrentStateStep
-            value={data.currentState || ''}
-            onChange={(v) => updateField('currentState', v)}
-          />
-        );
-      case 8:
-        return (
           <HabitSelectionStep
             selectedHabits={data.selectedHabits}
             habitFrequencies={data.habitFrequencies}
@@ -190,20 +396,62 @@ export default function OnboardingScreen({ navigation }: any) {
             onChange={(updates) => updateData(updates)}
           />
         );
-      case 9:
+      case 3:
         return <PremiumFeaturesStep />;
-      case 10:
-        return (
-          <GoalCreationStep
-            value={data.goals}
-            onChange={(v) => updateField('goals', v)}
-          />
-        );
-      case 11:
+      case 4:
         return (
           <RatingsStep
             value={data.initialRatings}
             onChange={(ratings) => updateData(ratings)}
+          />
+        );
+      case 5:
+        return (
+          <DateOfBirthStep
+            value={data.dateOfBirth || ''}
+            onChange={(v) => updateField('dateOfBirth', v)}
+          />
+        );
+      case 6:
+        return (
+          <LifeDescriptionStep
+            value={data.lifeDescription || ''}
+            onChange={(v) => updateField('lifeDescription', v)}
+          />
+        );
+      case 7:
+        return (
+          <ChangeReasonStep
+            value={data.changeReason || ''}
+            onChange={(v) => updateField('changeReason', v)}
+          />
+        );
+      case 8:
+        return (
+          <ProudMomentStep
+            value={data.proudMoment || ''}
+            onChange={(v) => updateField('proudMoment', v)}
+          />
+        );
+      case 9:
+        return (
+          <MorningMotivationStep
+            value={data.morningMotivation || ''}
+            onChange={(v) => updateField('morningMotivation', v)}
+          />
+        );
+      case 10:
+        return (
+          <CurrentStateStep
+            value={data.currentState || ''}
+            onChange={(v) => updateField('currentState', v)}
+          />
+        );
+      case 11:
+        return (
+          <GoalCreationStep
+            value={data.goals}
+            onChange={(v) => updateField('goals', v)}
           />
         );
       case 12:
@@ -235,7 +483,21 @@ export default function OnboardingScreen({ navigation }: any) {
           <Text style={[styles.stepIndicator, { color: theme.textSecondary }]}>
             Step {currentStep} of {totalSteps}
           </Text>
-          <View style={styles.placeholder} />
+          {currentStep >= 3 ? (
+            <TouchableOpacity 
+              style={styles.exitButtonTop} 
+              onPress={handleExitOnboarding}
+              disabled={exiting}
+            >
+              {exiting ? (
+                <ActivityIndicator size="small" color={theme.textPrimary} />
+              ) : (
+                <Ionicons name="close" size={24} color={theme.textPrimary} />
+              )}
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.placeholder} />
+          )}
         </View>
 
         {/* Progress Bar */}
@@ -250,20 +512,22 @@ export default function OnboardingScreen({ navigation }: any) {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[
-              styles.nextButton,
-              {
-                backgroundColor: canGoNext() ? theme.primary : 'rgba(128, 128, 128, 0.3)',
-              }
-            ]}
-            onPress={handleNext}
-            disabled={!canGoNext() || saving}
-          >
-            <Text style={styles.nextButtonText}>
-              {currentStep === totalSteps ? (saving ? 'Saving...' : "I'm Committed") : 'Next'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.footerButtons}>
+            <TouchableOpacity
+              style={[
+                styles.nextButton,
+                {
+                  backgroundColor: canGoNext() ? theme.primary : 'rgba(128, 128, 128, 0.3)',
+                }
+              ]}
+              onPress={handleNext}
+              disabled={!canGoNext() || saving}
+            >
+              <Text style={styles.nextButtonText}>
+                {currentStep === totalSteps ? (saving ? 'Saving...' : "I'm Committed") : 'Next'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     </CustomBackground>
@@ -291,6 +555,13 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 40,
   },
+  exitButtonTop: {
+    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   progressBarContainer: {
     height: 4,
     marginHorizontal: 20,
@@ -308,10 +579,14 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 30,
   },
+  footerButtons: {
+    flexDirection: 'row',
+  },
   nextButton: {
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
+    flex: 1,
   },
   nextButtonText: {
     color: '#fff',

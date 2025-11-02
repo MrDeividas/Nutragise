@@ -290,7 +290,7 @@ export default function ProgressChart({ onClose }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.cardBackground }]}>
+      <View style={[styles.container, { backgroundColor: 'rgba(128, 128, 128, 0.9)' }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Chart</Text>
           <TouchableOpacity onPress={onClose}>
@@ -306,7 +306,7 @@ export default function ProgressChart({ onClose }: Props) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme?.cardBackground || '#1F2937' }]}>
+    <View style={[styles.container, { backgroundColor: 'rgba(128, 128, 128, 0.9)' }]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Chart</Text>

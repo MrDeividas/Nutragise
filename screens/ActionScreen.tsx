@@ -4,10 +4,12 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Tex
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
 import { useActionStore } from '../state/actionStore';
+import CustomBackground from '../components/CustomBackground';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import { progressService } from '../lib/progressService';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -25,6 +27,7 @@ import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
 import { challengesService } from '../lib/challengesService';
 import { Challenge } from '../types/challenges';
+import { supabase } from '../lib/supabase';
 
 
 
@@ -260,7 +263,8 @@ const MonthCalendar = ({ theme }: { theme: any }) => {
   );
 };
 
-function ActionScreen({ navigation }: any) {
+function ActionScreen() {
+  const navigation = useNavigation() as any;
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
@@ -303,6 +307,8 @@ function ActionScreen({ navigation }: any) {
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [onboardingIncomplete, setOnboardingIncomplete] = useState(false);
+  const [onboardingLastStep, setOnboardingLastStep] = useState<number | null>(null);
 
   
   // Keyboard state for modal positioning
@@ -390,6 +396,63 @@ function ActionScreen({ navigation }: any) {
       loadUnreadNotificationCount();
     }
   }, [user]);
+
+  // Check onboarding status
+  const checkOnboardingStatus = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('onboarding_completed, onboarding_last_step')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) {
+        console.log('📊 Onboarding status:', {
+          userId: user.id,
+          completed: data.onboarding_completed,
+          lastStep: data.onboarding_last_step
+        });
+        // Show reminder if onboarding is not completed AND user has made progress
+        // Changed from > 1 to >= 2 to match exit button visibility (steps >= 3)
+        // Also show if onboarding_completed is false but onboarding_last_step is null (edge case)
+        const hasProgress = data.onboarding_last_step !== null && data.onboarding_last_step >= 2;
+        const isIncomplete = !data.onboarding_completed && hasProgress;
+        console.log('🔔 Should show reminder:', isIncomplete, {
+          completed: data.onboarding_completed,
+          lastStep: data.onboarding_last_step,
+          hasProgress,
+          check1: !data.onboarding_completed,
+          check2: hasProgress
+        });
+        setOnboardingIncomplete(isIncomplete);
+        setOnboardingLastStep(data.onboarding_last_step || null);
+        console.log('✅ State updated - onboardingIncomplete:', isIncomplete, 'onboardingLastStep:', data.onboarding_last_step || null);
+      } else if (error) {
+        console.error('❌ Error checking onboarding status:', error);
+        // If query fails, still try to show reminder if we have user
+        // This handles edge cases where profile might not exist yet
+        setOnboardingIncomplete(false);
+        setOnboardingLastStep(null);
+      }
+    } catch (error) {
+      console.error('❌ Error checking onboarding status:', error);
+    }
+  }, [user]);
+
+  // Check onboarding status on mount and when user changes
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, [checkOnboardingStatus]);
+
+  // Refresh onboarding status when screen comes into focus
+  // This ensures the reminder appears when returning from exiting onboarding
+  useFocusEffect(
+    useCallback(() => {
+      checkOnboardingStatus();
+    }, [checkOnboardingStatus])
+  );
 
 
   // Load selected habits on mount
@@ -507,21 +570,21 @@ function ActionScreen({ navigation }: any) {
     
     switch (habitId) {
       case 'meditation':
-        navigation.navigate('Meditation', {}, {
+        (navigation as any).navigate('Meditation', {}, {
           animation: 'slide_from_bottom',
           presentation: 'modal'
         });
         return;
 
       case 'microlearn':
-        navigation.navigate('Microlearning', {}, {
+        (navigation as any).navigate('Microlearning', {}, {
           animation: 'slide_from_bottom',
           presentation: 'modal'
         });
         return;
 
       case 'focus':
-        navigation.navigate('Focus', {}, {
+        (navigation as any).navigate('Focus', {}, {
           animation: 'slide_from_bottom',
           presentation: 'modal'
         });
@@ -1206,14 +1269,15 @@ function ActionScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
-      <ScrollView 
-        style={[styles.scrollView, { backgroundColor: 'transparent' }]} 
-        showsVerticalScrollIndicator={false}
+    <CustomBackground>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+        <ScrollView 
+          style={[styles.scrollView, { backgroundColor: 'transparent' }]} 
+          showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
+        >
 
         {/* Header with Settings */}
         <View style={styles.header}>
@@ -1291,7 +1355,28 @@ function ActionScreen({ navigation }: any) {
           onHabitPress={handleHabitPress}
           selectedHabits={selectedHabits}
           completedCount={completedHabits.size}
-          onEditPress={() => setShowEditHabitsModal(true)}
+          onEditPress={async () => {
+            if (!user) return;
+            // Check if habits are locked
+            const lockStatus = await dailyHabitsService.areHabitsLocked(user.id);
+            if (lockStatus.locked) {
+              const daysText = lockStatus.daysRemaining === 1 ? 'day' : 'days';
+              Alert.alert(
+                'Habits Locked',
+                `Your habits are locked for 6 weeks to help you build consistency. You can edit them again in ${lockStatus.daysRemaining} ${daysText}.`,
+                [
+                  { text: 'OK', style: 'default' },
+                  { 
+                    text: 'Premium', 
+                    style: 'default',
+                    onPress: () => Alert.alert('Premium', 'Coming soon')
+                  }
+                ]
+              );
+              return;
+            }
+            setShowEditHabitsModal(true);
+          }}
           enabledTodaySet={getEnabledTodayHabits()}
           onUnlockToday={handleUnlockToday}
           completedHabits={completedHabits}
@@ -1310,7 +1395,7 @@ function ActionScreen({ navigation }: any) {
                 <TouchableOpacity
                   key={challenge.id}
                   style={[styles.challengeCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
-                  onPress={() => navigation.navigate('ChallengeDetail', { challengeId: challenge.id })}
+                  onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
                 >
                   <View style={styles.challengeCardContent}>
                     <View style={styles.challengeHeader}>
@@ -1342,6 +1427,34 @@ function ActionScreen({ navigation }: any) {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
           <View key={`checkins-${refreshTrigger}`} style={[styles.todaysCheckinsContainer, { borderColor: theme.borderSecondary }]}>
+            {/* Onboarding Reminder */}
+            {(() => {
+              console.log('🎨 Rendering Reminders - onboardingIncomplete:', onboardingIncomplete, 'onboardingLastStep:', onboardingLastStep);
+              return onboardingIncomplete;
+            })() && (
+              <TouchableOpacity 
+                style={[styles.checkinItem, { borderBottomWidth: userGoals.length > 0 ? 1 : 0, borderBottomColor: theme.borderSecondary }]}
+                onPress={() => {
+                  (navigation as any).navigate('Onboarding');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.checkinItemLeft}>
+                  <View style={[styles.categoryIcon, { backgroundColor: theme.primary + '20' }]}>
+                    <Ionicons name="clipboard" size={18} color={theme.primary} />
+                  </View>
+                  <View style={styles.checkinItemContent}>
+                    <Text style={[styles.checkinItemTitle, { color: theme.textPrimary }]}>Complete Onboarding</Text>
+                    <Text style={[styles.checkinItemCategory, { color: theme.textSecondary }]}>
+                      {onboardingLastStep ? `Step ${onboardingLastStep} of 13` : 'Continue setup'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.checkinItemRight}>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            )}
             <CheckInList
               userGoals={userGoals}
               overdueGoals={overdueGoals}
@@ -1353,7 +1466,7 @@ function ActionScreen({ navigation }: any) {
               user={user}
               onCheckInPress={handleCheckInPress}
               onGoalPress={(goal, onCheckInDeleted) => {
-                navigation.navigate('GoalDetail', { 
+                (navigation as any).navigate('GoalDetail', { 
                   goal,
                   onCheckInDeleted: async () => {
                     // Refresh progress data when check-in is deleted
@@ -1404,7 +1517,7 @@ function ActionScreen({ navigation }: any) {
               // Set flag in action store to open graphs
               useActionStore.getState().setShouldOpenGraphs(true);
               // Navigate to Insights tab
-              navigation.navigate('Insights');
+              (navigation as any).navigate('Insights');
             }}
             activeOpacity={0.7}
           >
@@ -3109,7 +3222,8 @@ function ActionScreen({ navigation }: any) {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 

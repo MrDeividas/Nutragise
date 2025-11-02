@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Image, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../state/themeStore';
 import { notificationService, Notification } from '../lib/notificationService';
+import CustomBackground from '../components/CustomBackground';
 
-
-
-export default function NotificationsScreen({ navigation }: any) {
+export default function NotificationsScreen() {
+  const navigation = useNavigation();
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -151,9 +153,10 @@ export default function NotificationsScreen({ navigation }: any) {
   }, [user]);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.headerRow, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
+    <CustomBackground>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/* Header */}
+        <View style={[styles.headerRow, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
         <TouchableOpacity 
           onPress={() => navigation.goBack()} 
           style={styles.backButton}
@@ -355,25 +358,21 @@ export default function NotificationsScreen({ navigation }: any) {
           </View>
         </View>
       )}
-    </View>
+    </SafeAreaView>
+    </CustomBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingBottom: 34, // Add bottom padding for home indicator
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingVertical: 16,
   },
   headerTitle: {
     fontSize: 28,

@@ -36,16 +36,28 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
   const [expandedHabit, setExpandedHabit] = useState<string | null>(null);
   const [tempSchedule, setTempSchedule] = useState<boolean[]>(new Array(7).fill(false));
   const [pendingSchedules, setPendingSchedules] = useState<Record<string, boolean[]>>({});
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockDaysRemaining, setLockDaysRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible && user) {
+      checkLockStatus();
       loadUserHabits();
     } else if (!visible) {
       // Clear pending schedules when modal closes
       setPendingSchedules({});
       setExpandedHabit(null);
+      setIsLocked(false);
+      setLockDaysRemaining(null);
     }
   }, [visible, user]);
+
+  const checkLockStatus = async () => {
+    if (!user) return;
+    const lockStatus = await dailyHabitsService.areHabitsLocked(user.id);
+    setIsLocked(lockStatus.locked);
+    setLockDaysRemaining(lockStatus.daysRemaining || null);
+  };
 
   const loadUserHabits = async () => {
     if (!user) return;
@@ -99,6 +111,24 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
 
   const handleSave = async () => {
     if (!user) return;
+    
+    // Double-check lock status before saving (safety check)
+    if (isLocked) {
+      const daysText = lockDaysRemaining === 1 ? 'day' : 'days';
+      Alert.alert(
+        'Habits Locked',
+        `Your habits are locked for 6 weeks to help you build consistency. You can edit them again in ${lockDaysRemaining} ${daysText}.`,
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Premium', 
+            style: 'default',
+            onPress: () => Alert.alert('Premium', 'Coming soon')
+          }
+        ]
+      );
+      return;
+    }
     
     if (selectedHabits.length < 6) {
       Alert.alert('Error', 'Please select at least 6 habits');
@@ -173,7 +203,7 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
     });
   };
 
-  const isSaveDisabled = selectedHabits.length < 6 || loading;
+  const isSaveDisabled = selectedHabits.length < 6 || loading || isLocked;
 
   if (initialLoading) {
     return (
@@ -224,7 +254,15 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
           <Text style={[styles.countText, { color: theme.textPrimary }]}>
             {selectedHabits.length}/11 selected
           </Text>
-          {selectedHabits.length < 6 && (
+          {isLocked && lockDaysRemaining !== null && (
+            <View style={styles.lockContainer}>
+              <Ionicons name="lock-closed" size={16} color="#FF6B6B" />
+              <Text style={[styles.lockText, { color: '#FF6B6B' }]}>
+                Habits locked for {lockDaysRemaining} {lockDaysRemaining === 1 ? 'day' : 'days'}
+              </Text>
+            </View>
+          )}
+          {!isLocked && selectedHabits.length < 6 && (
             <Text style={[styles.minText, { color: '#FF6B6B' }]}>
               Minimum 6 habits required
             </Text>
@@ -252,9 +290,29 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
                         : theme.cardBackground,
                       borderColor: isSelected ? theme.primary : theme.borderSecondary,
                       borderWidth: isSelected ? 2 : 1,
+                      opacity: isLocked ? 0.5 : 1,
                     },
                   ]}
-                  onPress={() => toggleHabit(habit.id)}
+                  onPress={() => {
+                    if (isLocked) {
+                      const daysText = lockDaysRemaining === 1 ? 'day' : 'days';
+                      Alert.alert(
+                        'Habits Locked',
+                        `Your habits are locked for 6 weeks. You can edit them again in ${lockDaysRemaining} ${daysText}.`,
+                        [
+                          { text: 'OK', style: 'default' },
+                          { 
+                            text: 'Premium', 
+                            style: 'default',
+                            onPress: () => Alert.alert('Premium', 'Coming soon')
+                          }
+                        ]
+                      );
+                      return;
+                    }
+                    toggleHabit(habit.id);
+                  }}
+                  disabled={isLocked}
                 >
                   <View style={styles.habitContent}>
                     <FontAwesome5
@@ -379,6 +437,17 @@ const styles = StyleSheet.create({
   minText: {
     fontSize: 12,
     marginTop: 2,
+  },
+  lockContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  lockText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
