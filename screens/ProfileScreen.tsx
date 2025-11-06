@@ -12,7 +12,8 @@ import {
   Modal,
   PanResponder,
   Dimensions,
-  Alert
+  Alert,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../state/authStore';
@@ -57,6 +58,32 @@ function ProfileScreen({ navigation }: any) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [goalProgress, setGoalProgress] = useState<{[goalId: string]: number}>({});
   
+  // Pillar progress state
+  const [pillarProgress, setPillarProgress] = useState({
+    strength_fitness: 35,
+    growth_wisdom: 35,
+    discipline: 35,
+    team_spirit: 35,
+    overall: 35
+  });
+  
+  // Track previous progress values to detect increases
+  const [previousPillarProgress, setPreviousPillarProgress] = useState({
+    strength_fitness: 35,
+    growth_wisdom: 35,
+    discipline: 35,
+    team_spirit: 35,
+    overall: 35
+  });
+  
+  // Track which pillars show the green arrow indicator
+  const [showProgressIndicator, setShowProgressIndicator] = useState<{
+    [key: string]: boolean;
+  }>({});
+  
+  // Track the date when indicators were last reset
+  const [indicatorResetDate, setIndicatorResetDate] = useState<string | null>(null);
+  
   // Profile card expansion state
   const [isProfileCardExpanded, setIsProfileCardExpanded] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -90,6 +117,9 @@ function ProfileScreen({ navigation }: any) {
   
   // Stats visibility toggle
   const [statsVisible, setStatsVisible] = useState(true);
+  
+  // Pull to refresh state
+  const [refreshing, setRefreshing] = useState(false);
 
 
 
@@ -212,6 +242,30 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      console.log('🔄 Pull to refresh triggered');
+      // Reload all data
+      await Promise.all([
+        loadProfileData(),
+        fetchUserPoints(),
+        fetchNotificationCount(),
+        loadDmUnreadCount(),
+        fetchGoalProgress(),
+        checkTodaysCheckIns(),
+        loadCoreHabitsStatus(),
+        loadPillarProgress(),
+        user ? fetchGoals(user.id) : Promise.resolve()
+      ]);
+      console.log('✅ Refresh complete');
+    } catch (error) {
+      console.error('Error during refresh:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user]);
+
   const fetchUserPoints = async () => {
     if (!user) return;
 
@@ -283,6 +337,51 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
+  const loadPillarProgress = async () => {
+    if (user) {
+      try {
+        const { pillarProgressService } = await import('../lib/pillarProgressService');
+        const progress = await pillarProgressService.getPillarProgress(user.id);
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Reset indicators if it's a new day
+        if (indicatorResetDate !== today) {
+          setShowProgressIndicator({});
+          setIndicatorResetDate(today);
+        }
+        
+        // Check for increases and show indicators
+        const newIndicators: { [key: string]: boolean } = {};
+        const pillarKeys: (keyof typeof progress)[] = ['strength_fitness', 'growth_wisdom', 'discipline', 'team_spirit', 'overall'];
+        
+        pillarKeys.forEach(key => {
+          const currentProgress = Math.round(progress[key] * 100) / 100;
+          const previousProgress = Math.round(previousPillarProgress[key] * 100) / 100;
+          
+          // Show indicator if progress increased
+          if (currentProgress > previousProgress) {
+            newIndicators[key] = true;
+          }
+        });
+        
+        // Update indicators state
+        if (Object.keys(newIndicators).length > 0) {
+          setShowProgressIndicator(prev => ({ ...prev, ...newIndicators }));
+        }
+        
+        // Update previous progress before setting current
+        setPreviousPillarProgress(progress);
+        
+        // Update current progress - FORCE NEW OBJECT REFERENCE
+        setPillarProgress({ ...progress });
+      } catch (error) {
+        console.error('Error loading pillar progress:', error);
+      }
+    }
+  };
+
+  // Refresh pillar progress when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadProfileData();
@@ -292,18 +391,17 @@ function ProfileScreen({ navigation }: any) {
       fetchGoalProgress();
       checkTodaysCheckIns();
       loadCoreHabitsStatus();
+      loadPillarProgress();
     }, [user])
   );
 
   // Listen for navigation events to refresh data when returning to profile
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
+      // Only refresh critical data on navigation focus
       loadProfileData();
       fetchUserPoints();
       fetchNotificationCount();
-      fetchGoalProgress();
-      checkTodaysCheckIns();
-      loadCoreHabitsStatus();
     });
 
     return unsubscribe;
@@ -530,7 +628,12 @@ function ProfileScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Header with Settings */}
         <View style={styles.header}>
           {/* Left side - Settings */}
@@ -1003,61 +1106,88 @@ function ProfileScreen({ navigation }: any) {
           </View>
           <View style={[styles.progressBarsContainer, { marginTop: 20 }]}>
             {[
-              { index: 1, progress: 35, color: '#ffffff' }, // White
-              { index: 2, progress: 35, color: '#ffffff' }, // White
-              { index: 3, progress: 35, color: '#ffffff' }, // White
-              { index: 4, progress: 35, color: '#ffffff' }, // White
-              { index: 5, progress: 35, color: '#ffffff' }  // White
-            ].map((bar) => (
-              <View key={bar.index} style={styles.progressBarColumn}>
-                <View style={styles.progressBarContainer}>
-                  {/* Background bar */}
-                  <View style={[styles.progressBarBackground, { backgroundColor: bar.color, opacity: 0.2 }]} />
-                  {/* Filled progress */}
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        backgroundColor: bar.color,
-                        height: `${bar.progress}%`,
-                        opacity: 0.7
-                      }
-                    ]}
-                  />
-                  {/* Avatar at bottom - cut-out effect */}
-                  <View style={[styles.progressBarAvatar, { 
-                    backgroundColor: 'transparent',
-                    overflow: 'hidden'
-                  }]}>
-                    <View style={{
-                      position: 'absolute',
-                      width: 28,
-                      height: 28,
+              { index: 1, progress: Math.round(pillarProgress.strength_fitness), color: '#ffffff', pillar: 'Strength & Fitness', key: 'strength_fitness' },
+              { index: 2, progress: Math.round(pillarProgress.growth_wisdom), color: '#ffffff', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
+              { index: 3, progress: Math.round(pillarProgress.discipline), color: '#ffffff', pillar: 'Discipline', key: 'discipline' },
+              { index: 4, progress: Math.round(pillarProgress.team_spirit), color: '#ffffff', pillar: 'Team Spirit', key: 'team_spirit' },
+              { index: 5, progress: Math.round(pillarProgress.overall), color: '#ffffff', pillar: 'Overall', key: 'overall' }
+            ].map((bar) => {
+              const showIndicator = showProgressIndicator[bar.key];
+              const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
+              
+              return (
+                <View key={bar.index} style={styles.progressBarColumn}>
+                  <View style={styles.progressBarContainer}>
+                    {/* Background bar */}
+                    <View style={[styles.progressBarBackground, { backgroundColor: bar.color, opacity: 0.2 }]} />
+                    {/* Filled progress */}
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          backgroundColor: bar.color,
+                          height: `${bar.progress}%`,
+                          opacity: 0.7
+                        }
+                      ]}
+                    />
+                    {/* Avatar at bottom - cut-out effect */}
+                    <View style={[styles.progressBarAvatar, { 
                       backgroundColor: 'transparent',
-                      borderRadius: 14,
-                      zIndex: 1
-                    }} />
-                    {bar.index === 1 ? (
-                      <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 2 ? (
-                      <FontAwesome5 name="brain" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 3 ? (
-                      <FontAwesome5 name="lock" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 4 ? (
-                      <FontAwesome5 name="star" size={20} color="rgba(0,0,0,0.5)" solid style={{ zIndex: 2 }} />
-                    ) : (
-                      <FontAwesome5 name="fire" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    )}
-                  </View>
-                  {/* Number at top of filled section */}
-                  <View style={styles.progressBarLabel}>
-                    <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
-                      {bar.progress}
-                    </Text>
+                      overflow: 'hidden'
+                    }]}>
+                      <View style={{
+                        position: 'absolute',
+                        width: 28,
+                        height: 28,
+                        backgroundColor: 'transparent',
+                        borderRadius: 14,
+                        zIndex: 1
+                      }} />
+                      {/* Green arrow indicator above icon */}
+                      {showIndicator && (
+                        <View style={styles.progressIndicatorAboveIcon}>
+                          <Ionicons 
+                            name="arrow-up" 
+                            size={12} 
+                            color="#10B981" 
+                          />
+                        </View>
+                      )}
+                      {bar.index === 1 ? (
+                        <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                      ) : bar.index === 2 ? (
+                        <FontAwesome5 name="brain" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                      ) : bar.index === 3 ? (
+                        <FontAwesome5 name="lock" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                      ) : bar.index === 4 ? (
+                        <FontAwesome5 name="star" size={20} color="rgba(0,0,0,0.5)" solid style={{ zIndex: 2 }} />
+                      ) : (
+                        <FontAwesome5 name="fire" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                      )}
+                    </View>
+                    {/* Number at top of filled section */}
+                    <View style={styles.progressBarLabel}>
+                      <TouchableOpacity 
+                        style={styles.progressBarNumberContainer}
+                        onPress={() => {
+                          Alert.alert(
+                            bar.pillar,
+                            `${exactProgress.toFixed(1)}%`,
+                            [{ text: 'OK' }]
+                          );
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
+                          {bar.progress}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
@@ -2186,16 +2316,35 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: '50%',
-    transform: [{ translateX: -15 }],
-    width: 30,
+    transform: [{ translateX: -20 }],
+    width: 40,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+  },
+  progressBarNumberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   progressBarNumber: {
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  progressIndicatorArrow: {
+    marginLeft: 2,
+  },
+  progressIndicatorAboveIcon: {
+    position: 'absolute',
+    top: -20,
+    left: '50%',
+    transform: [{ translateX: -6 }],
+    zIndex: 10,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderRadius: 8,
+    padding: 2,
   },
   blankAvatar: {
     width: 28,

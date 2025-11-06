@@ -12,12 +12,10 @@ class InsightService {
     try {
       const timePeriod = TimePeriodUtils.getPeriodByType(period);
       
-      const [streaks, dailyInsights] = await Promise.all([
-        Promise.all(['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'].map(habitType => 
-          dailyHabitsService.getHabitStreak(userId, habitType)
-        )),
-        dailyInsightsService.generateDailyInsights(userId, period)
-      ]);
+      // Use batch method to fetch all streaks in one query
+      const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
+      const streaks = await dailyHabitsService.getHabitStreaksBatch(userId, habitTypes);
+      const dailyInsights = await dailyInsightsService.generateDailyInsights(userId, period);
 
       const activeStreaks = streaks.filter(streak => streak.current_streak > 0);
       

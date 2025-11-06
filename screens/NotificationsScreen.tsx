@@ -15,6 +15,9 @@ export default function NotificationsScreen() {
   const { theme } = useTheme();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [habitRewardsCollapsed, setHabitRewardsCollapsed] = useState(true); // Collapsed by default
+  const [habitRewards, setHabitRewards] = useState<any[]>([]);
+  const [habitRewardsViewed, setHabitRewardsViewed] = useState(false); // Track if user has viewed rewards
   const [recentActivityCollapsed, setRecentActivityCollapsed] = useState(true);
   const [actionTipsCollapsed, setActionTipsCollapsed] = useState(true);
 
@@ -27,8 +30,20 @@ export default function NotificationsScreen() {
       // Fetch notifications from our notifications table
       const notifications = await notificationService.getNotifications(user.id, 50);
       
-      // Transform notifications into the expected format
-      const transformedNotifications = notifications.map((notification: Notification) => {
+      // Separate habit rewards from other notifications
+      const habitRewardNotifications = notifications.filter(n => n.notification_type === 'habit_reward');
+      const otherNotifications = notifications.filter(n => n.notification_type !== 'habit_reward');
+      
+      // Set habit rewards
+      setHabitRewards(habitRewardNotifications);
+      
+      // Reset viewed state if there are new rewards (more than before)
+      if (habitRewardNotifications.length > habitRewards.length) {
+        setHabitRewardsViewed(false);
+      }
+      
+      // Transform other notifications into the expected format
+      const transformedNotifications = otherNotifications.map((notification: Notification) => {
         let message = '';
         let type = notification.notification_type;
         
@@ -278,6 +293,101 @@ export default function NotificationsScreen() {
             </View>
           }
         />
+      )}
+
+      {/* Habit Rewards Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
+        <TouchableOpacity 
+          style={styles.collapsibleHeader}
+          onPress={() => {
+            const newCollapsed = !habitRewardsCollapsed;
+            setHabitRewardsCollapsed(newCollapsed);
+            // Mark as viewed when expanded
+            if (!newCollapsed) {
+              setHabitRewardsViewed(true);
+            }
+          }}
+        >
+          <View style={styles.headerWithBadge}>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Habit Rewards</Text>
+            {habitRewards.length > 0 && !habitRewardsViewed && (
+              <View style={[styles.habitRewardBadge, { backgroundColor: '#10B981' }]}>
+                <Text style={styles.habitRewardBadgeText}>{habitRewards.length}</Text>
+              </View>
+            )}
+          </View>
+          <Ionicons 
+            name={habitRewardsCollapsed ? "chevron-down" : "chevron-up"} 
+            size={16} 
+            color={theme.textSecondary} 
+          />
+        </TouchableOpacity>
+      </View>
+      {!habitRewardsCollapsed && (
+        <View style={styles.habitRewardsContainer}>
+          <FlatList
+            data={habitRewards}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
+            renderItem={({ item }) => {
+            const habitIcons: {[key: string]: string} = {
+              gym: 'barbell',
+              run: 'walk',
+              cold_shower: 'water',
+              water: 'water-outline',
+              reflect: 'bulb',
+              focus: 'eye',
+              sleep: 'moon',
+              meditation: 'leaf',
+              microlearn: 'book',
+              like: 'heart',
+              comment: 'chatbubble',
+              share: 'share-social',
+              update_goal: 'trophy'
+            };
+
+            const pillarNames: {[key: string]: string} = {
+              strength_fitness: 'Strength & Fitness',
+              growth_wisdom: 'Growth & Wisdom',
+              discipline: 'Discipline',
+              team_spirit: 'Team Spirit'
+            };
+
+            return (
+              <View style={styles.rewardItem}>
+                <View style={[styles.rewardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                  <Ionicons 
+                    name={habitIcons[item.habit_type] as any || 'star'} 
+                    size={20} 
+                    color="#10B981" 
+                  />
+                </View>
+                <View style={styles.rewardContent}>
+                  <Text style={[styles.rewardTitle, { color: theme.textPrimary }]}>
+                    +{item.points_gained} points
+                  </Text>
+                  {item.pillar_type && (
+                    <Text style={[styles.rewardSubtitle, { color: theme.textSecondary }]}>
+                      {pillarNames[item.pillar_type]} +{item.pillar_progress}%
+                    </Text>
+                  )}
+                  <Text style={[styles.rewardTime, { color: theme.textTertiary }]}>
+                    {getTimeAgo(item.created_at)}
+                  </Text>
+                </View>
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.emptyRewardsContainer}>
+              <Text style={[styles.emptyRewardsText, { color: theme.textSecondary }]}>
+                Complete habits to earn rewards!
+              </Text>
+            </View>
+          }
+        />
+        </View>
       )}
 
       {/* Recent Activity Section */}
@@ -531,6 +641,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  headerWithBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  habitRewardBadge: {
+    backgroundColor: '#10B981',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    marginLeft: 4,
+  },
+  habitRewardBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  habitRewardsContainer: {
+    maxHeight: 300,
+    marginBottom: 8,
+  },
   activityList: {
     marginTop: 0,
     paddingHorizontal: 16,
@@ -579,5 +713,43 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#6b7280',
     lineHeight: 18,
+  },
+  // Habit Rewards styles
+  rewardItem: {
+    flexDirection: 'row',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  rewardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  rewardContent: {
+    flex: 1,
+  },
+  rewardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  rewardSubtitle: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  rewardTime: {
+    fontSize: 11,
+  },
+  emptyRewardsContainer: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  emptyRewardsText: {
+    fontSize: 14,
   },
 }); 

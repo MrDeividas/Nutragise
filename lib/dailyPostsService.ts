@@ -214,6 +214,7 @@ class DailyPostsService {
    */
   async getRecentJourney(userId: string, limit: number = 3): Promise<DailyPost[]> {
     try {
+      // Use same pattern as getAllJourney which works - select * and simple query
       const { data, error } = await supabase
         .from('daily_posts')
         .select('*')
@@ -222,13 +223,44 @@ class DailyPostsService {
         .limit(limit);
       
       if (error) {
-        console.error('Error getting recent journey:', error);
+        console.error('Error getting recent journey:', {
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          userId
+        });
+        // If table doesn't exist or has permission issues, return empty array
+        if (error.code === '42P01' || error.code === 'PGRST301') {
+          console.warn('daily_posts table may not exist or has RLS restrictions');
+        }
         return [];
       }
       
+      // Log result for debugging
+      if (data) {
+        console.log(`Found ${data.length} daily posts for journey`);
+        // Debug: Check if photos are present
+        data.forEach((post: DailyPost, index: number) => {
+          console.log(`Post ${index + 1}:`, {
+            id: post.id,
+            date: post.date,
+            photos_count: post.photos?.length || 0,
+            photos: post.photos ? (Array.isArray(post.photos) ? post.photos.slice(0, 2) : 'not an array') : 'null/undefined',
+            has_photos_field: 'photos' in post
+          });
+        });
+      } else {
+        console.log('No daily posts found (data is null)');
+      }
+      
       return data || [];
-    } catch (error) {
-      console.error('Error in getRecentJourney:', error);
+    } catch (error: any) {
+      console.error('Error in getRecentJourney (catch):', {
+        error: error?.message || error,
+        name: error?.name,
+        stack: error?.stack
+      });
       return [];
     }
   }

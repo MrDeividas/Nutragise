@@ -153,6 +153,10 @@ class ProgressService {
       // Invalidate related cache entries when a check-in is created
       const checkInCountKey = apiCache.generateKey('checkInCount', checkInData.goalId, checkInData.userId);
       apiCache.delete(checkInCountKey);
+      
+      // Invalidate goal progress cache
+      const goalProgressKey = apiCache.generateKey('goalProgress', checkInData.userId);
+      apiCache.delete(goalProgressKey);
 
       return true;
     } catch (error) {
@@ -382,6 +386,138 @@ class ProgressService {
   }
 
   /**
+   * Get check-in counts for multiple goals in a date range (batch query)
+   */
+  async getCheckInCountsForGoalsInRange(
+    userId: string,
+    goals: Array<{ id: string; start_date?: string; end_date?: string; frequency?: boolean[] }>
+  ): Promise<{ [goalId: string]: number }> {
+    try {
+      if (goals.length === 0) return {};
+
+      // Verify authenticated user matches
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const actualUserId = authUser?.id || userId;
+
+      // Find the earliest start date and latest end date across all goals
+      let earliestStartDate: Date | null = null;
+      let latestEndDate: Date | null = null;
+
+      goals.forEach(goal => {
+        if (goal.start_date) {
+          const startDate = new Date(goal.start_date);
+          if (!earliestStartDate || startDate < earliestStartDate) {
+            earliestStartDate = startDate;
+          }
+        }
+        if (goal.end_date) {
+          const endDate = new Date(goal.end_date);
+          if (!latestEndDate || endDate > latestEndDate) {
+            latestEndDate = endDate;
+          }
+        }
+      });
+
+      // If no date ranges specified, get all check-ins for these goals
+      if (!earliestStartDate || !latestEndDate) {
+        const goalIds = goals.map(g => g.id);
+        const { data, error } = await supabase
+          .from('progress_photos')
+          .select('goal_id, check_in_date')
+          .eq('user_id', actualUserId)
+          .in('goal_id', goalIds);
+
+        if (error) {
+          console.error('Error fetching batch check-in counts:', error);
+          return {};
+        }
+
+        // Process counts for each goal
+        const counts: { [goalId: string]: number } = {};
+        goalIds.forEach(goalId => {
+          counts[goalId] = 0;
+        });
+
+        if (data) {
+          data.forEach((checkIn: any) => {
+            const goal = goals.find(g => g.id === checkIn.goal_id);
+            if (goal && goal.frequency) {
+              // Filter by frequency
+              const checkInDate = new Date(checkIn.check_in_date);
+              const dayOfWeek = checkInDate.getDay();
+              if (goal.frequency[dayOfWeek]) {
+                counts[checkIn.goal_id] = (counts[checkIn.goal_id] || 0) + 1;
+              }
+            } else {
+              counts[checkIn.goal_id] = (counts[checkIn.goal_id] || 0) + 1;
+            }
+          });
+        }
+
+        return counts;
+      }
+
+      // Fetch all check-ins for all goals in the date range
+      // At this point, earliestStartDate and latestEndDate are guaranteed to be Date objects
+      const startDateStr = (earliestStartDate as Date).toISOString().split('T')[0];
+      const endDateStr = (latestEndDate as Date).toISOString().split('T')[0];
+      const goalIds = goals.map(g => g.id);
+
+      const { data, error } = await supabase
+        .from('progress_photos')
+        .select('goal_id, check_in_date')
+        .eq('user_id', actualUserId)
+        .in('goal_id', goalIds)
+        .gte('check_in_date', startDateStr)
+        .lte('check_in_date', endDateStr);
+
+      if (error) {
+        console.error('Error fetching batch check-in counts:', error);
+        return {};
+      }
+
+      // Process counts for each goal, filtering by frequency and date range
+      const counts: { [goalId: string]: number } = {};
+      goalIds.forEach(goalId => {
+        counts[goalId] = 0;
+      });
+
+      if (data) {
+        data.forEach((checkIn: any) => {
+          const goal = goals.find(g => g.id === checkIn.goal_id);
+          if (!goal) return;
+
+          // Check if check-in is within goal's date range
+          const checkInDate = new Date(checkIn.check_in_date);
+          const checkInDateStr = checkInDate.toISOString().split('T')[0];
+          
+          if (goal.start_date && checkInDateStr < goal.start_date.split('T')[0]) {
+            return; // Before goal start date
+          }
+          if (goal.end_date && checkInDateStr > goal.end_date.split('T')[0]) {
+            return; // After goal end date
+          }
+
+          // Filter by frequency if specified
+          if (goal.frequency) {
+            const dayOfWeek = checkInDate.getDay();
+            if (goal.frequency[dayOfWeek]) {
+              counts[checkIn.goal_id] = (counts[checkIn.goal_id] || 0) + 1;
+            }
+          } else {
+            counts[checkIn.goal_id] = (counts[checkIn.goal_id] || 0) + 1;
+          }
+        });
+      }
+
+      return counts;
+    } catch (error) {
+      console.error('Error in getCheckInCountsForGoalsInRange:', error);
+      return {};
+    }
+  }
+
+  /**
    * Delete a check-in and its associated photo
    */
   async deleteCheckIn(checkInId: string, photoUrl?: string): Promise<boolean> {
@@ -417,6 +553,14 @@ class ProgressService {
       }
 
       // Delete check-in record from database - with user ownership verification
+      // First, get the goal_id before deleting (for cache invalidation)
+      const { data: checkInData } = await supabase
+        .from('progress_photos')
+        .select('goal_id')
+        .eq('id', checkInId)
+        .eq('user_id', user.id)
+        .single();
+
       const { error } = await supabase
         .from('progress_photos')
         .delete()
@@ -427,6 +571,17 @@ class ProgressService {
         console.error('Error deleting check-in from database:', error);
         return false;
       }
+      
+      // Invalidate related cache entries when a check-in is deleted
+      if (checkInData) {
+        const checkInCountKey = apiCache.generateKey('checkInCount', checkInData.goal_id, user.id);
+        apiCache.delete(checkInCountKey);
+      }
+      
+      // Invalidate goal progress cache
+      const goalProgressKey = apiCache.generateKey('goalProgress', user.id);
+      apiCache.delete(goalProgressKey);
+      
       return true;
     } catch (error) {
       console.error('Error in deleteCheckIn:', error);

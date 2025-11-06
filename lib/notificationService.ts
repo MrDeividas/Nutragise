@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { apiCache } from './apiCache';
 
 export interface Notification {
   id: string;
@@ -34,6 +35,11 @@ export interface Notification {
   };
   comment_content?: string;
   reply_content?: string;
+  // Habit reward fields
+  points_gained?: number;
+  pillar_type?: string;
+  pillar_progress?: number;
+  habit_type?: string;
 }
 
 class NotificationService {
@@ -57,6 +63,9 @@ class NotificationService {
         return false;
       }
 
+      // Invalidate notifications cache
+      apiCache.delete(apiCache.generateKey('notifications', data.user_id));
+
       return true;
     } catch (error) {
       console.error('Error creating notification:', error);
@@ -67,6 +76,14 @@ class NotificationService {
   // Get notifications for a user
   async getNotifications(userId: string, limit: number = 50): Promise<Notification[]> {
     try {
+      // Check cache first
+      const cacheKey = apiCache.generateKey('notifications', userId);
+      const cached = apiCache.get<Notification[]>(cacheKey);
+      
+      if (cached !== null) {
+        return cached;
+      }
+
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -86,28 +103,24 @@ class NotificationService {
       // Get user IDs from notifications
       const userIds = [...new Set(data.map(notification => notification.from_user_id).filter(Boolean))];
 
-      // Fetch user profiles separately
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url')
-        .in('id', userIds);
+      // Fetch user profiles separately (batch query)
+      let profilesMap = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', userIds);
 
-      if (profilesError) {
-        console.error('Error fetching user profiles for notifications:', profilesError);
-        // Return notifications without profiles
-        return data.map(notification => ({
-          ...notification,
-          from_user: undefined
-        }));
+        if (profilesError) {
+          console.error('Error fetching user profiles for notifications:', profilesError);
+        } else if (profiles) {
+          profiles.forEach(profile => {
+            profilesMap.set(profile.id, profile);
+          });
+        }
       }
 
-      // Create a map of user ID to profile
-      const profileMap = new Map();
-      profiles?.forEach(profile => {
-        profileMap.set(profile.id, profile);
-      });
-
-      // Fetch comment content for comment and reply notifications
+      // Fetch comment and reply content in parallel (batch queries)
       const commentIds = data
         .filter(n => n.comment_id)
         .map(n => n.comment_id);
@@ -119,39 +132,40 @@ class NotificationService {
       let commentMap = new Map();
       let replyMap = new Map();
 
-      if (commentIds.length > 0) {
-        const { data: comments, error: commentsError } = await supabase
-          .from('post_comments')
-          .select('id, content')
-          .in('id', commentIds);
+      // Run comment and reply queries in parallel
+      const [commentsResult, repliesResult] = await Promise.allSettled([
+        commentIds.length > 0 
+          ? supabase.from('post_comments').select('id, content').in('id', commentIds)
+          : Promise.resolve({ data: null, error: null }),
+        replyIds.length > 0
+          ? supabase.from('post_comment_replies').select('id, reply_text').in('id', replyIds)
+          : Promise.resolve({ data: null, error: null })
+      ]);
 
-        if (!commentsError && comments) {
-          comments.forEach(comment => {
-            commentMap.set(comment.id, comment.content);
-          });
-        }
+      if (commentsResult.status === 'fulfilled' && commentsResult.value.data) {
+        commentsResult.value.data.forEach(comment => {
+          commentMap.set(comment.id, comment.content);
+        });
       }
 
-      if (replyIds.length > 0) {
-        const { data: replies, error: repliesError } = await supabase
-          .from('post_comment_replies')
-          .select('id, reply_text')
-          .in('id', replyIds);
-
-        if (!repliesError && replies) {
-          replies.forEach(reply => {
-            replyMap.set(reply.id, reply.reply_text);
-          });
-        }
+      if (repliesResult.status === 'fulfilled' && repliesResult.value.data) {
+        repliesResult.value.data.forEach(reply => {
+          replyMap.set(reply.id, reply.reply_text);
+        });
       }
 
       // Combine notifications with profiles and content
-      return data.map(notification => ({
+      const result = data.map(notification => ({
         ...notification,
-        from_user: notification.from_user_id ? profileMap.get(notification.from_user_id) : undefined,
+        from_user: notification.from_user_id ? profilesMap.get(notification.from_user_id) : undefined,
         comment_content: notification.comment_id ? commentMap.get(notification.comment_id) : undefined,
         reply_content: notification.reply_id ? replyMap.get(notification.reply_id) : undefined
       }));
+
+      // Cache for 1 minute (notifications change frequently)
+      apiCache.set(cacheKey, result, 3 * 60 * 1000); // 3 minutes instead of 1
+      
+      return result;
     } catch (error) {
       console.error('Error fetching notifications:', error);
       return [];
@@ -341,6 +355,81 @@ class NotificationService {
       });
     } catch (error) {
       console.error('Error creating post reply notification:', error);
+      return false;
+    }
+  }
+
+  // Create a habit reward notification
+  async createHabitRewardNotification(data: {
+    user_id: string;
+    habit_type: string;
+    points_gained: number;
+    pillar_type?: string;
+    pillar_progress?: number;
+  }): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: data.user_id,
+          from_user_id: null,
+          notification_type: 'habit_reward',
+          post_id: null,
+          comment_id: null,
+          reply_id: null,
+          goal_id: null,
+          points_gained: data.points_gained,
+          pillar_type: data.pillar_type,
+          pillar_progress: data.pillar_progress,
+          habit_type: data.habit_type,
+        });
+
+      if (error) {
+        console.error('Error creating habit reward notification:', error);
+        return false;
+      }
+
+      // Invalidate notifications cache
+      apiCache.delete(apiCache.generateKey('notifications', data.user_id));
+
+      return true;
+    } catch (error) {
+      console.error('Error creating habit reward notification:', error);
+      return false;
+    }
+  }
+
+  // Delete habit reward notifications for a specific habit
+  async deleteHabitRewardNotification(userId: string, habitType: string, date: string): Promise<boolean> {
+    try {
+      // Delete notifications for this habit on this date
+      // We use created_at to match the day (within 24 hours of the habit date)
+      const habitDate = new Date(date);
+      const startOfDay = new Date(habitDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(habitDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', userId)
+        .eq('notification_type', 'habit_reward')
+        .eq('habit_type', habitType)
+        .gte('created_at', startOfDay.toISOString())
+        .lte('created_at', endOfDay.toISOString());
+
+      if (error) {
+        console.error('Error deleting habit reward notification:', error);
+        return false;
+      }
+
+      // Invalidate notifications cache
+      apiCache.delete(apiCache.generateKey('notifications', userId));
+
+      return true;
+    } catch (error) {
+      console.error('Error deleting habit reward notification:', error);
       return false;
     }
   }

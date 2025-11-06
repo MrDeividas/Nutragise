@@ -12,6 +12,7 @@ import { useActionStore } from '../state/actionStore';
 import CustomBackground from '../components/CustomBackground';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import { progressService } from '../lib/progressService';
+import { apiCache } from '../lib/apiCache';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import CheckInList from '../components/CheckInList';
 import DateNavigator from '../components/DateNavigator';
@@ -383,14 +384,7 @@ function ActionScreen() {
     }
   };
 
-  // Load notification count when component mounts and when screen comes into focus
-  useEffect(() => {
-    if (user) {
-      loadUnreadNotificationCount();
-    }
-  }, [user]);
-
-  // Refresh notification count when component mounts
+  // Load notification count when component mounts and when user changes
   useEffect(() => {
     if (user) {
       loadUnreadNotificationCount();
@@ -409,26 +403,13 @@ function ActionScreen() {
         .single();
 
       if (!error && data) {
-        console.log('📊 Onboarding status:', {
-          userId: user.id,
-          completed: data.onboarding_completed,
-          lastStep: data.onboarding_last_step
-        });
         // Show reminder if onboarding is not completed AND user has made progress
         // Changed from > 1 to >= 2 to match exit button visibility (steps >= 3)
         // Also show if onboarding_completed is false but onboarding_last_step is null (edge case)
         const hasProgress = data.onboarding_last_step !== null && data.onboarding_last_step >= 2;
         const isIncomplete = !data.onboarding_completed && hasProgress;
-        console.log('🔔 Should show reminder:', isIncomplete, {
-          completed: data.onboarding_completed,
-          lastStep: data.onboarding_last_step,
-          hasProgress,
-          check1: !data.onboarding_completed,
-          check2: hasProgress
-        });
         setOnboardingIncomplete(isIncomplete);
         setOnboardingLastStep(data.onboarding_last_step || null);
-        console.log('✅ State updated - onboardingIncomplete:', isIncomplete, 'onboardingLastStep:', data.onboarding_last_step || null);
       } else if (error) {
         console.error('❌ Error checking onboarding status:', error);
         // If query fails, still try to show reminder if we have user
@@ -455,22 +436,8 @@ function ActionScreen() {
   );
 
 
-  // Load selected habits on mount
-  useEffect(() => {
-    if (user) {
-      loadSelectedHabits();
-    }
-    // Also sync completed habits on mount
-    syncCompletedHabits();
-  }, [user]);
-
-  // Re-sync completed habits whenever today's stored data loads/changes
-  useEffect(() => {
-    syncCompletedHabits();
-  }, [dailyHabits]);
-
   // Sync completed habits with existing data
-  const syncCompletedHabits = () => {
+  const syncCompletedHabits = useCallback(() => {
     const { dailyHabits } = useActionStore.getState();
     const completedSet = new Set<string>();
     
@@ -501,7 +468,21 @@ function ActionScreen() {
     }
     
     setCompletedHabits(completedSet);
-  };
+  }, []);
+
+  // Load selected habits on mount
+  useEffect(() => {
+    if (user) {
+      loadSelectedHabits();
+    }
+    // Also sync completed habits on mount
+    syncCompletedHabits();
+  }, [user, syncCompletedHabits]);
+
+  // Re-sync completed habits whenever today's stored data loads/changes
+  useEffect(() => {
+    syncCompletedHabits();
+  }, [dailyHabits, syncCompletedHabits]);
 
   const loadSelectedHabits = async () => {
     try {
@@ -822,80 +803,41 @@ function ActionScreen() {
     return '#10B981'; // Always green
   };
 
-
-
-  useEffect(() => {
-    const controller = new AbortController();
-    
-    const initializeData = async () => {
-      if (user) {
-        try {
-          await Promise.all([
-            fetchGoals(user.id),
-            checkTodaysCheckIns(),
-            checkForOverdueGoals()
-          ]);
-        } catch (error: any) {
-          if (error?.name !== 'AbortError') {
-            console.error('Error initializing ActionScreen data:', error);
-          }
-        }
-      }
-    };
-    
-    initializeData();
-    
-    return () => {
-      controller.abort();
-    };
-  }, [user, userGoals.length]);
-
-  // Refresh data when component mounts
-  useEffect(() => {
-    if (user && userGoals.length > 0) {
-      // Only refresh progress-related data, not goals themselves to avoid loading flicker
-      fetchGoalProgress();
-      checkTodaysCheckIns();
-      checkForOverdueGoals();
-    }
-    
-    // Record login day (daily habits circle always shows today's data)
-    if (user) {
-      const recordLogin = async () => {
-        try {
-          const today = new Date().toISOString().split('T')[0];
-          await dailyHabitsService.recordLoginDay(user.id, today);
-        } catch (error) {
-          console.warn('Failed to record login day:', error);
-        }
-      };
-      recordLogin();
-    }
-  }, [user, userGoals.length]);
-
   const fetchGoalProgress = useCallback(async () => {
     if (!user || userGoals.length === 0) return;
 
-    // Batch process goal progress instead of individual queries
-    const progressPromises = userGoals
-      .filter(goal => !goal.completed)
-      .map(async (goal) => {
-        // Use range-based count filtered by frequency to match completion percentage logic
-        const checkInCount = goal.start_date 
-          ? await progressService.getCheckInCountInRange(goal.id, user.id, goal.start_date, goal.end_date, goal.frequency)
-          : await progressService.getCheckInCount(goal.id, user.id);
-        return { goalId: goal.id, count: checkInCount };
-      });
+    // Check cache first
+    const cacheKey = apiCache.generateKey('goalProgress', user.id);
+    const cached = apiCache.get<{[goalId: string]: number}>(cacheKey);
     
+    if (cached !== null) {
+      setGoalProgress(cached);
+      return;
+    }
+
+    // Batch fetch all goal progress counts in one query
+    const incompleteGoals = userGoals.filter(goal => !goal.completed);
+    
+    if (incompleteGoals.length === 0) {
+      setGoalProgress({});
+      return;
+    }
+
     try {
-      const progressResults = await Promise.all(progressPromises);
-      const progressData: {[goalId: string]: number} = {};
-      
-      progressResults.forEach(({ goalId, count }) => {
-        progressData[goalId] = count;
-      });
-      
+      const progressData = await progressService.getCheckInCountsForGoalsInRange(
+        user.id,
+        incompleteGoals.map(goal => ({
+          id: goal.id,
+          start_date: goal.start_date,
+          end_date: goal.end_date,
+          frequency: goal.frequency
+        }))
+      );
+
       setGoalProgress(progressData);
+      
+      // Cache for 2 minutes
+      apiCache.set(cacheKey, progressData, 2 * 60 * 1000);
     } catch (error) {
       console.error('Error fetching goal progress:', error);
     }
@@ -903,6 +845,21 @@ function ActionScreen() {
 
   const checkForOverdueGoals = useCallback(async () => {
     if (!user || userGoals.length === 0) return;
+
+    // Check cache first
+    const cacheKey = apiCache.generateKey('overdueGoals', user.id);
+    const cached = apiCache.get<{
+      overdueSet: Set<string>;
+      overdueDatesMap: {[goalId: string]: Date};
+      overdueCountsMap: {[goalId: string]: number};
+    }>(cacheKey);
+    
+    if (cached !== null) {
+      setOverdueGoals(cached.overdueSet);
+      setOverdueGoalDates(cached.overdueDatesMap);
+      setOverdueGoalCounts(cached.overdueCountsMap);
+      return;
+    }
 
     // Move heavy processing to background using setTimeout
     return new Promise<void>((resolve) => {
@@ -963,12 +920,6 @@ function ActionScreen() {
       checkInMap.get(key)!.add(checkIn.check_in_date);
     }
     
-    // Debug: Log each goal's active range
-    for (const goal of validGoals) {
-      const goalStartDate = goal.start_date ? new Date(goal.start_date) : null;
-      const goalEndDate = goal.end_date ? new Date(goal.end_date) : null;
-    }
-    
     // Now check each goal for overdue check-ins
     for (const goal of validGoals) {
       const goalStartDate = goal.start_date ? new Date(goal.start_date) : null;
@@ -1017,12 +968,20 @@ function ActionScreen() {
           setOverdueGoals(overdueSet);
           setOverdueGoalDates(overdueDatesMap);
           setOverdueGoalCounts(overdueCountsMap);
+          
+          // Cache results for 5 minutes
+          apiCache.set(cacheKey, {
+            overdueSet,
+            overdueDatesMap,
+            overdueCountsMap
+          }, 5 * 60 * 1000);
+          
           resolve();
         } catch (error) {
           console.error('Error checking overdue goals:', error);
           resolve();
         }
-      }, 0);
+      }, 100); // Increased delay to 100ms to ensure UI renders first
       
       // Cleanup function to clear timeout if component unmounts
       return () => clearTimeout(timeoutId);
@@ -1031,6 +990,19 @@ function ActionScreen() {
 
   const checkTodaysCheckIns = useCallback(async () => {
     if (!user || userGoals.length === 0) return;
+
+    // Check cache first
+    const cacheKey = apiCache.generateKey('todaysCheckIns', user.id, selectedWeek.toISOString());
+    const cached = apiCache.get<{
+      checkedInSet: Set<string>;
+      checkedInByDay: {[key: string]: Set<string>};
+    }>(cacheKey);
+    
+    if (cached !== null) {
+      setCheckedInGoals(cached.checkedInSet);
+      setCheckedInGoalsByDay(cached.checkedInByDay);
+      return;
+    }
 
     const checkedInSet = new Set<string>();
     const checkedInByDay: {[key: string]: Set<string>} = {};
@@ -1079,6 +1051,15 @@ function ActionScreen() {
           }
         }
       }
+      
+      setCheckedInGoals(checkedInSet);
+      setCheckedInGoalsByDay(checkedInByDay);
+      
+      // Cache for 1 minute
+      apiCache.set(cacheKey, {
+        checkedInSet,
+        checkedInByDay
+      }, 60 * 1000);
     } catch (error) {
       console.error('Error fetching check-ins for week:', error);
       // Fallback to individual calls if batch fails
@@ -1099,48 +1080,67 @@ function ActionScreen() {
           }
         }
       }
+      
+      setCheckedInGoals(checkedInSet);
+      setCheckedInGoalsByDay(checkedInByDay);
     }
-
-    setCheckedInGoals(checkedInSet);
-    setCheckedInGoalsByDay(checkedInByDay);
   }, [user, userGoals, selectedWeek]);
 
-  // Re-check when goals are updated or selected week changes
+  // Initialize data when component mounts and when user/goals change
   useEffect(() => {
-    if (user && userGoals.length > 0) {
-      checkTodaysCheckIns();
-    }
-  }, [user, userGoals, selectedWeek, checkTodaysCheckIns]);
-
-  // Fetch goal progress when goals are loaded
-  useEffect(() => {
-    if (user && userGoals.length > 0) {
-      fetchGoalProgress();
-    }
-  }, [user, userGoals, fetchGoalProgress]);
-
-  // Refresh check-ins when screen comes into focus (useful after deleting check-ins)
-  useEffect(() => {
-    let isActive = true;
+    if (!user) return;
     
-    const refreshData = async () => {
-      if (user && userGoals.length > 0 && isActive) {
-        try {
-          await checkTodaysCheckIns();
-        } catch (error) {
-          if (isActive) {
-            console.error('Error refreshing check-ins:', error);
-          }
+    const controller = new AbortController();
+    
+    const initializeData = async () => {
+      try {
+        await Promise.all([
+          fetchGoals(user.id),
+          checkTodaysCheckIns(),
+          checkForOverdueGoals()
+        ]);
+        
+        // Only refresh progress-related data if goals are loaded
+        if (userGoals.length > 0) {
+          fetchGoalProgress();
+        }
+        
+        // Record login day (non-blocking)
+        const today = new Date().toISOString().split('T')[0];
+        dailyHabitsService.recordLoginDay(user.id, today).catch(() => {});
+        
+        // Apply pillar decay check (non-blocking)
+        const { pillarProgressService } = await import('../lib/pillarProgressService');
+        pillarProgressService.applyDecay(user.id).catch(() => {});
+      } catch (error: any) {
+        if (error?.name !== 'AbortError') {
+          console.error('Error initializing ActionScreen data:', error);
         }
       }
     };
     
-    refreshData();
+    initializeData();
     
     return () => {
-      isActive = false;
+      controller.abort();
     };
-  }, [user, userGoals, checkTodaysCheckIns]);
+  }, [user, userGoals.length]);
+
+  // Refresh check-ins when selected week changes (only if goals exist)
+  useEffect(() => {
+    if (user && userGoals.length > 0) {
+      checkTodaysCheckIns();
+    }
+  }, [selectedWeek]);
+
+  // Refresh check-ins when screen comes into focus (useful after deleting check-ins)
+  useFocusEffect(
+    useCallback(() => {
+      if (user && userGoals.length > 0) {
+        checkTodaysCheckIns();
+      }
+    }, [user, userGoals.length, checkTodaysCheckIns])
+  );
 
   // Load my active challenges
   const loadMyActiveChallenges = useCallback(async () => {
@@ -1281,7 +1281,10 @@ function ActionScreen() {
 
         {/* Header with Settings */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setShowStreakModal(true)}>
+          <TouchableOpacity 
+            onPress={() => setShowStreakModal(true)}
+            style={{ zIndex: 1 }}
+          >
             <Ionicons name="flame-outline" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           
@@ -1289,7 +1292,10 @@ function ActionScreen() {
             Day {user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1}
           </Text>
           
-          <TouchableOpacity onPress={() => setShowActionModal(true)}>
+          <TouchableOpacity 
+            onPress={() => setShowActionModal(true)}
+            style={{ zIndex: 1 }}
+          >
             <Ionicons name="add" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
         </View>
@@ -1425,13 +1431,21 @@ function ActionScreen() {
 
         {/* Combined Check-ins Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
+            <TouchableOpacity 
+              onPress={() => {
+                // TODO: Implement add reminder functionality
+                Alert.alert('Add Reminder', 'Coming soon');
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+          </View>
           <View key={`checkins-${refreshTrigger}`} style={[styles.todaysCheckinsContainer, { borderColor: theme.borderSecondary }]}>
             {/* Onboarding Reminder */}
-            {(() => {
-              console.log('🎨 Rendering Reminders - onboardingIncomplete:', onboardingIncomplete, 'onboardingLastStep:', onboardingLastStep);
-              return onboardingIncomplete;
-            })() && (
+            {onboardingIncomplete && (
               <TouchableOpacity 
                 style={[styles.checkinItem, { borderBottomWidth: userGoals.length > 0 ? 1 : 0, borderBottomColor: theme.borderSecondary }]}
                 onPress={() => {

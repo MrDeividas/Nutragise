@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
+import { apiCache } from './apiCache';
 import { DailyHabits, CreateDailyHabitsData, UpdateDailyHabitsData, HabitStreak } from '../types/database';
 import { DEFAULT_HABITS } from '../components/DailyHabitsSummary';
+import { pillarProgressService } from './pillarProgressService';
+import { notificationService } from './notificationService';
 
 class DailyHabitsService {
   /**
@@ -47,6 +50,142 @@ class DailyHabitsService {
         throw error;
       }
       
+      const today = new Date().toISOString().split('T')[0];
+      console.log('🔍 Pillar tracking check:', { 
+        hasData: !!data, 
+        date, 
+        today, 
+        isToday: date === today,
+        gymDayType: habitData.gym_day_type 
+      });
+      
+      // Track pillar progress for completed habits (only for today's date)
+      if (data && date === today) {
+        console.log('✅ Pillar tracking condition met, initializing pillars...');
+        
+        // Initialize pillars first if they don't exist (non-blocking)
+        pillarProgressService.initializeUserPillars(userId).catch(err => {
+          console.warn('Failed to initialize user pillars:', err);
+        });
+        
+        // Strength & Fitness: gym, run, cold_shower, water
+        if (habitData.gym_day_type === 'active') {
+          console.log('💪 Gym habit detected, tracking action...');
+          try {
+            await pillarProgressService.trackAction(userId, 'strength_fitness', 'gym');
+            console.log('✅ Gym pillar action tracked successfully');
+          } catch (err) {
+            console.error('❌ Failed to track gym action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'gym',
+            points_gained: 15,
+            pillar_type: 'strength_fitness',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        } else {
+          console.log('⚠️ Gym habit not active:', habitData.gym_day_type);
+        }
+        if (habitData.run_activity_type || habitData.run_day_type === 'active') {
+          console.log('🏃 Run habit detected, tracking action...');
+          try {
+            await pillarProgressService.trackAction(userId, 'strength_fitness', 'run');
+            console.log('✅ Run pillar action tracked successfully');
+          } catch (err) {
+            console.error('❌ Failed to track run action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'run',
+            points_gained: 15,
+            pillar_type: 'strength_fitness',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+        if (habitData.cold_shower_completed) {
+          try {
+            await pillarProgressService.trackAction(userId, 'strength_fitness', 'cold_shower');
+          } catch (err) {
+            console.error('❌ Failed to track cold_shower action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'cold_shower',
+            points_gained: 15,
+            pillar_type: 'strength_fitness',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+        if (habitData.water_intake && habitData.water_intake > 0) {
+          try {
+            await pillarProgressService.trackAction(userId, 'strength_fitness', 'water');
+          } catch (err) {
+            console.error('❌ Failed to track water action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'water',
+            points_gained: 15,
+            pillar_type: 'strength_fitness',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+        
+        // Growth & Wisdom: reflect, focus
+        if (habitData.reflect_mood || habitData.reflect_energy) {
+          try {
+            await pillarProgressService.trackAction(userId, 'growth_wisdom', 'reflect');
+          } catch (err) {
+            console.error('❌ Failed to track reflect action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'reflect',
+            points_gained: 15,
+            pillar_type: 'growth_wisdom',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+        if (habitData.focus_completed) {
+          try {
+            await pillarProgressService.trackAction(userId, 'growth_wisdom', 'focus');
+          } catch (err) {
+            console.error('❌ Failed to track focus action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'focus',
+            points_gained: 15,
+            pillar_type: 'growth_wisdom',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+        
+        // Discipline: sleep
+        if (habitData.sleep_hours && habitData.sleep_hours > 0) {
+          try {
+            await pillarProgressService.trackAction(userId, 'discipline', 'sleep');
+          } catch (err) {
+            console.error('❌ Failed to track sleep action for pillar progress:', err);
+          }
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'sleep',
+            points_gained: 15,
+            pillar_type: 'discipline',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+      }
+      
+      // Invalidate habit streak cache when habits are completed
+      const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
+      habitTypes.forEach(habitType => {
+        const cacheKey = apiCache.generateKey('habitStreak', userId, habitType);
+        apiCache.delete(cacheKey);
+      });
+      
       return data;
     } catch (error) {
       console.error('Error in upsertDailyHabits:', error);
@@ -59,6 +198,9 @@ class DailyHabitsService {
    */
   async clearHabit(userId: string, date: string, habitType: string): Promise<boolean> {
     try {
+      console.log(`🗑️ Clearing habit:`, { userId, date, habitType });
+      
+      // Clear the habit from database
       const { error } = await supabase.rpc('clear_daily_habit', {
         p_user_id: userId,
         p_date: date,
@@ -68,6 +210,38 @@ class DailyHabitsService {
         console.error('Error clearing daily habit:', error);
         throw error;
       }
+
+      // Deduct pillar progress and delete notification (only for today's date)
+      if (date === new Date().toISOString().split('T')[0]) {
+        // Map habit types to pillars
+        const habitToPillarMap: { [key: string]: { pillar: string, habitKey: string } } = {
+          gym: { pillar: 'strength_fitness', habitKey: 'gym' },
+          run: { pillar: 'strength_fitness', habitKey: 'run' },
+          cold_shower: { pillar: 'strength_fitness', habitKey: 'cold_shower' },
+          water: { pillar: 'strength_fitness', habitKey: 'water' },
+          reflect: { pillar: 'growth_wisdom', habitKey: 'reflect' },
+          focus: { pillar: 'growth_wisdom', habitKey: 'focus' },
+          sleep: { pillar: 'discipline', habitKey: 'sleep' },
+          meditation: { pillar: 'growth_wisdom', habitKey: 'meditation' },
+          microlearn: { pillar: 'growth_wisdom', habitKey: 'microlearn' },
+        };
+
+        const mapping = habitToPillarMap[habitType];
+        if (mapping) {
+          // Deduct pillar progress
+          pillarProgressService.deductAction(userId, mapping.pillar as any, mapping.habitKey).catch(err => {
+            console.error(`Failed to deduct ${habitType} from pillar:`, err);
+          });
+
+          // Delete the habit reward notification
+          notificationService.deleteHabitRewardNotification(userId, habitType, date).catch(err => {
+            console.error(`Failed to delete ${habitType} notification:`, err);
+          });
+
+          console.log(`✅ Deducted progress and removed notification for ${habitType}`);
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('Error in clearHabit:', error);
@@ -225,21 +399,169 @@ class DailyHabitsService {
   }
 
   /**
+   * Get streaks for multiple habits in batch (optimized)
+   */
+  async getHabitStreaksBatch(userId: string, habitTypes: string[]): Promise<HabitStreak[]> {
+    try {
+      if (habitTypes.length === 0) return [];
+
+      const today = new Date().toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Fetch all habit history data in one query for all habit types
+      const { data, error } = await supabase
+        .from('daily_habits')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', thirtyDaysAgo)
+        .lte('date', today)
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching habit history for batch streaks:', error);
+        return habitTypes.map(type => ({
+          habit_type: type,
+          current_streak: 0,
+          longest_streak: 0
+        }));
+      }
+
+      // Process streaks for each habit type
+      const streaks: HabitStreak[] = [];
+
+      for (const habitType of habitTypes) {
+        // Filter records for this habit type
+        const habitHistory = (data || []).filter(record => {
+          return this.isHabitCompleted(record, habitType);
+        });
+
+        if (habitHistory.length === 0) {
+          streaks.push({
+            habit_type: habitType,
+            current_streak: 0,
+            longest_streak: 0
+          });
+          continue;
+        }
+
+        // Sort by date descending
+        const sortedHistory = habitHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        let currentStreak = 0;
+        let longestStreak = 0;
+        let tempStreak = 0;
+        let lastDate: Date | null = null;
+
+        for (const record of sortedHistory) {
+          const recordDate = new Date(record.date);
+          
+          // Skip future dates
+          const todayDate = new Date();
+          if (recordDate > todayDate) {
+            continue;
+          }
+          
+          if (lastDate === null) {
+            // First record
+            tempStreak = 1;
+            lastDate = recordDate;
+          } else {
+            const dayDiff = Math.floor((lastDate.getTime() - recordDate.getTime()) / (24 * 60 * 60 * 1000));
+            
+            if (dayDiff === 1) {
+              // Consecutive day
+              tempStreak++;
+            } else {
+              // Break in streak
+              if (tempStreak > longestStreak) {
+                longestStreak = tempStreak;
+              }
+              tempStreak = 1;
+            }
+            lastDate = recordDate;
+          }
+        }
+
+        // Check if we have a current streak
+        const todayRecord = habitHistory.find(h => h.date === today);
+        const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const yesterdayRecord = habitHistory.find(h => h.date === yesterdayDate);
+        
+        if (todayRecord) {
+          currentStreak = tempStreak;
+        } else if (yesterdayRecord && tempStreak > 0) {
+          currentStreak = tempStreak;
+        } else {
+          currentStreak = 0;
+        }
+        
+        // Additional check: if the last completion was more than 2 days ago, streak is broken
+        if (sortedHistory.length > 0) {
+          const lastCompletionDate = new Date(sortedHistory[0].date);
+          const todayDate = new Date();
+          
+          if (lastCompletionDate > todayDate) {
+            currentStreak = 0;
+          } else {
+            const daysSinceLastCompletion = Math.floor((todayDate.getTime() - lastCompletionDate.getTime()) / (24 * 60 * 60 * 1000));
+            
+            if (daysSinceLastCompletion > 2) {
+              currentStreak = 0;
+            }
+          }
+        }
+
+        // Update longest streak if current streak is longer
+        if (tempStreak > longestStreak) {
+          longestStreak = tempStreak;
+        }
+
+        streaks.push({
+          habit_type: habitType,
+          current_streak: currentStreak,
+          longest_streak: longestStreak,
+          last_completed_date: sortedHistory[0]?.date
+        });
+      }
+
+      return streaks;
+    } catch (error) {
+      console.error('Error in getHabitStreaksBatch:', error);
+      return habitTypes.map(type => ({
+        habit_type: type,
+        current_streak: 0,
+        longest_streak: 0
+      }));
+    }
+  }
+
+  /**
    * Get current streak for a specific habit
    */
   async getHabitStreak(userId: string, habitType: string): Promise<HabitStreak> {
     try {
+      // Check cache first
+      const cacheKey = apiCache.generateKey('habitStreak', userId, habitType);
+      const cached = apiCache.get<HabitStreak>(cacheKey);
+      
+      if (cached !== null) {
+        return cached;
+      }
+
       const today = new Date().toISOString().split('T')[0];
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       const history = await this.getHabitHistory(userId, habitType, thirtyDaysAgo, today);
       
       if (history.length === 0) {
-        return {
+        const result = {
           habit_type: habitType,
           current_streak: 0,
           longest_streak: 0
         };
+        // Cache for 3 minutes
+        apiCache.set(cacheKey, result, 3 * 60 * 1000);
+        return result;
       }
 
       // Sort by date descending
@@ -320,12 +642,17 @@ class DailyHabitsService {
         longestStreak = tempStreak;
       }
 
-      return {
+      const result = {
         habit_type: habitType,
         current_streak: currentStreak,
         longest_streak: longestStreak,
         last_completed_date: sortedHistory[0]?.date
       };
+
+      // Cache for 3 minutes
+      apiCache.set(cacheKey, result, 3 * 60 * 1000);
+      
+      return result;
     } catch (error) {
       console.error('Error in getHabitStreak:', error);
       return {
@@ -409,17 +736,49 @@ class DailyHabitsService {
    */
   async recordLoginDay(userId: string, date: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from('user_login_days')
         .upsert(
           { user_id: userId, login_date: date },
           { onConflict: 'user_id,login_date' }
         );
       
-      if (error) throw error;
+      if (error) {
+        // Log detailed error information
+        console.error('Error recording login day:', {
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          userId,
+          date
+        });
+        
+        // If table doesn't exist or RLS issue, don't throw - just return false
+        // This prevents breaking the app if the feature isn't set up yet
+        if (error.code === '42P01' || error.code === 'PGRST301') {
+          console.warn('user_login_days table may not exist or has RLS restrictions. Skipping login day recording.');
+          return false;
+        }
+        
+        throw error;
+      }
+      
+      // Check login streak and track discipline pillar if > 3 days
+      const streak = await this.getLoginStreak(userId);
+      if (streak.currentStreak > 3) {
+        pillarProgressService.trackAction(userId, 'discipline', 'login_streak').catch(console.error);
+      }
+      
       return true;
-    } catch (error) {
-      console.error('Error recording login day:', error);
+    } catch (error: any) {
+      // Additional error handling for unexpected errors
+      console.error('Error recording login day (catch block):', {
+        error: error?.message || error,
+        stack: error?.stack,
+        userId,
+        date
+      });
       return false;
     }
   }

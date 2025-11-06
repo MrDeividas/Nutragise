@@ -55,16 +55,29 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
       }
     } catch (error) {
       console.error('Error loading account creation date:', error);
+      // Don't block loading if this fails
     }
   };
 
   const loadRecentJourney = async () => {
     try {
-      // Load more days for horizontal scrolling (e.g., last 10 days)
+      setLoading(true);
+      console.log('📸 Loading recent journey for user:', userId);
+      // Load last 10 days - service handles errors internally
       const days = await dailyPostsService.getRecentJourney(userId, 10);
-      setRecentDays(days);
+      console.log('📸 Received days from service:', days?.length || 0);
+      if (days && days.length > 0) {
+        console.log('📸 First day sample:', {
+          id: days[0].id,
+          date: days[0].date,
+          photos: days[0].photos
+        });
+      }
+      setRecentDays(days || []);
     } catch (error) {
-      console.error('Error loading recent journey:', error);
+      console.error('❌ Error loading recent journey:', error);
+      // Set empty array on error to show empty state
+      setRecentDays([]);
     } finally {
       setLoading(false);
     }
@@ -152,26 +165,39 @@ interface JourneyDayPreviewProps {
 }
 
 function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreviewProps) {
+  // Ensure photos is always an array
+  const photos = Array.isArray(day.photos) ? day.photos : (day.photos ? [day.photos] : []);
+  
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <View style={styles.dayPreview}>
       {/* Single Photo Thumbnail - Most Recent */}
       <View style={styles.photoThumbnails}>
-        {day.photos.length > 0 && (
+        {photos.length > 0 && photos[0] ? (
           <View style={styles.singlePhotoContainer}>
             <Image 
-              source={{ uri: day.photos[0] }}
+              source={{ uri: photos[0] }}
               style={[styles.singlePhotoThumbnail, { borderColor: theme.borderSecondary }]}
               resizeMode="cover"
               blurRadius={0}
             />
-            {day.photos.length > 1 && (
+            {photos.length > 1 && (
               <View style={[styles.photoCountBadge, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}>
                 <Text style={[styles.photoCountText, { color: '#ffffff' }]}>
-                  {day.photos.length}
+                  {photos.length}
                 </Text>
               </View>
             )}
+          </View>
+        ) : (
+          // Show placeholder if no photos
+          <View style={[styles.singlePhotoThumbnail, { 
+            backgroundColor: 'rgba(128, 128, 128, 0.2)', 
+            borderColor: theme.borderSecondary,
+            justifyContent: 'center',
+            alignItems: 'center'
+          }]}>
+            <Ionicons name="image-outline" size={24} color="rgba(255, 255, 255, 0.5)" />
           </View>
         )}
       </View>

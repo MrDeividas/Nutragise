@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { apiCache } from './apiCache';
 import {
   Challenge,
   ChallengeWithDetails,
@@ -23,6 +24,14 @@ class ChallengesService {
    */
   async getChallenges(status?: 'active' | 'upcoming' | 'completed'): Promise<Challenge[]> {
     try {
+      // Check cache first
+      const cacheKey = apiCache.generateKey('challenges', status || 'all');
+      const cached = apiCache.get<Challenge[]>(cacheKey);
+      
+      if (cached !== null) {
+        return cached;
+      }
+
       let query = supabase
         .from('challenges')
         .select('*')
@@ -39,24 +48,35 @@ class ChallengesService {
         throw error;
       }
 
-      // Get participant counts for each challenge separately
-      let challenges = await Promise.all(
-        (data || []).map(async (challenge) => {
-          const { count, error: countError } = await supabase
-            .from('challenge_participants')
-            .select('*', { count: 'exact', head: true })
-            .eq('challenge_id', challenge.id);
-          
-          if (countError) {
-            console.error(`Error getting participant count for challenge ${challenge.id}:`, countError);
-          }
-          
-          return {
-            ...challenge,
-            participant_count: count || 0,
-          };
-        })
-      );
+      if (!data || data.length === 0) {
+        return [];
+      }
+
+      // Get participant counts for all challenges in a single batch query
+      const challengeIds = data.map(c => c.id);
+      const { data: participantCounts, error: countError } = await supabase
+        .from('challenge_participants')
+        .select('challenge_id')
+        .in('challenge_id', challengeIds);
+
+      if (countError) {
+        console.error('Error getting participant counts:', countError);
+      }
+
+      // Create a map of challenge_id -> count
+      const countMap = new Map<string, number>();
+      if (participantCounts) {
+        participantCounts.forEach((p: any) => {
+          const currentCount = countMap.get(p.challenge_id) || 0;
+          countMap.set(p.challenge_id, currentCount + 1);
+        });
+      }
+
+      // Map counts to challenges
+      let challenges = (data || []).map((challenge) => ({
+        ...challenge,
+        participant_count: countMap.get(challenge.id) || 0,
+      }));
 
       // Filter recurring challenges to only show current week's instances
       const now = new Date();
@@ -97,6 +117,9 @@ class ChallengesService {
         }
       }
 
+      // Cache the result for 3 minutes
+      apiCache.set(cacheKey, filteredChallenges, 3 * 60 * 1000);
+      
       return filteredChallenges;
     } catch (error) {
       console.error('Error in getChallenges:', error);
@@ -109,70 +132,64 @@ class ChallengesService {
    */
   async getChallengeById(id: string): Promise<ChallengeWithDetails | null> {
     try {
-      const { data: challenge, error: challengeError } = await supabase
-        .from('challenges')
-        .select('*')
-        .eq('id', id)
-        .single();
+      // Get challenge, requirements, and participants in parallel
+      const [challengeResult, requirementsResult, participantsResult] = await Promise.all([
+        supabase
+          .from('challenges')
+          .select('*')
+          .eq('id', id)
+          .single(),
+        supabase
+          .from('challenge_requirements')
+          .select('*')
+          .eq('challenge_id', id)
+          .order('requirement_order'),
+        supabase
+          .from('challenge_participants')
+          .select('*')
+          .eq('challenge_id', id)
+      ]);
 
-      if (challengeError) {
-        console.error('Error fetching challenge:', challengeError);
-        throw challengeError;
+      if (challengeResult.error) {
+        console.error('Error fetching challenge:', challengeResult.error);
+        throw challengeResult.error;
       }
 
+      const challenge = challengeResult.data;
       if (!challenge) return null;
 
-      // Get requirements
-      const { data: requirements, error: requirementsError } = await supabase
-        .from('challenge_requirements')
-        .select('*')
-        .eq('challenge_id', id)
-        .order('requirement_order');
+      const requirements = requirementsResult.data || [];
+      const participants = participantsResult.data || [];
 
-      if (requirementsError) {
-        console.error('Error fetching requirements:', requirementsError);
-      }
+      // Get user profiles for participants and creator in a single query
+      const userIds = [...new Set([
+        ...participants.map(p => p.user_id),
+        challenge.created_by
+      ].filter(Boolean))];
 
-      // Get participants
-      const { data: participants, error: participantsError } = await supabase
-        .from('challenge_participants')
-        .select('*')
-        .eq('challenge_id', id);
-
-      if (participantsError) {
-        console.error('Error fetching participants:', participantsError);
-      }
-
-      // Get user profiles for participants
-      let participantsWithProfiles = [];
-      if (participants && participants.length > 0) {
-        const userIds = participants.map(p => p.user_id);
+      let profilesMap = new Map();
+      if (userIds.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
           .select('id, username, avatar_url, display_name')
           .in('id', userIds);
 
         if (profilesError) {
-          console.error('Error fetching participant profiles:', profilesError);
+          console.error('Error fetching profiles:', profilesError);
+        } else if (profiles) {
+          profiles.forEach(profile => {
+            profilesMap.set(profile.id, profile);
+          });
         }
-
-        // Combine participants with their profile data
-        participantsWithProfiles = participants.map(participant => ({
-          ...participant,
-          user: profiles?.find(profile => profile.id === participant.user_id)
-        }));
       }
 
-      // Get creator info
-      const { data: creator, error: creatorError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url, display_name')
-        .eq('id', challenge.created_by)
-        .single();
+      // Combine participants with their profile data
+      const participantsWithProfiles = participants.map(participant => ({
+        ...participant,
+        user: profilesMap.get(participant.user_id)
+      }));
 
-      if (creatorError) {
-        console.error('Error fetching creator:', creatorError);
-      }
+      const creator = profilesMap.get(challenge.created_by);
 
       return {
         ...challenge,
@@ -249,6 +266,11 @@ class ChallengesService {
         throw error;
       }
 
+      // Invalidate challenge cache
+      apiCache.delete(apiCache.generateKey('challenges', 'all'));
+      apiCache.delete(apiCache.generateKey('challenges', 'active'));
+      apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
+
       return true;
     } catch (error) {
       console.error('Error in joinChallenge:', error);
@@ -289,6 +311,11 @@ class ChallengesService {
         console.error('Error leaving challenge:', error);
         throw error;
       }
+
+      // Invalidate challenge cache
+      apiCache.delete(apiCache.generateKey('challenges', 'all'));
+      apiCache.delete(apiCache.generateKey('challenges', 'active'));
+      apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
 
       return true;
     } catch (error) {

@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { DailyHabits } from '../types/database';
+import { pillarProgressService } from './pillarProgressService';
+import { notificationService } from './notificationService';
 
 interface DailyPointsBreakdown {
   daily: number;
@@ -174,6 +176,18 @@ class PointsService {
       
       // Check for bonus
       await this.checkAndAwardBonus(userId, targetDate);
+
+      // Track pillar progress for Growth & Wisdom (meditation, microlearn)
+      if (targetDate === new Date().toISOString().split('T')[0]) {
+        pillarProgressService.trackAction(userId, 'growth_wisdom', habitType).catch(console.error);
+        notificationService.createHabitRewardNotification({
+          user_id: userId,
+          habit_type: habitType,
+          points_gained: this.DAILY_HABIT_POINTS,
+          pillar_type: 'growth_wisdom',
+          pillar_progress: 0.36
+        }).catch(console.error);
+      }
 
       return true;
     } catch (error) {
@@ -480,6 +494,31 @@ class PointsService {
       }
       
       await this.checkAndAwardBonus(userId, targetDate);
+
+      // Track pillar progress and create reward notifications
+      if (targetDate === new Date().toISOString().split('T')[0]) {
+        if (habitType === 'like' || habitType === 'comment' || habitType === 'share') {
+          // Team Spirit pillar
+          pillarProgressService.trackAction(userId, 'team_spirit', habitType).catch(console.error);
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: habitType,
+            points_gained: pointsToAdd,
+            pillar_type: 'team_spirit',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        } else if (habitType === 'update_goal') {
+          // Discipline pillar
+          pillarProgressService.trackAction(userId, 'discipline', 'update_goal').catch(console.error);
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: 'update_goal',
+            points_gained: pointsToAdd,
+            pillar_type: 'discipline',
+            pillar_progress: 0.36
+          }).catch(console.error);
+        }
+      }
 
       return true;
     } catch (error) {
