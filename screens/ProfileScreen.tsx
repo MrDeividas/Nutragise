@@ -81,9 +81,6 @@ function ProfileScreen({ navigation }: any) {
     [key: string]: boolean;
   }>({});
   
-  // Track the date when indicators were last reset
-  const [indicatorResetDate, setIndicatorResetDate] = useState<string | null>(null);
-  
   // Profile card expansion state
   const [isProfileCardExpanded, setIsProfileCardExpanded] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -345,32 +342,52 @@ function ProfileScreen({ navigation }: any) {
         
         const today = new Date().toISOString().split('T')[0];
         
-        // Reset indicators if it's a new day
-        if (indicatorResetDate !== today) {
-          setShowProgressIndicator({});
-          setIndicatorResetDate(today);
+        // Load start of day progress snapshot from AsyncStorage
+        const startOfDayKey = `pillar_progress_start_of_day_${user.id}`;
+        const startOfDayDateKey = `pillar_progress_start_of_day_date_${user.id}`;
+        const storedStartOfDayDate = await AsyncStorage.getItem(startOfDayDateKey);
+        const storedStartOfDayProgress = await AsyncStorage.getItem(startOfDayKey);
+        
+        let startOfDayProgress = progress;
+        
+        // If we have a stored snapshot from today, use it
+        if (storedStartOfDayDate === today && storedStartOfDayProgress) {
+          try {
+            startOfDayProgress = JSON.parse(storedStartOfDayProgress);
+          } catch (e) {
+            // If parsing fails, use current progress as start of day
+            startOfDayProgress = progress;
+          }
+        } else {
+          // New day - save current progress as start of day snapshot
+          await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
+          await AsyncStorage.setItem(startOfDayDateKey, today);
+          startOfDayProgress = progress;
         }
         
-        // Check for increases and show indicators
+        // Compare current progress vs start of day - show indicator if increased
         const newIndicators: { [key: string]: boolean } = {};
         const pillarKeys: (keyof typeof progress)[] = ['strength_fitness', 'growth_wisdom', 'discipline', 'team_spirit', 'overall'];
         
         pillarKeys.forEach(key => {
-          const currentProgress = Math.round(progress[key] * 100) / 100;
-          const previousProgress = Math.round(previousPillarProgress[key] * 100) / 100;
+          const currentProgress = progress[key];
+          const startProgress = startOfDayProgress[key];
           
-          // Show indicator if progress increased
-          if (currentProgress > previousProgress) {
+          // Show indicator if current > start of day
+          if (currentProgress > startProgress) {
+            console.log(`✅ Showing indicator for ${key}: ${startProgress} → ${currentProgress} (diff: ${currentProgress - startProgress})`);
             newIndicators[key] = true;
+          } else {
+            console.log(`❌ No indicator for ${key}: ${startProgress} → ${currentProgress}`);
           }
         });
         
-        // Update indicators state
-        if (Object.keys(newIndicators).length > 0) {
-          setShowProgressIndicator(prev => ({ ...prev, ...newIndicators }));
-        }
+        console.log(`📊 Final indicators:`, newIndicators);
         
-        // Update previous progress before setting current
+        // Update indicators state
+        setShowProgressIndicator(newIndicators);
+        
+        // Update previous progress state
         setPreviousPillarProgress(progress);
         
         // Update current progress - FORCE NEW OBJECT REFERENCE
@@ -1106,14 +1123,21 @@ function ProfileScreen({ navigation }: any) {
           </View>
           <View style={[styles.progressBarsContainer, { marginTop: 20 }]}>
             {[
-              { index: 1, progress: Math.round(pillarProgress.strength_fitness), color: '#ffffff', pillar: 'Strength & Fitness', key: 'strength_fitness' },
-              { index: 2, progress: Math.round(pillarProgress.growth_wisdom), color: '#ffffff', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
-              { index: 3, progress: Math.round(pillarProgress.discipline), color: '#ffffff', pillar: 'Discipline', key: 'discipline' },
-              { index: 4, progress: Math.round(pillarProgress.team_spirit), color: '#ffffff', pillar: 'Team Spirit', key: 'team_spirit' },
-              { index: 5, progress: Math.round(pillarProgress.overall), color: '#ffffff', pillar: 'Overall', key: 'overall' }
+              { index: 1, progress: pillarProgress.strength_fitness, color: '#ffffff', pillar: 'Strength & Fitness', key: 'strength_fitness' },
+              { index: 2, progress: pillarProgress.growth_wisdom, color: '#ffffff', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
+              { index: 3, progress: pillarProgress.discipline, color: '#ffffff', pillar: 'Discipline', key: 'discipline' },
+              { index: 4, progress: pillarProgress.team_spirit, color: '#ffffff', pillar: 'Team Spirit', key: 'team_spirit' },
+              { index: 5, progress: pillarProgress.overall, color: '#ffffff', pillar: 'Overall', key: 'overall' }
             ].map((bar) => {
               const showIndicator = showProgressIndicator[bar.key];
               const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
+              // Display rounded number but keep exact for bar height
+              const displayProgress = Math.round(exactProgress);
+              
+              // Debug logging
+              if (showIndicator) {
+                console.log(`🎯 Rendering indicator for ${bar.key}:`, showIndicator);
+              }
               
               return (
                 <View key={bar.index} style={styles.progressBarColumn}>
@@ -1126,16 +1150,23 @@ function ProfileScreen({ navigation }: any) {
                         styles.progressBarFill,
                         {
                           backgroundColor: bar.color,
-                          height: `${bar.progress}%`,
+                          height: `${exactProgress}%`,
                           opacity: 0.7
                         }
                       ]}
                     />
+                    {/* Green arrow indicator above icon - positioned relative to container */}
+                    {showIndicator && (
+                      <View style={styles.progressIndicatorAboveIcon}>
+                        <Ionicons 
+                          name="arrow-up" 
+                          size={12} 
+                          color="#10B981" 
+                        />
+                      </View>
+                    )}
                     {/* Avatar at bottom - cut-out effect */}
-                    <View style={[styles.progressBarAvatar, { 
-                      backgroundColor: 'transparent',
-                      overflow: 'hidden'
-                    }]}>
+                    <View style={styles.progressBarAvatar}>
                       <View style={{
                         position: 'absolute',
                         width: 28,
@@ -1144,16 +1175,6 @@ function ProfileScreen({ navigation }: any) {
                         borderRadius: 14,
                         zIndex: 1
                       }} />
-                      {/* Green arrow indicator above icon */}
-                      {showIndicator && (
-                        <View style={styles.progressIndicatorAboveIcon}>
-                          <Ionicons 
-                            name="arrow-up" 
-                            size={12} 
-                            color="#10B981" 
-                          />
-                        </View>
-                      )}
                       {bar.index === 1 ? (
                         <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
                       ) : bar.index === 2 ? (
@@ -1180,7 +1201,7 @@ function ProfileScreen({ navigation }: any) {
                         activeOpacity={0.7}
                       >
                         <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
-                          {bar.progress}
+                          {exactProgress.toFixed(1)}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -2338,13 +2359,10 @@ const styles = StyleSheet.create({
   },
   progressIndicatorAboveIcon: {
     position: 'absolute',
-    top: -20,
+    bottom: 40, // Position above the icon (icon is at bottom: 8, icon height ~20, so 8 + 20 + 12 = 40)
     left: '50%',
     transform: [{ translateX: -6 }],
     zIndex: 10,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    borderRadius: 8,
-    padding: 2,
   },
   blankAvatar: {
     width: 28,
