@@ -290,7 +290,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
 
   if (isLoadingProfile) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
@@ -303,7 +303,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
 
   if (!profile) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.errorContainer}>
           <Ionicons name="person-outline" size={64} color={theme.textSecondary} />
           <Text style={[styles.errorText, { color: theme.textSecondary }]}>
@@ -318,7 +318,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const activeGoals = viewedUserGoals.filter(goal => !goal.completed).slice(0, 3);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
@@ -497,7 +497,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
             <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
             <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
+              <View style={styles.leftBarBackground}>
                 {[...Array(20)].map((_, i) => (
                   <View
                     key={i}
@@ -513,7 +513,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                       (i > 0 && i < 19) && { borderRadius: 0 },
                       i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
                       i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                      (i >= levelProgress.segmentsFilled) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'white' },
+                      (i >= levelProgress.segmentsFilled) && { backgroundColor: theme.background, borderWidth: 1, borderColor: 'white' },
                     ]}
                   />
                 ))}
@@ -525,7 +525,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           {/* Green Progress Bar */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
             <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent', flexDirection: 'row' }]}>
+              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
                 {[...Array(8)].map((_, i) => {
                   const activeSegmentCount = viewedUserDailyHabits.filter(checked => checked).length;
                   const shouldBeActive = i < activeSegmentCount;
@@ -536,7 +536,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                       style={[
                         styles.leftBarSegment,
                         { 
-                          backgroundColor: shouldBeActive ? '#10B981' : 'transparent', 
+                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
                           height: 2.59,
                           flex: 1,
                           marginRight: i === 7 ? 0 : 2,
@@ -550,7 +550,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                         i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
                         i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
                         (!shouldBeActive) && { 
-                          backgroundColor: 'transparent', 
+                          backgroundColor: theme.background, 
                           borderWidth: 0.5, 
                           borderColor: '#10B981',
                           shadowColor: 'transparent',
@@ -568,7 +568,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
             <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
+              <View style={styles.leftBarBackground}>
                 {[...Array(5)].map((_, i) => {
                   const isCompleted = viewedUserCoreHabits[i];
                   return (
@@ -577,7 +577,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                       style={[
                         styles.leftBarSegment,
                         { 
-                          backgroundColor: isCompleted ? '#E91E63' : 'transparent', 
+                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
                           height: 2.59,
                           shadowColor: '#E91E63',
                           shadowOffset: { width: 0, height: 0 },
@@ -590,7 +590,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                         i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
                         i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
                         !isCompleted && { 
-                          backgroundColor: 'transparent', 
+                          backgroundColor: theme.background, 
                           borderWidth: 0.5, 
                           borderColor: '#E91E63',
                           shadowColor: 'transparent',
@@ -618,7 +618,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           <View style={styles.goalsSectionHeader}>
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
           </View>
-          <View style={[styles.weeklyTrackerCard, { backgroundColor: 'transparent' }]}>
+          <View style={[styles.weeklyTrackerCard, { backgroundColor: theme.cardBackground }]}>
             <View style={styles.goalsContainer}>
               {activeGoals.length === 0 ? (
                 <View style={styles.noGoalsContainer}>
@@ -637,7 +637,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                     }));
                     const completionPercent = calculateCompletionPercentage(goal, mockProgressEntries);
                     
-                    const gradientColors = ['#FF6B35', '#9C27B0', '#E91E63'];
+                    const gradientColors = ['#10B981', '#10B981', '#10B981']; // Green gradient matching level bar
                     
                     return (
                       <View key={goal.id} style={styles.circularGoalItem}>
@@ -716,15 +716,11 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                       }
                     ]}
                   />
-                  <View style={[styles.progressBarAvatar, { 
-                    backgroundColor: 'transparent',
-                    overflow: 'hidden'
-                  }]}>
+                  <View style={[styles.progressBarAvatar, { overflow: 'hidden' }]}>
                     <View style={{
                       position: 'absolute',
                       width: 28,
                       height: 28,
-                      backgroundColor: 'transparent',
                       borderRadius: 14,
                       zIndex: 1
                     }} />
@@ -847,7 +843,6 @@ const styles = StyleSheet.create({
   profilePictureContainer: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   profilePictureCard: {
     flexDirection: 'row',

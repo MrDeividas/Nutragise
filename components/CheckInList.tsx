@@ -112,9 +112,9 @@ function CheckInList({
                 <Svg width={40} height={40}>
                   <Defs>
                     <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                      <Stop offset="0%" stopColor="#FF6B35" />
-                      <Stop offset="50%" stopColor="#9C27B0" />
-                      <Stop offset="100%" stopColor="#E91E63" />
+                      <Stop offset="0%" stopColor="#10B981" />
+                      <Stop offset="50%" stopColor="#10B981" />
+                      <Stop offset="100%" stopColor="#10B981" />
                     </LinearGradient>
                   </Defs>
                   {/* Background circle */}

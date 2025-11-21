@@ -15,9 +15,9 @@ const ALL_HABITS: Habit[] = [
   { id: 'sleep', name: 'Sleep', icon: '😴', isPremium: false, isCore: false },
   { id: 'water', name: 'Water', icon: '💧', isPremium: false, isCore: true },
   { id: 'update_goal', name: 'Update Goal', icon: '📝', isPremium: false, isCore: false },
-  { id: 'reflect', name: 'Reflect', icon: '✨', isPremium: true, isCore: false },
-  { id: 'meditation', name: 'Meditation', icon: '🧘', isPremium: true, isCore: true },
-  { id: 'microlearn', name: 'Microlearning', icon: '📚', isPremium: true, isCore: true },
+  { id: 'reflect', name: 'Reflect', icon: '✨', isPremium: false, isCore: false },
+  { id: 'meditation', name: 'Meditation', icon: '🧘', isPremium: false, isCore: true },
+  { id: 'microlearn', name: 'Microlearning', icon: '📚', isPremium: false, isCore: true },
   { id: 'gym', name: 'Gym', icon: '💪', isPremium: false, isCore: true },
   { id: 'run', name: 'Run', icon: '🏃', isPremium: false, isCore: true },
   { id: 'focus', name: 'Focus', icon: '🎯', isPremium: false, isCore: false },
@@ -35,7 +35,7 @@ interface HabitSelectionStepProps {
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 // Habits that should auto-set to all 7 days and be non-editable
-const FIXED_FREQUENCY_HABITS = ['sleep', 'water'];
+const FIXED_FREQUENCY_HABITS: string[] = []; // Empty - all habits can have their schedules edited
 // Habits that are compulsory and cannot be deselected
 const COMPULSORY_HABITS = ['sleep', 'water', 'update_goal', 'reflect'];
 // Habits that are auto-selected on mount
@@ -373,7 +373,8 @@ export default function HabitSelectionStep({
         })}
       </View>
 
-      <View style={styles.toggleContainer}>
+      {/* Premium toggle removed - all habits are free now */}
+      {/* <View style={styles.toggleContainer}>
         <TouchableOpacity
           style={[
             styles.toggleButton,
@@ -388,7 +389,7 @@ export default function HabitSelectionStep({
             {isPremium ? '✨ Premium' : 'Free Version'}
           </Text>
         </TouchableOpacity>
-      </View>
+      </View> */}
     </ScrollView>
   );
 }

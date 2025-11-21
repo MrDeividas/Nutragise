@@ -739,43 +739,69 @@ class PointsService {
 
   /**
    * Get current level based on total points
-   * Level 1: 0-3999 pts
-   * Level 2: 4000-7999 pts
-   * Level 3: 8000-11999 pts
-   * Level 4: 12000+ pts
+   * Level 1: 0-1399 pts (Beginner)
+   * Level 2: 1400-3199 pts (Committed)
+   * Level 3: 3200-5499 pts (Focused)
+   * Level 4: 5500-8599 pts (Disciplined)
+   * Level 5: 8600-12499 pts (Achiever)
+   * Level 6: 12500-17499 pts (Challenger)
+   * Level 7: 17500-23999 pts (Relentless)
+   * Level 8: 24000+ pts (Ascended)
    */
   getCurrentLevel(totalPoints: number): number {
-    if (totalPoints >= 12000) return 4;
-    if (totalPoints >= 8000) return 3;
-    if (totalPoints >= 4000) return 2;
+    if (totalPoints >= 24000) return 8;
+    if (totalPoints >= 17500) return 7;
+    if (totalPoints >= 12500) return 6;
+    if (totalPoints >= 8600) return 5;
+    if (totalPoints >= 5500) return 4;
+    if (totalPoints >= 3200) return 3;
+    if (totalPoints >= 1400) return 2;
     return 1;
   }
 
   /**
    * Get level progress information
-   * Returns current level, next level, points within current level, and segments filled
+   * Returns current level, next level, points within current level, and points needed for next
    */
   getLevelProgress(totalPoints: number): {
     currentLevel: number;
     nextLevel: number;
     pointsInCurrentLevel: number;
     pointsNeededForNext: number;
-    segmentsFilled: number; // out of 20
   } {
     const currentLevel = this.getCurrentLevel(totalPoints);
-    const levelStartPoints = (currentLevel - 1) * 4000;
+    
+    // Level thresholds
+    const levelThresholds = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
+    
+    const levelStartPoints = levelThresholds[currentLevel - 1];
     const pointsInCurrentLevel = totalPoints - levelStartPoints;
-    const segmentsFilled = Math.floor(pointsInCurrentLevel / 200);
+    
+    let pointsNeededForNext = 0;
+    if (currentLevel < 8) {
+      const nextLevelThreshold = levelThresholds[currentLevel];
+      pointsNeededForNext = nextLevelThreshold - totalPoints;
+    }
     
     return {
       currentLevel,
-      nextLevel: currentLevel < 4 ? currentLevel + 1 : 4,
+      nextLevel: currentLevel < 8 ? currentLevel + 1 : 8,
       pointsInCurrentLevel,
-      pointsNeededForNext: currentLevel < 4 ? 4000 - pointsInCurrentLevel : 0,
-      segmentsFilled: Math.min(segmentsFilled, 20)
+      pointsNeededForNext
     };
   }
 }
+
+export const LEVEL_TITLES = [
+  'Beginner',
+  'Committed',
+  'Focused',
+  'Disciplined',
+  'Achiever',
+  'Challenger',
+  'Relentless',
+  'Ascended'
+];
 
 export const pointsService = new PointsService();
 

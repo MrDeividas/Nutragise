@@ -539,7 +539,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: 'transparent',
   },
   tabActive: {
     backgroundColor: '#fff',

@@ -113,7 +113,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   const [filteredPosts, setFilteredPosts] = useState<PostWithUser[]>([]);
   const [filteredDailyPosts, setFilteredDailyPosts] = useState<DailyPostWithUser[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
@@ -146,7 +145,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
   const [fullScreenPhotos, setFullScreenPhotos] = useState<string[]>([]);
   const [fullScreenInitialIndex, setFullScreenInitialIndex] = useState(0);
   const { user } = useAuthStore();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { fetchSuggestedUsers, followUser, isLoading: socialLoading } = useSocialStore();
 
 
@@ -1319,13 +1318,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         {/* Left side buttons */}
         <View style={styles.headerLeftButtons}>
           <TouchableOpacity 
-            onPress={() => setShowCategoryPicker(true)}
-            style={{ marginRight: 12 }}
-          >
-            <Ionicons name="filter-outline" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
             onPress={() => setActiveTab(activeTab === 'explore' ? 'following' : 'explore')}
             style={{ marginRight: 12 }}
           >
@@ -1342,6 +1334,12 @@ function HomeScreen({ navigation }: HomeScreenProps) {
 
         {/* Right side buttons */}
         <View style={styles.headerActionButtons}>
+          <TouchableOpacity 
+            onPress={() => setShowActionModal(true)}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="add" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
           
           <TouchableOpacity 
             onPress={() => setShowSearchModal(true)}
@@ -1395,7 +1393,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         statusBarTranslucent={true}
         onRequestClose={() => setShowSearchModal(false)}
       >
-        <View style={[styles.container, { backgroundColor: '#141414' }]}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
           <View style={[styles.header, { paddingTop: 60 }]}>
             <View style={styles.searchModalHeaderContainer}>
               <TouchableOpacity 
@@ -1677,53 +1675,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       </Modal>
 
 
-
-      {/* Simple Category Picker Modal */}
-      <Modal
-        visible={showCategoryPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCategoryPicker(false)}
-      >
-        <View style={styles.simpleCategoryModal}>
-          <View style={styles.simpleCategoryContent}>
-            {/* X Button in top right */}
-            <TouchableOpacity
-              style={styles.simpleCategoryXButton}
-              onPress={() => setShowCategoryPicker(false)}
-            >
-              <Ionicons name="close" size={24} color={theme.textSecondary} />
-            </TouchableOpacity>
-            
-            <Text style={styles.simpleCategoryTitle}>
-              Choose Category
-            </Text>
-            <View style={styles.simpleCategoryGrid}>
-              {categories.map((category) => (
-                <TouchableOpacity
-                  key={category.name}
-                  style={[
-                    styles.simpleCategoryItem,
-                    selectedCategory === category.name && { 
-                      backgroundColor: 'rgba(234, 88, 12, 0.2)',
-                      borderColor: 'rgba(234, 88, 12, 0.5)'
-                    }
-                  ]}
-                  onPress={() => {
-                    setSelectedCategory(category.name);
-                    setShowCategoryPicker(false);
-                  }}
-                >
-                  <Text style={styles.simpleCategoryIcon}>{category.icon}</Text>
-                  <Text style={styles.simpleCategoryName}>
-                    {category.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* Content based on active tab and search */}
       <View style={styles.contentContainer}>
@@ -2227,7 +2178,7 @@ function ExploreContent({
                 </View>
 
                 {/* Goal Card */}
-                <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
+                <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
                   {/* Media Section */}
                   <View style={styles.mediaSection}>
                     {goal.media_url && goal.media_url !== 'no-photo' ? (
@@ -2369,7 +2320,7 @@ function ExploreContent({
                     </View>
 
                     {/* Post Card */}
-                    <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
+                    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
                       {/* Media Section */}
                       <View style={styles.mediaSection}>
                         {post.photos && post.photos.length > 0 ? (
@@ -2508,7 +2459,7 @@ function ExploreContent({
                     </View>
 
                     {/* Main Content Area */}
-                    <View style={[styles.card, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]}>
+                    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
                       {/* Photo Gallery */}
                       {dailyPost.photos && dailyPost.photos.length > 0 && (
                         <View style={styles.postPhotoContainer}>
@@ -2949,7 +2900,6 @@ const styles = StyleSheet.create({
     left: 30,
     right: 30,
     zIndex: 10,
-    backgroundColor: 'transparent',
     borderRadius: 12,
     paddingLeft: 0,
     paddingRight: 0,
@@ -3303,7 +3253,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   simpleCategoryContent: {
-    backgroundColor: '#141414',
     borderRadius: 20,
     padding: 24,
     margin: 20,
@@ -3311,7 +3260,6 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   simpleCategoryXButton: {
     position: 'absolute',
@@ -3340,9 +3288,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: '48%',
     marginBottom: 12,
-    backgroundColor: 'rgba(128, 128, 128, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   simpleCategoryIcon: {
     fontSize: 24,
@@ -3352,7 +3298,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     textAlign: 'center',
-    color: '#ffffff',
   },
 
   listContainer: {

@@ -62,9 +62,9 @@ export default function SignInScreen({ navigation }: any) {
     }
   };
 
-    return (
+  return (
     <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: 'transparent' }]}
+      style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >

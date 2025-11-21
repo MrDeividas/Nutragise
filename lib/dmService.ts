@@ -46,19 +46,27 @@ class DMService {
 
   // Get user's chats with profiles and unread counts (OPTIMIZED - single query)
   async getUserChats(userId: string, filterFollowing?: boolean): Promise<ChatWithProfile[]> {
+    console.log('🔍 getUserChats called for user:', userId);
+    
     try {
-      // Use optimized RPC function that does everything in one query
+      // Try to use optimized RPC function that does everything in one query
+      console.log('⚡ Attempting to use RPC function...');
       const { data, error } = await supabase
         .rpc('get_user_chats_optimized', { p_user_id: userId });
 
       if (error) {
-        console.error('Error fetching chats:', error);
-        return [];
+        // If RPC doesn't exist, fall back to manual queries
+        console.log('⚠️ RPC error:', error.message);
+        console.log('📱 Falling back to manual queries');
+        return await this.getUserChatsFallback(userId, filterFollowing);
       }
 
       if (!data) {
+        console.log('✅ RPC succeeded but no data returned');
         return [];
       }
+
+      console.log(`✅ RPC succeeded, got ${data.length} chats`);
 
       // Transform the flat data into ChatWithProfile format
       let result: ChatWithProfile[] = data.map((row: any) => ({
@@ -85,9 +93,112 @@ class DMService {
         result = result.filter(chat => chat.is_following === filterFollowing);
       }
 
+      console.log(`✅ Returning ${result.length} chats after filtering`);
       return result;
     } catch (error) {
-      console.error('Error in getUserChats:', error);
+      console.error('❌ Error in getUserChats:', error);
+      console.log('📱 Falling back to manual queries due to error');
+      return await this.getUserChatsFallback(userId, filterFollowing);
+    }
+  }
+
+  // Fallback method if RPC doesn't exist - using simpler approach
+  private async getUserChatsFallback(userId: string, filterFollowing?: boolean): Promise<ChatWithProfile[]> {
+    try {
+      console.log('📱 Using fallback method for getUserChats');
+      const startTime = Date.now();
+      
+      // Get user's chats
+      const { data: chats, error: chatsError } = await supabase
+        .from('chats')
+        .select('*')
+        .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+        .order('updated_at', { ascending: false });
+
+      if (chatsError) {
+        console.error('Error fetching chats (fallback):', chatsError);
+        return [];
+      }
+
+      if (!chats || chats.length === 0) {
+        console.log('No chats found');
+        return [];
+      }
+
+      console.log(`Found ${chats.length} chats in ${Date.now() - startTime}ms`);
+
+      // Build result with other user info - batch queries for better performance
+      const result: ChatWithProfile[] = [];
+      
+      // Get all other user IDs
+      const otherUserIds = chats.map(chat => 
+        chat.participant_1 === userId ? chat.participant_2 : chat.participant_1
+      );
+
+      // Batch fetch all profiles, unread counts, and following status in parallel
+      const [profilesResult, unreadCountsResult, followingsResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', otherUserIds),
+        supabase
+          .from('unread_counts')
+          .select('chat_id, unread_count')
+          .eq('user_id', userId)
+          .in('chat_id', chats.map(c => c.id)),
+        supabase
+          .from('followers')
+          .select('following_id')
+          .eq('follower_id', userId)
+          .in('following_id', otherUserIds)
+      ]);
+
+      console.log(`Fetched all data in ${Date.now() - startTime}ms`);
+
+      const profilesMap = new Map(profilesResult.data?.map(p => [p.id, p]) || []);
+      const unreadMap = new Map(unreadCountsResult.data?.map(u => [u.chat_id, u.unread_count]) || []);
+      const followingSet = new Set(followingsResult.data?.map(f => f.following_id) || []);
+
+      // Build result from batched data
+      for (const chat of chats) {
+        const otherUserId = chat.participant_1 === userId ? chat.participant_2 : chat.participant_1;
+        const profile = profilesMap.get(otherUserId);
+
+        if (!profile) {
+          console.log(`Profile not found for user ${otherUserId}`);
+          continue;
+        }
+
+        result.push({
+          id: chat.id,
+          participant_1: chat.participant_1,
+          participant_2: chat.participant_2,
+          last_message_id: chat.last_message_id,
+          last_message_preview: chat.last_message_preview,
+          last_message_at: chat.last_message_at,
+          created_at: chat.created_at,
+          updated_at: chat.updated_at,
+          other_user: {
+            id: profile.id,
+            username: profile.username || 'Unknown',
+            display_name: profile.display_name || 'Unknown User',
+            avatar_url: profile.avatar_url
+          },
+          unread_count: unreadMap.get(chat.id) || 0,
+          is_following: followingSet.has(otherUserId)
+        });
+      }
+
+      console.log(`Built ${result.length} chat items in ${Date.now() - startTime}ms total`);
+
+      // Apply following filter if requested
+      if (filterFollowing !== undefined) {
+        return result.filter(chat => chat.is_following === filterFollowing);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error in getUserChatsFallback:', error);
       return [];
     }
   }

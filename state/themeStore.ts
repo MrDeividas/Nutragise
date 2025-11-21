@@ -41,9 +41,9 @@ export interface Theme {
 
 export const lightTheme: Theme = {
   // Backgrounds
-  background: 'rgba(255, 255, 255, 0.3)',
-  backgroundSecondary: 'rgba(249, 250, 251, 0.3)',
-  backgroundTertiary: 'rgba(243, 244, 246, 0.3)',
+  background: '#FCFAF9',
+  backgroundSecondary: '#FCFAF9',
+  backgroundTertiary: '#FCFAF9',
   
   // Text colors
   textPrimary: '#1f2937',
@@ -67,7 +67,7 @@ export const lightTheme: Theme = {
   tabBarInactiveTint: '#6b7280',
   
   // Cards and containers
-  cardBackground: 'rgba(255, 255, 255, 0.05)',
+  cardBackground: '#FCFAF9',
   
   // Icon colors
   iconPrimary: '#129490',
@@ -76,9 +76,9 @@ export const lightTheme: Theme = {
 
 export const darkTheme: Theme = {
   // Backgrounds
-  background: 'rgba(20, 19, 19, 0.3)',
-  backgroundSecondary: 'rgba(20, 19, 19, 0.3)',
-  backgroundTertiary: 'rgba(20, 19, 19, 0.3)',
+  background: '#141414',
+  backgroundSecondary: '#1b1b1b',
+  backgroundTertiary: '#222222',
   
   // Text colors
   textPrimary: '#f9fafb',
@@ -102,7 +102,7 @@ export const darkTheme: Theme = {
   tabBarInactiveTint: '#9ca3af',
   
   // Cards and containers
-  cardBackground: 'rgba(255, 255, 255, 0.05)',
+  cardBackground: '#1f1f1f',
   
   // Icon colors
   iconPrimary: '#14b8a6',

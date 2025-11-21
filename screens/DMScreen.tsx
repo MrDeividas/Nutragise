@@ -7,7 +7,8 @@ import {
   TextInput,
   StyleSheet,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,7 @@ export default function DMScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'following' | 'others'>('all');
+  const [refreshing, setRefreshing] = useState(false);
   
   // Use ref to avoid subscription recreation on filter change
   const filterRef = useRef(filter);
@@ -39,16 +41,53 @@ export default function DMScreen() {
   // Debounce ref for search
   const searchDebounceRef = useRef<NodeJS.Timeout>();
 
-  // Load chats - stable callback without filter dependency
+  // Track if chats have been loaded initially
+  const chatsLoadedRef = useRef(false);
+
+  // Load chats - only loads once on mount
   const loadChats = useCallback(async () => {
     if (!user) return;
     
-    setLoading(true);
-    const userChats = await dmService.getUserChats(user.id);
-    setChats(userChats);
-    applyFilter(userChats, filterRef.current);
-    setLoading(false);
+    try {
+      console.log('🔄 Loading chats for user:', user.id);
+      setLoading(true);
+      
+      const userChats = await dmService.getUserChats(user.id);
+      
+      console.log('✅ Chats loaded:', userChats?.length || 0);
+      setChats(userChats || []);
+      applyFilter(userChats || [], filterRef.current);
+      chatsLoadedRef.current = true;
+    } catch (error) {
+      console.error('❌ Error loading chats:', error);
+      setChats([]);
+      setFilteredChats([]);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  // Refresh chats silently (from subscription or pull-to-refresh)
+  const refreshChats = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      console.log('🔄 Refreshing chats silently...');
+      const userChats = await dmService.getUserChats(user.id);
+      setChats(userChats || []);
+      applyFilter(userChats || [], filterRef.current);
+      console.log('✅ Chats refreshed:', userChats?.length || 0);
+    } catch (error) {
+      console.error('❌ Error refreshing chats:', error);
+    }
+  }, [user]);
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshChats();
+    setRefreshing(false);
+  }, [refreshChats]);
 
   // Apply filter
   const applyFilter = (chatList: ChatWithProfile[], filterType: typeof filter) => {
@@ -77,8 +116,13 @@ export default function DMScreen() {
 
     // Debounce the actual search
     searchDebounceRef.current = setTimeout(async () => {
-      const results = await socialService.searchUsers(query);
-      setSearchResults(results.filter(u => u.id !== user?.id));
+      try {
+        const results = await socialService.searchUsers(query);
+        setSearchResults(results?.filter(u => u.id !== user?.id) || []);
+      } catch (error) {
+        console.error('Error searching users:', error);
+        setSearchResults([]);
+      }
     }, 300);
   };
 
@@ -86,11 +130,15 @@ export default function DMScreen() {
   const startChat = async (otherUserId: string) => {
     if (!user) return;
     
-    const chatId = await dmService.getOrCreateChat(user.id, otherUserId);
-    if (chatId) {
-      navigation.navigate('ChatWindow' as never, { chatId, otherUserId } as never);
-      setShowSearch(false);
-      setSearchQuery('');
+    try {
+      const chatId = await dmService.getOrCreateChat(user.id, otherUserId);
+      if (chatId) {
+        navigation.navigate('ChatWindow' as never, { chatId, otherUserId } as never);
+        setShowSearch(false);
+        setSearchQuery('');
+      }
+    } catch (error) {
+      console.error('Error starting chat:', error);
     }
   };
 
@@ -98,22 +146,44 @@ export default function DMScreen() {
   useEffect(() => {
     if (!user) return;
 
-    const subscription = dmService.subscribeToChats(user.id, loadChats);
-    
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [user, loadChats]);
+    try {
+      // Use refreshChats for subscription updates (silent refresh)
+      const subscription = dmService.subscribeToChats(user.id, refreshChats);
+      
+      return () => {
+        try {
+          if (subscription && typeof subscription.unsubscribe === 'function') {
+            subscription.unsubscribe();
+          }
+        } catch (error) {
+          console.error('Error unsubscribing from chats:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Error subscribing to chats:', error);
+    }
+  }, [user, refreshChats]);
 
   // Re-apply filter when filter changes
   useEffect(() => {
     applyFilter(chats, filter);
   }, [filter, chats]);
 
+  // Load chats only on initial mount
+  useEffect(() => {
+    loadChats();
+  }, [loadChats]);
+
+  // Only refresh when coming back to screen if already loaded
   useFocusEffect(
     useCallback(() => {
-      loadChats();
-    }, [loadChats])
+      // Skip initial load (handled by useEffect above)
+      if (!chatsLoadedRef.current) return;
+      
+      // Silent refresh when returning to screen
+      console.log('🔄 Screen focused, refreshing chats...');
+      refreshChats();
+    }, [refreshChats])
   );
 
   const formatTime = (timestamp?: string) => {
@@ -130,47 +200,54 @@ export default function DMScreen() {
     return date.toLocaleDateString();
   };
 
-  const renderChatItem = ({ item }: { item: ChatWithProfile }) => (
-    <TouchableOpacity
-      style={[styles.chatItem, { borderBottomColor: theme.border }]}
-      onPress={() => navigation.navigate('ChatWindow' as never, { 
-        chatId: item.id, 
-        otherUserId: item.other_user.id 
-      } as never)}
-    >
-      <Image
-        source={{ uri: item.other_user.avatar_url || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-      />
-      <View style={styles.chatInfo}>
-        <View style={styles.chatHeader}>
-          <Text style={[styles.username, { color: theme.textPrimary }]}>
-            {item.other_user.display_name || item.other_user.username}
-          </Text>
-          <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
-            {formatTime(item.last_message_at)}
-          </Text>
+  const renderChatItem = ({ item }: { item: ChatWithProfile }) => {
+    // Add null safety check
+    if (!item || !item.other_user) {
+      return null;
+    }
+
+    return (
+      <TouchableOpacity
+        style={[styles.chatItem, { borderBottomColor: theme.border }]}
+        onPress={() => navigation.navigate('ChatWindow' as never, { 
+          chatId: item.id, 
+          otherUserId: item.other_user?.id 
+        } as never)}
+      >
+        <Image
+          source={{ uri: item.other_user?.avatar_url || 'https://via.placeholder.com/50' }}
+          style={styles.avatar}
+        />
+        <View style={styles.chatInfo}>
+          <View style={styles.chatHeader}>
+            <Text style={[styles.username, { color: theme.textPrimary }]}>
+              {item.other_user?.display_name || item.other_user?.username || 'Unknown User'}
+            </Text>
+            <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
+              {formatTime(item.last_message_at)}
+            </Text>
+          </View>
+          <View style={styles.messagePreview}>
+            <Text 
+              style={[
+                styles.lastMessage, 
+                { color: theme.textSecondary },
+                item.unread_count > 0 && styles.unreadMessage
+              ]}
+              numberOfLines={1}
+            >
+              {item.last_message_preview || 'No messages yet'}
+            </Text>
+            {item.unread_count > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadCount}>{item.unread_count}</Text>
+              </View>
+            )}
+          </View>
         </View>
-        <View style={styles.messagePreview}>
-          <Text 
-            style={[
-              styles.lastMessage, 
-              { color: theme.textSecondary },
-              item.unread_count > 0 && styles.unreadMessage
-            ]}
-            numberOfLines={1}
-          >
-            {item.last_message_preview || 'No messages yet'}
-          </Text>
-          {item.unread_count > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>{item.unread_count}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const renderSearchResult = ({ item }: { item: any }) => (
     <TouchableOpacity
@@ -281,6 +358,13 @@ export default function DMScreen() {
             data={filteredChats}
             renderItem={renderChatItem}
             keyExtractor={(item) => item.id}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={theme.primary}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Ionicons name="chatbubbles-outline" size={64} color={theme.textSecondary} />

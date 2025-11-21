@@ -104,13 +104,7 @@ function ProfileScreen({ navigation }: any) {
   
   // Level system state
   const [showLevelModal, setShowLevelModal] = useState(false);
-  const [levelProgress, setLevelProgress] = useState({ 
-    currentLevel: 1, 
-    nextLevel: 2, 
-    segmentsFilled: 0,
-    pointsInCurrentLevel: 0,
-    pointsNeededForNext: 4000
-  });
+  const [currentLevel, setCurrentLevel] = useState(1);
   
   // Stats visibility toggle
   const [statsVisible, setStatsVisible] = useState(true);
@@ -275,7 +269,7 @@ function ProfileScreen({ navigation }: any) {
       // Debug log removed for production cleanliness
       
       setTotalPoints(total);
-      setLevelProgress(progress);
+      setCurrentLevel(progress.currentLevel);
     } catch (error) {
       console.error('Error fetching user points:', error);
       setTotalPoints(0);
@@ -329,16 +323,23 @@ function ProfileScreen({ navigation }: any) {
 
   const loadDmUnreadCount = async () => {
     if (user) {
-      const count = await dmService.getTotalUnreadCount(user.id);
-      setDmUnreadCount(count);
+      try {
+        const count = await dmService.getTotalUnreadCount(user.id);
+        setDmUnreadCount(count || 0);
+      } catch (error) {
+        console.error('Error loading DM unread count:', error);
+        setDmUnreadCount(0);
+      }
     }
   };
 
   const loadPillarProgress = async () => {
     if (user) {
       try {
+        console.log('🔄 Loading pillar progress...');
         const { pillarProgressService } = await import('../lib/pillarProgressService');
         const progress = await pillarProgressService.getPillarProgress(user.id);
+        console.log('📊 Current progress:', progress);
         
         const today = new Date().toISOString().split('T')[0];
         
@@ -349,20 +350,43 @@ function ProfileScreen({ navigation }: any) {
         const storedStartOfDayProgress = await AsyncStorage.getItem(startOfDayKey);
         
         let startOfDayProgress = progress;
+        let needsSnapshotReset = false;
         
-        // If we have a stored snapshot from today, use it
+        // Read the snapshot saved by ActionScreen at app start
         if (storedStartOfDayDate === today && storedStartOfDayProgress) {
           try {
-            startOfDayProgress = JSON.parse(storedStartOfDayProgress);
+            const parsedSnapshot = JSON.parse(storedStartOfDayProgress);
+            
+            // Validate snapshot: if any start value > current value, snapshot is invalid
+            // This happens when snapshot was saved after habits were completed
+            const isInvalid = Object.keys(parsedSnapshot).some(key => {
+              return parsedSnapshot[key] > progress[key as keyof typeof progress];
+            });
+            
+            if (isInvalid) {
+              console.log('⚠️ Snapshot is invalid (start > current), resetting to current as baseline');
+              startOfDayProgress = progress;
+              needsSnapshotReset = true;
+            } else {
+              startOfDayProgress = parsedSnapshot;
+              console.log('📅 Using saved start of day progress:', startOfDayProgress);
+            }
           } catch (e) {
-            // If parsing fails, use current progress as start of day
+            console.log('⚠️ Failed to parse stored progress, using current as baseline');
             startOfDayProgress = progress;
+            needsSnapshotReset = true;
           }
         } else {
-          // New day - save current progress as start of day snapshot
+          // No snapshot exists yet (ActionScreen hasn't run) - use current as baseline
+          console.log('⚠️ No snapshot found, using current progress as baseline (no green indicators)');
+          startOfDayProgress = progress;
+        }
+        
+        // Reset snapshot if needed
+        if (needsSnapshotReset) {
           await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
           await AsyncStorage.setItem(startOfDayDateKey, today);
-          startOfDayProgress = progress;
+          console.log('🔄 Reset snapshot to current values:', progress);
         }
         
         // Compare current progress vs start of day - show indicator if increased
@@ -372,17 +396,17 @@ function ProfileScreen({ navigation }: any) {
         pillarKeys.forEach(key => {
           const currentProgress = progress[key];
           const startProgress = startOfDayProgress[key];
+          const difference = currentProgress - startProgress;
+          
+          console.log(`🔍 ${key}: current=${currentProgress.toFixed(2)}, start=${startProgress.toFixed(2)}, diff=${difference > 0 ? '+' : ''}${difference.toFixed(2)}, show=${currentProgress > startProgress}`);
           
           // Show indicator if current > start of day
           if (currentProgress > startProgress) {
-            console.log(`✅ Showing indicator for ${key}: ${startProgress} → ${currentProgress} (diff: ${currentProgress - startProgress})`);
             newIndicators[key] = true;
-          } else {
-            console.log(`❌ No indicator for ${key}: ${startProgress} → ${currentProgress}`);
           }
         });
         
-        console.log(`📊 Final indicators:`, newIndicators);
+        console.log('✅ Green indicators:', Object.keys(newIndicators).length > 0 ? newIndicators : 'none');
         
         // Update indicators state
         setShowProgressIndicator(newIndicators);
@@ -870,39 +894,10 @@ function ProfileScreen({ navigation }: any) {
           activeOpacity={0.7}
         >
           <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-            {/* Main Progress Bar */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-              <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
-                <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
-                  {[...Array(20)].map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        {
-                          width: '4.3%', // 100% / 20 segments, adjusted for spacing
-                          height: '100%',
-                          backgroundColor: 'white',
-                          marginRight: i === 19 ? 0 : '0.7%', // increased spacing between segments
-                          borderRadius: 2,
-                          transform: [{ skewX: '-18deg' }],
-                        },
-                        (i > 0 && i < 19) && { borderRadius: 0 },
-                                              i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                                                i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                                              (i >= levelProgress.segmentsFilled) && { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'white' },
-                      ]}
-                    />
-                  ))}
-                </View>
-              </View>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
-            </View>
-          
           {/* Green Progress Bar - Now first */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
             <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent', flexDirection: 'row' }]}>
+              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
                 {[...Array(8)].map((_, i) => {
                   // Get the count of checked segments from action screen
                   const activeSegmentCount = segmentChecked.filter(checked => checked).length;
@@ -918,7 +913,7 @@ function ProfileScreen({ navigation }: any) {
                       style={[
                         styles.leftBarSegment,
                         { 
-                          backgroundColor: shouldBeActive ? '#10B981' : 'transparent', 
+                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
                           height: 2.59,
                           flex: 1,
                           marginRight: i === 7 ? 0 : 2,
@@ -932,7 +927,7 @@ function ProfileScreen({ navigation }: any) {
                         i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
                         i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
                         (!shouldBeActive) && { 
-                          backgroundColor: 'transparent', 
+                          backgroundColor: theme.background, 
                           borderWidth: 0.5, 
                           borderColor: '#10B981',
                           shadowColor: 'transparent',
@@ -950,7 +945,7 @@ function ProfileScreen({ navigation }: any) {
           {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
             <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
+              <View style={styles.leftBarBackground}>
                 {[...Array(5)].map((_, i) => {
                   const isCompleted = coreHabitsCompleted[i];
                   return (
@@ -959,7 +954,7 @@ function ProfileScreen({ navigation }: any) {
                       style={[
                         styles.leftBarSegment,
                         { 
-                          backgroundColor: isCompleted ? '#E91E63' : 'transparent', 
+                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
                           height: 2.59,
                           shadowColor: '#E91E63',
                           shadowOffset: { width: 0, height: 0 },
@@ -972,7 +967,7 @@ function ProfileScreen({ navigation }: any) {
                         i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
                         i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
                         !isCompleted && { 
-                          backgroundColor: 'transparent', 
+                          backgroundColor: theme.background, 
                           borderWidth: 0.5, 
                           borderColor: '#E91E63',
                           shadowColor: 'transparent',
@@ -1006,7 +1001,7 @@ function ProfileScreen({ navigation }: any) {
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
             <Ionicons name="chevron-forward-outline" size={20} color="#ffffff" />
           </TouchableOpacity>
-          <View style={[styles.weeklyTrackerCard, { backgroundColor: 'transparent' }]}>
+          <View style={[styles.weeklyTrackerCard, { backgroundColor: theme.cardBackground }]}>
             <View style={styles.goalsContainer}>
               {activeGoals.length === 0 ? (
                 <View style={styles.noGoalsContainer}>
@@ -1032,8 +1027,8 @@ function ProfileScreen({ navigation }: any) {
                     }));
                     const completionPercent = calculateCompletionPercentage(goal, mockProgressEntries);
                     
-                    // Create gradient colors based on index
-                    const gradientColors = ['#FF6B35', '#9C27B0', '#E91E63']; // Orange to purple to pink
+                    // Create gradient colors based on index - using same green as level bar
+                    const gradientColors = ['#10B981', '#10B981', '#10B981']; // Green gradient matching level bar
                     
                     return (
                       <TouchableOpacity 
@@ -1131,37 +1126,38 @@ function ProfileScreen({ navigation }: any) {
             ].map((bar) => {
               const showIndicator = showProgressIndicator[bar.key];
               const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
-              // Display rounded number but keep exact for bar height
-              const displayProgress = Math.round(exactProgress);
+              // Display: floor the number (35.1-35.9 shows as 35, 36.0+ shows as 36)
+              // But keep exact decimal for bar height calculations
+              const displayProgress = Math.floor(exactProgress);
               
-              // Debug logging
-              if (showIndicator) {
-                console.log(`🎯 Rendering indicator for ${bar.key}:`, showIndicator);
-              }
+              // Use green color if bar increased, otherwise white
+              const barColor = showIndicator ? '#10B981' : bar.color;
+              const iconColor = 'rgba(0,0,0,0.5)';
               
               return (
                 <View key={bar.index} style={styles.progressBarColumn}>
                   <View style={styles.progressBarContainer}>
-                    {/* Background bar */}
+                    {/* Background bar - always white */}
                     <View style={[styles.progressBarBackground, { backgroundColor: bar.color, opacity: 0.2 }]} />
-                    {/* Filled progress */}
+                    {/* Filled progress - green if increased, white otherwise */}
                     <View
                       style={[
                         styles.progressBarFill,
                         {
-                          backgroundColor: bar.color,
+                          backgroundColor: barColor,
                           height: `${exactProgress}%`,
-                          opacity: 0.7
+                          opacity: 0.7,
+                          zIndex: 5,
                         }
                       ]}
                     />
-                    {/* Green arrow indicator above icon - positioned relative to container */}
+                    {/* Arrow indicator above icon - color matches icon */}
                     {showIndicator && (
                       <View style={styles.progressIndicatorAboveIcon}>
-                        <Ionicons 
+                        <FontAwesome5 
                           name="arrow-up" 
                           size={12} 
-                          color="#10B981" 
+                          color={iconColor} 
                         />
                       </View>
                     )}
@@ -1171,20 +1167,19 @@ function ProfileScreen({ navigation }: any) {
                         position: 'absolute',
                         width: 28,
                         height: 28,
-                        backgroundColor: 'transparent',
                         borderRadius: 14,
                         zIndex: 1
                       }} />
                       {bar.index === 1 ? (
-                        <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                        <FontAwesome5 name="dumbbell" size={20} color={iconColor} style={{ zIndex: 2 }} />
                       ) : bar.index === 2 ? (
-                        <FontAwesome5 name="brain" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                        <FontAwesome5 name="brain" size={20} color={iconColor} style={{ zIndex: 2 }} />
                       ) : bar.index === 3 ? (
-                        <FontAwesome5 name="lock" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                        <FontAwesome5 name="lock" size={20} color={iconColor} style={{ zIndex: 2 }} />
                       ) : bar.index === 4 ? (
-                        <FontAwesome5 name="star" size={20} color="rgba(0,0,0,0.5)" solid style={{ zIndex: 2 }} />
+                        <FontAwesome5 name="star" size={20} color={iconColor} solid style={{ zIndex: 2 }} />
                       ) : (
-                        <FontAwesome5 name="fire" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
+                        <FontAwesome5 name="fire" size={20} color={iconColor} style={{ zIndex: 2 }} />
                       )}
                     </View>
                     {/* Number at top of filled section */}
@@ -1198,10 +1193,63 @@ function ProfileScreen({ navigation }: any) {
                             [{ text: 'OK' }]
                           );
                         }}
+                        onLongPress={async () => {
+                          // Debug: Reset snapshot options
+                          if (user) {
+                            Alert.alert(
+                              'Debug: Snapshot Options',
+                              'Choose an option:',
+                              [
+                                {
+                                  text: 'Set to Current -2%',
+                                  onPress: async () => {
+                                    const startOfDayKey = `pillar_progress_start_of_day_${user.id}`;
+                                    const startOfDayDateKey = `pillar_progress_start_of_day_date_${user.id}`;
+                                    const today = new Date().toISOString().split('T')[0];
+                                    
+                                    // Get current progress
+                                    const { pillarProgressService } = await import('../lib/pillarProgressService');
+                                    const current = await pillarProgressService.getPillarProgress(user.id);
+                                    
+                                    // Subtract 2% from each pillar to simulate start of day
+                                    const startOfDay = {
+                                      strength_fitness: Math.max(0, current.strength_fitness - 2),
+                                      growth_wisdom: Math.max(0, current.growth_wisdom - 2),
+                                      discipline: Math.max(0, current.discipline - 2),
+                                      team_spirit: Math.max(0, current.team_spirit - 2),
+                                      overall: Math.max(0, current.overall - 2),
+                                    };
+                                    
+                                    await AsyncStorage.setItem(startOfDayKey, JSON.stringify(startOfDay));
+                                    await AsyncStorage.setItem(startOfDayDateKey, today);
+                                    
+                                    console.log('🔧 Manual snapshot set:', startOfDay);
+                                    Alert.alert('Success', 'Snapshot set to current -2%. Refresh to see green indicators!');
+                                    
+                                    // Reload to see changes
+                                    await loadPillarProgress();
+                                  }
+                                },
+                                {
+                                  text: 'Clear Snapshot',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    const startOfDayKey = `pillar_progress_start_of_day_${user.id}`;
+                                    const startOfDayDateKey = `pillar_progress_start_of_day_date_${user.id}`;
+                                    await AsyncStorage.removeItem(startOfDayKey);
+                                    await AsyncStorage.removeItem(startOfDayDateKey);
+                                    Alert.alert('Cleared', 'Snapshot cleared! Restart app to set new baseline.');
+                                  }
+                                },
+                                { text: 'Cancel', style: 'cancel' }
+                              ]
+                            );
+                          }
+                        }}
                         activeOpacity={0.7}
                       >
                         <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
-                          {exactProgress.toFixed(1)}
+                          {displayProgress}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1264,7 +1312,7 @@ function ProfileScreen({ navigation }: any) {
       <LevelInfoModal
         visible={showLevelModal}
         onClose={() => setShowLevelModal(false)}
-        currentLevel={levelProgress.currentLevel}
+        currentLevel={currentLevel}
         totalPoints={totalPoints}
         dailyHabits={segmentChecked}
         coreHabits={coreHabitsCompleted}
@@ -1431,7 +1479,6 @@ const styles = StyleSheet.create({
   keepTrackSection: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   keepTrackTitle: {
     fontSize: 20,
@@ -1605,7 +1652,6 @@ const styles = StyleSheet.create({
     // backgroundColor will be set dynamically
   },
   innerCircleUnchecked: {
-    backgroundColor: 'transparent',
     borderWidth: 1,
     // borderColor will be set dynamically
   },
@@ -1712,7 +1758,6 @@ const styles = StyleSheet.create({
   // Overlay styles
   overlayContainer: {
     flex: 1,
-    backgroundColor: 'transparent',
   },
   dayOverlay: {
     position: 'absolute',
@@ -1743,7 +1788,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   profileBox: {
     flex: 1,
@@ -2120,7 +2164,6 @@ const styles = StyleSheet.create({
   profilePictureContainer: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   profilePictureCard: {
     flexDirection: 'row',
@@ -2315,6 +2358,25 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 20,
   },
+  progressBarTopBorder: {
+    position: 'absolute',
+    width: '100%',
+    height: 6,
+    backgroundColor: '#10B981',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    zIndex: 6,
+    marginBottom: -6, // Overlap the filled bar by shifting down
+  },
+  progressBarTopBorderOnly: {
+    position: 'absolute',
+    width: '100%',
+    height: 6,
+    backgroundColor: '#10B981',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    zIndex: 6,
+  },
   progressBarAvatar: {
     position: 'absolute',
     bottom: 8,
@@ -2324,6 +2386,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 28,
     height: 28,
+    zIndex: 10,
   },
   chevronContainer: {
     position: 'absolute',

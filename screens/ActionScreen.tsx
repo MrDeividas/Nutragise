@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated, Easing } from 'react-native';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions } from 'react-native';
+import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,17 +18,19 @@ import { apiCache } from '../lib/apiCache';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import CheckInList from '../components/CheckInList';
 import DateNavigator from '../components/DateNavigator';
-import DailyHabitsSummary, { DEFAULT_HABITS, AVAILABLE_HABITS } from '../components/DailyHabitsSummary';
+import { DEFAULT_HABITS, AVAILABLE_HABITS } from '../components/DailyHabitsSummary';
 import EditHabitsModal from '../components/EditHabitsModal';
 
 import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
 import CreatePostModal from '../components/CreatePostModal';
 import NewGoalModal from '../components/NewGoalModal';
+import LevelInfoModal from '../components/LevelInfoModal';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
 import { challengesService } from '../lib/challengesService';
+import { pointsService } from '../lib/pointsService';
 import { Challenge } from '../types/challenges';
 import { supabase } from '../lib/supabase';
 
@@ -35,6 +39,37 @@ import { supabase } from '../lib/supabase';
 
 // Days constants
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+type HabitCardVisualState = {
+  baseProgress: number;
+  progressAnimated: Animated.Value;
+  completed: boolean;
+};
+
+// Helper function to save pillar progress snapshot at start of day
+async function savePillarProgressSnapshot(userId: string, today: string): Promise<void> {
+  try {
+    const startOfDayKey = `pillar_progress_start_of_day_${userId}`;
+    const startOfDayDateKey = `pillar_progress_start_of_day_date_${userId}`;
+    const storedDate = await AsyncStorage.getItem(startOfDayDateKey);
+    
+    console.log(`📸 Snapshot check: stored="${storedDate}", today="${today}"`);
+    
+    // Only save if we haven't saved today already (new calendar day)
+    if (storedDate !== today) {
+      const { pillarProgressService } = await import('../lib/pillarProgressService');
+      const progress = await pillarProgressService.getPillarProgress(userId);
+      
+      await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
+      await AsyncStorage.setItem(startOfDayDateKey, today);
+      console.log('📸 NEW DAY: Saved pillar progress snapshot:', progress);
+    } else {
+      console.log('📸 SAME DAY: Snapshot already exists, keeping original baseline');
+    }
+  } catch (error) {
+    console.error('Error saving pillar progress snapshot:', error);
+  }
+}
 
 // Helper function to check if a date is before today
 const isDateBeforeToday = (date: Date): boolean => {
@@ -134,166 +169,29 @@ const isGoalDueToday = (goal: any, checkedInGoals: Set<string>): boolean => {
   return goal.frequency[todayDayOfWeek] && !checkedInGoals.has(goal.id);
 };
 
-// Calendar component
-const MonthCalendar = ({ theme }: { theme: any }) => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDay = firstDay.getDay();
-    
-    const days = [];
-    const today = new Date();
-    
-    // Add days from previous month
-    const prevMonth = new Date(year, month - 1, 0);
-    const prevMonthDays = prevMonth.getDate();
-    for (let i = startingDay - 1; i >= 0; i--) {
-      const dayDate = new Date(year, month - 1, prevMonthDays - i);
-      days.push({ 
-        day: prevMonthDays - i, 
-        date: dayDate, 
-        isToday: false, 
-        isOtherMonth: true 
-      });
-    }
-    
-    // Add all days of the current month
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dayDate = new Date(year, month, i);
-      const isToday = dayDate.toDateString() === today.toDateString();
-      days.push({ day: i, date: dayDate, isToday, isOtherMonth: false });
-    }
-    
-    // Add days from next month to fill the grid
-    const remainingCells = 42 - days.length; // 6 rows * 7 days = 42
-    for (let i = 1; i <= remainingCells; i++) {
-      const dayDate = new Date(year, month + 1, i);
-      days.push({ 
-        day: i, 
-        date: dayDate, 
-        isToday: false, 
-        isOtherMonth: true 
-      });
-    }
-    
-    return days;
-  };
-  
-  const goToPreviousMonth = () => {
-    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  };
-  
-  const goToNextMonth = () => {
-    setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-  };
-  
-  const goToCurrentMonth = () => {
-    setCurrentDate(new Date());
-  };
-  
-  const formatMonthYear = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  };
-  
-  const days = getDaysInMonth(currentDate);
-  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-  
-  return (
-    <View style={styles.calendarContainer}>
-      {/* Calendar Header */}
-      <View style={styles.monthCalendarHeader}>
-        <TouchableOpacity onPress={goToPreviousMonth} style={styles.calendarNavButton}>
-          <Ionicons name="chevron-back-outline" size={20} color={theme.textPrimary} />
-        </TouchableOpacity>
-        
-        <View style={styles.calendarTitleContainer}>
-          <Text style={[styles.calendarTitle, { color: theme.textPrimary }]}>
-            {formatMonthYear(currentDate)}
-          </Text>
-        </View>
-        
-        <TouchableOpacity onPress={goToNextMonth} style={styles.calendarNavButton}>
-          <Ionicons name="chevron-forward-outline" size={20} color={theme.textPrimary} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Day Names */}
-      <View style={styles.dayNamesContainer}>
-        {dayNames.map((day, index) => (
-          <Text key={index} style={[styles.dayName, { color: theme.textSecondary }]}>
-            {day}
-          </Text>
-        ))}
-      </View>
-      
-      {/* Calendar Grid */}
-      <View style={styles.calendarGrid}>
-        {days.map((day, index) => (
-          <View key={index} style={styles.calendarDay}>
-            <TouchableOpacity 
-              style={[
-                styles.calendarDayButton,
-                day.isToday && styles.monthTodayButton
-              ]}
-            >
-              <Text style={[
-                styles.calendarDayText,
-                day.isOtherMonth ? { color: 'rgba(128, 128, 128, 0.4)' } : { color: theme.textPrimary },
-                day.isToday && styles.todayText
-              ]}>
-                {day.day}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
-      
-      {/* Today Button */}
-      <TouchableOpacity 
-        style={styles.goToTodayButton}
-        onPress={goToCurrentMonth}
-      >
-        <Text style={styles.goToTodayText}>Today</Text>
-      </TouchableOpacity>
-    </View>
-  );
-};
-
 function ActionScreen() {
   const navigation = useNavigation() as any;
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
-  const { selectedDate, setSelectedDate, dailyHabits } = useActionStore();
+  const { selectedDate, setSelectedDate, dailyHabits, loadDailyHabits, syncSegmentsWithData } = useActionStore();
+  const { segmentChecked, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
   
-  // Calendar state variables
-  const [expandedDay, setExpandedDay] = useState<number | null>(null);
-  const animatedHeight = useRef(new Animated.Value(0)).current;
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
   const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [checkedInGoals, setCheckedInGoals] = useState<Set<string>>(new Set());
   const [checkedInGoalsByDay, setCheckedInGoalsByDay] = useState<{[key: string]: Set<string>}>({});
   const [selectedWeek, setSelectedWeek] = useState(new Date());
-  const [showCalendar, setShowCalendar] = useState(false);
   const [goalProgress, setGoalProgress] = useState<{[goalId: string]: number}>({});
   const [overdueGoals, setOverdueGoals] = useState<Set<string>>(new Set());
   const [overdueGoalDates, setOverdueGoalDates] = useState<{[goalId: string]: Date}>({});
   const [overdueGoalCounts, setOverdueGoalCounts] = useState<{[goalId: string]: number}>({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showGymModal, setShowGymModal] = useState(false);
-  const [showGymActiveModal, setShowGymActiveModal] = useState(false);
-  const [showGymRestModal, setShowGymRestModal] = useState(false);
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [showWaterModal, setShowWaterModal] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
-  const [showRunActiveModal, setShowRunActiveModal] = useState(false);
-  const [showRunRestModal, setShowRunRestModal] = useState(false);
   const [showUntickConfirmation, setShowUntickConfirmation] = useState(false);
   const [segmentToUntick, setSegmentToUntick] = useState<number | null>(null);
   const [showHabitInfoModal, setShowHabitInfoModal] = useState(false);
@@ -310,6 +208,16 @@ function ActionScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [onboardingIncomplete, setOnboardingIncomplete] = useState(false);
   const [onboardingLastStep, setOnboardingLastStep] = useState<number | null>(null);
+  
+  // Level progress state
+  const [levelProgress, setLevelProgress] = useState({ 
+    currentLevel: 1, 
+    nextLevel: 2, 
+    pointsInCurrentLevel: 0,
+    pointsNeededForNext: 1400
+  });
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [showLevelModal, setShowLevelModal] = useState(false);
 
   
   // Keyboard state for modal positioning
@@ -364,8 +272,274 @@ function ActionScreen() {
     currentStep: 1
   });
 
+  const { width: screenWidth } = useWindowDimensions();
+  const spotlightCardWidth = useMemo(() => {
+    const horizontalPadding = 24 * 2;
+    const gap = 12;
+    return Math.max(160, (screenWidth - horizontalPadding - gap) / 2);
+  }, [screenWidth]);
 
+  const habitSpotlightCards = useMemo(() => ([
+    {
+      habitId: 'gym',
+      key: 'workout',
+      title: 'Workout',
+      subtitle: '24 Dec',
+      metricLabel: 'Goals',
+      metricValue: '4 / 6',
+      progress: 0.65,
+      accent: '#C084FC',
+    },
+    {
+      habitId: 'run',
+      key: 'exercise',
+      title: 'Exercise',
+      subtitle: 'Times Left',
+      metricLabel: 'Timer',
+      metricValue: '17:04:16',
+      progress: 0.4,
+      accent: '#38BDF8',
+    },
+    {
+      habitId: 'sleep',
+      key: 'sleep',
+      title: 'Sleep',
+      subtitle: 'Last Night',
+      metricLabel: 'Hours',
+      metricValue: '7h 45m',
+      progress: 0.78,
+      accent: '#34D399',
+    },
+    {
+      habitId: 'focus',
+      key: 'focus',
+      title: 'Focus',
+      subtitle: 'Daily Progress',
+      metricLabel: 'Today',
+      metricValue: '33%',
+      progress: 0.33,
+      accent: '#F472B6',
+    },
+    {
+      habitId: 'water',
+      key: 'water',
+      title: 'Water',
+      subtitle: 'Hydration',
+      metricLabel: 'Glasses',
+      metricValue: '6 / 8',
+      progress: 0.75,
+      accent: '#60A5FA',
+    },
+    {
+      habitId: 'reflect',
+      key: 'reflect',
+      title: 'Reflect',
+      subtitle: 'Entry Today',
+      metricLabel: 'Prompts',
+      metricValue: '2 / 3',
+      progress: 0.5,
+      accent: '#F59E0B',
+    },
+    {
+      habitId: 'update_goal',
+      key: 'update_goal',
+      title: 'Update Goal',
+      subtitle: 'Weekly',
+      metricLabel: 'Status',
+      metricValue: 'On Track',
+      progress: 0.85,
+      accent: '#A78BFA',
+    },
+    {
+      habitId: 'meditation',
+      key: 'meditation',
+      title: 'Meditation',
+      subtitle: 'Today',
+      metricLabel: 'Minutes',
+      metricValue: '12',
+      progress: 0.48,
+      accent: '#2DD4BF',
+    },
+    {
+      habitId: 'microlearn',
+      key: 'microlearn',
+      title: 'Microlearn',
+      subtitle: 'Lessons',
+      metricLabel: 'Completed',
+      metricValue: '3 / 5',
+      progress: 0.6,
+      accent: '#FB7185',
+    },
+    {
+      habitId: 'cold_shower',
+      key: 'cold_shower',
+      title: 'Cold Shower',
+      subtitle: 'Streak',
+      metricLabel: 'Days',
+      metricValue: '5-day',
+      progress: 0.9,
+      accent: '#7DD3FC',
+    },
+    {
+      habitId: 'screen_time',
+      key: 'screen_time',
+      title: 'Screen Time',
+      subtitle: 'Limit',
+      metricLabel: 'Today',
+      metricValue: '1h 20m',
+      progress: 0.4,
+      accent: '#FCD34D',
+    },
+  ]), []);
 
+  const [habitCardState, setHabitCardState] = useState<Record<string, HabitCardVisualState>>({});
+  const completionSoundRef = useRef<Audio.Sound | null>(null);
+
+  const habitIdToCardMap = useMemo(() => {
+    const map: Record<string, (typeof habitSpotlightCards)[number]> = {};
+    habitSpotlightCards.forEach(card => {
+      map[card.habitId] = card;
+    });
+    return map;
+  }, [habitSpotlightCards]);
+
+  useEffect(() => {
+    setHabitCardState((prev) => {
+      let changed = false;
+      const nextState: Record<string, HabitCardVisualState> = { ...prev };
+
+      habitSpotlightCards.forEach((card) => {
+        const shouldBeCompleted = completedHabits.has(card.habitId);
+        const existing = nextState[card.key];
+
+        if (!existing) {
+          const animatedValue = new Animated.Value(shouldBeCompleted ? 1 : card.progress);
+          nextState[card.key] = {
+            baseProgress: card.progress,
+            progressAnimated: animatedValue,
+            completed: shouldBeCompleted,
+          };
+          changed = true;
+          return;
+        }
+
+        if (existing.baseProgress !== card.progress) {
+          nextState[card.key] = {
+            ...existing,
+            baseProgress: card.progress,
+          };
+          if (!existing.completed) {
+            existing.progressAnimated.setValue(card.progress);
+          }
+          changed = true;
+        }
+
+        if (existing.completed !== shouldBeCompleted) {
+          existing.progressAnimated.setValue(shouldBeCompleted ? 1 : card.progress);
+          nextState[card.key] = {
+            ...existing,
+            completed: shouldBeCompleted,
+          };
+          changed = true;
+        }
+      });
+
+      return changed ? nextState : prev;
+    });
+  }, [habitSpotlightCards, completedHabits]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          require('../assets/sounds/habitComplete.mp3'),
+          { 
+            volume: 0.8,
+            shouldPlay: false, // Don't auto-play, just prepare it
+            isLooping: false
+          }
+        );
+
+        if (isMounted) {
+          // Pre-set position to 0 for immediate playback
+          await sound.setPositionAsync(0);
+          completionSoundRef.current = sound;
+        } else {
+          await sound.unloadAsync();
+        }
+      } catch (error) {
+        console.warn('Failed to load completion sound', error);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      if (completionSoundRef.current) {
+        completionSoundRef.current.unloadAsync().catch(() => {});
+        completionSoundRef.current = null;
+      }
+    };
+  }, []);
+
+  const playCompletionSound = useCallback(async () => {
+    try {
+      const sound = completionSoundRef.current;
+      if (!sound) return;
+      // Use playFromPositionAsync for immediate playback without delay
+      await sound.playFromPositionAsync(0);
+    } catch (error) {
+      console.warn('Failed to play completion sound', error);
+    }
+  }, []);
+
+  const updateCardCompletionVisual = useCallback((habitId: string, completed: boolean, options?: { animate?: boolean }) => {
+    const cardConfig = habitIdToCardMap[habitId];
+    if (!cardConfig) return;
+
+    const { key, progress } = cardConfig;
+    const animate = options?.animate ?? true;
+
+    setHabitCardState((prev) => {
+      const current = prev[key];
+      if (!current) return prev;
+
+      const targetValue = completed ? 1 : progress;
+      if (animate) {
+        Animated.timing(current.progressAnimated, {
+          toValue: targetValue,
+          duration: 450,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: false,
+        }).start();
+      } else {
+        current.progressAnimated.setValue(targetValue);
+      }
+
+      if (current.completed === completed && current.baseProgress === progress) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          baseProgress: progress,
+          completed,
+        },
+      };
+    });
+  }, [habitIdToCardMap]);
+
+  const handleHabitLongPress = useCallback(async (habitId: string) => {
+    if (completedHabits.has(habitId)) return;
+    markHabitCompleted(habitId); // Sound plays here when animation starts
+    const success = await persistQuickCompletion(habitId);
+    if (!success) {
+      markHabitUncompleted(habitId);
+    }
+  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion]);
 
   // Load today's daily habits data when component mounts
   useEffect(() => {
@@ -524,18 +698,123 @@ function ActionScreen() {
   };
 
   // Mark habit as completed in the new ring
-  const markHabitCompleted = (habitId: string) => {
-    setCompletedHabits(prev => new Set([...prev, habitId]));
-  };
+  const markHabitCompleted = useCallback((habitId: string) => {
+    setCompletedHabits(prev => {
+      if (prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.add(habitId);
+      return next;
+    });
+    // Play sound immediately when animation starts
+    playCompletionSound();
+    updateCardCompletionVisual(habitId, true, { animate: true });
+  }, [updateCardCompletionVisual, playCompletionSound]);
 
   // Mark habit as uncompleted in the new ring
-  const markHabitUncompleted = (habitId: string) => {
+  const markHabitUncompleted = useCallback((habitId: string) => {
     setCompletedHabits(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(habitId);
-      return newSet;
+      if (!prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.delete(habitId);
+      return next;
     });
-  };
+    updateCardCompletionVisual(habitId, false, { animate: true });
+  }, [updateCardCompletionVisual]);
+
+  const persistQuickCompletion = useCallback(async (habitId: string) => {
+    const date = getTodayDateString();
+    let success = false;
+
+    try {
+      switch (habitId) {
+        case 'gym':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            gym_day_type: 'active',
+            gym_training_types: ['Quick Session'],
+          });
+          break;
+        case 'run':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            run_day_type: 'active',
+            run_activity_type: 'run',
+            run_type: 'Easy',
+            run_distance: 5,
+            run_duration: '00:30:00',
+            run_notes: 'Logged via quick complete',
+          });
+          break;
+        case 'sleep':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            sleep_quality: 80,
+            sleep_hours: 7.5,
+            sleep_bedtime_hours: 22,
+            sleep_bedtime_minutes: 30,
+            sleep_wakeup_hours: 6,
+            sleep_wakeup_minutes: 0,
+            sleep_notes: 'Quick check-in',
+          });
+          break;
+        case 'water':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            water_intake: 4,
+            water_goal: 'Yes',
+            water_notes: 'Quick check-in',
+          });
+          break;
+        case 'focus':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            focus_completed: true,
+            focus_duration: 25,
+            focus_notes: 'Quick complete',
+          });
+          break;
+        case 'reflect':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            reflect_mood: 4,
+            reflect_energy: 4,
+            reflect_what_went_well: 'Quick reflection entry',
+            reflect_one_tweak: '',
+            reflect_nothing_to_change: false,
+          });
+          break;
+        case 'cold_shower':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            cold_shower_completed: true,
+          });
+          break;
+        case 'meditation':
+        case 'microlearn':
+          if (user) {
+            success = await pointsService.trackDailyHabit(user.id, habitId as 'meditation' | 'microlearn');
+          }
+          break;
+        case 'update_goal':
+          if (user) {
+            success = await pointsService.trackCoreHabit(user.id, 'update_goal');
+          }
+          break;
+        default:
+          console.warn('Quick completion not implemented for', habitId);
+          success = false;
+      }
+
+      if (success) {
+        await fetchUserPoints();
+        return true;
+      }
+    } catch (error) {
+      console.error('Error saving quick completion for', habitId, error);
+    }
+
+    return false;
+  }, [user]);
 
   // Handle habit press from the new ring
   const handleHabitPress = useCallback((habitId: string) => {
@@ -713,10 +992,10 @@ function ActionScreen() {
         liftAmount = -120; // Sleep modal needs moderate lift
       } else if (showWaterModal) {
         liftAmount = -80; // Water modal needs less lift (shorter content)
-      } else if (showRunModal || showRunActiveModal || showRunRestModal) {
-        liftAmount = -150; // Run modals need most lift (most content)
-      } else if (showGymModal || showGymActiveModal || showGymRestModal) {
-        liftAmount = -100; // Gym modals need moderate lift
+      } else if (showRunModal) {
+        liftAmount = -150; // Run modal needs most lift (most content)
+      } else if (showGymModal) {
+        liftAmount = -100; // Gym modal needs moderate lift
       } else if (showReflectModal) {
         liftAmount = -200; // Reflect modal needs most lift (most content)
       }
@@ -842,6 +1121,21 @@ function ActionScreen() {
       console.error('Error fetching goal progress:', error);
     }
   }, [user, userGoals]);
+
+  async function fetchUserPoints() {
+    if (!user) return;
+
+    try {
+      const total = await pointsService.getTotalPoints(user.id);
+      const progress = pointsService.getLevelProgress(total);
+      
+      setTotalPoints(total);
+      setLevelProgress(progress);
+    } catch (error) {
+      console.error('Error fetching user points:', error);
+      setTotalPoints(0);
+    }
+  }
 
   const checkForOverdueGoals = useCallback(async () => {
     if (!user || userGoals.length === 0) return;
@@ -1097,7 +1391,8 @@ function ActionScreen() {
         await Promise.all([
           fetchGoals(user.id),
           checkTodaysCheckIns(),
-          checkForOverdueGoals()
+          checkForOverdueGoals(),
+          fetchUserPoints()
         ]);
         
         // Only refresh progress-related data if goals are loaded
@@ -1109,9 +1404,10 @@ function ActionScreen() {
         const today = new Date().toISOString().split('T')[0];
         dailyHabitsService.recordLoginDay(user.id, today).catch(() => {});
         
-        // Apply pillar decay check (non-blocking)
-        const { pillarProgressService } = await import('../lib/pillarProgressService');
-        pillarProgressService.applyDecay(user.id).catch(() => {});
+        // Decay disabled - no longer applying automatic progress reduction
+        
+        // Save pillar progress snapshot at start of day (for green indicator comparison)
+        await savePillarProgressSnapshot(user.id, today);
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
           console.error('Error initializing ActionScreen data:', error);
@@ -1139,7 +1435,12 @@ function ActionScreen() {
       if (user && userGoals.length > 0) {
         checkTodaysCheckIns();
       }
-    }, [user, userGoals.length, checkTodaysCheckIns])
+      // Refresh level progress and core habits when screen comes into focus
+      if (user) {
+        fetchUserPoints();
+        loadCoreHabitsStatus();
+      }
+    }, [user, userGoals.length, checkTodaysCheckIns, loadCoreHabitsStatus])
   );
 
   // Load my active challenges
@@ -1199,30 +1500,8 @@ function ActionScreen() {
     return weekStart;
   }, []);
 
-  const formatDate = useCallback((date: Date): string => {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }, []);
-
-  // Navigation functions for the calendar
-  const goToPreviousWeek = useCallback(() => {
-    const newWeek = new Date(selectedWeek);
-    newWeek.setDate(selectedWeek.getDate() - 7);
-    setSelectedWeek(newWeek);
-  }, [selectedWeek]);
-
-  const goToNextWeek = useCallback(() => {
-    const newWeek = new Date(selectedWeek);
-    newWeek.setDate(selectedWeek.getDate() + 7);
-    setSelectedWeek(newWeek);
-  }, [selectedWeek]);
-
-  const goToCurrentWeek = useCallback(() => {
-    setSelectedWeek(new Date());
-  }, []);
-
   const handleCheckInPress = useCallback((goal: any, dayOfWeek: number) => {
     setSelectedGoal(goal);
-    setExpandedDay(dayOfWeek); // Store the day being checked in for
     
     // Set target check-in date based on overdue date if available
     if (goal.overdueDate) {
@@ -1235,7 +1514,7 @@ function ActionScreen() {
   }, []);
 
 
-  const getTodayDateString = (): string => {
+  function getTodayDateString(): string {
     const now = new Date();
     const hour = now.getHours();
     
@@ -1246,7 +1525,7 @@ function ActionScreen() {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
-  };
+  }
 
   const segmentIndexToHabit: Record<number, string> = {
     0: 'meditation',
@@ -1270,9 +1549,9 @@ function ActionScreen() {
 
   return (
     <CustomBackground>
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
         <ScrollView 
-          style={[styles.scrollView, { backgroundColor: 'transparent' }]} 
+          style={[styles.scrollView, { backgroundColor: theme.background }]} 
           showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -1281,112 +1560,256 @@ function ActionScreen() {
 
         {/* Header with Settings */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            onPress={() => setShowStreakModal(true)}
-            style={{ zIndex: 1 }}
+          <TouchableOpacity
+            onPress={() => {
+              // Switch to the existing Profile tab (same as tapping it in the bottom nav)
+              const parentNav = (navigation as any).getParent?.();
+              if (parentNav) {
+                parentNav.navigate('Profile');
+              } else {
+                (navigation as any).navigate('Profile');
+              }
+            }}
+            style={styles.profileButton}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="flame-outline" size={24} color={theme.textPrimary} />
+            {user?.avatar_url ? (
+              <Image source={{ uri: user.avatar_url }} style={styles.profileAvatar} />
+            ) : (
+              <View style={[styles.profileAvatarPlaceholder, { backgroundColor: theme.cardBackground }]}>
+                <Ionicons name="person-outline" size={18} color={theme.textPrimary} />
+              </View>
+            )}
           </TouchableOpacity>
-          
+
+          <View style={styles.profileHeaderCard}>
+            <View style={styles.headerStatsRow}>
+              {/* Money icon + 40 (left) */}
+              <View style={styles.headerStat}>
+                <Ionicons name="cash-outline" size={18} color={theme.textPrimary} />
+                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>40</Text>
+              </View>
+              {/* Diamonds icon + 100 (right) */}
+              <View style={styles.headerStat}>
+                <Ionicons name="diamond-outline" size={18} color={theme.textPrimary} />
+                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>100</Text>
+              </View>
+            </View>
+          </View>
+
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            Day {user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1}
+            {/* Title centered */}
           </Text>
           
           <TouchableOpacity 
-            onPress={() => setShowActionModal(true)}
+            onPress={() => (navigation as any).navigate('Notifications')}
             style={{ zIndex: 1 }}
           >
-            <Ionicons name="add" size={24} color={theme.textPrimary} />
+            <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
         </View>
 
+        {/* Level Progress Bar */}
+        <View style={{ marginHorizontal: 24, marginBottom: 16, marginTop: 12 }}>
+          <TouchableOpacity 
+            onPress={() => {
+              const levelTitles = ['Beginner', 'Committed', 'Focused', 'Disciplined', 'Achiever', 'Challenger', 'Relentless', 'Ascended'];
+              const currentTitle = levelTitles[levelProgress.currentLevel - 1];
+              const levelThresholds = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
+              const currentLevelStart = levelThresholds[levelProgress.currentLevel - 1];
+              const currentLevelTotal = levelProgress.currentLevel < 8 
+                ? levelThresholds[levelProgress.currentLevel] - currentLevelStart 
+                : 0;
+              
+              Alert.alert(
+                'Level Progress',
+                levelProgress.currentLevel < 8 
+                  ? `You are level ${levelProgress.currentLevel} — ${currentTitle}\n${levelProgress.pointsInCurrentLevel} / ${currentLevelTotal} points\n${levelProgress.pointsNeededForNext} points to level ${levelProgress.nextLevel}`
+                  : `You are level ${levelProgress.currentLevel} — ${currentTitle}\n${levelProgress.pointsInCurrentLevel} points\nMax level reached!`,
+                [{ text: 'OK' }]
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
+              <View style={{ flex: 1, marginHorizontal: 4, height: 8, backgroundColor: 'rgba(16, 185, 129, 0.2)', borderRadius: 4, overflow: 'visible', position: 'relative' }}>
+                {(() => {
+                  // Calculate the total XP needed for current level
+                  const levelThresholds = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
+                  const currentLevelStart = levelThresholds[levelProgress.currentLevel - 1];
+                  const levelXPRequired = levelProgress.currentLevel < 8 
+                    ? levelThresholds[levelProgress.currentLevel] - currentLevelStart 
+                    : 10000; // Max level uses arbitrary large number for display
+                  
+                  // Calculate progress percentage based on points in current level
+                  const progressPercentage = Math.min(100, (levelProgress.pointsInCurrentLevel / levelXPRequired) * 100);
+                  
+                  return (
+                    <>
+                      <View 
+                        style={{
+                          height: '100%',
+                          width: `${progressPercentage}%`,
+                          backgroundColor: '#10B981',
+                          borderRadius: 4,
+                        }}
+                      />
+                      {/* Dash indicator showing exact points position */}
+                      <View 
+                        style={{
+                          position: 'absolute',
+                          left: `${progressPercentage}%`,
+                          top: 14,
+                          width: 1,
+                          height: 8,
+                          backgroundColor: '#ffffff',
+                          transform: [{ translateX: -0.5 }],
+                        }}
+                      />
+                      {/* Points count below dash */}
+                      <View
+                        style={{
+                          position: 'absolute',
+                          left: `${progressPercentage}%`,
+                          top: 26,
+                          transform: [{ translateX: -20 }],
+                          width: 40,
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text 
+                          style={{
+                            fontSize: 10,
+                            fontWeight: '600',
+                            color: theme.textPrimary,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {levelProgress.pointsInCurrentLevel}
+                        </Text>
+                      </View>
+                    </>
+                  );
+                })()}
+              </View>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+            <View style={{ width: 20 }} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginRight: 4 }}>EXP</Text>
+            <TouchableOpacity 
+              onPress={async () => {
+                // Refresh data before opening modal to ensure live updates
+                if (user) {
+                  const today = new Date();
+                  const hour = today.getHours();
+                  const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
+                  const dateString = dateToUse.toISOString().split('T')[0];
+                  
+                  // Refresh daily habits and core habits status
+                  await Promise.all([
+                    loadDailyHabits(dateString),
+                    loadCoreHabitsStatus(),
+                    fetchUserPoints()
+                  ]);
+                }
+                setShowLevelModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="information-circle-outline" size={14} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Greeting Section */}
-        <View style={styles.greetingSection}>
-          <Text style={styles.greetingText}>
+        <View style={[styles.greetingSection, { flexDirection: 'row', alignItems: 'center' }]}>
+          <Text style={[styles.greetingText, { color: theme.textPrimary }]}>
             {(() => {
               const hour = new Date().getHours();
               if (hour < 12) return 'Good morning';
               if (hour < 18) return 'Good afternoon';
               return 'Good evening';
-            })()}, {user?.username || 'there'}
+            })()}{user?.username ? ` ${user.username},` : ' there,'} Day {user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1}
           </Text>
-          <Text style={styles.todaysTodoText}>Today's Overview</Text>
-          
-          {/* Orange Progress Bars - Between text and circle */}
-          <View style={styles.orangeProgressContainer}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-              <View style={[styles.leftBarContainer, { flex: 0.84, marginHorizontal: 4, alignSelf: 'center' }]}>
-                <View style={[styles.leftBarBackground, { backgroundColor: 'transparent' }]}>
-                  {[...Array(5)].map((_, i) => (
-                    <View
-                      key={i}
+          <TouchableOpacity onPress={() => setShowStreakModal(true)} accessibilityRole="button" style={{ marginLeft: 8 }}>
+            <Ionicons name="flame-outline" size={20} color={theme.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Habit Spotlight Cards */}
+        <View style={styles.highlightCarouselContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={spotlightCardWidth + 12}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            contentContainerStyle={styles.highlightCarouselContent}
+          >
+            {habitSpotlightCards.map((card, index) => {
+              const cardState = habitCardState[card.key];
+              const isCompletedCard = cardState?.completed;
+              const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(card.progress);
+              const progressWidth = progressAnimatedValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0%', '100%'],
+              });
+              const cardBackgroundColor = isCompletedCard ? '#10B981' : (isDark ? '#1f1f1f' : '#111827');
+              const progressTrackColor = isCompletedCard ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)';
+              const progressFillColor = isCompletedCard ? '#ffffff' : card.accent;
+              const subtitleColor = isCompletedCard ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)';
+
+              return (
+                <TouchableOpacity
+                  key={card.key}
+                  activeOpacity={0.85}
+                  delayLongPress={250}
+                  onPress={() => handleHabitPress(card.habitId)}
+                  onLongPress={() => handleHabitLongPress(card.habitId)}
+                  style={[
+                    styles.highlightCard,
+                    {
+                      width: spotlightCardWidth,
+                      marginRight: index === habitSpotlightCards.length - 1 ? 0 : 12,
+                      backgroundColor: cardBackgroundColor,
+                      shadowColor: isCompletedCard ? '#065f46' : isDark ? '#000000' : '#94a3b8',
+                    },
+                  ]}
+                >
+                  <View style={styles.highlightCardHeader}>
+                    <View>
+                      <Text style={[styles.highlightCardTitle, { color: '#ffffff' }]}>{card.title}</Text>
+                      <Text style={[styles.highlightCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
+                    </View>
+                    <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+                  </View>
+
+                  <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor }]}>
+                    <Animated.View
                       style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: i < 3 ? '#E91E63' : 'transparent', 
-                          height: 2.59,
-                          shadowColor: '#E91E63',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: 0.6,
-                          shadowRadius: 3,
-                          elevation: 3,
-                        },
-                        i === 4 && { marginRight: 0 },
-                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        (i === 3 || i === 4) && { 
-                          backgroundColor: 'transparent', 
-                          borderWidth: 0.5, 
-                          borderColor: '#E91E63',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
+                        styles.highlightCardProgressFill,
+                        {
+                          width: progressWidth,
+                          backgroundColor: progressFillColor,
                         },
                       ]}
                     />
-                  ))}
-                </View>
-              </View>
-              <TouchableOpacity style={styles.infoIconContainer}>
-                <Ionicons name="information-circle-outline" size={20} color="#ffffff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  </View>
 
-        {/* New Circular Progress Component */}
-        <DailyHabitsSummary
-          data={null}
-          onHabitPress={handleHabitPress}
-          selectedHabits={selectedHabits}
-          completedCount={completedHabits.size}
-          onEditPress={async () => {
-            if (!user) return;
-            // Check if habits are locked
-            const lockStatus = await dailyHabitsService.areHabitsLocked(user.id);
-            if (lockStatus.locked) {
-              const daysText = lockStatus.daysRemaining === 1 ? 'day' : 'days';
-              Alert.alert(
-                'Habits Locked',
-                `Your habits are locked for 6 weeks to help you build consistency. You can edit them again in ${lockStatus.daysRemaining} ${daysText}.`,
-                [
-                  { text: 'OK', style: 'default' },
-                  { 
-                    text: 'Premium', 
-                    style: 'default',
-                    onPress: () => Alert.alert('Premium', 'Coming soon')
-                  }
-                ]
+                  <View style={styles.highlightCardMetricRow}>
+                    <Text style={[styles.highlightCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
+                    <Text style={[styles.highlightCardMetricValue, { color: '#ffffff' }]}>{card.metricValue}</Text>
+                  </View>
+                </TouchableOpacity>
               );
-              return;
-            }
-            setShowEditHabitsModal(true);
-          }}
-          enabledTodaySet={getEnabledTodayHabits()}
-          onUnlockToday={handleUnlockToday}
-          completedHabits={completedHabits}
-        />
+            })}
+          </ScrollView>
+        </View>
 
         {/* Active Challenges Section */}
         <View style={styles.section}>
@@ -1523,40 +1946,12 @@ function ActionScreen() {
           />
         </View>
 
-        {/* View Progress Charts Button */}
-        <View style={styles.section}>
-          <TouchableOpacity 
-            style={[styles.progressChartsButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-            onPress={() => {
-              // Set flag in action store to open graphs
-              useActionStore.getState().setShouldOpenGraphs(true);
-              // Navigate to Insights tab
-              (navigation as any).navigate('Insights');
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.progressChartsContent}>
-              <Ionicons name="analytics" size={24} color={theme.primary} />
-              <View style={styles.progressChartsText}>
-                <Text style={[styles.progressChartsTitle, { color: theme.textPrimary }]}>View Progress Charts</Text>
-                <Text style={[styles.progressChartsSubtitle, { color: theme.textSecondary }]}>Track your wellness journey</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Month Calendar */}
-        <View style={styles.section}>
-          <MonthCalendar theme={theme} />
-        </View>
-
         
 
 
       </ScrollView>
 
-      {/* Gym Questionnaire Modal */}
+      {/* Gym Questionnaire Modal - Combined Single Page */}
       <Modal
         visible={showGymModal}
         transparent={true}
@@ -1576,129 +1971,132 @@ function ActionScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Day Type Selection */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>What type of day is this?</Text>
-              <View style={styles.optionsContainer}>
-                <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => {
-                    setShowGymModal(false);
-                    setShowGymActiveModal(true);
-                  }}
-                >
-                  <Text style={styles.optionButtonText}>
-                    Active Day
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => {
-                    setShowGymModal(false);
-                    setShowGymRestModal(true);
-                  }}
-                >
-                  <Text style={styles.optionButtonText}>
-                    Rest Day
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            </Animated.View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Gym Active Day Modal */}
-      <Modal
-        visible={showGymActiveModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowGymActiveModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <Animated.View style={[
-              styles.modalContent,
-              { transform: [{ translateY: modalPosition }] }
-            ]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Gym Active Day</Text>
-              <TouchableOpacity onPress={() => setShowGymActiveModal(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Training Type Selection */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>What did you train?</Text>
-              <View style={styles.trainingTypesContainer}>
-                {trainingTypes.map((type, index) => (
+            <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+              {/* Day Type Selection */}
+              <View style={styles.questionSection}>
+                <Text style={styles.questionText}>What type of day is this?</Text>
+                <View style={styles.optionsContainer}>
                   <TouchableOpacity
-                    key={index}
                     style={[
-                      styles.trainingTypeButton,
-                      gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonSelected
+                      styles.optionButton,
+                      gymQuestionnaire.dayType === 'active' && styles.optionButtonSelected
                     ]}
                     onPress={() => {
-                      setGymQuestionnaire(prev => {
-                        const isSelected = prev.selectedTrainingTypes.includes(type);
-                        if (isSelected) {
-                          return { ...prev, selectedTrainingTypes: prev.selectedTrainingTypes.filter(t => t !== type) };
-                        } else {
-                          return { ...prev, selectedTrainingTypes: [...prev.selectedTrainingTypes, type] };
-                        }
-                      });
+                      setGymQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
                     }}
                   >
                     <Text style={[
-                      styles.trainingTypeButtonText,
-                      gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonTextSelected
+                      styles.optionButtonText,
+                      gymQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
                     ]}>
-                      {type}
+                      Active Day
                     </Text>
                   </TouchableOpacity>
-                ))}
+                  <TouchableOpacity
+                    style={[
+                      styles.optionButton,
+                      gymQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
+                    ]}
+                    onPress={() => {
+                      setGymQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.optionButtonText,
+                      gymQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
+                    ]}>
+                      Rest Day
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
 
-            {/* Custom Training Type Input for "Other" */}
-            {gymQuestionnaire.selectedTrainingTypes.includes('Other') && (
-              <View style={styles.questionSection}>
-                <Text style={styles.questionText}>What type of training was it?</Text>
-                <TextInput
-                  style={styles.customInput}
-                  placeholder="Enter your training type..."
-                  value={gymQuestionnaire.customTrainingType}
-                  onChangeText={(text) => setGymQuestionnaire(prev => ({ ...prev, customTrainingType: text }))}
-                  placeholderTextColor="#999"
-                  multiline
-                  returnKeyType="default"
-                />
-              </View>
-            )}
+              {/* Active Day Content */}
+              {gymQuestionnaire.dayType === 'active' && (
+                <>
+                  {/* Training Type Selection */}
+                  <View style={styles.questionSection}>
+                    <Text style={styles.questionText}>What did you train?</Text>
+                    <View style={styles.trainingTypesContainer}>
+                      {trainingTypes.map((type, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.trainingTypeButton,
+                            gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonSelected
+                          ]}
+                          onPress={() => {
+                            setGymQuestionnaire(prev => {
+                              const isSelected = prev.selectedTrainingTypes.includes(type);
+                              if (isSelected) {
+                                return { ...prev, selectedTrainingTypes: prev.selectedTrainingTypes.filter(t => t !== type) };
+                              } else {
+                                return { ...prev, selectedTrainingTypes: [...prev.selectedTrainingTypes, type] };
+                              }
+                            });
+                          }}
+                        >
+                          <Text style={[
+                            styles.trainingTypeButtonText,
+                            gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonTextSelected
+                          ]}>
+                            {type}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Custom Training Type Input for "Other" */}
+                  {gymQuestionnaire.selectedTrainingTypes.includes('Other') && (
+                    <View style={styles.questionSection}>
+                      <Text style={styles.questionText}>What type of training was it?</Text>
+                      <TextInput
+                        style={styles.customInput}
+                        placeholder="Enter your training type..."
+                        value={gymQuestionnaire.customTrainingType}
+                        onChangeText={(text) => setGymQuestionnaire(prev => ({ ...prev, customTrainingType: text }))}
+                        placeholderTextColor="#999"
+                        multiline
+                        returnKeyType="default"
+                      />
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* Rest Day Content */}
+              {gymQuestionnaire.dayType === 'rest' && (
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionText}>Rest days are important for recovery!</Text>
+                  <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
+                    Taking time to rest allows your muscles to recover and grow stronger.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
 
             {/* Submit Button */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())) && styles.submitButtonDisabled
+                (!gymQuestionnaire.dayType || (gymQuestionnaire.dayType === 'active' && (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())))) && styles.submitButtonDisabled
               ]}
-              disabled={gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())}
+              disabled={!gymQuestionnaire.dayType || (gymQuestionnaire.dayType === 'active' && (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())))}
               onPress={async () => {
                 try {
                   const date = getTodayDateString();
                   const habitData = {
                     date,
-                    gym_day_type: 'active' as const,
-                    gym_training_types: gymQuestionnaire.selectedTrainingTypes,
-                    gym_custom_type: gymQuestionnaire.customTrainingType,
+                    gym_day_type: gymQuestionnaire.dayType as 'active' | 'rest',
+                    gym_training_types: gymQuestionnaire.dayType === 'active' ? gymQuestionnaire.selectedTrainingTypes : [],
+                    gym_custom_type: gymQuestionnaire.dayType === 'active' ? gymQuestionnaire.customTrainingType : '',
                   };
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    markHabitCompleted('gym'); // Mark gym as completed in new ring
-                    setShowGymActiveModal(false);
+                    markHabitCompleted('gym'); // Sound plays here when animation starts
+                    setShowGymModal(false);
                     setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
                   } else {
                     console.error('Failed to save gym data');
@@ -1708,71 +2106,15 @@ function ActionScreen() {
                 }
               }}
             >
-              <Text style={styles.submitButtonText}>Complete Session</Text>
-            </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Gym Rest Day Modal */}
-      <Modal
-        visible={showGymRestModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowGymRestModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <Animated.View style={[
-              styles.modalContent,
-              { transform: [{ translateY: modalPosition }] }
-            ]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Gym Rest Day</Text>
-              <TouchableOpacity onPress={() => setShowGymRestModal(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Rest Day Message */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Rest days are important for recovery!</Text>
-              <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
-                Taking time to rest allows your muscles to recover and grow stronger.
+              <Text style={styles.submitButtonText}>
+                {gymQuestionnaire.dayType === 'rest' ? 'Complete Rest Day' : 'Complete Session'}
               </Text>
-            </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={async () => {
-                try {
-                  const date = getTodayDateString();
-                  const habitData = {
-                    date,
-                    gym_day_type: 'rest' as const,
-                  };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    markHabitCompleted('gym'); // Mark gym as completed in new ring
-                    setShowGymRestModal(false);
-                    setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
-                  } else {
-                    console.error('Failed to save gym rest day');
-                  }
-                } catch (error) {
-                  console.error('Error saving gym rest day:', error);
-                }
-              }}
-            >
-              <Text style={styles.submitButtonText}>Complete Rest Day</Text>
             </TouchableOpacity>
             </Animated.View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
 
       {/* Sleep Questionnaire Modal */}
       <Modal
@@ -2153,7 +2495,7 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    markHabitCompleted('sleep'); // Mark sleep as completed in new ring
+                    markHabitCompleted('sleep'); // Sound plays here when animation starts
                     setShowSleepModal(false);
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
                   } else {
@@ -2271,7 +2613,7 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    markHabitCompleted('water'); // Mark water as completed in new ring
+                    markHabitCompleted('water'); // Sound plays here when animation starts
                     setShowWaterModal(false);
                     setWaterQuestionnaire({ waterIntake: 5, waterGoal: '', waterNotes: '' });
                   } else {
@@ -2289,7 +2631,7 @@ function ActionScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Run Questionnaire Modal */}
+      {/* Run Questionnaire Modal - Combined Single Page */}
       <Modal
         visible={showRunModal}
         transparent={true}
@@ -2298,7 +2640,10 @@ function ActionScreen() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <Animated.View style={[
+              styles.runModalContent,
+              { transform: [{ translateY: modalPosition }] }
+            ]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Run Session</Text>
               <TouchableOpacity onPress={() => setShowRunModal(false)}>
@@ -2306,317 +2651,309 @@ function ActionScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Day Type Selection */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>What type of day is this?</Text>
-              <View style={styles.optionsContainer}>
-                <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => {
-                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
-                  }}
-                >
-                  <Text style={styles.optionButtonText}>
-                    Active Day
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.optionButton}
-                  onPress={() => {
-                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
-                    setShowRunModal(false);
-                    setShowRunRestModal(true);
-                  }}
-                >
-                  <Text style={styles.optionButtonText}>
-                    Rest Day
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Activity Type Selection - Only shows when Active Day is selected */}
-            {runQuestionnaire.dayType === 'active' && (
+            <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
+              {/* Day Type Selection */}
               <View style={styles.questionSection}>
-                <Text style={styles.questionText}>What type of activity?</Text>
+                <Text style={styles.questionText}>What type of day is this?</Text>
                 <View style={styles.optionsContainer}>
                   <TouchableOpacity
                     style={[
                       styles.optionButton,
-                      runQuestionnaire.activityType === 'run' && styles.optionButtonSelected
+                      runQuestionnaire.dayType === 'active' && styles.optionButtonSelected
                     ]}
                     onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'run' }));
-                      setShowRunModal(false);
-                      setShowRunActiveModal(true);
+                      setRunQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
                     }}
                   >
                     <Text style={[
                       styles.optionButtonText,
-                      runQuestionnaire.activityType === 'run' && styles.optionButtonTextSelected
+                      runQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
                     ]}>
-                      Run
+                      Active Day
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[
                       styles.optionButton,
-                      runQuestionnaire.activityType === 'walk' && styles.optionButtonSelected
+                      runQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
                     ]}
                     onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'walk' }));
-                      setShowRunModal(false);
-                      setShowRunActiveModal(true);
+                      setRunQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
                     }}
                   >
                     <Text style={[
                       styles.optionButtonText,
-                      runQuestionnaire.activityType === 'walk' && styles.optionButtonTextSelected
+                      runQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
                     ]}>
-                      Walk
+                      Rest Day
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
-            )}
 
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+              {/* Active Day Content */}
+              {runQuestionnaire.dayType === 'active' && (
+                <>
+                  {/* Activity Type Selection */}
+                  <View style={styles.questionSection}>
+                    <Text style={styles.questionText}>What type of activity?</Text>
+                    <View style={styles.optionsContainer}>
+                      <TouchableOpacity
+                        style={[
+                          styles.optionButton,
+                          runQuestionnaire.activityType === 'run' && styles.optionButtonSelected
+                        ]}
+                        onPress={() => {
+                          setRunQuestionnaire(prev => ({ ...prev, activityType: 'run' }));
+                        }}
+                      >
+                        <Text style={[
+                          styles.optionButtonText,
+                          runQuestionnaire.activityType === 'run' && styles.optionButtonTextSelected
+                        ]}>
+                          Run
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.optionButton,
+                          runQuestionnaire.activityType === 'walk' && styles.optionButtonSelected
+                        ]}
+                        onPress={() => {
+                          setRunQuestionnaire(prev => ({ ...prev, activityType: 'walk' }));
+                        }}
+                      >
+                        <Text style={[
+                          styles.optionButtonText,
+                          runQuestionnaire.activityType === 'walk' && styles.optionButtonTextSelected
+                        ]}>
+                          Walk
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-      {/* Run Active Day Modal */}
-      <Modal
-        visible={showRunActiveModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowRunActiveModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <Animated.View style={[
-              styles.runModalContent,
-              { transform: [{ translateY: modalPosition }] }
-            ]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {runQuestionnaire.activityType === 'walk' ? 'Walk Active Day' : 'Run Active Day'}
-              </Text>
-              <TouchableOpacity onPress={() => setShowRunActiveModal(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
+                  {/* Run Type Selection - Only show if activity type is selected */}
+                  {runQuestionnaire.activityType && (
+                    <>
+                      <View style={styles.questionSection}>
+                        <View style={styles.otherOptionsContainer}>
+                          {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
+                            <TouchableOpacity
+                              key={type}
+                              style={[
+                                styles.otherOptionButton,
+                                runQuestionnaire.runType === type && styles.otherOptionButtonSelected
+                              ]}
+                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, runType: type }))}
+                            >
+                              <Text style={[
+                                styles.otherOptionButtonText,
+                                runQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
+                              ]}>
+                                {type}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
 
-            {/* Run Type Selection */}
-            <View style={styles.questionSection}>
-              <View style={styles.otherOptionsContainer}>
-                {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.otherOptionButton,
-                      runQuestionnaire.runType === type && styles.otherOptionButtonSelected
-                    ]}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, runType: type }))}
-                  >
-                    <Text style={[
-                      styles.otherOptionButtonText,
-                      runQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
-                    ]}>
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                      {/* Distance Slider */}
+                      <View style={styles.questionSection}>
+                        <Text style={styles.questionText}>Distance covered?</Text>
+                        <View style={styles.sliderContainer}>
+                          {/* Popular Distance Buttons */}
+                          <View style={styles.popularDistanceButtons}>
+                            <TouchableOpacity 
+                              style={styles.popularDistanceButton}
+                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 10 }))}
+                            >
+                              <Text style={styles.popularDistanceButtonText}>5km</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity 
+                              style={styles.popularDistanceButton}
+                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 20 }))}
+                            >
+                              <Text style={styles.popularDistanceButtonText}>10km</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity 
+                              style={styles.popularDistanceButton}
+                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 42 }))}
+                            >
+                              <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
+                            </TouchableOpacity>
+                          </View>
+                          
+                          <Slider
+                            style={styles.slider}
+                            minimumValue={0}
+                            maximumValue={85}
+                            value={runQuestionnaire.distance}
+                            onValueChange={(value) => setRunQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
+                            minimumTrackTintColor="#10B981"
+                            maximumTrackTintColor="#E5E7EB"
+                            thumbTintColor="#10B981"
+                            step={1}
+                          />
+                          <View style={styles.sliderLabels}>
+                            <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(runQuestionnaire.distance) }]}>
+                              {formatRunDistance(runQuestionnaire.distance)}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
 
-            {/* Distance Slider */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Distance covered?</Text>
-              <View style={styles.sliderContainer}>
-                {/* Popular Distance Buttons */}
-                <View style={styles.popularDistanceButtons}>
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 10 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>5km</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 20 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>10km</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 42 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={85}
-                  value={runQuestionnaire.distance}
-                  onValueChange={(value) => setRunQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
-                  minimumTrackTintColor="#10B981"
-                  maximumTrackTintColor="#E5E7EB"
-                  thumbTintColor="#10B981"
-                  step={1}
-                />
-                <View style={styles.sliderLabels}>
-                  <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(runQuestionnaire.distance) }]}>
-                    {formatRunDistance(runQuestionnaire.distance)}
+                      {/* Duration */}
+                      <View style={styles.questionSection}>
+                        <Text style={styles.questionText}>How long did it take?</Text>
+                        <View style={styles.timePickerRow}>
+                          {/* Hours column */}
+                          <View style={styles.timePickerColumn}>
+                            <Text style={styles.timePickerLabel}>Hours</Text>
+                            <ScrollView 
+                              style={styles.timePickerScroll} 
+                              showsVerticalScrollIndicator={false}
+                              snapToInterval={65}
+                              decelerationRate="fast"
+                              onMomentumScrollEnd={(event) => {
+                                const y = event.nativeEvent.contentOffset.y;
+                                const itemHeight = 65;
+                                const selectedIndex = Math.round(y / itemHeight);
+                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
+                                setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
+                              }}
+                            >
+                              {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+                                <TouchableOpacity
+                                  key={`h-${hour}`}
+                                  style={styles.timePickerItem}
+                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
+                                >
+                                  <Text style={styles.timePickerItemText}>
+                                    {hour}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+
+                          {/* Minutes column */}
+                          <View style={styles.timePickerColumn}>
+                            <Text style={styles.timePickerLabel}>Minutes</Text>
+                            <ScrollView 
+                              style={styles.timePickerScroll} 
+                              showsVerticalScrollIndicator={false}
+                              snapToInterval={65}
+                              decelerationRate="fast"
+                              onMomentumScrollEnd={(event) => {
+                                const y = event.nativeEvent.contentOffset.y;
+                                const itemHeight = 65;
+                                const selectedIndex = Math.round(y / itemHeight);
+                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
+                                setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
+                              }}
+                            >
+                              {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                                <TouchableOpacity
+                                  key={`m-${minute}`}
+                                  style={styles.timePickerItem}
+                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
+                                >
+                                  <Text style={styles.timePickerItemText}>
+                                    {minute.toString().padStart(2, '0')}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+
+                          {/* Seconds column */}
+                          <View style={styles.timePickerColumn}>
+                            <Text style={styles.timePickerLabel}>Seconds</Text>
+                            <ScrollView 
+                              style={styles.timePickerScroll} 
+                              showsVerticalScrollIndicator={false}
+                              snapToInterval={65}
+                              decelerationRate="fast"
+                              onMomentumScrollEnd={(event) => {
+                                const y = event.nativeEvent.contentOffset.y;
+                                const itemHeight = 65;
+                                const selectedIndex = Math.round(y / itemHeight);
+                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
+                                setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
+                              }}
+                            >
+                              {Array.from({ length: 60 }, (_, i) => i).map((second) => (
+                                <TouchableOpacity
+                                  key={`s-${second}`}
+                                  style={styles.timePickerItem}
+                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
+                                >
+                                  <Text style={styles.timePickerItemText}>
+                                    {second.toString().padStart(2, '0')}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Run Notes */}
+                      <View style={styles.questionSection}>
+                        <Text style={styles.questionText}>How did it feel? (optional)</Text>
+                        <TextInput
+                          style={styles.customInput}
+                          placeholder="e.g., Felt strong, good pace..."
+                          value={runQuestionnaire.runNotes}
+                          onChangeText={(text) => setRunQuestionnaire(prev => ({ ...prev, runNotes: text }))}
+                          placeholderTextColor="#999"
+                          multiline
+                          textAlignVertical="top"
+                        />
+                      </View>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Rest Day Content */}
+              {runQuestionnaire.dayType === 'rest' && (
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionText}>Rest days are important for recovery!</Text>
+                  <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
+                    Taking time to rest allows your muscles to recover and prevents injury.
                   </Text>
                 </View>
-              </View>
-            </View>
-
-            {/* Duration */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>How long did it take?</Text>
-              <View style={styles.timePickerRow}>
-                {/* Hours column */}
-                <View style={styles.timePickerColumn}>
-                  <Text style={styles.timePickerLabel}>Hours</Text>
-                  <ScrollView 
-                    style={styles.timePickerScroll} 
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={65}
-                    decelerationRate="fast"
-                    onMomentumScrollEnd={(event) => {
-                      const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 65;
-                      const selectedIndex = Math.round(y / itemHeight);
-                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
-                      setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
-                    }}
-                  >
-                    {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
-                      <TouchableOpacity
-                        key={`h-${hour}`}
-                        style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
-                      >
-                        <Text style={styles.timePickerItemText}>
-                          {hour}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Minutes column */}
-                <View style={styles.timePickerColumn}>
-                  <Text style={styles.timePickerLabel}>Minutes</Text>
-                  <ScrollView 
-                    style={styles.timePickerScroll} 
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={65}
-                    decelerationRate="fast"
-                    onMomentumScrollEnd={(event) => {
-                      const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 65;
-                      const selectedIndex = Math.round(y / itemHeight);
-                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                      setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
-                    }}
-                  >
-                    {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-                      <TouchableOpacity
-                        key={`m-${minute}`}
-                        style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
-                      >
-                        <Text style={styles.timePickerItemText}>
-                          {minute.toString().padStart(2, '0')}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Seconds column */}
-                <View style={styles.timePickerColumn}>
-                  <Text style={styles.timePickerLabel}>Seconds</Text>
-                  <ScrollView 
-                    style={styles.timePickerScroll} 
-                    showsVerticalScrollIndicator={false}
-                    snapToInterval={65}
-                    decelerationRate="fast"
-                    onMomentumScrollEnd={(event) => {
-                      const y = event.nativeEvent.contentOffset.y;
-                      const itemHeight = 65;
-                      const selectedIndex = Math.round(y / itemHeight);
-                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                      setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
-                    }}
-                  >
-                    {Array.from({ length: 60 }, (_, i) => i).map((second) => (
-                      <TouchableOpacity
-                        key={`s-${second}`}
-                        style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
-                      >
-                        <Text style={styles.timePickerItemText}>
-                          {second.toString().padStart(2, '0')}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            </View>
-
-            {/* Run Notes */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>How did it feel? (optional)</Text>
-              <ScrollView 
-                style={styles.runNotesScrollContainer}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled={true}
-              >
-                <TextInput
-                  style={styles.customInput}
-                  placeholder="e.g., Felt strong, good pace..."
-                  value={runQuestionnaire.runNotes}
-                  onChangeText={(text) => setRunQuestionnaire(prev => ({ ...prev, runNotes: text }))}
-                  placeholderTextColor="#999"
-                  multiline
-                  textAlignVertical="top"
-                />
-              </ScrollView>
-            </View>
+              )}
+            </ScrollView>
 
             {/* Submit Button */}
             <TouchableOpacity
-                              style={[
-                  styles.submitButton,
-                  !runQuestionnaire.runType && styles.submitButtonDisabled
-                ]}
-              disabled={!runQuestionnaire.runType}
+              style={[
+                styles.submitButton,
+                (!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))) && styles.submitButtonDisabled
+              ]}
+              disabled={!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))}
               onPress={async () => {
                 try {
                   const date = getTodayDateString();
                   const habitData = {
                     date,
-                    run_activity_type: runQuestionnaire.activityType as 'run' | 'walk',
+                    run_activity_type: runQuestionnaire.dayType === 'active' ? (runQuestionnaire.activityType as 'run' | 'walk') : undefined,
                     run_day_type: runQuestionnaire.dayType as 'active' | 'rest',
-                    run_type: runQuestionnaire.runType,
-                    run_distance: runQuestionnaire.distance * 0.5, // Convert to actual km
-                    run_duration: `${runQuestionnaire.durationHours}:${runQuestionnaire.durationMinutes.toString().padStart(2, '0')}:${runQuestionnaire.durationSeconds.toString().padStart(2, '0')}`,
-                    run_notes: runQuestionnaire.runNotes,
+                    run_type: runQuestionnaire.dayType === 'active' ? runQuestionnaire.runType : undefined,
+                    run_distance: runQuestionnaire.dayType === 'active' ? runQuestionnaire.distance * 0.5 : undefined,
+                    run_duration: runQuestionnaire.dayType === 'active' ? `${runQuestionnaire.durationHours}:${runQuestionnaire.durationMinutes.toString().padStart(2, '0')}:${runQuestionnaire.durationSeconds.toString().padStart(2, '0')}` : undefined,
+                    run_notes: runQuestionnaire.dayType === 'active' ? runQuestionnaire.runNotes : undefined,
                   };
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    markHabitCompleted('run'); // Mark run as completed in new ring
-                    setShowRunActiveModal(false);
+                    markHabitCompleted('run'); // Sound plays here when animation starts
+                    setShowRunModal(false);
                     setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
                   } else {
                     console.error('Failed to save run data');
@@ -2628,71 +2965,15 @@ function ActionScreen() {
                 }
               }}
             >
-              <Text style={styles.submitButtonText}>Complete Run Log</Text>
-            </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* Run Rest Day Modal */}
-      <Modal
-        visible={showRunRestModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowRunRestModal(false)}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <Animated.View style={[
-              styles.modalContent,
-              { transform: [{ translateY: modalPosition }] }
-            ]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Run Rest Day</Text>
-              <TouchableOpacity onPress={() => setShowRunRestModal(false)}>
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Rest Day Message */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Rest days are important for recovery!</Text>
-              <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
-                Taking time to rest allows your muscles to recover and prevents injury.
+              <Text style={styles.submitButtonText}>
+                {runQuestionnaire.dayType === 'rest' ? 'Complete Rest Day' : 'Complete Run Log'}
               </Text>
-            </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={async () => {
-                try {
-                  const date = getTodayDateString();
-                  const habitData = {
-                    date,
-                    run_day_type: 'rest' as const,
-                  };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    markHabitCompleted('run'); // Mark run as completed in new ring
-                    setShowRunRestModal(false);
-                    setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
-                  } else {
-                    console.error('Failed to save run rest day');
-                  }
-                } catch (error) {
-                  console.error('Error saving run rest day:', error);
-                }
-              }}
-            >
-              <Text style={styles.submitButtonText}>Complete Rest Day</Text>
             </TouchableOpacity>
             </Animated.View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
 
       {/* Reflect Questionnaire Modal */}
       <Modal
@@ -2968,7 +3249,7 @@ function ActionScreen() {
                           
                           const success = await useActionStore.getState().saveDailyHabits(habitData);
                           if (success) {
-                            markHabitCompleted('reflect'); // Mark reflect as completed in new ring
+                            markHabitCompleted('reflect'); // Sound plays here when animation starts
                             setShowReflectModal(false);
                             setReflectQuestionnaire({ mood: 3, energy: 3, whatWentWell: '', friction: '', oneTweak: '', nothingToChange: false, currentStep: 1 });
                           } else {
@@ -3029,7 +3310,7 @@ function ActionScreen() {
                       
                       const success = await useActionStore.getState().saveDailyHabits(habitData);
                       if (success) {
-                        markHabitCompleted('cold_shower'); // Mark cold shower as completed in new ring
+                        markHabitCompleted('cold_shower'); // Sound plays here when animation starts
                         setShowColdShowerModal(false);
                       } else {
                         console.error('Failed to save cold shower data');
@@ -3189,6 +3470,16 @@ function ActionScreen() {
         }}
       />
 
+      {/* Level Info Modal */}
+      <LevelInfoModal
+        visible={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        currentLevel={levelProgress.currentLevel}
+        totalPoints={totalPoints}
+        dailyHabits={segmentChecked}
+        coreHabits={coreHabitsCompleted}
+      />
+
 
       {/* Action Modal - Create Goal or Update Daily Post */}
       <Modal
@@ -3259,6 +3550,127 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
     position: 'relative',
+  },
+  profileButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileHeaderCard: {
+    flex: 1,
+    height: 48,
+    marginHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  highlightCarouselContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  highlightCarouselContent: {
+    paddingHorizontal: 24,
+  },
+  highlightCard: {
+    borderRadius: 20,
+    padding: 16,
+    minHeight: 120,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  highlightCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  highlightCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  highlightCardSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  highlightCardProgress: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    overflow: 'hidden',
+    marginBottom: 18,
+  },
+  highlightCardProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  highlightCardMetricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  highlightCardMetricLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  highlightCardMetricValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  headerStatsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+  headerStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerStatText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerTitle: {
     fontSize: 28,
@@ -3497,7 +3909,6 @@ const styles = StyleSheet.create({
   keepTrackSection: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   keepTrackTitle: {
     fontSize: 20,
@@ -3676,7 +4087,6 @@ const styles = StyleSheet.create({
     // backgroundColor will be set dynamically
   },
   innerCircleUnchecked: {
-    backgroundColor: 'transparent',
     borderWidth: 1,
     // borderColor will be set dynamically
   },
@@ -3842,160 +4252,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#129490',
   },
-  // Calendar navigation styles
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  calendarNavButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  calendarTitleContainer: {
-    flex: 1,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    
-  },
-  calendarTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  todayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  todayButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  // Calendar day styles
-  pastDayContainer: {
-    opacity: 0.6,
-  },
-  futureDayContainer: {
-    opacity: 0.8,
-  },
-  dayDate: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  todayDate: {
-    color: '#129490',
-    fontWeight: '600',
-  },
-  goalCount: {
-    fontSize: 10,
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  keepTrackHeader: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingVertical: 8,
-    
-  },
-  // New styles for the month calendar
-  calendarContainer: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(128, 128, 128, 0.2)',
-  },
-  monthCalendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  dayNamesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 12,
-  },
-  dayName: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-  },
-  calendarDay: {
-    width: '14.28%', // 7 days in a row
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 4,
-  },
-  calendarDayButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  calendarDayText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  todayText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  emptyDay: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'transparent',
-  },
-  goToTodayButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#129490',
-    alignSelf: 'center',
-    marginTop: 16,
-  },
-  goToTodayText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  monthTodayButton: {
-    backgroundColor: '#129490',
-  },
-  monthNamesContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 60,
-    
-  },
-  currentMonthName: {
-    fontSize: 20,
-    fontWeight: '700',
-    flex: 1,
-    textAlign: 'center',
-  },
-  adjacentMonthName: {
-    fontSize: 16,
-    fontWeight: '500',
-    flex: 1,
-    textAlign: 'center',
-  },
   // New styles for the progress bar
   leftBarContainer: {
     width: '80%',
@@ -4022,19 +4278,12 @@ const styles = StyleSheet.create({
   greetingSection: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
     marginTop: 16,
   },
   greetingText: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#ffffff',
     marginBottom: 4,
-  },
-  todaysTodoText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
   },
   // New styles for the info icon container
   infoIconContainer: {
@@ -4093,7 +4342,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     minWidth: 80,
@@ -4166,7 +4414,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4174,7 +4421,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4676,32 +4922,6 @@ const styles = StyleSheet.create({
   },
   timePickerItemSelected: {
     backgroundColor: '#10B981',
-  },
-  progressChartsButton: {
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  progressChartsContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progressChartsText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  progressChartsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  progressChartsSubtitle: {
-    fontSize: 14,
   },
   timePickerItemTextSelected: {
     color: '#ffffff',

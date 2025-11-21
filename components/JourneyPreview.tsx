@@ -376,7 +376,6 @@ const styles = StyleSheet.create({
   journeyPreview: {
     paddingHorizontal: 24,
     paddingVertical: 10,
-    backgroundColor: 'transparent',
   },
   journeyHeader: {
     flexDirection: 'row',

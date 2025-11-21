@@ -329,10 +329,7 @@ export default function OnboardingScreen({ navigation }: any) {
         await onboardingService.createInitialGoal(currentUser.id, goal);
       }
 
-      // If premium selected and not signed, show paywall (placeholder)
-      if (data.isPremium) {
-        Alert.alert('Premium Selected', 'Paywall coming soon! Continuing to app...');
-      }
+      // Premium feature removed - all habits are now free
 
       // Reset onboarding state
       reset();

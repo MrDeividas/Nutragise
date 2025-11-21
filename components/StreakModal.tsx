@@ -74,8 +74,8 @@ export default function StreakModal({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+    <Modal visible={visible} animationType="fade" onRequestClose={onClose} transparent={false}>
+      <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
         <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -146,7 +146,6 @@ export default function StreakModal({ visible, onClose }: Props) {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },

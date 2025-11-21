@@ -13,38 +13,71 @@ import { useTheme } from '../state/themeStore';
 const LEVELS = [
   {
     level: 1,
-    title: "Starter",
+    title: "Beginner",
     minPoints: 0,
-    maxPoints: 3999,
+    maxPoints: 1399,
     unlocks: "Daily challenges + accountability score tracking",
     rewards: ["Personalized weekly performance summary (AI coach)", "10% referral commission"]
   },
   {
     level: 2,
-    title: "Builder",
-    minPoints: 4000,
-    maxPoints: 7999,
+    title: "Committed",
+    minPoints: 1400,
+    maxPoints: 3199,
     unlocks: "Streak tracker + habit analytics dashboard",
     comingSoon: ["Create challenges between friends"],
     rewards: ["1 free 'Accountability Boost' (double points for 1 day)", "15% referral commission"]
   },
   {
     level: 3,
-    title: "Achiever",
-    minPoints: 8000,
-    maxPoints: 11999,
+    title: "Focused",
+    minPoints: 3200,
+    maxPoints: 5499,
     unlocks: "Access to advanced challenges (e.g., 7-day cold shower streaks)",
     comingSoon: ["Public challenges"],
     rewards: ["Entry into monthly prize draw (rewards up to £50)"]
   },
   {
     level: 4,
-    title: "Elite",
-    minPoints: 12000,
-    maxPoints: Infinity,
+    title: "Disciplined",
+    minPoints: 5500,
+    maxPoints: 8599,
     unlocks: "Custom progress report + leaderboard spotlight",
+    rewards: ["Priority support access", "20% referral commission"]
+  },
+  {
+    level: 5,
+    title: "Achiever",
+    minPoints: 8600,
+    maxPoints: 12499,
+    unlocks: "Exclusive community badge + advanced analytics",
     comingSoon: ["Become a mentor - create events, sell courses etc"],
-    rewards: ["Entry into premium prize draw (rewards up to £150)"]
+    rewards: ["Entry into monthly prize draw (rewards up to £75)", "2 free 'Accountability Boosts'"]
+  },
+  {
+    level: 6,
+    title: "Challenger",
+    minPoints: 12500,
+    maxPoints: 17499,
+    unlocks: "Elite tier challenges + custom goal templates",
+    rewards: ["Entry into premium prize draw (rewards up to £100)", "25% referral commission"]
+  },
+  {
+    level: 7,
+    title: "Relentless",
+    minPoints: 17500,
+    maxPoints: 23999,
+    unlocks: "Platinum status + featured profile spotlight",
+    rewards: ["Entry into premium prize draw (rewards up to £150)", "Exclusive merchandise"]
+  },
+  {
+    level: 8,
+    title: "Ascended",
+    minPoints: 24000,
+    maxPoints: Infinity,
+    unlocks: "Ultimate mastery badge + lifetime benefits",
+    comingSoon: ["VIP mentorship program"],
+    rewards: ["Entry into grand prize draw (rewards up to £250)", "30% referral commission", "Lifetime premium features"]
   }
 ];
 
@@ -88,11 +121,11 @@ export default function LevelInfoModal({
   const renderLevelCard = (levelData: typeof LEVELS[0], isCurrentLevel: boolean) => {
     // Calculate progress for current level
     let pointRangeText = '';
-    if (isCurrentLevel && currentLevel < 4) {
-      const pointsInLevel = totalPoints - (currentLevel - 1) * 4000;
-      const nextLevelPoints = 4000;
-      pointRangeText = `${pointsInLevel.toLocaleString()}/${nextLevelPoints.toLocaleString()} pts`;
-    } else if (isCurrentLevel && currentLevel === 4) {
+    if (isCurrentLevel && currentLevel < 8) {
+      const pointsInLevel = totalPoints - levelData.minPoints;
+      const nextLevelPoints = levelData.maxPoints + 1;
+      pointRangeText = `${pointsInLevel.toLocaleString()}/${(nextLevelPoints - levelData.minPoints).toLocaleString()} pts`;
+    } else if (isCurrentLevel && currentLevel === 8) {
       pointRangeText = `${totalPoints.toLocaleString()}+ pts`;
     } else {
       pointRangeText = `${levelData.minPoints.toLocaleString()}${levelData.maxPoints === Infinity ? '+' : `-${levelData.maxPoints.toLocaleString()}`} pts`;

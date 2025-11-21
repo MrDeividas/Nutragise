@@ -323,7 +323,6 @@ const styles = StyleSheet.create({
   keepTrackSection: {
     paddingHorizontal: 24,
     paddingVertical: 4,
-    backgroundColor: 'transparent',
   },
   keepTrackTitle: {
     fontSize: 20,

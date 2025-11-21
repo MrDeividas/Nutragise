@@ -164,22 +164,15 @@ class PillarProgressService {
         return false;
       }
 
-      // Apply decay before updating
-      await this.checkAndApplyDecay(userId, pillarType);
-
-      // Re-fetch after decay to get updated progress
-      const { data: updatedPillar } = await supabase
-        .from('pillar_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('pillar_type', pillarType)
-        .single();
-
-      const currentProgress = updatedPillar?.progress_percentage || pillar.progress_percentage || 35;
+      // Don't apply decay when tracking an action - only when retrieving progress
+      // This ensures progress always goes UP when completing habits
+      const currentProgress = pillar.progress_percentage || 35;
       
       // Calculate new progress
       const newProgress = Math.min(100, currentProgress + this.PROGRESS_INCREMENT);
       const newActionsToday = actionsToday + 1;
+
+      console.log(`📈 ${pillarType}: ${currentProgress.toFixed(2)}% → ${newProgress.toFixed(2)}% (+${this.PROGRESS_INCREMENT})`);
 
       // Update pillar progress
       const { error: updateError } = await supabase
@@ -205,6 +198,8 @@ class PillarProgressService {
         return false;
       }
 
+      console.log(`✅ ${pillarType} progress updated successfully`);
+
       // Update overall pillar
       await this.updateOverallPillar(userId);
 
@@ -217,73 +212,20 @@ class PillarProgressService {
 
   /**
    * Check and apply decay if needed for a specific pillar
+   * DISABLED: Decay functionality removed until requirements are finalized
    */
   async checkAndApplyDecay(userId: string, pillarType: PillarType): Promise<void> {
-    try {
-      const { data: pillar } = await supabase
-        .from('pillar_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('pillar_type', pillarType)
-        .single();
-
-      if (!pillar || !pillar.last_activity_date) return;
-
-      const today = new Date();
-      const lastActivity = new Date(pillar.last_activity_date);
-      const daysSinceActivity = Math.floor((today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-
-      // Only decay after grace period
-      if (daysSinceActivity > this.DECAY_GRACE_DAYS) {
-        const daysToDecay = daysSinceActivity - this.DECAY_GRACE_DAYS;
-        const decayAmount = daysToDecay * this.DECAY_AMOUNT;
-        const newProgress = Math.max(0, pillar.progress_percentage - decayAmount);
-
-        await supabase
-          .from('pillar_progress')
-          .update({
-            progress_percentage: newProgress,
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', userId)
-          .eq('pillar_type', pillarType);
-      }
-    } catch (error) {
-      console.error('Error in checkAndApplyDecay:', error);
-    }
+    // Decay disabled - no longer applying automatic progress reduction
+    return;
   }
 
   /**
    * Apply decay to all pillars for a user
+   * DISABLED: Decay functionality removed until requirements are finalized
    */
   async applyDecay(userId: string): Promise<void> {
-    try {
-      // Check if we've done a decay check recently (within last minute)
-      const now = Date.now();
-      const lastCheck = this.lastDecayCheck?.[userId] ?? 0;
-      const timeSinceLastCheck = now - lastCheck;
-      
-      if (timeSinceLastCheck < this.DECAY_CHECK_INTERVAL) {
-        // Skip silently - no need to log this
-        return;
-      }
-      
-      if (!this.lastDecayCheck) {
-        this.lastDecayCheck = {};
-      }
-      this.lastDecayCheck[userId] = now;
-      
-      const pillars: PillarType[] = ['strength_fitness', 'growth_wisdom', 'discipline', 'team_spirit'];
-      
-      await Promise.all(
-        pillars.map(pillar => this.checkAndApplyDecay(userId, pillar))
-      );
-
-      // Update overall after decay
-      await this.updateOverallPillar(userId);
-    } catch (error) {
-      console.error('Error in applyDecay:', error);
-    }
+    // Decay disabled - no longer applying automatic progress reduction
+    return;
   }
 
   /**

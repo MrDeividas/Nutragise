@@ -217,11 +217,11 @@ function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }: any) => ({
-        tabBarActiveTintColor: '#ffffff',
-        tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
+        tabBarActiveTintColor: theme.textPrimary,
+        tabBarInactiveTintColor: theme.textSecondary,
         tabBarStyle: {
-          backgroundColor: 'rgba(128, 128, 128, 0.15)',
-          borderTopColor: 'rgba(128, 128, 128, 0.2)',
+          backgroundColor: theme.backgroundSecondary,
+          borderTopColor: theme.border,
           shadowColor: 'transparent',
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0,

@@ -438,7 +438,7 @@ export default function InsightsScreen({ route }: any) {
 
   return (
     <CustomBackground>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Collapsible Header */}
         <View style={[styles.header, { borderBottomColor: borderSecondary }]}>
           <View style={styles.headerTopRow}>
@@ -928,7 +928,6 @@ export default function InsightsScreen({ route }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
   },
   header: {
     borderBottomWidth: 1,
@@ -1207,7 +1206,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#ffffff',
     textAlignVertical: 'center',
-    backgroundColor: 'transparent',
     borderWidth: 0,
   },
   sendButton: {

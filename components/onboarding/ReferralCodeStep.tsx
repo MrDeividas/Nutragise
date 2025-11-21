@@ -35,7 +35,7 @@ export default function ReferralCodeStep({ value, onChange, onNext }: ReferralCo
       />
 
       <TouchableOpacity
-        style={[styles.skipButton, { backgroundColor: 'transparent' }]}
+        style={styles.skipButton}
         onPress={onNext}
       >
         <Text style={[styles.skipText, { color: theme.textSecondary }]}>

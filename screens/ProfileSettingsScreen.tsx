@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 
 export default function ProfileSettingsScreen() {
   const navigation = useNavigation();
-  const { theme } = useTheme();
+  const { theme, isDark, toggleTheme } = useTheme();
   const { user, updateProfile, signOut, resendVerificationEmail, checkEmailVerification } = useAuthStore();
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
@@ -122,6 +122,22 @@ export default function ProfileSettingsScreen() {
           </View>
         )}
 
+        {/* Theme Toggle */}
+        <View style={[styles.option, styles.optionRow, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+          <View style={styles.optionTextContainer}>
+            <Text style={[styles.optionText, { color: theme.textPrimary }]}>Dark Mode</Text>
+            <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>
+              Toggle between light and dark experience
+            </Text>
+          </View>
+          <Switch
+            value={isDark}
+            onValueChange={toggleTheme}
+            trackColor={{ false: 'rgba(15, 122, 120, 0.3)', true: theme.primary }}
+            thumbColor="#ffffff"
+          />
+        </View>
+
         <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           <Text style={[styles.optionText, { color: theme.primary }]}>Change Username</Text>
         </TouchableOpacity>
@@ -195,6 +211,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderWidth: 1,
   },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   optionContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,6 +235,10 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  optionDescription: {
+    fontSize: 14,
+    marginTop: 4,
   },
   joinDate: {
     fontSize: 14,

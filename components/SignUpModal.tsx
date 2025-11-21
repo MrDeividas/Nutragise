@@ -112,7 +112,7 @@ export default function SignUpModal({ visible, onClose, onSuccess }: SignUpModal
               </View>
 
               <View style={styles.actions}>
-                <TouchableOpacity style={[styles.button, { backgroundColor: 'transparent', borderColor: theme.borderSecondary }]} onPress={handleClose} disabled={loading}>
+                <TouchableOpacity style={[styles.button, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]} onPress={handleClose} disabled={loading}>
                   <Text style={[styles.buttonText, { color: theme.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.button, { backgroundColor: theme.primary }]} onPress={handleSignUp} disabled={loading}>
