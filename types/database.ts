@@ -237,6 +237,82 @@ export interface CreateDailyHabitsData {
 
 export interface UpdateDailyHabitsData extends Partial<CreateDailyHabitsData> {}
 
+export type HabitCategory = 'custom' | 'wellbeing' | 'nutrition' | 'time' | 'avoid';
+export type HabitMode = 'positive' | 'negative' | 'timed';
+export type HabitScheduleType =
+  | 'specific_days_week'
+  | 'specific_days_month'
+  | 'days_per_week'
+  | 'days_per_fortnight'
+  | 'days_per_month'
+  | 'every_x_days';
+
+export interface CustomHabit {
+  id: string;
+  user_id: string;
+  title: string;
+  preset_key?: string | null;
+  category: HabitCategory;
+  habit_mode: HabitMode;
+  description?: string | null;
+  accent_color?: string | null;
+  icon_name?: string | null;
+  schedule_type: HabitScheduleType;
+  days_of_week?: number[] | null;
+  days_of_month?: number[] | null;
+  quantity_per_week?: number | null;
+  quantity_per_fortnight?: number | null;
+  quantity_per_month?: number | null;
+  every_x_days?: number | null;
+  start_date?: string | null;
+  timezone?: string | null;
+  goal_duration_minutes?: number | null;
+  metadata?: Record<string, any>;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomHabitCompletion {
+  id: string;
+  habit_id: string;
+  user_id: string;
+  occur_date: string;
+  status: 'completed' | 'skipped' | 'missed';
+  value?: number | null;
+  note?: string | null;
+  created_at: string;
+}
+
+export interface CreateCustomHabitInput {
+  title: string;
+  preset_key?: string | null;
+  category: HabitCategory;
+  habit_mode: HabitMode;
+  description?: string | null;
+  accent_color?: string | null;
+  icon_name?: string | null;
+  schedule_type: HabitScheduleType;
+  days_of_week?: number[] | null;
+  days_of_month?: number[] | null;
+  quantity_per_week?: number | null;
+  quantity_per_fortnight?: number | null;
+  quantity_per_month?: number | null;
+  every_x_days?: number | null;
+  start_date?: string | null;
+  timezone?: string | null;
+  goal_duration_minutes?: number | null;
+  metadata?: Record<string, any>;
+}
+
+export interface CompleteHabitPayload {
+  habit_id: string;
+  occur_date: string;
+  status?: 'completed' | 'skipped' | 'missed';
+  value?: number | null;
+  note?: string | null;
+}
+
 export interface HabitStreak {
   habit_type: string;
   current_streak: number;

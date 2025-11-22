@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated, Easing } from 'react-native';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions, PanResponder } from 'react-native';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
@@ -33,6 +34,7 @@ import { challengesService } from '../lib/challengesService';
 import { pointsService } from '../lib/pointsService';
 import { Challenge } from '../types/challenges';
 import { supabase } from '../lib/supabase';
+import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit } from '../types/database';
 
 
 
@@ -75,6 +77,63 @@ const mixColor = (hex: string, amount: number) => {
   return rgbToHex(r * ratio, g * ratio, b * ratio);
 };
 
+const hsvToRgb = (h: number, s: number, v: number) => {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h >= 0 && h < 60) {
+    r = c; g = x; b = 0;
+  } else if (h >= 60 && h < 120) {
+    r = x; g = c; b = 0;
+  } else if (h >= 120 && h < 180) {
+    r = 0; g = c; b = x;
+  } else if (h >= 180 && h < 240) {
+    r = 0; g = x; b = c;
+  } else if (h >= 240 && h < 300) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255),
+  };
+};
+
+const rgbToHsv = (r: number, g: number, b: number) => {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const diff = max - min;
+
+  let h = 0;
+  if (diff !== 0) {
+    if (max === r) {
+      h = ((g - b) / diff) % 6;
+    } else if (max === g) {
+      h = (b - r) / diff + 2;
+    } else {
+      h = (r - g) / diff + 4;
+    }
+  }
+  h = Math.round(h * 60);
+  if (h < 0) h += 360;
+
+  const s = max === 0 ? 0 : diff / max;
+  const v = max;
+
+  return { h, s, v };
+};
+
 const getLevelFillPercent = (progress: { currentLevel: number; pointsInCurrentLevel: number }) => {
   const currentLevelIndex = Math.max(0, Math.min(progress.currentLevel - 1, LEVEL_THRESHOLDS.length - 1));
   const currentLevelStart = LEVEL_THRESHOLDS[currentLevelIndex];
@@ -84,6 +143,65 @@ const getLevelFillPercent = (progress: { currentLevel: number; pointsInCurrentLe
       : currentLevelStart + 10000;
   const levelXPRequired = Math.max(nextThreshold - currentLevelStart, 1);
   return Math.min(progress.pointsInCurrentLevel / levelXPRequired, 1);
+};
+
+const SCHEDULE_OPTION_MAP: Record<string, HabitScheduleType> = {
+  'specific-days-week': 'specific_days_week',
+  'specific-days-month': 'specific_days_month',
+  'days-per-week': 'days_per_week',
+  'days-per-fortnight': 'days_per_fortnight',
+  'days-per-month': 'days_per_month',
+  'every-x-days': 'every_x_days',
+};
+
+const REVERSE_SCHEDULE_MAP: Record<HabitScheduleType, string> = {
+  'specific_days_week': 'specific-days-week',
+  'specific_days_month': 'specific-days-month',
+  'days_per_week': 'days-per-week',
+  'days_per_fortnight': 'days-per-fortnight',
+  'days_per_month': 'days-per-month',
+  'every_x_days': 'every-x-days',
+};
+
+const HABIT_ACCENTS: Record<HabitCategory, string> = {
+  custom: '#10B981',
+  wellbeing: '#0EA5E9',
+  nutrition: '#F59E0B',
+  time: '#F97316',
+  avoid: '#EF4444',
+};
+
+const formatHabitScheduleDescription = (habit: CustomHabit): string => {
+  switch (habit.schedule_type) {
+    case 'specific_days_week':
+      if (habit.days_of_week?.length) {
+        const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        return habit.days_of_week
+          .sort((a, b) => a - b)
+          .map((idx) => labels[idx] ?? '')
+          .filter(Boolean)
+          .join(', ');
+      }
+      return 'Specific days of the week';
+    case 'specific_days_month':
+      if (habit.days_of_month?.length) {
+        return `Days ${habit.days_of_month.sort((a, b) => a - b).join(', ')}`;
+      }
+      return 'Specific days of the month';
+    case 'days_per_week':
+      return `${habit.quantity_per_week ?? 1} per week`;
+    case 'days_per_fortnight':
+      return `${habit.quantity_per_fortnight ?? 1} per fortnight`;
+    case 'days_per_month':
+      if (habit.days_of_month?.length) {
+        return `Days ${habit.days_of_month.sort((a, b) => a - b).join(', ')}`;
+      }
+      return 'Days per month';
+    case 'every_x_days':
+      return `Every ${habit.every_x_days ?? 2} days`;
+    default:
+      return 'Every day';
+  }
 };
 
 type HabitCardVisualState = {
@@ -215,12 +333,143 @@ const isGoalDueToday = (goal: any, checkedInGoals: Set<string>): boolean => {
   return goal.frequency[todayDayOfWeek] && !checkedInGoals.has(goal.id);
 };
 
+const WhiteHabitCard = React.memo(({ 
+  card, 
+  index, 
+  totalCards,
+  spotlightCardWidth, 
+  whiteCardShadowColor, 
+  customHabitsLoading, 
+  theme,
+  customHabitsDate,
+  todayDate,
+  toggleHabitCompletion,
+  playCompletionSound,
+  loadHabitForEditing,
+  setShowCustomHabitModal,
+  styles
+}: any) => {
+  const isCreateCard = card.key === 'create_new_habit';
+  const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
+  
+  useEffect(() => {
+    Animated.timing(progressAnimated, {
+      toValue: card.progress ?? 0,
+      duration: 450,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [card.progress, progressAnimated]);
+
+  const animatedWidth = progressAnimated.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  const handleCardPress = useCallback(() => {
+    if (isCreateCard) {
+      setShowCustomHabitModal(true);
+    }
+  }, [isCreateCard, setShowCustomHabitModal]);
+
+  const handleCardLongPress = useCallback(() => {
+    if (isCreateCard || !card.habit) return;
+    playCompletionSound();
+    toggleHabitCompletion(card.habit.id, customHabitsDate || todayDate);
+  }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
+
+  const isCompleted = !isCreateCard && (card.progress >= 1);
+  const cardBackgroundColor = isCompleted ? '#10B981' : '#FFFFFF';
+  const titleColor = isCompleted ? '#FFFFFF' : theme.textPrimary;
+  const subtitleColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
+  const iconColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
+  const progressTrackColor = isCompleted ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+  const progressFillColor = card.accent;
+  
+  return (
+            <TouchableOpacity 
+      activeOpacity={0.85}
+      onPress={isCreateCard ? handleCardPress : undefined}
+      onLongPress={handleCardLongPress}
+      delayLongPress={250}
+      disabled={!isCreateCard && customHabitsLoading}
+              style={[
+        styles.whiteHabitCard,
+        {
+          width: spotlightCardWidth,
+          marginRight: index === totalCards - 1 ? 0 : 12,
+          marginVertical: 8,
+          shadowColor: whiteCardShadowColor,
+          backgroundColor: cardBackgroundColor,
+          borderColor: isCompleted ? 'transparent' : '#E5E7EB',
+        },
+        !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
+      ]}
+    >
+      <View style={styles.whiteHabitCardHeader}>
+        <View>
+          <Text style={[styles.whiteHabitCardTitle, { color: titleColor }]}>{card.title}</Text>
+          <Text style={[styles.whiteHabitCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
+          </View>
+        {!isCreateCard && card.habit && (
+      <TouchableOpacity 
+            onPress={(e) => {
+              e.stopPropagation();
+              if (card.habit) {
+                loadHabitForEditing(card.habit);
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-vertical" size={16} color={iconColor} />
+      </TouchableOpacity>
+        )}
+        {isCreateCard && (
+          <Ionicons name="ellipsis-vertical" size={16} color={theme.textSecondary} />
+        )}
+    </View>
+
+      <View style={[styles.whiteHabitCardProgress, { backgroundColor: progressTrackColor }]}>
+        <Animated.View
+          style={[
+            styles.whiteHabitCardProgressFill,
+            {
+              width: animatedWidth,
+              backgroundColor: progressFillColor,
+            },
+          ]}
+        />
+      </View>
+
+      <View style={styles.whiteHabitCardMetricRow}>
+        <Text style={[styles.whiteHabitCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
+        <Text style={[styles.whiteHabitCardMetricValue, { color: titleColor }]}>{card.metricValue}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 function ActionScreen() {
   const navigation = useNavigation() as any;
   const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
-  const { selectedDate, setSelectedDate, dailyHabits, loadDailyHabits, syncSegmentsWithData } = useActionStore();
+  const {
+    selectedDate,
+    setSelectedDate,
+    dailyHabits,
+    loadDailyHabits,
+    syncSegmentsWithData,
+    customHabits,
+    customHabitsLoading,
+    habitCompletions,
+    loadCustomHabits,
+    createCustomHabit,
+    updateCustomHabit,
+    deleteCustomHabit,
+    toggleHabitCompletion,
+    customHabitsDate,
+  } = useActionStore();
   const { segmentChecked, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
   
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
@@ -239,15 +488,55 @@ function ActionScreen() {
   const [showWaterModal, setShowWaterModal] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
   const [showCustomHabitModal, setShowCustomHabitModal] = useState(false);
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [customHabitTitle, setCustomHabitTitle] = useState('');
   const [selectedCustomHabitType, setSelectedCustomHabitType] = useState('custom');
   const [breakHabitTitle, setBreakHabitTitle] = useState('');
+  const [timedTaskTitle, setTimedTaskTitle] = useState('');
+  const [goalTime, setGoalTime] = useState('');
   const customHabitSlide = useRef(new Animated.Value(0)).current;
+  const customHabitScrollViewRef = useRef<ScrollView>(null);
   const [selectedPreset, setSelectedPreset] = useState<{ key: string; label: string } | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDuration, setTaskDuration] = useState<'day' | 'week' | 'month'>('day');
   const [taskFrequency, setTaskFrequency] = useState(1);
+  const [selectedColor, setSelectedColor] = useState('#10B981');
+  const [colorPickerHue, setColorPickerHue] = useState(150);
+  const [colorPickerSaturation, setColorPickerSaturation] = useState(0.8);
+  const [colorPickerValue, setColorPickerValue] = useState(0.8);
+  const colorPickerUpdatingRef = useRef(false);
+  const colorPickerBoxSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const colorPickerHueTrackSizeRef = useRef<number>(0);
+  const colorPickerFrameRef = useRef<number | null>(null);
+  const pendingColorSVRef = useRef<{ s: number; v: number } | null>(null);
+  const pendingHueRef = useRef<number | null>(null);
+  const [isColorPickerInteracting, setIsColorPickerInteracting] = useState(false);
   const [taskDays, setTaskDays] = useState('Every Day');
+  const [selectedTaskDaysOption, setSelectedTaskDaysOption] = useState<string>('specific-days-week');
+  const [selectedMonthDays, setSelectedMonthDays] = useState<Set<number>>(new Set([1]));
+  const [selectedWeekDays, setSelectedWeekDays] = useState<Set<number>>(new Set());
+  const [selectedDaysPerWeek, setSelectedDaysPerWeek] = useState<number>(1);
+  const [selectedDaysPerFortnight, setSelectedDaysPerFortnight] = useState<number>(1);
+  const [selectedDaysPerMonth, setSelectedDaysPerMonth] = useState<Set<number>>(new Set([1]));
+  const [selectedEveryXDays, setSelectedEveryXDays] = useState<number>(2);
+  const [isSavingHabit, setIsSavingHabit] = useState(false);
+  const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const colorPickerBaseColor = useMemo(() => {
+    const { r, g, b } = hsvToRgb(colorPickerHue, 1, 1);
+    return rgbToHex(r, g, b);
+  }, [colorPickerHue]);
+  const colorPickerBoxWidth = colorPickerBoxSizeRef.current?.width ?? 220;
+  const colorPickerBoxHeight = colorPickerBoxSizeRef.current?.height ?? 220;
+  const colorPickerHueTrackHeight = colorPickerHueTrackSizeRef.current || 220;
+
+  useEffect(() => {
+    return () => {
+      if (colorPickerFrameRef.current !== null) {
+        cancelAnimationFrame(colorPickerFrameRef.current);
+        colorPickerFrameRef.current = null;
+      }
+    };
+  }, []);
   const customHabitCategories = useMemo(
     () => [
       { key: 'custom', label: 'Create', icon: 'checkmark' },
@@ -285,9 +574,40 @@ function ActionScreen() {
     ],
     []
   );
+  const timedPresets = useMemo(
+    () => [
+      { key: 'read_10_minutes', label: 'Read for 10 Minutes' },
+      { key: 'learn_language', label: 'Learn a Language' },
+      { key: 'practice_instrument', label: 'Practice Instrument' },
+      { key: 'tidy_up', label: 'Tidy Up' },
+      { key: 'pomodoro', label: 'Pomodoro' },
+      { key: 'decrease_screen_time', label: 'Decrease Screen Time' },
+      { key: 'increase_screen_time', label: 'Increase Screen Time' },
+      { key: 'mindful_minutes', label: 'Mindful Minutes' },
+    ],
+    []
+  );
   const customHabitPresets = useMemo(() => {
-    return selectedCustomHabitType === 'avoid' ? avoidPresets : positivePresets;
-  }, [selectedCustomHabitType, avoidPresets, positivePresets]);
+    if (selectedCustomHabitType === 'avoid') {
+      return avoidPresets;
+    } else if (selectedCustomHabitType === 'time') {
+      return timedPresets;
+    }
+    return positivePresets;
+  }, [selectedCustomHabitType, avoidPresets, timedPresets, positivePresets]);
+
+  const isTimedTask = useMemo(() => {
+    if (timedTaskTitle.trim() !== '') return true;
+    if (selectedPreset) {
+      return timedPresets.some(p => p.key === selectedPreset.key);
+    }
+    return false;
+  }, [timedTaskTitle, selectedPreset, timedPresets]);
+  const isHealthOrFoodComingSoon = selectedCustomHabitType === 'wellbeing' || selectedCustomHabitType === 'nutrition';
+  const isSaveDisabled = useMemo(
+    () => isHealthOrFoodComingSoon || isSavingHabit || taskTitle.trim().length === 0,
+    [isHealthOrFoodComingSoon, isSavingHabit, taskTitle]
+  );
   const [showUntickConfirmation, setShowUntickConfirmation] = useState(false);
   const [segmentToUntick, setSegmentToUntick] = useState<number | null>(null);
   const [showHabitInfoModal, setShowHabitInfoModal] = useState(false);
@@ -382,17 +702,8 @@ function ActionScreen() {
     return Math.max(160, (screenWidth - horizontalPadding - gap) / 2);
   }, [screenWidth]);
 
-  const whiteHabitCards = useMemo(() => ([
-    {
-      key: 'dont_eat_bad_food',
-      title: "Don't Eat Bad Food",
-      subtitle: 'Today',
-      metricLabel: 'Status',
-      metricValue: 'On Track',
-      progress: 0.75,
-      accent: '#EF4444',
-    },
-    {
+  const whiteHabitCards = useMemo(() => {
+    const createCard = {
       key: 'create_new_habit',
       title: 'Create New Habit',
       subtitle: 'Custom',
@@ -400,8 +711,39 @@ function ActionScreen() {
       metricValue: '+',
       progress: 0,
       accent: '#10B981',
-    },
-  ]), []);
+      habit: undefined as CustomHabit | undefined,
+    };
+
+    const habitCards = customHabits.map((habit) => {
+      const completion = habitCompletions[habit.id];
+      const frequency = (habit.metadata as any)?.frequency ?? 1;
+      const duration = (habit.metadata as any)?.taskDuration ?? 'day';
+      const durationAbbr = duration === 'day' ? 't/d' : duration === 'week' ? 't/w' : 't/m';
+      const frequencyText = `${frequency} ${durationAbbr}`;
+      
+      // Calculate progress based on completion count vs frequency
+      const completionCount = completion?.value ?? (completion ? 1 : 0);
+      const calculatedProgress = frequency > 0 ? Math.min(completionCount / frequency, 1) : 0;
+      // Show minimum 5% if not completed, so user can see the color
+      const progress = calculatedProgress > 0 ? calculatedProgress : 0.05;
+      
+      // Get color from metadata or accent_color, fallback to category default
+      const habitColor = (habit.metadata as any)?.color ?? habit.accent_color ?? HABIT_ACCENTS[habit.category] ?? '#10B981';
+      
+      return {
+        key: habit.id,
+        title: habit.title,
+        subtitle: formatHabitScheduleDescription(habit),
+        metricLabel: 'Frequency',
+        metricValue: frequencyText,
+        progress: progress,
+        accent: habitColor,
+        habit,
+      };
+    });
+
+    return [...habitCards, createCard];
+  }, [customHabits, habitCompletions]);
 
   const whiteCardShadowColor = useMemo(
     () => (isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(15, 23, 42, 0.18)'),
@@ -443,16 +785,141 @@ function ActionScreen() {
 
   useEffect(() => {
     if (!showCustomHabitModal) {
+      setEditingHabitId(null);
       setCustomHabitTitle('');
       setBreakHabitTitle('');
+      setTimedTaskTitle('');
+      setGoalTime('');
       setSelectedCustomHabitType('custom');
       setSelectedPreset(null);
+      setTaskTitle('');
       customHabitSlide.setValue(0);
       setTaskDuration('day');
       setTaskFrequency(1);
       setTaskDays('Every Day');
+      setSelectedTaskDaysOption('specific-days-week');
+      setSelectedWeekDays(new Set());
+      setSelectedMonthDays(new Set([1]));
+      setSelectedDaysPerWeek(1);
+      setSelectedDaysPerFortnight(1);
+      setSelectedDaysPerMonth(new Set([1]));
+      setSelectedEveryXDays(2);
+      setSelectedColor('#10B981');
     }
   }, [showCustomHabitModal, customHabitSlide]);
+
+  useEffect(() => {
+    // Reset scroll to top when category changes
+    if (customHabitScrollViewRef.current) {
+      customHabitScrollViewRef.current.scrollTo({ y: 0, animated: false });
+    }
+  }, [selectedCustomHabitType]);
+
+  useEffect(() => {
+    if (colorPickerUpdatingRef.current) {
+      colorPickerUpdatingRef.current = false;
+      return;
+    }
+    try {
+      const { r, g, b } = toRgb(selectedColor);
+      const { h, s, v } = rgbToHsv(r, g, b);
+      setColorPickerHue(h);
+      setColorPickerSaturation(s);
+      setColorPickerValue(v);
+    } catch (error) {
+      // ignore invalid color strings
+    }
+  }, [selectedColor]);
+
+  useEffect(() => {
+    const { r, g, b } = hsvToRgb(colorPickerHue, colorPickerSaturation, colorPickerValue);
+    const hex = rgbToHex(r, g, b);
+    if (hex.toLowerCase() !== selectedColor.toLowerCase()) {
+      colorPickerUpdatingRef.current = true;
+      setSelectedColor(hex);
+    }
+  }, [colorPickerHue, colorPickerSaturation, colorPickerValue, selectedColor]);
+
+  const scheduleColorPickerFlush = useCallback(() => {
+    if (colorPickerFrameRef.current !== null) return;
+    colorPickerFrameRef.current = requestAnimationFrame(() => {
+      colorPickerFrameRef.current = null;
+      if (pendingColorSVRef.current) {
+        const { s, v } = pendingColorSVRef.current;
+        pendingColorSVRef.current = null;
+        setColorPickerSaturation(s);
+        setColorPickerValue(v);
+      }
+      if (pendingHueRef.current !== null) {
+        const hue = pendingHueRef.current;
+        pendingHueRef.current = null;
+        setColorPickerHue(hue);
+      }
+    });
+  }, []);
+
+  const updateColorFromBox = useCallback((x: number, y: number) => {
+    const size = colorPickerBoxSizeRef.current ?? { width: 1, height: 1 };
+    const clampedX = Math.max(0, Math.min(size.width, x));
+    const clampedY = Math.max(0, Math.min(size.height, y));
+    pendingColorSVRef.current = {
+      s: clampedX / size.width,
+      v: 1 - clampedY / size.height,
+    };
+    scheduleColorPickerFlush();
+  }, [scheduleColorPickerFlush]);
+
+  const colorBoxPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          setIsColorPickerInteracting(true);
+          updateColorFromBox(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+        },
+        onPanResponderMove: (evt) => {
+          updateColorFromBox(evt.nativeEvent.locationX, evt.nativeEvent.locationY);
+        },
+        onPanResponderRelease: () => setIsColorPickerInteracting(false),
+        onPanResponderTerminate: () => setIsColorPickerInteracting(false),
+      }),
+    [updateColorFromBox]
+  );
+
+  const updateHueFromTouch = useCallback((y: number) => {
+    const height = colorPickerHueTrackSizeRef.current || 1;
+    const clampedY = Math.max(0, Math.min(height, y));
+    pendingHueRef.current = (1 - clampedY / height) * 360;
+    scheduleColorPickerFlush();
+  }, [scheduleColorPickerFlush]);
+
+  const handleRandomColor = useCallback(() => {
+    const randomHue = Math.random() * 360;
+    const randomSaturation = 0.4 + Math.random() * 0.6;
+    const randomValue = 0.5 + Math.random() * 0.5;
+    setColorPickerHue(randomHue);
+    setColorPickerSaturation(randomSaturation);
+    setColorPickerValue(randomValue);
+  }, []);
+
+  const huePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          setIsColorPickerInteracting(true);
+          updateHueFromTouch(evt.nativeEvent.locationY);
+        },
+        onPanResponderMove: (evt) => {
+          updateHueFromTouch(evt.nativeEvent.locationY);
+        },
+        onPanResponderRelease: () => setIsColorPickerInteracting(false),
+        onPanResponderTerminate: () => setIsColorPickerInteracting(false),
+      }),
+    [updateHueFromTouch]
+  );
 
   const clearHabitNeedsDetails = useCallback((habitId: string) => {
     setPendingDataHabits(prev => {
@@ -472,6 +939,16 @@ function ActionScreen() {
   }, [user?.created_at, user?.username]);
 
   const habitSpotlightCards = useMemo(() => ([
+    {
+      habitId: 'sleep',
+      key: 'sleep',
+      title: 'Sleep',
+      subtitle: 'Last Night',
+      metricLabel: 'Hours',
+      metricValue: '7h 45m',
+      progress: 0.78,
+      accent: '#34D399',
+    },
     {
       habitId: 'gym',
       key: 'workout',
@@ -493,44 +970,14 @@ function ActionScreen() {
       accent: '#38BDF8',
     },
     {
-      habitId: 'sleep',
-      key: 'sleep',
-      title: 'Sleep',
-      subtitle: 'Last Night',
-      metricLabel: 'Hours',
-      metricValue: '7h 45m',
-      progress: 0.78,
-      accent: '#34D399',
-    },
-    {
-      habitId: 'focus',
-      key: 'focus',
-      title: 'Focus',
-      subtitle: 'Daily Progress',
-      metricLabel: 'Today',
-      metricValue: '33%',
-      progress: 0.33,
-      accent: '#F472B6',
-    },
-    {
-      habitId: 'water',
-      key: 'water',
-      title: 'Water',
-      subtitle: 'Hydration',
-      metricLabel: 'Glasses',
-      metricValue: '6 / 8',
-      progress: 0.75,
-      accent: '#60A5FA',
-    },
-    {
-      habitId: 'reflect',
-      key: 'reflect',
-      title: 'Reflect',
-      subtitle: 'Entry Today',
-      metricLabel: 'Prompts',
-      metricValue: '2 / 3',
-      progress: 0.5,
-      accent: '#F59E0B',
+      habitId: 'meditation',
+      key: 'meditation',
+      title: 'Meditation',
+      subtitle: 'Today',
+      metricLabel: 'Minutes',
+      metricValue: '12',
+      progress: 0.48,
+      accent: '#2DD4BF',
     },
     {
       habitId: 'update_goal',
@@ -543,16 +990,6 @@ function ActionScreen() {
       accent: '#A78BFA',
     },
     {
-      habitId: 'meditation',
-      key: 'meditation',
-      title: 'Meditation',
-      subtitle: 'Today',
-      metricLabel: 'Minutes',
-      metricValue: '12',
-      progress: 0.48,
-      accent: '#2DD4BF',
-    },
-    {
       habitId: 'microlearn',
       key: 'microlearn',
       title: 'Microlearn',
@@ -561,6 +998,36 @@ function ActionScreen() {
       metricValue: '3 / 5',
       progress: 0.6,
       accent: '#FB7185',
+    },
+    {
+      habitId: 'focus',
+      key: 'focus',
+      title: 'Focus',
+      subtitle: 'Daily Progress',
+      metricLabel: 'Today',
+      metricValue: '33%',
+      progress: 0.33,
+      accent: '#F472B6',
+    },
+    {
+      habitId: 'reflect',
+      key: 'reflect',
+      title: 'Reflect',
+      subtitle: 'Entry Today',
+      metricLabel: 'Prompts',
+      metricValue: '2 / 3',
+      progress: 0.5,
+      accent: '#F59E0B',
+    },
+    {
+      habitId: 'water',
+      key: 'water',
+      title: 'Water',
+      subtitle: 'Hydration',
+      metricLabel: 'Glasses',
+      metricValue: '6 / 8',
+      progress: 0.75,
+      accent: '#60A5FA',
     },
     {
       habitId: 'cold_shower',
@@ -603,11 +1070,13 @@ function ActionScreen() {
       habitSpotlightCards.forEach((card) => {
         const shouldBeCompleted = completedHabits.has(card.habitId);
         const existing = nextState[card.key];
+        // Show 5% if not completed (so user can see the color), otherwise use actual progress or 100% if completed
+        const displayProgress = shouldBeCompleted ? 1 : 0.05;
 
         if (!existing) {
-          const animatedValue = new Animated.Value(shouldBeCompleted ? 1 : card.progress);
+          const animatedValue = new Animated.Value(displayProgress);
           nextState[card.key] = {
-            baseProgress: card.progress,
+            baseProgress: displayProgress,
             progressAnimated: animatedValue,
             completed: shouldBeCompleted,
           };
@@ -615,21 +1084,22 @@ function ActionScreen() {
           return;
         }
 
-        if (existing.baseProgress !== card.progress) {
+        if (existing.baseProgress !== displayProgress && !shouldBeCompleted) {
           nextState[card.key] = {
             ...existing,
-            baseProgress: card.progress,
+            baseProgress: displayProgress,
           };
           if (!existing.completed) {
-            existing.progressAnimated.setValue(card.progress);
+            existing.progressAnimated.setValue(displayProgress);
           }
           changed = true;
         }
 
         if (existing.completed !== shouldBeCompleted) {
-          existing.progressAnimated.setValue(shouldBeCompleted ? 1 : card.progress);
+          existing.progressAnimated.setValue(displayProgress);
           nextState[card.key] = {
             ...existing,
+            baseProgress: displayProgress,
             completed: shouldBeCompleted,
           };
           changed = true;
@@ -697,7 +1167,9 @@ function ActionScreen() {
       const current = prev[key];
       if (!current) return prev;
 
-      const targetValue = completed ? 1 : progress;
+      // Show 5% if not completed (so user can see the color), otherwise 100% if completed
+      const displayProgress = completed ? 1 : 0.05;
+      const targetValue = displayProgress;
       if (animate) {
         Animated.timing(current.progressAnimated, {
           toValue: targetValue,
@@ -709,7 +1181,7 @@ function ActionScreen() {
         current.progressAnimated.setValue(targetValue);
       }
 
-      if (current.completed === completed && current.baseProgress === progress) {
+      if (current.completed === completed && current.baseProgress === displayProgress) {
         return prev;
       }
 
@@ -717,16 +1189,123 @@ function ActionScreen() {
         ...prev,
         [key]: {
           ...current,
-          baseProgress: progress,
+          baseProgress: displayProgress,
           completed,
         },
       };
     });
   }, [habitIdToCardMap]);
 
+  const markHabitCompleted = useCallback((habitId: string) => {
+    setCompletedHabits(prev => {
+      if (prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.add(habitId);
+      return next;
+    });
+    playCompletionSound();
+    updateCardCompletionVisual(habitId, true, { animate: true });
+    clearHabitNeedsDetails(habitId);
+  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails]);
+
+  const markHabitUncompleted = useCallback((habitId: string) => {
+    setCompletedHabits(prev => {
+      if (!prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.delete(habitId);
+      return next;
+    });
+    updateCardCompletionVisual(habitId, false, { animate: true });
+    clearHabitNeedsDetails(habitId);
+  }, [updateCardCompletionVisual, clearHabitNeedsDetails]);
+
+  const persistQuickCompletion = useCallback(async (habitId: string) => {
+    const date = getTodayDateString();
+    let success = false;
+
+    try {
+      switch (habitId) {
+        case 'gym':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            gym_day_type: 'active',
+            gym_training_types: ['Quick Session'],
+          });
+          break;
+        case 'run':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            run_day_type: 'active',
+            run_notes: 'Quick complete',
+          });
+          break;
+        case 'sleep':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            sleep_hours: 1,
+            sleep_quality: 50,
+          });
+          break;
+        case 'water':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            water_intake: 1,
+            water_notes: 'Quick check-in',
+          });
+          break;
+        case 'focus':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            focus_completed: true,
+            focus_notes: 'Quick complete',
+          });
+          break;
+        case 'reflect':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            reflect_mood: 3,
+            reflect_energy: 3,
+            reflect_what_went_well: 'Quick reflection',
+            reflect_nothing_to_change: false,
+          });
+          break;
+        case 'cold_shower':
+          success = await useActionStore.getState().saveDailyHabits({
+            date,
+            cold_shower_completed: true,
+          });
+          break;
+        case 'meditation':
+        case 'microlearn':
+          if (user) {
+            success = await pointsService.trackDailyHabit(user.id, habitId as 'meditation' | 'microlearn');
+          }
+          break;
+        case 'update_goal':
+          if (user) {
+            success = await pointsService.trackCoreHabit(user.id, 'update_goal');
+          }
+          break;
+        default:
+          console.warn('Quick completion not implemented for', habitId);
+          success = false;
+      }
+
+      if (success) {
+        markHabitNeedsDetails(habitId);
+        await fetchUserPoints();
+        return true;
+      }
+    } catch (error) {
+      console.error('Error saving quick completion for', habitId, error);
+    }
+
+    return false;
+  }, [user, markHabitNeedsDetails, fetchUserPoints]);
+
   const handleHabitLongPress = useCallback(async (habitId: string) => {
     if (completedHabits.has(habitId)) return;
-    markHabitCompleted(habitId); // Sound plays here when animation starts
+    markHabitCompleted(habitId);
     const success = await persistQuickCompletion(habitId);
     if (!success) {
       markHabitUncompleted(habitId);
@@ -738,6 +1317,10 @@ function ActionScreen() {
     const today = new Date().toISOString().split('T')[0];
     useActionStore.getState().loadDailyHabits(today);
   }, []);
+
+  useEffect(() => {
+    useActionStore.getState().loadCustomHabits(todayDate);
+  }, [todayDate]);
 
   useEffect(() => {
     headerGreetingOpacity.setValue(0);
@@ -946,32 +1529,6 @@ function ActionScreen() {
     setTodayOverrides(prev => new Set([...prev, habitId]));
   };
 
-  // Mark habit as completed in the new ring
-  const markHabitCompleted = useCallback((habitId: string) => {
-    setCompletedHabits(prev => {
-      if (prev.has(habitId)) return prev;
-      const next = new Set(prev);
-      next.add(habitId);
-      return next;
-    });
-    // Play sound immediately when animation starts
-    playCompletionSound();
-    updateCardCompletionVisual(habitId, true, { animate: true });
-    clearHabitNeedsDetails(habitId);
-  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails]);
-
-  // Mark habit as uncompleted in the new ring
-  const markHabitUncompleted = useCallback((habitId: string) => {
-    setCompletedHabits(prev => {
-      if (!prev.has(habitId)) return prev;
-      const next = new Set(prev);
-      next.delete(habitId);
-      return next;
-    });
-    updateCardCompletionVisual(habitId, false, { animate: true });
-    clearHabitNeedsDetails(habitId);
-  }, [updateCardCompletionVisual, clearHabitNeedsDetails]);
-
   const slideToConfirm = useCallback(() => {
     Animated.timing(customHabitSlide, {
       toValue: -screenWidth,
@@ -990,6 +1547,33 @@ function ActionScreen() {
     }).start();
   }, [customHabitSlide]);
 
+  const slideToColorPicker = useCallback(() => {
+    Animated.timing(customHabitSlide, {
+      toValue: -screenWidth * 2,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide, screenWidth]);
+
+  const slideToTaskDays = useCallback(() => {
+    Animated.timing(customHabitSlide, {
+      toValue: -screenWidth * 3,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide, screenWidth]);
+
+  const handleColorPickerBack = useCallback(() => {
+    Animated.timing(customHabitSlide, {
+      toValue: -screenWidth,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide, screenWidth]);
+
   const handlePresetSelect = useCallback((preset: { key: string; label: string }) => {
     setSelectedPreset(preset);
     setTaskTitle(preset.label);
@@ -1000,6 +1584,159 @@ function ActionScreen() {
     slideToSelection();
   }, [slideToSelection]);
 
+  const handleTaskDaysBack = useCallback(() => {
+    // Format and save the selected task days option
+    let formattedTaskDays = 'Every Day';
+    
+    switch (selectedTaskDaysOption) {
+      case 'specific-days-week':
+        if (selectedWeekDays.size > 0) {
+          const dayNames = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+          const selectedDays = Array.from(selectedWeekDays)
+            .sort((a, b) => a - b)
+            .map(index => dayNames[index])
+            .join(', ');
+          formattedTaskDays = selectedDays;
+        } else {
+          formattedTaskDays = 'Specific days of the week';
+        }
+        break;
+      case 'specific-days-month':
+        if (selectedMonthDays.size > 0) {
+          const selectedDays = Array.from(selectedMonthDays)
+            .sort((a, b) => a - b)
+            .join(', ');
+          formattedTaskDays = `Days ${selectedDays}`;
+        } else {
+          formattedTaskDays = 'Specific days of the month';
+        }
+        break;
+      case 'days-per-week':
+        formattedTaskDays = `${selectedDaysPerWeek} ${selectedDaysPerWeek === 1 ? 'day' : 'days'} per week`;
+        break;
+      case 'days-per-fortnight':
+        formattedTaskDays = `${selectedDaysPerFortnight} ${selectedDaysPerFortnight === 1 ? 'day' : 'days'} per fortnight`;
+        break;
+      case 'days-per-month':
+        if (selectedDaysPerMonth.size > 0) {
+          const selectedDays = Array.from(selectedDaysPerMonth)
+            .sort((a, b) => a - b)
+            .join(', ');
+          formattedTaskDays = `Days ${selectedDays}`;
+        } else {
+          formattedTaskDays = 'Number of days per month';
+        }
+        break;
+      case 'every-x-days':
+        formattedTaskDays = `Every ${selectedEveryXDays} ${selectedEveryXDays === 1 ? 'day' : 'days'}`;
+        break;
+      default:
+        formattedTaskDays = 'Every Day';
+    }
+    
+    setTaskDays(formattedTaskDays);
+    
+    Animated.timing(customHabitSlide, {
+      toValue: -screenWidth,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide, screenWidth, selectedTaskDaysOption, selectedWeekDays, selectedMonthDays, selectedDaysPerWeek, selectedDaysPerFortnight, selectedDaysPerMonth, selectedEveryXDays]);
+
+  const parseGoalTimeToMinutes = useCallback((): number | null => {
+    if (!goalTime) return null;
+    const numeric = parseInt(goalTime.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(numeric) ? numeric : null;
+  }, [goalTime]);
+
+  const buildHabitPayload = useCallback((): CreateCustomHabitInput | null => {
+    const trimmedTitle = (taskTitle || selectedPreset?.label || '').trim();
+    if (!trimmedTitle) {
+      return null;
+    }
+
+    const scheduleType = SCHEDULE_OPTION_MAP[selectedTaskDaysOption] ?? 'specific_days_week';
+    const habitMode: 'positive' | 'negative' | 'timed' =
+      selectedCustomHabitType === 'avoid'
+        ? 'negative'
+        : selectedCustomHabitType === 'time'
+        ? 'timed'
+        : 'positive';
+
+    const payload: CreateCustomHabitInput = {
+      title: trimmedTitle,
+      preset_key: selectedPreset?.key ?? null,
+      category: selectedCustomHabitType as HabitCategory,
+      habit_mode: habitMode,
+      schedule_type: scheduleType,
+      accent_color: selectedColor,
+      metadata: {
+        selectedTaskDaysOption,
+        presetLabel: selectedPreset?.label ?? null,
+        created_from: 'action_screen_modal',
+        frequency: taskFrequency,
+        taskDuration: taskDuration,
+        color: selectedColor,
+      },
+    };
+
+    if (scheduleType === 'specific_days_week') {
+      const days = Array.from(selectedWeekDays).sort((a, b) => a - b);
+      if (days.length) {
+        payload.days_of_week = days;
+      }
+    }
+
+    if (scheduleType === 'specific_days_month') {
+      const days = Array.from(selectedMonthDays).sort((a, b) => a - b);
+      if (days.length) {
+        payload.days_of_month = days;
+      }
+    }
+
+    if (scheduleType === 'days_per_week') {
+      payload.quantity_per_week = selectedDaysPerWeek;
+    }
+
+    if (scheduleType === 'days_per_fortnight') {
+      payload.quantity_per_fortnight = selectedDaysPerFortnight;
+    }
+
+    if (scheduleType === 'days_per_month') {
+      const days = Array.from(selectedDaysPerMonth).sort((a, b) => a - b);
+      if (days.length) {
+        payload.days_of_month = days;
+      }
+    }
+
+    if (scheduleType === 'every_x_days') {
+      payload.every_x_days = selectedEveryXDays;
+    }
+
+    const goalMinutes = parseGoalTimeToMinutes();
+    if (goalMinutes && habitMode === 'timed') {
+      payload.goal_duration_minutes = goalMinutes;
+    }
+
+    return payload;
+  }, [
+    taskTitle,
+    selectedPreset,
+    selectedTaskDaysOption,
+    selectedCustomHabitType,
+    selectedWeekDays,
+    selectedMonthDays,
+    selectedDaysPerWeek,
+    selectedDaysPerFortnight,
+    selectedDaysPerMonth,
+    selectedEveryXDays,
+    taskFrequency,
+    taskDuration,
+    selectedColor,
+    parseGoalTimeToMinutes,
+  ]);
+
   const handleCustomTaskConfirm = useCallback((title: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -1009,89 +1746,127 @@ function ActionScreen() {
     slideToConfirm();
   }, [slideToConfirm]);
 
-  const persistQuickCompletion = useCallback(async (habitId: string) => {
-    const date = getTodayDateString();
-    let success = false;
-
-    try {
-      switch (habitId) {
-        case 'gym':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            gym_day_type: 'active',
-            gym_training_types: ['Quick Session'],
-          });
-          break;
-        case 'run':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            run_day_type: 'active', // Minimal data to mark as completed
-            run_notes: 'Quick complete',
-          });
-          break;
-        case 'sleep':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            sleep_hours: 1, // Minimal integer value to mark as completed
-            sleep_quality: 50, // Minimal value to match function signature
-          });
-          break;
-        case 'water':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            water_intake: 1, // Minimal value to mark as completed
-            water_notes: 'Quick check-in',
-          });
-          break;
-        case 'focus':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            focus_completed: true, // Minimal data to mark as completed
-            focus_notes: 'Quick complete',
-          });
-          break;
-        case 'reflect':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            reflect_mood: 3, // Minimal value to mark as completed
-            reflect_energy: 3,
-            reflect_what_went_well: 'Quick reflection',
-            reflect_nothing_to_change: false,
-          });
-          break;
-        case 'cold_shower':
-          success = await useActionStore.getState().saveDailyHabits({
-            date,
-            cold_shower_completed: true,
-          });
-          break;
-        case 'meditation':
-        case 'microlearn':
-          if (user) {
-            success = await pointsService.trackDailyHabit(user.id, habitId as 'meditation' | 'microlearn');
-          }
-          break;
-        case 'update_goal':
-          if (user) {
-            success = await pointsService.trackCoreHabit(user.id, 'update_goal');
-          }
-          break;
-        default:
-          console.warn('Quick completion not implemented for', habitId);
-          success = false;
+  const loadHabitForEditing = useCallback((habit: CustomHabit) => {
+    setEditingHabitId(habit.id);
+    setTaskTitle(habit.title);
+    setSelectedCustomHabitType(habit.category);
+    
+    if (habit.preset_key) {
+      const preset = customHabitPresets.find(p => p.key === habit.preset_key) || 
+                     positivePresets.find(p => p.key === habit.preset_key) ||
+                     avoidPresets.find(p => p.key === habit.preset_key) ||
+                     timedPresets.find(p => p.key === habit.preset_key);
+      if (preset) {
+        setSelectedPreset(preset);
       }
-
-      if (success) {
-        markHabitNeedsDetails(habitId);
-        await fetchUserPoints();
-        return true;
+    }
+    
+    // Load schedule type and map it back to selectedTaskDaysOption
+    const taskDaysOption = REVERSE_SCHEDULE_MAP[habit.schedule_type] || 'specific-days-week';
+    setSelectedTaskDaysOption(taskDaysOption);
+    
+    // Load schedule-specific data
+    if (habit.days_of_week) setSelectedWeekDays(new Set(habit.days_of_week));
+    if (habit.days_of_month) setSelectedMonthDays(new Set(habit.days_of_month));
+    if (habit.quantity_per_week) setSelectedDaysPerWeek(habit.quantity_per_week);
+    if (habit.quantity_per_fortnight) setSelectedDaysPerFortnight(habit.quantity_per_fortnight);
+    if (habit.every_x_days) setSelectedEveryXDays(habit.every_x_days);
+    
+    const metadata = habit.metadata as any;
+    if (metadata) {
+      if (metadata.frequency) setTaskFrequency(metadata.frequency);
+      if (metadata.taskDuration) setTaskDuration(metadata.taskDuration);
+      if (metadata.color) setSelectedColor(metadata.color);
+      else if (habit.accent_color) setSelectedColor(habit.accent_color);
+      if (habit.goal_duration_minutes) {
+        const hours = Math.floor(habit.goal_duration_minutes / 60);
+        const minutes = habit.goal_duration_minutes % 60;
+        setGoalTime(`${hours}:${minutes.toString().padStart(2, '0')}`);
       }
-    } catch (error) {
-      console.error('Error saving quick completion for', habitId, error);
+    } else if (habit.accent_color) {
+      setSelectedColor(habit.accent_color);
+    }
+    
+    setShowCustomHabitModal(true);
+    // Slide to confirm step after a brief delay to allow state to settle
+    setTimeout(() => {
+      slideToConfirm();
+    }, 100);
+  }, [customHabitPresets, positivePresets, avoidPresets, timedPresets, slideToConfirm]);
+
+  const handleSaveHabit = useCallback(async () => {
+    if (selectedCustomHabitType === 'wellbeing' || selectedCustomHabitType === 'nutrition') {
+      Alert.alert('Coming Soon', 'Health and food tasks will be available soon.');
+      return;
     }
 
-    return false;
-  }, [user, markHabitNeedsDetails, fetchUserPoints]);
+    const payload = buildHabitPayload();
+    if (!payload) {
+      Alert.alert('Missing title', 'Please enter a task title before saving.');
+      return;
+    }
+
+    setIsSavingHabit(true);
+    try {
+      let success = false;
+      if (editingHabitId) {
+        const updated = await updateCustomHabit(editingHabitId, payload);
+        success = !!updated;
+      } else {
+        const created = await createCustomHabit(payload);
+        success = !!created;
+      }
+      
+      if (success) {
+        await loadCustomHabits(customHabitsDate || todayDate);
+        setShowCustomHabitModal(false);
+      } else {
+        Alert.alert('Error', `Failed to ${editingHabitId ? 'update' : 'save'} habit. Please try again.`);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message ?? `Failed to ${editingHabitId ? 'update' : 'save'} habit.`);
+    } finally {
+      setIsSavingHabit(false);
+    }
+  }, [
+    buildHabitPayload,
+    createCustomHabit,
+    updateCustomHabit,
+    editingHabitId,
+    loadCustomHabits,
+    customHabitsDate,
+    todayDate,
+    selectedCustomHabitType,
+  ]);
+
+  const handleDeleteHabit = useCallback(async () => {
+    if (!editingHabitId) return;
+
+    Alert.alert(
+      'Delete Task',
+      'Are you sure you want to delete this task? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const success = await deleteCustomHabit(editingHabitId);
+              if (success) {
+                await loadCustomHabits(customHabitsDate || todayDate);
+                setShowCustomHabitModal(false);
+              } else {
+                Alert.alert('Error', 'Failed to delete habit. Please try again.');
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error?.message ?? 'Failed to delete habit.');
+            }
+          },
+        },
+      ]
+    );
+  }, [editingHabitId, deleteCustomHabit, loadCustomHabits, customHabitsDate, todayDate]);
 
   const openHabitForm = useCallback((habitId: string) => {
     const { dailyHabits } = useActionStore.getState();
@@ -1736,15 +2511,25 @@ function ActionScreen() {
       const challenges = await challengesService.getUserChallenges(user.id);
       const now = new Date();
       
-      // Only show challenges that are currently ACTIVE (started but not ended)
-      const active = challenges.filter(challenge => {
+      // Show challenges that are active or upcoming
+      const relevant = challenges
+        .map(challenge => {
         const startDate = new Date(challenge.start_date);
         const endDate = new Date(challenge.end_date);
-        
-        // Only show if currently active (started and not ended yet)
-        return now >= startDate && now <= endDate;
-      });
-      setMyActiveChallenges(active);
+          const isActive = now >= startDate && now <= endDate;
+          const isUpcoming = now < startDate;
+          return { challenge, startDate, endDate, isActive, isUpcoming };
+        })
+        .filter(entry => entry.isActive || entry.isUpcoming)
+        .sort((a, b) => {
+          if (a.isActive !== b.isActive) {
+            return a.isActive ? -1 : 1; // active first
+          }
+          return a.startDate.getTime() - b.startDate.getTime();
+        })
+        .map(entry => entry.challenge);
+
+      setMyActiveChallenges(relevant);
     } catch (error) {
       console.error('Error loading active challenges:', error);
       setMyActiveChallenges([]);
@@ -1757,6 +2542,13 @@ function ActionScreen() {
   useEffect(() => {
     loadMyActiveChallenges();
   }, [loadMyActiveChallenges]);
+
+  // Refresh challenges whenever Action screen regains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadMyActiveChallenges();
+    }, [loadMyActiveChallenges])
+  );
 
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
@@ -2051,14 +2843,18 @@ function ActionScreen() {
             {habitSpotlightCards.map((card, index) => {
               const cardState = habitCardState[card.key];
               const isCompletedCard = cardState?.completed;
-              const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(card.progress);
+              const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
+              // Show 5% if not completed (so user can see the color), otherwise use baseProgress
+              const displayProgress = isCompletedCard ? baseProgress : 0.05;
+              const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(displayProgress);
               const progressWidth = progressAnimatedValue.interpolate({
                 inputRange: [0, 1],
                 outputRange: ['0%', '100%'],
               });
-              const cardBackgroundColor = isCompletedCard ? '#10B981' : (isDark ? '#1f1f1f' : '#111827');
+              const cardBackgroundColor = isCompletedCard ? '#059669' : (isDark ? '#1f1f1f' : '#111827');
               const progressTrackColor = isCompletedCard ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)';
-              const progressFillColor = isCompletedCard ? '#ffffff' : card.accent;
+              // Keep original accent color even when completed
+              const progressFillColor = card.accent;
               const subtitleColor = isCompletedCard ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)';
 
               const showPendingIndicator = pendingDataHabits.has(card.habitId);
@@ -2129,92 +2925,98 @@ function ActionScreen() {
             decelerationRate="fast"
             contentContainerStyle={styles.highlightCarouselContent}
           >
-            {whiteHabitCards.map((card, index) => {
-              const progressWidth = `${card.progress * 100}%`;
+            {whiteHabitCards.map((card, index) => (
+              <WhiteHabitCard
+                key={card.key}
+                card={card}
+                index={index}
+                totalCards={whiteHabitCards.length}
+                spotlightCardWidth={spotlightCardWidth}
+                whiteCardShadowColor={whiteCardShadowColor}
+                customHabitsLoading={customHabitsLoading}
+                theme={theme}
+                customHabitsDate={customHabitsDate}
+                todayDate={todayDate}
+                toggleHabitCompletion={toggleHabitCompletion}
+                playCompletionSound={playCompletionSound}
+                loadHabitForEditing={loadHabitForEditing}
+                setShowCustomHabitModal={setShowCustomHabitModal}
+                styles={styles}
+              />
+            ))}
+          </ScrollView>
+        </View>
 
-              return (
+        {/* Challenges Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              Challenges
+            </Text>
+          </View>
+          {myActiveChallenges.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.challengesContainer}
+              snapToInterval={spotlightCardWidth + 8}
+              snapToAlignment="start"
+              decelerationRate="fast"
+            >
+              {myActiveChallenges.map((challenge, index) => {
+                const startDate = new Date(challenge.start_date);
+                const endDate = new Date(challenge.end_date);
+                const now = new Date();
+                const isActiveChallenge = now >= startDate && now <= endDate;
+
+                return (
                 <TouchableOpacity
-                  key={card.key}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    if (card.key === 'create_new_habit') {
-                      setShowCustomHabitModal(true);
-              return;
-            }
-                    Alert.alert('Habit', 'Coming soon');
-                  }}
+                  key={challenge.id}
                   style={[
-                    styles.whiteHabitCard,
+                    styles.challengeCard,
                     {
                       width: spotlightCardWidth,
-                      marginRight: index === whiteHabitCards.length - 1 ? 0 : 12,
-                      marginVertical: 8,
-                      shadowColor: whiteCardShadowColor,
+                      marginRight: index === myActiveChallenges.length - 1 ? 0 : 8,
+                      backgroundColor: '#3B82F6',
+                      borderColor: theme.border,
                     },
                   ]}
+                  onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
                 >
-                  <View style={styles.whiteHabitCardHeader}>
+                  <View style={styles.challengeCardContent}>
                     <View>
-                      <Text style={[styles.whiteHabitCardTitle, { color: theme.textPrimary }]}>{card.title}</Text>
-                      <Text style={[styles.whiteHabitCardSubtitle, { color: theme.textSecondary }]}>{card.subtitle}</Text>
+                    <View style={styles.challengeHeader}>
+                        <Text style={[styles.challengeTitle, { color: '#FFFFFF' }]} numberOfLines={2}>
+                        {challenge.title}
+                      </Text>
+                      </View>
+                      <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.8)', marginTop: 4 }]}>
+                        {isActiveChallenge
+                          ? `Ends ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                          : `Starts ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                      </Text>
+                      {!isActiveChallenge && (
+                        <View
+                          style={[
+                            styles.challengeStatusBadge,
+                            { backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 8 },
+                          ]}
+                        >
+                          <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Upcoming</Text>
                     </View>
-                    <Ionicons name="ellipsis-vertical" size={16} color={theme.textSecondary} />
+                      )}
+                      <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.8)', marginTop: 8 }]} numberOfLines={1}>
+                      {challenge.category}
+                    </Text>
                   </View>
-
-                  <View style={[styles.whiteHabitCardProgress, { backgroundColor: 'rgba(0, 0, 0, 0.1)' }]}>
-                    <View
-                      style={[
-                        styles.whiteHabitCardProgressFill,
-                        {
-                          width: progressWidth,
-                          backgroundColor: card.accent,
-                        },
-                      ]}
-                    />
-                  </View>
-
-                  <View style={styles.whiteHabitCardMetricRow}>
-                    <Text style={[styles.whiteHabitCardMetricLabel, { color: theme.textSecondary }]}>{card.metricLabel}</Text>
-                    <Text style={[styles.whiteHabitCardMetricValue, { color: theme.textPrimary }]}>{card.metricValue}</Text>
+                    <View style={styles.challengeCardFooter}>
+                      <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+            </View>
                   </View>
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-        </View>
-
-        {/* Active Challenges Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Active Challenges
-            </Text>
-          </View>
-          {myActiveChallenges.length > 0 ? (
-            <View style={styles.challengesContainer}>
-              {myActiveChallenges.map((challenge) => (
-                <TouchableOpacity
-                  key={challenge.id}
-                  style={[styles.challengeCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
-                  onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
-                >
-                  <View style={styles.challengeCardContent}>
-                    <View style={styles.challengeHeader}>
-                      <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-                        {challenge.title}
-                      </Text>
-                      <Text style={[styles.challengeTime, { color: theme.textSecondary }]}>
-                        Ends {new Date(challenge.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                    </View>
-                    <Text style={[styles.challengeCategory, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {challenge.category}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-                </TouchableOpacity>
-              ))}
-            </View>
+            </ScrollView>
           ) : (
             <View style={[styles.challengesContainer, { paddingVertical: 20, alignItems: 'center' }]}>
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
@@ -2336,7 +3138,7 @@ function ActionScreen() {
               style={[
                 styles.customHabitPager,
                 {
-                  width: screenWidth * 2,
+                  width: screenWidth * 4,
                   transform: [{ translateX: customHabitSlide }],
                 },
               ]}
@@ -2350,7 +3152,9 @@ function ActionScreen() {
                   >
                     <Ionicons name="close" size={24} color={customHabitColors.text} />
                   </TouchableOpacity>
-                  <Text style={[styles.customHabitTitle, { color: customHabitColors.text }]}>Add Task</Text>
+                  <Text style={[styles.customHabitTitle, { color: customHabitColors.text }]}>
+                    {editingHabitId ? 'Edit Task' : 'Add Task'}
+                  </Text>
                   <TouchableOpacity
                     style={[styles.customHabitSearchButton, { backgroundColor: customHabitColors.iconBackground }]}
                   >
@@ -2382,6 +3186,7 @@ function ActionScreen() {
                   })}
               </View>
                 <ScrollView
+                  ref={customHabitScrollViewRef}
                   style={styles.customHabitScroll}
                   contentContainerStyle={styles.customHabitScrollContent}
                   showsVerticalScrollIndicator={false}
@@ -2392,8 +3197,31 @@ function ActionScreen() {
                       ? 'Tasks start each day as incomplete. Mark a task as done to increase your streak.'
                       : selectedCustomHabitType === 'avoid'
                       ? 'Negative tasks start each day as complete. Your streak breaks only when you mark it as missed.'
+                      : selectedCustomHabitType === 'time'
+                      ? 'Timed tasks automatically start a timer for you to complete that task, you can pause and resume throughout the day if necessary.'
+                      : selectedCustomHabitType === 'wellbeing'
+                      ? 'Health tasks are linked to the health app and are automatically updated when synced.'
+                      : selectedCustomHabitType === 'nutrition'
+                      ? 'Health tasks are linked to the health app and are automatically updated when synced.'
                       : 'Tap a task to edit or pick from suggestions below.'}
                   </Text>
+
+                  {(selectedCustomHabitType === 'wellbeing' || selectedCustomHabitType === 'nutrition') && (
+                    <>
+                      <Text style={[styles.customHabitPresetLabel, { color: customHabitColors.text }]}>
+                        CHOOSE A PRESET:
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.customHabitComingSoonButton, { backgroundColor: customHabitColors.card }]}
+                        activeOpacity={0.7}
+                        disabled={true}
+                      >
+                        <Text style={[styles.customHabitComingSoonButtonText, { color: customHabitColors.text }]}>
+                          Coming soon
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
 
                   {selectedCustomHabitType === 'custom' && (
                     <View style={[styles.customHabitInputWrapper, { backgroundColor: customHabitColors.card }]}>
@@ -2461,6 +3289,39 @@ function ActionScreen() {
                     </View>
                   )}
 
+                  {selectedCustomHabitType === 'time' && (
+                    <View style={[styles.customHabitInputWrapper, { backgroundColor: customHabitColors.card }]}>
+                      <Text style={[styles.customHabitInputLabel, { color: customHabitColors.text }]}>
+                        Create your own:
+                      </Text>
+                      <View style={styles.customHabitInputField}>
+                        <TextInput
+                          style={[styles.customHabitInput, styles.customHabitInputHasArrow, { color: customHabitColors.text }]}
+                          placeholder="Enter task title..."
+                          placeholderTextColor={customHabitColors.placeholder}
+                          maxLength={28}
+                          value={timedTaskTitle}
+                          onChangeText={setTimedTaskTitle}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.customHabitInputActionButton,
+                            { backgroundColor: customHabitColors.buttonActive },
+                            !timedTaskTitle.trim() && styles.customHabitInputActionButtonDisabled,
+                          ]}
+                          activeOpacity={0.7}
+                          disabled={!timedTaskTitle.trim()}
+                          onPress={() => handleCustomTaskConfirm(timedTaskTitle)}
+                        >
+                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
+                        {timedTaskTitle.length} / 28
+                      </Text>
+                    </View>
+                  )}
+
                   {selectedCustomHabitType === 'custom' && (
                     <>
                       <Text style={[styles.customHabitRecommendationsLabel, { color: customHabitColors.text }]}>
@@ -2491,46 +3352,62 @@ function ActionScreen() {
                     </>
                   )}
 
-                  <Text style={[styles.customHabitPresetLabel, { color: customHabitColors.text }]}>
-                    OR CHOOSE A PRESET:
-                  </Text>
+                  {selectedCustomHabitType !== 'wellbeing' && selectedCustomHabitType !== 'nutrition' && (
+                    <>
+                      <Text style={[styles.customHabitPresetLabel, { color: customHabitColors.text }]}>
+                        OR CHOOSE A PRESET:
+                      </Text>
 
-                  <ScrollView
-                    contentContainerStyle={styles.customHabitPresetList}
-                    showsVerticalScrollIndicator={false}
-                    nestedScrollEnabled
-                  >
-                  {customHabitPresets.map(preset => (
-                    <TouchableOpacity
-                      key={preset.key}
-                      style={[styles.customHabitPresetItem, { backgroundColor: customHabitColors.card }]}
-                      activeOpacity={0.7}
-                      onPress={() => handlePresetSelect(preset)}
-                    >
-                      <View style={[styles.customHabitPresetIcon, { backgroundColor: customHabitColors.iconBackground }]}>
-                        <Ionicons name="ban" size={18} color={customHabitColors.text} />
-                      </View>
-                      <Text style={[styles.customHabitPresetText, { color: customHabitColors.text }]}>{preset.label}</Text>
-                      <Ionicons name="chevron-forward" size={18} color={customHabitColors.text} />
-          </TouchableOpacity>
-                  ))}
-                  </ScrollView>
+                      <ScrollView
+                        contentContainerStyle={styles.customHabitPresetList}
+                        showsVerticalScrollIndicator={false}
+                        nestedScrollEnabled
+                      >
+                      {customHabitPresets.map(preset => (
+                        <TouchableOpacity
+                          key={preset.key}
+                          style={[styles.customHabitPresetItem, { backgroundColor: customHabitColors.card }]}
+                          activeOpacity={0.7}
+                          onPress={() => handlePresetSelect(preset)}
+                        >
+                          <View style={[styles.customHabitPresetIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                            <Ionicons name="ban" size={18} color={customHabitColors.text} />
+                          </View>
+                          <Text style={[styles.customHabitPresetText, { color: customHabitColors.text }]}>{preset.label}</Text>
+                          <Ionicons name="chevron-forward" size={18} color={customHabitColors.text} />
+              </TouchableOpacity>
+                      ))}
+                      </ScrollView>
+                    </>
+                  )}
                 </ScrollView>
         </View>
 
               {/* Confirm Step */}
               <View style={[styles.customHabitPage, { width: screenWidth }]}>
                 <View style={styles.confirmTaskHeader}>
-                  <TouchableOpacity
-                    style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
-                    onPress={handleConfirmTaskBack}
-                  >
-                    <Ionicons name="arrow-back" size={24} color={customHabitColors.text} />
-                  </TouchableOpacity>
+                  {!editingHabitId && (
+                    <TouchableOpacity
+                      style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
+                      onPress={handleConfirmTaskBack}
+                    >
+                      <Ionicons name="arrow-back" size={24} color={customHabitColors.text} />
+                    </TouchableOpacity>
+                  )}
+                  {editingHabitId && <View style={{ width: 40 }} />}
                   <View style={styles.confirmTaskHeaderTitleGroup}>
                     <Text style={[styles.confirmTaskTitle, { color: customHabitColors.text }]}>Confirm Task</Text>
                   </View>
-                  <View style={{ width: 40 }} />
+                  {editingHabitId ? (
+                    <TouchableOpacity
+                      style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
+                      onPress={() => setShowCustomHabitModal(false)}
+                    >
+                      <Ionicons name="close" size={24} color={customHabitColors.text} />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ width: 40 }} />
+                  )}
         </View>
 
                 <ScrollView contentContainerStyle={styles.confirmTaskContent} showsVerticalScrollIndicator={false}>
@@ -2560,7 +3437,7 @@ function ActionScreen() {
               <TouchableOpacity
                 style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24 }]}
                 activeOpacity={0.7}
-                onPress={() => {
+            onPress={() => {
                   setTaskDuration(prev => {
                     if (prev === 'day') return 'week';
                     if (prev === 'week') return 'month';
@@ -2612,20 +3489,62 @@ function ActionScreen() {
               {/* Task Days */}
               <TouchableOpacity
                 style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
-                activeOpacity={0.7}
+            activeOpacity={0.7}
+                onPress={slideToTaskDays}
               >
                 <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Task Days</Text>
                 <View style={styles.confirmTaskRowRight}>
                   <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>{taskDays}</Text>
                   <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
                     <Ionicons name="calendar" size={18} color={customHabitColors.text} />
-                  </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+              {/* Goal (only for timed tasks) */}
+              {isTimedTask && (
+                <View style={[styles.confirmTaskSection, { marginTop: 24 }]}>
+                  <Text style={[styles.confirmTaskSectionLabel, { color: customHabitColors.text }]}>GOAL:</Text>
+                  <View style={styles.confirmTaskTitleWrapper}>
+                    <TextInput
+                      style={[styles.confirmTaskTitleInput, { 
+                        backgroundColor: customHabitColors.card,
+                        color: customHabitColors.text,
+                        borderColor: customHabitColors.border
+                      }]}
+                      value={goalTime}
+                      onChangeText={setGoalTime}
+                      placeholder="Enter time (e.g., 10 min, 30 min)"
+                      placeholderTextColor={customHabitColors.placeholder}
+                      keyboardType="numeric"
+                    />
+        </View>
+                </View>
+              )}
+
+              {/* Color */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24 }]}
+                activeOpacity={0.7}
+                onPress={slideToColorPicker}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Color</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <View
+                    style={[
+                      styles.colorPreview,
+                      { backgroundColor: selectedColor, borderColor: customHabitColors.border }
+                    ]}
+                  />
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons name="chevron-forward" size={18} color={customHabitColors.text} />
+        </View>
                 </View>
               </TouchableOpacity>
 
               {/* Notifications */}
               <TouchableOpacity
-                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24 }]}
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Notifications</Text>
@@ -2653,25 +3572,608 @@ function ActionScreen() {
 
               {/* Save Task Button */}
               <TouchableOpacity
-                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24, marginBottom: 0 }]}
+                style={[
+                  styles.confirmTaskRow,
+                  { backgroundColor: customHabitColors.card, marginTop: 24, marginBottom: editingHabitId ? 12 : 0 },
+                  isSaveDisabled && styles.confirmTaskRowDisabled,
+                ]}
                 activeOpacity={0.8}
-                onPress={() => {
-                  setShowCustomHabitModal(false);
-                }}
+                onPress={handleSaveHabit}
+                disabled={isSaveDisabled}
               >
-                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Save Task</Text>
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>
+                  {isHealthOrFoodComingSoon ? 'Coming Soon' : isSavingHabit ? (editingHabitId ? 'Updating...' : 'Saving...') : (editingHabitId ? 'Update Task' : 'Save Task')}
+                </Text>
                 <View style={styles.confirmTaskRowRight}>
                   <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
                     <Ionicons name="checkmark" size={18} color={customHabitColors.text} />
                   </View>
                 </View>
               </TouchableOpacity>
+
+              {/* Delete Task Button - Only shown in edit mode */}
+              {editingHabitId && (
+                <TouchableOpacity
+                  style={[
+                    styles.confirmTaskRow,
+                    { backgroundColor: '#FEE2E2', marginTop: 0, marginBottom: 0 },
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={handleDeleteHabit}
+                >
+                  <Text style={[styles.confirmTaskRowText, { color: '#DC2626' }]}>Delete Task</Text>
+                  <View style={styles.confirmTaskRowRight}>
+                    <View style={[styles.confirmTaskRowIcon, { backgroundColor: '#FCA5A5' }]}>
+                      <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
       </ScrollView>
+              </View>
+
+              {/* Color Picker Step */}
+              <View style={[styles.customHabitPage, { width: screenWidth }]}>
+                <View style={styles.confirmTaskHeader}>
+                  <TouchableOpacity
+                    style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
+                    onPress={handleColorPickerBack}
+                  >
+                    <Ionicons name="arrow-back" size={24} color={customHabitColors.text} />
+                  </TouchableOpacity>
+                  <View style={styles.confirmTaskHeaderTitleGroup}>
+                    <Text style={[styles.confirmTaskTitle, { color: customHabitColors.text }]}>Choose Color</Text>
+                  </View>
+                  <View style={{ width: 40 }} />
+                </View>
+
+                <ScrollView
+                  style={styles.colorPickerContent}
+                  showsVerticalScrollIndicator={false}
+                  scrollEnabled={!isColorPickerInteracting}
+                >
+                  <View style={styles.colorPickerMainContainer}>
+                    <View style={styles.colorPickerBoxContainer}>
+                      <View
+                        style={[
+                          styles.colorPickerBox,
+                          { backgroundColor: colorPickerBaseColor },
+                        ]}
+                        onLayout={(event) => {
+                          colorPickerBoxSizeRef.current = event.nativeEvent.layout;
+                        }}
+                      >
+                        <ExpoLinearGradient
+                          colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0)']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.colorPickerBoxWhiteOverlay}
+                        />
+                        <ExpoLinearGradient
+                          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,1)']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 0, y: 1 }}
+                          style={styles.colorPickerBoxBlackOverlay}
+                        />
+                        <View
+                          style={[
+                            styles.colorPickerIndicator,
+                            {
+                              left: Math.max(
+                                -12,
+                                Math.min(
+                                  colorPickerBoxWidth - 12,
+                                  colorPickerSaturation * colorPickerBoxWidth - 12
+                                )
+                              ),
+                              top: Math.max(
+                                -12,
+                                Math.min(
+                                  colorPickerBoxHeight - 12,
+                                  (1 - colorPickerValue) * colorPickerBoxHeight - 12
+                                )
+                              ),
+                            },
+                          ]}
+                        />
+                        <View style={StyleSheet.absoluteFill} {...colorBoxPanResponder.panHandlers} />
+                      </View>
+                    </View>
+
+                    <View style={styles.colorPickerHueContainer}>
+                      <Text style={[styles.colorPickerSectionTitle, { color: customHabitColors.text }]}>Hue</Text>
+                      <View
+                        style={styles.colorPickerHueTrack}
+                        onLayout={(event) => {
+                          colorPickerHueTrackSizeRef.current = event.nativeEvent.layout.height;
+                        }}
+                      >
+                        <ExpoLinearGradient
+                          colors={['#FF0000', '#FF00FF', '#0000FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF0000']}
+                          locations={[0, 0.17, 0.33, 0.5, 0.67, 0.83, 1]}
+                          style={StyleSheet.absoluteFill}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 0, y: 1 }}
+                        />
+                        <View
+                          style={[
+                            styles.colorPickerHueHandle,
+                            {
+                              top: Math.max(
+                                -8,
+                                Math.min(
+                                  colorPickerHueTrackHeight - 8,
+                                  (1 - colorPickerHue / 360) * colorPickerHueTrackHeight - 8
+                                )
+                              ),
+                            },
+                          ]}
+                        />
+                        <View style={StyleSheet.absoluteFill} {...huePanResponder.panHandlers} />
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* HEX Input */}
+                  <View style={[styles.colorPickerHexRow, { marginTop: 24 }]}>
+                    <View
+                      style={[
+                        styles.colorPreview,
+                        { backgroundColor: selectedColor, borderColor: customHabitColors.border },
+                      ]}
+                    />
+                    <Text style={[styles.colorPickerHexLabel, { color: customHabitColors.text }]}>HEX</Text>
+                    <TextInput
+                      style={[styles.colorPickerHexInput, { color: customHabitColors.text }]}
+                      value={selectedColor.toUpperCase()}
+                      onChangeText={(text) => {
+                        if (/^#[0-9A-Fa-f]{0,6}$/.test(text)) {
+                          setSelectedColor(text);
+                        }
+                      }}
+                      placeholder="#000000"
+                      placeholderTextColor={customHabitColors.placeholder}
+                      maxLength={7}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                  
+                  {/* Random Color Button */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.8}
+                    onPress={handleRandomColor}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Random color</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons name="shuffle" size={18} color={customHabitColors.text} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  <Text style={[styles.colorPickerSectionTitle, { color: customHabitColors.text, marginTop: 24 }]}>
+                    Preset Colors
+                  </Text>
+                  <View style={styles.colorPickerGrid}>
+                    {[
+                      '#10B981', '#3B82F6', '#8B5CF6', '#EC4899',
+                      '#F59E0B', '#EF4444', '#06B6D4', '#84CC16',
+                      '#6366F1', '#F97316', '#14B8A6', '#A855F7',
+                    ].map((color) => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorPickerSwatch,
+                          {
+                            backgroundColor: color,
+                            borderWidth: selectedColor === color ? 3 : 1,
+                            borderColor: selectedColor === color ? '#FFFFFF' : customHabitColors.border,
+                          },
+                        ]}
+                        onPress={() => setSelectedColor(color)}
+                      >
+                        {selectedColor === color && (
+                          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* Task Days Step */}
+              <View style={[styles.customHabitPage, { width: screenWidth }]}>
+                <View style={styles.confirmTaskHeader}>
+                  <TouchableOpacity
+                    style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
+                    onPress={handleTaskDaysBack}
+                  >
+                    <Ionicons name="arrow-back" size={24} color={customHabitColors.text} />
+                  </TouchableOpacity>
+                  <View style={styles.confirmTaskHeaderTitleGroup}>
+                    <Text style={[styles.confirmTaskTitle, { color: customHabitColors.text }]}>Task Days</Text>
+                  </View>
+                  <View style={{ width: 40 }} />
+                </View>
+
+                <ScrollView contentContainerStyle={styles.confirmTaskContent} showsVerticalScrollIndicator={false}>
+                  {/* Specific days of the week */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('specific-days-week')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Specific days of the week</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'specific-days-week' ? 'checkmark' : 'help-circle-outline'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'specific-days-week' && (
+                    <>
+                      <View style={styles.taskDaysWeekSelectorContainer}>
+                        <View style={styles.taskDaysWeekSelector}>
+                          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => {
+                            const isSelected = selectedWeekDays.has(index);
+                            return (
+                              <TouchableOpacity
+                                key={index}
+                                style={[
+                                  styles.taskDaysWeekButton,
+                                  {
+                                    backgroundColor: isSelected ? '#FFFFFF' : customHabitColors.card,
+                                  },
+                                ]}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                  setSelectedWeekDays(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(index)) {
+                                      next.delete(index);
+                                    } else {
+                                      next.add(index);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.taskDaysWeekButtonText,
+                                    { color: isSelected ? customHabitColors.background : customHabitColors.text },
+                                  ]}
+                                >
+                                  {day}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                      {/* 2-Day Rule */}
+                      <View style={styles.taskDaysWeekSelectorContainer}>
+                        <TouchableOpacity
+                          style={[styles.taskDays2DayRuleButton, { backgroundColor: customHabitColors.card }]}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.taskDaysWeekButtonText, { color: customHabitColors.text }]}>2-Day Rule</Text>
+                          <View style={[styles.taskDays2DayRuleIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                            <Ionicons
+                              name="help-circle-outline"
+                              size={14}
+                              color={customHabitColors.text}
+                            />
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+
+                  {/* Specific days of the month */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('specific-days-month')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Specific days of the month</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'specific-days-month' ? 'checkmark' : 'chevron-forward'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'specific-days-month' && (
+                    <>
+                      {/* Calendar Grid */}
+                      <View style={styles.taskDaysMonthGridContainer}>
+                        <View style={styles.taskDaysMonthGrid}>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+                            const isSelected = selectedMonthDays.has(day);
+                            return (
+                              <TouchableOpacity
+                                key={day}
+                                style={[
+                                  styles.taskDaysMonthButton,
+                                  {
+                                    backgroundColor: isSelected ? '#FFFFFF' : 'transparent',
+                                    borderColor: customHabitColors.card,
+                                    borderWidth: 1,
+                                  },
+                                ]}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                  setSelectedMonthDays(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(day)) {
+                                      next.delete(day);
+                                    } else {
+                                      next.add(day);
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.taskDaysMonthButtonText,
+                                    {
+                                      color: isSelected ? customHabitColors.background : customHabitColors.text,
+                                    },
+                                  ]}
+                                >
+                                  {day}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                    </>
+                  )}
+
+                  {/* Number of days per week */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('days-per-week')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Number of days per week</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'days-per-week' ? 'checkmark' : 'chevron-forward'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'days-per-week' && (
+                    <View style={styles.taskDaysWeekSelectorContainer}>
+                      <View style={styles.taskDaysWeekSelector}>
+                        {Array.from({ length: 7 }, (_, i) => i + 1).map(num => {
+                          const isSelected = selectedDaysPerWeek === num;
+                          return (
+                            <TouchableOpacity
+                              key={num}
+                              style={[
+                                styles.taskDaysWeekButton,
+                                {
+                                  backgroundColor: isSelected ? '#FFFFFF' : customHabitColors.card,
+                                },
+                              ]}
+                              activeOpacity={0.7}
+                              onPress={() => setSelectedDaysPerWeek(num)}
+                            >
+                              <Text
+                                style={[
+                                  styles.taskDaysWeekButtonText,
+                                  {
+                                    color: isSelected ? customHabitColors.background : customHabitColors.text,
+                                  },
+                                ]}
+                              >
+                                {num}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Number of days per fortnight */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('days-per-fortnight')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Number of days per fortnight</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'days-per-fortnight' ? 'checkmark' : 'chevron-forward'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'days-per-fortnight' && (
+                    <View style={styles.taskDaysWeekSelectorContainer}>
+                      <View style={styles.taskDaysWeekSelector}>
+                        {Array.from({ length: 14 }, (_, i) => i + 1).map(num => {
+                          const isSelected = selectedDaysPerFortnight === num;
+                          return (
+                            <TouchableOpacity
+                              key={num}
+                              style={[
+                                styles.taskDaysWeekButton,
+                                {
+                                  backgroundColor: isSelected ? '#FFFFFF' : customHabitColors.card,
+                                },
+                              ]}
+                              activeOpacity={0.7}
+                              onPress={() => setSelectedDaysPerFortnight(num)}
+                            >
+                              <Text
+                                style={[
+                                  styles.taskDaysWeekButtonText,
+                                  {
+                                    color: isSelected ? customHabitColors.background : customHabitColors.text,
+                                  },
+                                ]}
+                              >
+                                {num}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Number of days per month */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('days-per-month')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Number of days per month</Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'days-per-month' ? 'checkmark' : 'chevron-forward'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'days-per-month' && (
+                    <View style={styles.taskDaysMonthGridContainer}>
+                      <View style={styles.taskDaysMonthGrid}>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+                          const isSelected = selectedDaysPerMonth.has(day);
+                          return (
+                            <TouchableOpacity
+                              key={day}
+                              style={[
+                                styles.taskDaysMonthButton,
+                                {
+                                  backgroundColor: isSelected ? '#FFFFFF' : 'transparent',
+                                  borderColor: customHabitColors.card,
+                                  borderWidth: 1,
+                                },
+                              ]}
+                              activeOpacity={0.7}
+                              onPress={() => {
+                                setSelectedDaysPerMonth(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(day)) {
+                                    next.delete(day);
+                                  } else {
+                                    next.add(day);
+                                  }
+                                  return next;
+                                });
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.taskDaysMonthButtonText,
+                                  {
+                                    color: isSelected ? customHabitColors.background : customHabitColors.text,
+                                  },
+                                ]}
+                              >
+                                {day}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Every X Days */}
+                  <TouchableOpacity
+                    style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                    activeOpacity={0.7}
+                    onPress={() => setSelectedTaskDaysOption('every-x-days')}
+                  >
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>
+                      Every {selectedEveryXDays} {selectedEveryXDays === 1 ? 'Day' : 'Days'}
+                    </Text>
+                    <View style={styles.confirmTaskRowRight}>
+                      <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons
+                          name={selectedTaskDaysOption === 'every-x-days' ? 'checkmark' : 'chevron-forward'}
+                          size={18}
+                          color={customHabitColors.text}
+                        />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {selectedTaskDaysOption === 'every-x-days' && (
+                    <View style={styles.taskDaysMonthGridContainer}>
+                      <View style={styles.taskDaysMonthGrid}>
+                        {Array.from({ length: 59 }, (_, i) => i + 2).map(num => {
+                          const isSelected = selectedEveryXDays === num;
+                          return (
+                            <TouchableOpacity
+                              key={num}
+                              style={[
+                                styles.taskDaysMonthButton,
+                                {
+                                  backgroundColor: isSelected ? '#FFFFFF' : 'transparent',
+                                  borderColor: customHabitColors.card,
+                                  borderWidth: 1,
+                                },
+                              ]}
+                              activeOpacity={0.7}
+                              onPress={() => setSelectedEveryXDays(num)}
+                            >
+                              <Text
+                                style={[
+                                  styles.taskDaysMonthButtonText,
+                                  {
+                                    color: isSelected ? customHabitColors.background : customHabitColors.text,
+                                  },
+                                ]}
+                              >
+                                {num}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
             </Animated.View>
           </View>
         </View>
       </Modal>
+
 
       {/* Gym Questionnaire Modal - Combined Single Page */}
       <Modal
@@ -4465,6 +5967,18 @@ const styles = StyleSheet.create({
   customHabitInputActionButtonDisabled: {
     opacity: 0.4,
   },
+  customHabitComingSoonButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  customHabitComingSoonButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   customHabitScroll: {
     marginTop: 12,
   },
@@ -4609,6 +6123,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: 10,
   },
+  confirmTaskRowDisabled: {
+    opacity: 0.5,
+  },
   confirmTaskRowRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -4670,6 +6187,64 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textTransform: 'uppercase',
   },
+  taskDaysWeekSelectorContainer: {
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 16,
+  },
+  taskDaysWeekSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    justifyContent: 'center',
+  },
+  taskDaysWeekButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskDaysWeekButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  taskDays2DayRuleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  taskDays2DayRuleIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskDaysMonthGridContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  taskDaysMonthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  taskDaysMonthButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskDaysMonthButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   highlightCardProgress: {
     height: 6,
     borderRadius: 999,
@@ -4706,6 +6281,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 16,
     elevation: 12,
+  },
+  whiteHabitCardDisabled: {
+    opacity: 0.5,
   },
   whiteHabitCardHeader: {
     flexDirection: 'row',
@@ -4829,25 +6407,31 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   challengesContainer: {
-    gap: 12,
+    paddingVertical: 8,
   },
   challengeCard: {
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    minHeight: 180,
+    flexDirection: 'column',
     justifyContent: 'space-between',
   },
   challengeCardContent: {
     flex: 1,
-    gap: 4,
+    gap: 8,
+    justifyContent: 'space-between',
   },
   challengeHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 4,
+  },
+  challengeCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 8,
   },
   challengeTitle: {
     fontSize: 16,
@@ -4858,6 +6442,17 @@ const styles = StyleSheet.create({
   challengeTime: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  challengeStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    marginBottom: 4,
+  },
+  challengeStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   challengeCategory: {
     fontSize: 13,
@@ -6110,5 +7705,138 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+  },
+  colorPreview: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginRight: 8,
+  },
+  colorPickerContent: {
+    padding: 16,
+    paddingBottom: 20,
+  },
+  colorPickerMainContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    alignItems: 'flex-start',
+  },
+  colorPickerBoxContainer: {
+    flex: 1,
+    maxWidth: 260,
+    aspectRatio: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  colorPickerBox: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  colorPickerBoxWhiteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  colorPickerBoxBlackOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  colorPickerIndicator: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  colorPickerHueContainer: {
+    width: 40,
+    alignItems: 'center',
+  },
+  colorPickerHueTrack: {
+    flex: 1,
+    width: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    marginTop: 8,
+  },
+  colorPickerHueHandle: {
+    position: 'absolute',
+    left: -6,
+    width: 40,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  colorPickerSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  colorPickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 20,
+  },
+  colorPickerSwatch: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorPickerPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 24,
+  },
+  colorPickerPreviewLarge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+  },
+  colorPickerHexRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  colorPickerHexLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  colorPickerHexInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    paddingVertical: 0,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  colorPickerRandomButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  colorPickerRandomText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

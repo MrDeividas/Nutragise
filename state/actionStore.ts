@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { pointsService } from '../lib/pointsService';
-import { DailyHabits, CreateDailyHabitsData } from '../types/database';
+import {
+  DailyHabits,
+  CreateDailyHabitsData,
+  CustomHabit,
+  CustomHabitCompletion,
+  CreateCustomHabitInput,
+} from '../types/database';
 import { useAuthStore } from './authStore';
 import { supabase } from '../lib/supabase';
+import { habitsService } from '../lib/habitsService';
 
 interface ActionState {
 	segmentChecked: boolean[];
@@ -33,6 +40,18 @@ interface ActionState {
 	syncSegmentsWithData: (dailyHabits: DailyHabits, pointsData?: { meditation_completed?: boolean; microlearn_completed?: boolean } | null) => void;
 	setShouldOpenGraphs: (shouldOpen: boolean) => void;
 	clearStore: () => void;
+
+	// Custom habits
+	customHabits: CustomHabit[];
+	customHabitsLoading: boolean;
+	customHabitsError: string | null;
+	customHabitsDate: string;
+	habitCompletions: Record<string, CustomHabitCompletion | undefined>;
+	loadCustomHabits: (date?: string) => Promise<void>;
+	createCustomHabit: (payload: CreateCustomHabitInput) => Promise<CustomHabit | null>;
+	updateCustomHabit: (habitId: string, payload: Partial<CreateCustomHabitInput>) => Promise<CustomHabit | null>;
+	deleteCustomHabit: (habitId: string) => Promise<boolean>;
+	toggleHabitCompletion: (habitId: string, occurDate: string) => Promise<void>;
 }
 
 export const useActionStore = create<ActionState>((set, get) => ({
@@ -51,6 +70,13 @@ export const useActionStore = create<ActionState>((set, get) => ({
     return yesterday.toISOString().split('T')[0];
   })(), // Yesterday's date as default
 	shouldOpenGraphs: false,
+
+	// Custom habits
+	customHabits: [],
+	customHabitsLoading: false,
+	customHabitsError: null,
+	customHabitsDate: new Date().toISOString().split('T')[0],
+	habitCompletions: {},
 	
 	// Listen for auth changes and clear store when user logs out
 	...(function() {
@@ -65,7 +91,12 @@ export const useActionStore = create<ActionState>((set, get) => ({
 					dailyHabitsLoading: false,
 					dailyHabitsError: null,
 					selectedDate: new Date().toISOString().split('T')[0],
-					shouldOpenGraphs: false
+					shouldOpenGraphs: false,
+					customHabits: [],
+					customHabitsLoading: false,
+					customHabitsError: null,
+					customHabitsDate: new Date().toISOString().split('T')[0],
+					habitCompletions: {},
 				});
 			}
 		});
@@ -235,6 +266,136 @@ export const useActionStore = create<ActionState>((set, get) => ({
 		}
 	},
 
+	loadCustomHabits: async (date?: string) => {
+		set({ customHabitsLoading: true, customHabitsError: null });
+
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) throw new Error('User not authenticated');
+
+			const targetDate = date ?? get().customHabitsDate ?? new Date().toISOString().split('T')[0];
+			const [habits, completions] = await Promise.all([
+				habitsService.fetchHabits(user.id),
+				habitsService.fetchCompletions(user.id, targetDate),
+			]);
+
+			const completionMap: Record<string, CustomHabitCompletion | undefined> = {};
+			completions.forEach((entry) => {
+				completionMap[entry.habit_id] = entry;
+			});
+
+			set({
+				customHabits: habits,
+				customHabitsLoading: false,
+				customHabitsError: null,
+				customHabitsDate: targetDate,
+				habitCompletions: completionMap,
+			});
+		} catch (error: any) {
+			set({
+				customHabitsLoading: false,
+				customHabitsError: error.message ?? 'Failed to load habits',
+			});
+		}
+	},
+
+	createCustomHabit: async (payload: CreateCustomHabitInput) => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) throw new Error('User not authenticated');
+
+			const habit = await habitsService.createHabit(user.id, payload);
+			set((state) => ({
+				customHabits: [...state.customHabits, habit],
+			}));
+
+			return habit;
+		} catch (error: any) {
+			set({
+				customHabitsError: error.message ?? 'Failed to create habit',
+			});
+			return null;
+		}
+	},
+
+	updateCustomHabit: async (habitId: string, payload: Partial<CreateCustomHabitInput>) => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) throw new Error('User not authenticated');
+
+			const updated = await habitsService.updateHabit(user.id, habitId, payload);
+			set((state) => ({
+				customHabits: state.customHabits.map((h) => (h.id === habitId ? updated : h)),
+			}));
+
+			return updated;
+		} catch (error: any) {
+			set({
+				customHabitsError: error.message ?? 'Failed to update habit',
+			});
+			return null;
+		}
+	},
+
+	deleteCustomHabit: async (habitId: string) => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) throw new Error('User not authenticated');
+
+			await habitsService.deleteHabit(user.id, habitId);
+			set((state) => ({
+				customHabits: state.customHabits.filter((h) => h.id !== habitId),
+			}));
+
+			return true;
+		} catch (error: any) {
+			set({
+				customHabitsError: error.message ?? 'Failed to delete habit',
+			});
+			return false;
+		}
+	},
+
+	toggleHabitCompletion: async (habitId: string, occurDate: string) => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) throw new Error('User not authenticated');
+
+			const state = get();
+			const habit = state.customHabits.find(h => h.id === habitId);
+			if (!habit) throw new Error('Habit not found');
+
+			const frequency = (habit.metadata as any)?.frequency ?? 1;
+			const completions = { ...state.habitCompletions };
+			const existing = completions[habitId];
+			const currentCount = existing?.value ?? (existing ? 1 : 0);
+
+			// Cycle through: 0 -> 1 -> 2 -> ... -> frequency -> 0
+			let newCount: number;
+			if (currentCount >= frequency) {
+				// Reset to 0 by deleting the completion
+				await habitsService.deleteCompletion(user.id, habitId, occurDate);
+				delete completions[habitId];
+			} else {
+				// Increment the count
+				newCount = currentCount + 1;
+				const entry = await habitsService.upsertCompletion(user.id, {
+					habit_id: habitId,
+					occur_date: occurDate,
+					status: 'completed',
+					value: newCount,
+				});
+				completions[habitId] = entry;
+			}
+
+			set({ habitCompletions: completions });
+		} catch (error: any) {
+			set({
+				customHabitsError: error.message ?? 'Failed to toggle habit',
+			});
+		}
+	},
+
 	// Clear daily habits error
 	clearDailyHabitsError: () => {
 		set({ dailyHabitsError: null });
@@ -291,7 +452,12 @@ export const useActionStore = create<ActionState>((set, get) => ({
 				yesterday.setDate(yesterday.getDate() - 1);
 				return yesterday.toISOString().split('T')[0];
 			})(),
-			shouldOpenGraphs: false
+			shouldOpenGraphs: false,
+			customHabits: [],
+			customHabitsLoading: false,
+			customHabitsError: null,
+			customHabitsDate: new Date().toISOString().split('T')[0],
+			habitCompletions: {},
 		});
 	},
 })); 
