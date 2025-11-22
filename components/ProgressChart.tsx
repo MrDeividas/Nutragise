@@ -12,11 +12,12 @@ interface Props {
 }
 
 export default function ProgressChart({ onClose }: Props) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const [sleepData, setSleepData] = useState<Array<{ date: string; quality: number; hours: number; waterIntake: number; mood: number; energy: number; distance: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
+  const gridLineColor = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.15)';
   
   // Chart dimensions
   const chartWidth = Dimensions.get('window').width - 80; // Account for padding
@@ -288,9 +289,11 @@ export default function ProgressChart({ onClose }: Props) {
     return '😴';
   };
 
+  const modalBackground = theme.background;
+
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: 'rgba(128, 128, 128, 0.9)' }]}>
+      <View style={[styles.container, { backgroundColor: modalBackground }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Chart</Text>
           <TouchableOpacity onPress={onClose}>
@@ -306,7 +309,14 @@ export default function ProgressChart({ onClose }: Props) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: 'rgba(128, 128, 128, 0.9)' }]}>
+    <View style={[
+      styles.container,
+      {
+        backgroundColor: modalBackground,
+        borderRadius: 0,
+        borderWidth: 0,
+      },
+    ]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Chart</Text>
@@ -405,8 +415,8 @@ export default function ProgressChart({ onClose }: Props) {
                         y1={200 - (value * config.pixelsPerKm)}
                         x2={chartWidth - 60}
                         y2={200 - (value * config.pixelsPerKm)}
-                        stroke="rgba(255, 255, 255, 0.1)"
-                        strokeWidth="1"
+                        stroke={gridLineColor}
+                        strokeWidth={1}
                       />
                     ));
                   })()}
@@ -518,8 +528,8 @@ export default function ProgressChart({ onClose }: Props) {
                       y1={200 - (value * 16.67)}
                       x2={chartWidth - 60}
                       y2={200 - (value * 16.67)}
-                      stroke="rgba(255, 255, 255, 0.1)"
-                      strokeWidth="1"
+                      stroke={gridLineColor}
+                      strokeWidth={1}
                     />
                   ))}
                   
@@ -632,8 +642,8 @@ export default function ProgressChart({ onClose }: Props) {
                   y1={200 - (value * 40)}
                   x2={chartWidth - 60}
                   y2={200 - (value * 40)}
-                  stroke="rgba(255, 255, 255, 0.1)"
-                  strokeWidth="1"
+                  stroke={gridLineColor}
+                  strokeWidth={1}
                 />
               ))}
                   
@@ -741,8 +751,8 @@ export default function ProgressChart({ onClose }: Props) {
                       y1={200 - (value * 44.44)}
                       x2={chartWidth - 60}
                       y2={200 - (value * 44.44)}
-                      stroke="rgba(255, 255, 255, 0.1)"
-                      strokeWidth="1"
+                      stroke={gridLineColor}
+                      strokeWidth={1}
                     />
                   ))}
                   
@@ -849,8 +859,8 @@ export default function ProgressChart({ onClose }: Props) {
                       y1={200 - (value * 40)}
                       x2={chartWidth - 60}
                       y2={200 - (value * 40)}
-                      stroke="rgba(255, 255, 255, 0.1)"
-                      strokeWidth="1"
+                      stroke={gridLineColor}
+                      strokeWidth={1}
                     />
                   ))}
                   
@@ -957,8 +967,8 @@ export default function ProgressChart({ onClose }: Props) {
                       y1={200 - (value * 40)}
                       x2={chartWidth - 60}
                       y2={200 - (value * 40)}
-                      stroke="rgba(255, 255, 255, 0.1)"
-                      strokeWidth="1"
+                      stroke={gridLineColor}
+                      strokeWidth={1}
                     />
                   ))}
                   

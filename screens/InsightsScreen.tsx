@@ -806,8 +806,8 @@ export default function InsightsScreen({ route }: any) {
         )}
 
       {/* Progress Chart Modal */}
-      <Modal visible={activeModal === 'progress'} transparent animationType="fade" onRequestClose={() => setActiveModal(null)}>
-        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+      <Modal visible={activeModal === 'progress'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
           <View style={[styles.modalContent, { 
             backgroundColor: cardBackground, 
             padding: 0,
@@ -827,8 +827,8 @@ export default function InsightsScreen({ route }: any) {
         </View>
 
       {/* Data Requirements Modal */}
-      <Modal visible={activeModal === 'requirements'} transparent animationType="fade" onRequestClose={() => setActiveModal(null)}>
-        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+      <Modal visible={activeModal === 'requirements'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
           <View style={[styles.modalContent, { 
             backgroundColor: cardBackground, 
             padding: 24,
@@ -1091,18 +1091,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: 'white',
     borderRadius: 16,
     padding: 0,
     width: '90%',
     maxWidth: 400,
     height: 600,
     maxHeight: '80%',
-    borderWidth: 1,
-    borderColor: 'rgba(128, 128, 128, 0.2)',
   },
 
 

@@ -40,6 +40,52 @@ import { supabase } from '../lib/supabase';
 // Days constants
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+const LEVEL_THRESHOLDS = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
+const HABITS_REQUIRING_DETAILS = new Set(['gym', 'run', 'sleep', 'water', 'reflect', 'cold_shower']);
+const toRgb = (hex: string) => {
+  const sanitized = hex.replace('#', '');
+  const expanded = sanitized.length === 3 ? sanitized.split('').map((char) => char + char).join('') : sanitized;
+  const parsed = parseInt(expanded, 16);
+  return {
+    r: (parsed >> 16) & 255,
+    g: (parsed >> 8) & 255,
+    b: parsed & 255,
+  };
+};
+
+const rgbToHex = (r: number, g: number, b: number) => {
+  return (
+    '#' +
+    [r, g, b]
+      .map((val) => {
+        const clamped = Math.max(0, Math.min(255, Math.round(val)));
+        const hex = clamped.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      })
+      .join('')
+  );
+};
+
+const mixColor = (hex: string, amount: number) => {
+  const { r, g, b } = toRgb(hex);
+  if (amount >= 0) {
+    return rgbToHex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount);
+  }
+  const ratio = 1 + amount;
+  return rgbToHex(r * ratio, g * ratio, b * ratio);
+};
+
+const getLevelFillPercent = (progress: { currentLevel: number; pointsInCurrentLevel: number }) => {
+  const currentLevelIndex = Math.max(0, Math.min(progress.currentLevel - 1, LEVEL_THRESHOLDS.length - 1));
+  const currentLevelStart = LEVEL_THRESHOLDS[currentLevelIndex];
+  const nextThreshold =
+    LEVEL_THRESHOLDS[progress.currentLevel] !== undefined
+      ? LEVEL_THRESHOLDS[progress.currentLevel]
+      : currentLevelStart + 10000;
+  const levelXPRequired = Math.max(nextThreshold - currentLevelStart, 1);
+  return Math.min(progress.pointsInCurrentLevel / levelXPRequired, 1);
+};
+
 type HabitCardVisualState = {
   baseProgress: number;
   progressAnimated: Animated.Value;
@@ -192,6 +238,56 @@ function ActionScreen() {
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [showWaterModal, setShowWaterModal] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
+  const [showCustomHabitModal, setShowCustomHabitModal] = useState(false);
+  const [customHabitTitle, setCustomHabitTitle] = useState('');
+  const [selectedCustomHabitType, setSelectedCustomHabitType] = useState('custom');
+  const [breakHabitTitle, setBreakHabitTitle] = useState('');
+  const customHabitSlide = useRef(new Animated.Value(0)).current;
+  const [selectedPreset, setSelectedPreset] = useState<{ key: string; label: string } | null>(null);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDuration, setTaskDuration] = useState<'day' | 'week' | 'month'>('day');
+  const [taskFrequency, setTaskFrequency] = useState(1);
+  const [taskDays, setTaskDays] = useState('Every Day');
+  const customHabitCategories = useMemo(
+    () => [
+      { key: 'custom', label: 'Create', icon: 'checkmark' },
+      { key: 'wellbeing', label: 'Wellbeing', icon: 'heart' },
+      { key: 'nutrition', label: 'Nutrition', icon: 'restaurant' },
+      { key: 'time', label: 'Schedule', icon: 'time' },
+      { key: 'avoid', label: 'Avoid', icon: 'ban' },
+    ],
+    []
+  );
+  const positivePresets = useMemo(
+    () => [
+      { key: 'eat_healthy_meal', label: 'Eat a Healthy Meal' },
+      { key: 'be_happy', label: 'Be Happy' },
+      { key: 'write_in_journal', label: 'Write In Journal' },
+      { key: 'do_homework', label: 'Do Your Homework' },
+      { key: 'walk_dog', label: 'Walk the Dog' },
+      { key: 'drink_smoothie', label: 'Drink a Smoothie' },
+      { key: 'take_vitamins', label: 'Take Vitamins' },
+      { key: 'take_photo', label: 'Take a Photo' },
+    ],
+    []
+  );
+  const avoidPresets = useMemo(
+    () => [
+      { key: 'dont_smoke', label: "Don't Smoke" },
+      { key: 'dont_swear', label: "Don't Swear" },
+      { key: 'dont_slouch', label: "Don't Slouch" },
+      { key: 'dont_bite_nails', label: "Don't Bite Nails" },
+      { key: 'dont_pick_nose', label: "Don't Pick Nose" },
+      { key: 'decrease_alcohol', label: 'Decrease Alcohol Consumption' },
+      { key: 'dont_drink_coffee', label: "Don't Drink Coffee" },
+      { key: 'dont_eat_bad_food', label: "Don't Eat Bad Food" },
+      { key: 'dont_procrastinate', label: "Don't Procrastinate" },
+    ],
+    []
+  );
+  const customHabitPresets = useMemo(() => {
+    return selectedCustomHabitType === 'avoid' ? avoidPresets : positivePresets;
+  }, [selectedCustomHabitType, avoidPresets, positivePresets]);
   const [showUntickConfirmation, setShowUntickConfirmation] = useState(false);
   const [segmentToUntick, setSegmentToUntick] = useState<number | null>(null);
   const [showHabitInfoModal, setShowHabitInfoModal] = useState(false);
@@ -206,6 +302,8 @@ function ActionScreen() {
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const headerGreetingOpacity = useRef(new Animated.Value(0)).current;
+  const headerStatsOpacity = useRef(new Animated.Value(0)).current;
   const [onboardingIncomplete, setOnboardingIncomplete] = useState(false);
   const [onboardingLastStep, setOnboardingLastStep] = useState<number | null>(null);
   
@@ -218,6 +316,11 @@ function ActionScreen() {
   });
   const [totalPoints, setTotalPoints] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
+  const progressFillAnim = useRef(new Animated.Value(getLevelFillPercent(levelProgress))).current;
+  const progressPointsAnim = useRef(new Animated.Value(levelProgress.pointsInCurrentLevel)).current;
+  const [animatedPoints, setAnimatedPoints] = useState(levelProgress.pointsInCurrentLevel);
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [pendingDataHabits, setPendingDataHabits] = useState<Set<string>>(new Set());
 
   
   // Keyboard state for modal positioning
@@ -278,6 +381,95 @@ function ActionScreen() {
     const gap = 12;
     return Math.max(160, (screenWidth - horizontalPadding - gap) / 2);
   }, [screenWidth]);
+
+  const whiteHabitCards = useMemo(() => ([
+    {
+      key: 'dont_eat_bad_food',
+      title: "Don't Eat Bad Food",
+      subtitle: 'Today',
+      metricLabel: 'Status',
+      metricValue: 'On Track',
+      progress: 0.75,
+      accent: '#EF4444',
+    },
+    {
+      key: 'create_new_habit',
+      title: 'Create New Habit',
+      subtitle: 'Custom',
+      metricLabel: 'Add',
+      metricValue: '+',
+      progress: 0,
+      accent: '#10B981',
+    },
+  ]), []);
+
+  const whiteCardShadowColor = useMemo(
+    () => (isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(15, 23, 42, 0.18)'),
+    [isDark]
+  );
+
+  const fillWidthInterpolation =
+    progressBarWidth > 0
+      ? progressFillAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, progressBarWidth],
+        })
+      : null;
+
+  const markHabitNeedsDetails = useCallback((habitId: string) => {
+    if (!HABITS_REQUIRING_DETAILS.has(habitId)) return;
+    setPendingDataHabits(prev => {
+      if (prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.add(habitId);
+      return next;
+    });
+  }, []);
+  const customHabitColors = useMemo(() => {
+    const progressGreen = '#10B981';
+    return {
+      background: progressGreen,
+      card: mixColor(progressGreen, -0.08),
+      button: mixColor(progressGreen, -0.16),
+      buttonActive: mixColor(progressGreen, -0.04),
+      iconBackground: mixColor(progressGreen, -0.22),
+      text: '#FFFFFF',
+      hint: '#C3F6E4',
+      placeholder: '#B2ECD7',
+      border: mixColor(progressGreen, -0.12),
+    };
+  }, []);
+  const customHabitRecommendations = useMemo(() => positivePresets.slice(0, 3), [positivePresets]);
+
+  useEffect(() => {
+    if (!showCustomHabitModal) {
+      setCustomHabitTitle('');
+      setBreakHabitTitle('');
+      setSelectedCustomHabitType('custom');
+      setSelectedPreset(null);
+      customHabitSlide.setValue(0);
+      setTaskDuration('day');
+      setTaskFrequency(1);
+      setTaskDays('Every Day');
+    }
+  }, [showCustomHabitModal, customHabitSlide]);
+
+  const clearHabitNeedsDetails = useCallback((habitId: string) => {
+    setPendingDataHabits(prev => {
+      if (!prev.has(habitId)) return prev;
+      const next = new Set(prev);
+      next.delete(habitId);
+      return next;
+    });
+  }, []);
+
+  const headerGreetingMessage = useMemo(() => {
+    const hour = new Date().getHours();
+    const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const dayCount = user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1;
+    const namePart = user?.username ? ` ${user.username}` : '';
+    return `${prefix}${namePart}, it's day ${dayCount}`;
+  }, [user?.created_at, user?.username]);
 
   const habitSpotlightCards = useMemo(() => ([
     {
@@ -547,6 +739,63 @@ function ActionScreen() {
     useActionStore.getState().loadDailyHabits(today);
   }, []);
 
+  useEffect(() => {
+    headerGreetingOpacity.setValue(0);
+    headerStatsOpacity.setValue(0);
+    const animation = Animated.sequence([
+      Animated.delay(150),
+      Animated.timing(headerGreetingOpacity, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.delay(4000),
+      Animated.parallel([
+        Animated.timing(headerGreetingOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(headerStatsOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]);
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [headerGreetingOpacity, headerStatsOpacity]);
+
+  useEffect(() => {
+    const listenerId = progressPointsAnim.addListener(({ value }) => {
+      setAnimatedPoints(Math.max(0, Math.round(value)));
+    });
+    return () => {
+      progressPointsAnim.removeListener(listenerId);
+    };
+  }, [progressPointsAnim]);
+
+  useEffect(() => {
+    const percent = getLevelFillPercent(levelProgress);
+    Animated.timing(progressFillAnim, {
+      toValue: percent,
+      duration: 500,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+    Animated.timing(progressPointsAnim, {
+      toValue: levelProgress.pointsInCurrentLevel,
+      duration: 500,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [levelProgress, progressFillAnim, progressPointsAnim]);
+
   // Load unread notification count
   const loadUnreadNotificationCount = async () => {
     if (!user) return;
@@ -708,7 +957,8 @@ function ActionScreen() {
     // Play sound immediately when animation starts
     playCompletionSound();
     updateCardCompletionVisual(habitId, true, { animate: true });
-  }, [updateCardCompletionVisual, playCompletionSound]);
+    clearHabitNeedsDetails(habitId);
+  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails]);
 
   // Mark habit as uncompleted in the new ring
   const markHabitUncompleted = useCallback((habitId: string) => {
@@ -719,7 +969,45 @@ function ActionScreen() {
       return next;
     });
     updateCardCompletionVisual(habitId, false, { animate: true });
-  }, [updateCardCompletionVisual]);
+    clearHabitNeedsDetails(habitId);
+  }, [updateCardCompletionVisual, clearHabitNeedsDetails]);
+
+  const slideToConfirm = useCallback(() => {
+    Animated.timing(customHabitSlide, {
+      toValue: -screenWidth,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide, screenWidth]);
+
+  const slideToSelection = useCallback(() => {
+    Animated.timing(customHabitSlide, {
+      toValue: 0,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [customHabitSlide]);
+
+  const handlePresetSelect = useCallback((preset: { key: string; label: string }) => {
+    setSelectedPreset(preset);
+    setTaskTitle(preset.label);
+    slideToConfirm();
+  }, [slideToConfirm]);
+
+  const handleConfirmTaskBack = useCallback(() => {
+    slideToSelection();
+  }, [slideToSelection]);
+
+  const handleCustomTaskConfirm = useCallback((title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const preset = { key: `custom_${Date.now()}`, label: trimmed };
+    setSelectedPreset(preset);
+    setTaskTitle(trimmed);
+    slideToConfirm();
+  }, [slideToConfirm]);
 
   const persistQuickCompletion = useCallback(async (habitId: string) => {
     const date = getTodayDateString();
@@ -737,49 +1025,37 @@ function ActionScreen() {
         case 'run':
           success = await useActionStore.getState().saveDailyHabits({
             date,
-            run_day_type: 'active',
-            run_activity_type: 'run',
-            run_type: 'Easy',
-            run_distance: 5,
-            run_duration: '00:30:00',
-            run_notes: 'Logged via quick complete',
+            run_day_type: 'active', // Minimal data to mark as completed
+            run_notes: 'Quick complete',
           });
           break;
         case 'sleep':
           success = await useActionStore.getState().saveDailyHabits({
             date,
-            sleep_quality: 80,
-            sleep_hours: 7.5,
-            sleep_bedtime_hours: 22,
-            sleep_bedtime_minutes: 30,
-            sleep_wakeup_hours: 6,
-            sleep_wakeup_minutes: 0,
-            sleep_notes: 'Quick check-in',
+            sleep_hours: 1, // Minimal integer value to mark as completed
+            sleep_quality: 50, // Minimal value to match function signature
           });
           break;
         case 'water':
           success = await useActionStore.getState().saveDailyHabits({
             date,
-            water_intake: 4,
-            water_goal: 'Yes',
+            water_intake: 1, // Minimal value to mark as completed
             water_notes: 'Quick check-in',
           });
           break;
         case 'focus':
           success = await useActionStore.getState().saveDailyHabits({
             date,
-            focus_completed: true,
-            focus_duration: 25,
+            focus_completed: true, // Minimal data to mark as completed
             focus_notes: 'Quick complete',
           });
           break;
         case 'reflect':
           success = await useActionStore.getState().saveDailyHabits({
             date,
-            reflect_mood: 4,
-            reflect_energy: 4,
-            reflect_what_went_well: 'Quick reflection entry',
-            reflect_one_tweak: '',
+            reflect_mood: 3, // Minimal value to mark as completed
+            reflect_energy: 3,
+            reflect_what_went_well: 'Quick reflection',
             reflect_nothing_to_change: false,
           });
           break;
@@ -806,6 +1082,7 @@ function ActionScreen() {
       }
 
       if (success) {
+        markHabitNeedsDetails(habitId);
         await fetchUserPoints();
         return true;
       }
@@ -814,20 +1091,10 @@ function ActionScreen() {
     }
 
     return false;
-  }, [user]);
+  }, [user, markHabitNeedsDetails, fetchUserPoints]);
 
-  // Handle habit press from the new ring
-  const handleHabitPress = useCallback((habitId: string) => {
-    // Check if habit is already completed
-    if (completedHabits.has(habitId)) {
-      // Show untick confirmation
-      setHabitToUntick(habitId);
-      setShowUntickConfirmation(true);
-      return;
-    }
-
+  const openHabitForm = useCallback((habitId: string) => {
     const { dailyHabits } = useActionStore.getState();
-    
     switch (habitId) {
       case 'meditation':
         (navigation as any).navigate('Meditation', {}, {
@@ -978,7 +1245,24 @@ function ActionScreen() {
         console.log(`Unknown habit: ${habitId}`);
         return;
     }
-  }, [navigation, modalPosition, completedHabits]);
+  }, [navigation, modalPosition]);
+
+  // Handle habit press from the new ring
+  const handleHabitPress = useCallback((habitId: string) => {
+    // Check if habit is already completed
+    if (completedHabits.has(habitId)) {
+      if (pendingDataHabits.has(habitId)) {
+        openHabitForm(habitId);
+        return;
+      }
+      // Show untick confirmation
+      setHabitToUntick(habitId);
+      setShowUntickConfirmation(true);
+      return;
+    }
+
+    openHabitForm(habitId);
+  }, [completedHabits, pendingDataHabits, openHabitForm]);
 
   // Keyboard event listeners for modal positioning
   useEffect(() => {
@@ -1560,7 +1844,7 @@ function ActionScreen() {
 
         {/* Header with Settings */}
         <View style={styles.header}>
-          <TouchableOpacity
+          <TouchableOpacity 
             onPress={() => {
               // Switch to the existing Profile tab (same as tapping it in the bottom nav)
               const parentNav = (navigation as any).getParent?.();
@@ -1584,20 +1868,40 @@ function ActionScreen() {
           </TouchableOpacity>
 
           <View style={styles.profileHeaderCard}>
-            <View style={styles.headerStatsRow}>
-              {/* Money icon + 40 (left) */}
+            <Animated.View
+              style={[
+                styles.headerGreetingBanner,
+                {
+                  opacity: headerGreetingOpacity,
+                  transform: [
+                    {
+                      translateY: headerGreetingOpacity.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-10, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+              pointerEvents="none"
+            >
+              <Text style={[styles.headerGreetingText, { color: theme.textPrimary }]}>
+                {headerGreetingMessage}
+              </Text>
+            </Animated.View>
+
+            <Animated.View style={[styles.headerStatsRow, { opacity: headerStatsOpacity }]}>
               <View style={styles.headerStat}>
                 <Ionicons name="cash-outline" size={18} color={theme.textPrimary} />
                 <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>40</Text>
               </View>
-              {/* Diamonds icon + 100 (right) */}
               <View style={styles.headerStat}>
                 <Ionicons name="diamond-outline" size={18} color={theme.textPrimary} />
                 <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>100</Text>
               </View>
-            </View>
+            </Animated.View>
           </View>
-
+          
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
             {/* Title centered */}
           </Text>
@@ -1634,65 +1938,63 @@ function ActionScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
               <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-              <View style={{ flex: 1, marginHorizontal: 4, height: 8, backgroundColor: 'rgba(16, 185, 129, 0.2)', borderRadius: 4, overflow: 'visible', position: 'relative' }}>
-                {(() => {
-                  // Calculate the total XP needed for current level
-                  const levelThresholds = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
-                  const currentLevelStart = levelThresholds[levelProgress.currentLevel - 1];
-                  const levelXPRequired = levelProgress.currentLevel < 8 
-                    ? levelThresholds[levelProgress.currentLevel] - currentLevelStart 
-                    : 10000; // Max level uses arbitrary large number for display
-                  
-                  // Calculate progress percentage based on points in current level
-                  const progressPercentage = Math.min(100, (levelProgress.pointsInCurrentLevel / levelXPRequired) * 100);
-                  
-                  return (
-                    <>
                       <View 
                         style={{
-                          height: '100%',
-                          width: `${progressPercentage}%`,
-                          backgroundColor: '#10B981',
+                  flex: 1,
+                  marginHorizontal: 4,
+                  height: 8,
+                  backgroundColor: 'rgba(16, 185, 129, 0.2)',
                           borderRadius: 4,
-                        }}
-                      />
-                      {/* Dash indicator showing exact points position */}
-                      <View 
-                        style={{
-                          position: 'absolute',
-                          left: `${progressPercentage}%`,
-                          top: 14,
-                          width: 1,
-                          height: 8,
-                          backgroundColor: '#ffffff',
-                          transform: [{ translateX: -0.5 }],
-                        }}
-                      />
-                      {/* Points count below dash */}
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: `${progressPercentage}%`,
-                          top: 26,
-                          transform: [{ translateX: -20 }],
-                          width: 40,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text 
-                          style={{
-                            fontSize: 10,
-                            fontWeight: '600',
-                            color: theme.textPrimary,
-                            textAlign: 'center',
-                          }}
-                        >
-                          {levelProgress.pointsInCurrentLevel}
+                  overflow: 'visible',
+                  position: 'relative',
+                }}
+                onLayout={(event) => {
+                  const width = event.nativeEvent.layout.width;
+                  if (width !== progressBarWidth) {
+                    setProgressBarWidth(width);
+                  }
+                }}
+              >
+                <Animated.View
+                  style={[
+                    styles.levelProgressFill,
+                    {
+                      width: fillWidthInterpolation ?? 0,
+                    },
+                  ]}
+                />
+                {fillWidthInterpolation && (
+                  <>
+                    <Animated.View
+                      style={[
+                        styles.levelProgressDash,
+                        {
+                          transform: [
+                            {
+                              translateX: Animated.subtract(fillWidthInterpolation, 0.5),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+                    <Animated.View
+                      style={[
+                        styles.levelProgressFloatingPoints,
+                        {
+                          transform: [
+                            {
+                              translateX: Animated.subtract(fillWidthInterpolation, 20),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.levelProgressFloatingText, { color: theme.textPrimary }]}>
+                        {animatedPoints}
                         </Text>
-                      </View>
+                    </Animated.View>
                     </>
-                  );
-                })()}
+                )}
               </View>
               <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
             </View>
@@ -1722,19 +2024,14 @@ function ActionScreen() {
               activeOpacity={0.7}
             >
               <Ionicons name="information-circle-outline" size={14} color={theme.textSecondary} />
-            </TouchableOpacity>
+          </TouchableOpacity>
           </View>
         </View>
 
         {/* Greeting Section */}
         <View style={[styles.greetingSection, { flexDirection: 'row', alignItems: 'center' }]}>
           <Text style={[styles.greetingText, { color: theme.textPrimary }]}>
-            {(() => {
-              const hour = new Date().getHours();
-              if (hour < 12) return 'Good morning';
-              if (hour < 18) return 'Good afternoon';
-              return 'Good evening';
-            })()}{user?.username ? ` ${user.username},` : ' there,'} Day {user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1}
+            Habits
           </Text>
           <TouchableOpacity onPress={() => setShowStreakModal(true)} accessibilityRole="button" style={{ marginLeft: 8 }}>
             <Ionicons name="flame-outline" size={20} color={theme.textPrimary} />
@@ -1764,6 +2061,7 @@ function ActionScreen() {
               const progressFillColor = isCompletedCard ? '#ffffff' : card.accent;
               const subtitleColor = isCompletedCard ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)';
 
+              const showPendingIndicator = pendingDataHabits.has(card.habitId);
               return (
                 <TouchableOpacity
                   key={card.key}
@@ -1783,7 +2081,17 @@ function ActionScreen() {
                 >
                   <View style={styles.highlightCardHeader}>
                     <View>
-                      <Text style={[styles.highlightCardTitle, { color: '#ffffff' }]}>{card.title}</Text>
+                      <View style={styles.highlightCardTitleRow}>
+                        <Text style={[styles.highlightCardTitle, { color: '#ffffff' }]}>{card.title}</Text>
+                        {showPendingIndicator && (
+                          <Ionicons
+                            name="alert-circle"
+                            size={16}
+                            color="#F87171"
+                            style={styles.pendingIndicatorIcon}
+                          />
+                        )}
+                      </View>
                       <Text style={[styles.highlightCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
                     </View>
                     <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
@@ -1804,6 +2112,70 @@ function ActionScreen() {
                   <View style={styles.highlightCardMetricRow}>
                     <Text style={[styles.highlightCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
                     <Text style={[styles.highlightCardMetricValue, { color: '#ffffff' }]}>{card.metricValue}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* White Habit Cards */}
+        <View style={styles.highlightCarouselContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={spotlightCardWidth + 12}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            contentContainerStyle={styles.highlightCarouselContent}
+          >
+            {whiteHabitCards.map((card, index) => {
+              const progressWidth = `${card.progress * 100}%`;
+
+              return (
+                <TouchableOpacity
+                  key={card.key}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (card.key === 'create_new_habit') {
+                      setShowCustomHabitModal(true);
+              return;
+            }
+                    Alert.alert('Habit', 'Coming soon');
+                  }}
+                  style={[
+                    styles.whiteHabitCard,
+                    {
+                      width: spotlightCardWidth,
+                      marginRight: index === whiteHabitCards.length - 1 ? 0 : 12,
+                      marginVertical: 8,
+                      shadowColor: whiteCardShadowColor,
+                    },
+                  ]}
+                >
+                  <View style={styles.whiteHabitCardHeader}>
+                    <View>
+                      <Text style={[styles.whiteHabitCardTitle, { color: theme.textPrimary }]}>{card.title}</Text>
+                      <Text style={[styles.whiteHabitCardSubtitle, { color: theme.textSecondary }]}>{card.subtitle}</Text>
+                    </View>
+                    <Ionicons name="ellipsis-vertical" size={16} color={theme.textSecondary} />
+                  </View>
+
+                  <View style={[styles.whiteHabitCardProgress, { backgroundColor: 'rgba(0, 0, 0, 0.1)' }]}>
+                    <View
+                      style={[
+                        styles.whiteHabitCardProgressFill,
+                        {
+                          width: progressWidth,
+                          backgroundColor: card.accent,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <View style={styles.whiteHabitCardMetricRow}>
+                    <Text style={[styles.whiteHabitCardMetricLabel, { color: theme.textSecondary }]}>{card.metricLabel}</Text>
+                    <Text style={[styles.whiteHabitCardMetricValue, { color: theme.textPrimary }]}>{card.metricValue}</Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -1951,6 +2323,356 @@ function ActionScreen() {
 
       </ScrollView>
 
+      {/* Custom Habit Modal */}
+      <Modal
+        visible={showCustomHabitModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowCustomHabitModal(false)}
+      >
+        <View style={styles.customHabitOverlay}>
+          <View style={[styles.customHabitContainer, { backgroundColor: customHabitColors.background, width: screenWidth }]}>
+            <Animated.View
+              style={[
+                styles.customHabitPager,
+                {
+                  width: screenWidth * 2,
+                  transform: [{ translateX: customHabitSlide }],
+                },
+              ]}
+            >
+              {/* Selection Step */}
+              <View style={[styles.customHabitPage, { width: screenWidth }]}>
+                <View style={styles.customHabitHeader}>
+          <TouchableOpacity 
+                    style={[styles.customHabitCloseButton, { backgroundColor: customHabitColors.iconBackground }]}
+                    onPress={() => setShowCustomHabitModal(false)}
+                  >
+                    <Ionicons name="close" size={24} color={customHabitColors.text} />
+                  </TouchableOpacity>
+                  <Text style={[styles.customHabitTitle, { color: customHabitColors.text }]}>Add Task</Text>
+                  <TouchableOpacity
+                    style={[styles.customHabitSearchButton, { backgroundColor: customHabitColors.iconBackground }]}
+                  >
+                    <Ionicons name="search" size={20} color={customHabitColors.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.customHabitCategoryRow}>
+                  {customHabitCategories.map(category => {
+                    const isSelected = selectedCustomHabitType === category.key;
+                    return (
+                      <TouchableOpacity
+                        key={category.key}
+                        style={[
+                          styles.customHabitCategoryButton,
+                          { backgroundColor: customHabitColors.button },
+                          isSelected && { backgroundColor: customHabitColors.buttonActive },
+                        ]}
+                        onPress={() => setSelectedCustomHabitType(category.key)}
+            activeOpacity={0.7}
+          >
+                        <Ionicons
+                          name={category.icon as any}
+                          size={20}
+                          color={isSelected ? '#FFFFFF' : customHabitColors.text}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+              </View>
+                <ScrollView
+                  style={styles.customHabitScroll}
+                  contentContainerStyle={styles.customHabitScrollContent}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
+                  <Text style={[styles.customHabitHint, { color: customHabitColors.hint }]}>
+                    {selectedCustomHabitType === 'custom'
+                      ? 'Tasks start each day as incomplete. Mark a task as done to increase your streak.'
+                      : selectedCustomHabitType === 'avoid'
+                      ? 'Negative tasks start each day as complete. Your streak breaks only when you mark it as missed.'
+                      : 'Tap a task to edit or pick from suggestions below.'}
+                  </Text>
+
+                  {selectedCustomHabitType === 'custom' && (
+                    <View style={[styles.customHabitInputWrapper, { backgroundColor: customHabitColors.card }]}>
+                      <Text style={[styles.customHabitInputLabel, { color: customHabitColors.text }]}>
+                        Create your own:
+                      </Text>
+                      <View style={styles.customHabitInputField}>
+                        <TextInput
+                          style={[styles.customHabitInput, styles.customHabitInputHasArrow, { color: customHabitColors.text }]}
+                          placeholder="Enter task title..."
+                          placeholderTextColor={customHabitColors.placeholder}
+                          maxLength={28}
+                          value={customHabitTitle}
+                          onChangeText={setCustomHabitTitle}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.customHabitInputActionButton,
+                            { backgroundColor: customHabitColors.buttonActive },
+                            !customHabitTitle.trim() && styles.customHabitInputActionButtonDisabled,
+                          ]}
+                          activeOpacity={0.7}
+                          disabled={!customHabitTitle.trim()}
+                          onPress={() => handleCustomTaskConfirm(customHabitTitle)}
+                        >
+                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                        </TouchableOpacity>
+            </View>
+                      <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
+                        {customHabitTitle.length} / 28
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedCustomHabitType === 'avoid' && (
+                    <View style={[styles.customHabitInputWrapper, { backgroundColor: customHabitColors.card }]}>
+                      <Text style={[styles.customHabitInputLabel, { color: customHabitColors.text }]}>
+                        Break a bad habit:
+                      </Text>
+                      <View style={styles.customHabitInputField}>
+                        <TextInput
+                          style={[styles.customHabitInput, styles.customHabitInputHasArrow, { color: customHabitColors.text }]}
+                          placeholder="Enter habit to avoid..."
+                          placeholderTextColor={customHabitColors.placeholder}
+                          maxLength={28}
+                          value={breakHabitTitle}
+                          onChangeText={setBreakHabitTitle}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.customHabitInputActionButton,
+                            { backgroundColor: customHabitColors.buttonActive },
+                            !breakHabitTitle.trim() && styles.customHabitInputActionButtonDisabled,
+                          ]}
+                          activeOpacity={0.7}
+                          disabled={!breakHabitTitle.trim()}
+                          onPress={() => handleCustomTaskConfirm(breakHabitTitle)}
+                        >
+                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+                      <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
+                        {breakHabitTitle.length} / 28
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedCustomHabitType === 'custom' && (
+                    <>
+                      <Text style={[styles.customHabitRecommendationsLabel, { color: customHabitColors.text }]}>
+                        BASED ON YOUR TASKS:
+                      </Text>
+                      <View style={styles.customHabitRecommendationsList}>
+                        {customHabitRecommendations.map(rec => (
+                          <View
+                            key={`rec-${rec.key}`}
+                            style={[styles.customHabitRecommendationCard, { backgroundColor: customHabitColors.card }]}
+                          >
+                            <View style={styles.customHabitRecommendationIcon}>
+                              <Ionicons name="sparkles" size={16} color={customHabitColors.text} />
+        </View>
+                            <View style={styles.customHabitRecommendationContent}>
+                              <Text style={[styles.customHabitRecommendationTitle, { color: customHabitColors.text }]}>
+                                {rec.label}
+                              </Text>
+                              <Text
+                                style={[styles.customHabitRecommendationSubtitle, { color: customHabitColors.placeholder }]}
+                              >
+                                Suggested for you
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    </>
+                  )}
+
+                  <Text style={[styles.customHabitPresetLabel, { color: customHabitColors.text }]}>
+                    OR CHOOSE A PRESET:
+                  </Text>
+
+                  <ScrollView
+                    contentContainerStyle={styles.customHabitPresetList}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                  >
+                  {customHabitPresets.map(preset => (
+                    <TouchableOpacity
+                      key={preset.key}
+                      style={[styles.customHabitPresetItem, { backgroundColor: customHabitColors.card }]}
+                      activeOpacity={0.7}
+                      onPress={() => handlePresetSelect(preset)}
+                    >
+                      <View style={[styles.customHabitPresetIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                        <Ionicons name="ban" size={18} color={customHabitColors.text} />
+                      </View>
+                      <Text style={[styles.customHabitPresetText, { color: customHabitColors.text }]}>{preset.label}</Text>
+                      <Ionicons name="chevron-forward" size={18} color={customHabitColors.text} />
+          </TouchableOpacity>
+                  ))}
+                  </ScrollView>
+                </ScrollView>
+        </View>
+
+              {/* Confirm Step */}
+              <View style={[styles.customHabitPage, { width: screenWidth }]}>
+                <View style={styles.confirmTaskHeader}>
+                  <TouchableOpacity
+                    style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
+                    onPress={handleConfirmTaskBack}
+                  >
+                    <Ionicons name="arrow-back" size={24} color={customHabitColors.text} />
+                  </TouchableOpacity>
+                  <View style={styles.confirmTaskHeaderTitleGroup}>
+                    <Text style={[styles.confirmTaskTitle, { color: customHabitColors.text }]}>Confirm Task</Text>
+                  </View>
+                  <View style={{ width: 40 }} />
+        </View>
+
+                <ScrollView contentContainerStyle={styles.confirmTaskContent} showsVerticalScrollIndicator={false}>
+              {/* Title Input */}
+              <View style={styles.confirmTaskSection}>
+                <Text style={[styles.confirmTaskSectionLabel, { color: customHabitColors.text }]}>TITLE:</Text>
+                <View style={styles.confirmTaskTitleWrapper}>
+                  <TextInput
+                    style={[styles.confirmTaskTitleInput, { 
+                      backgroundColor: customHabitColors.card,
+                      color: customHabitColors.text,
+                      borderColor: customHabitColors.border
+                    }]}
+                    value={taskTitle}
+                    onChangeText={setTaskTitle}
+                    maxLength={28}
+                    placeholder="Enter task title..."
+                    placeholderTextColor={customHabitColors.placeholder}
+                  />
+                  <Text style={[styles.confirmTaskCharCount, { color: customHabitColors.placeholder }]}>
+                    {taskTitle.length} / 28
+                  </Text>
+                </View>
+              </View>
+
+              {/* Task Duration */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24 }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setTaskDuration(prev => {
+                    if (prev === 'day') return 'week';
+                    if (prev === 'week') return 'month';
+                    return 'day';
+                  });
+                }}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>
+                  {taskDuration === 'day' ? 'Day-Long Task' : taskDuration === 'week' ? 'Week-Long Task' : 'Month-Long Task'}
+                </Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>
+                    Tap to toggle
+                  </Text>
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons
+                      name="swap-vertical"
+                      size={18}
+                      color={customHabitColors.text}
+                    />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Frequency */}
+              <View style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}>
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Frequency</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>
+                    {taskFrequency} time/day
+                  </Text>
+                  <View style={styles.confirmTaskFrequencyControls}>
+                    <TouchableOpacity
+                      style={[styles.confirmTaskFrequencyButton, { backgroundColor: customHabitColors.iconBackground }]}
+                      onPress={() => setTaskFrequency(Math.max(1, taskFrequency - 1))}
+                    >
+                      <Ionicons name="remove" size={18} color={customHabitColors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.confirmTaskFrequencyButton, { backgroundColor: customHabitColors.iconBackground }]}
+                      onPress={() => setTaskFrequency(taskFrequency + 1)}
+                    >
+                      <Ionicons name="add" size={18} color={customHabitColors.text} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Task Days */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Task Days</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>{taskDays}</Text>
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons name="calendar" size={18} color={customHabitColors.text} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Notifications */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24 }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Notifications</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>Automatic</Text>
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons name="notifications-outline" size={18} color={customHabitColors.text} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Action Button */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Action Button</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>Automatic</Text>
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons name="hand-left-outline" size={18} color={customHabitColors.text} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* Save Task Button */}
+              <TouchableOpacity
+                style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card, marginTop: 24, marginBottom: 0 }]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setShowCustomHabitModal(false);
+                }}
+              >
+                <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Save Task</Text>
+                <View style={styles.confirmTaskRowRight}>
+                  <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
+                    <Ionicons name="checkmark" size={18} color={customHabitColors.text} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+      </ScrollView>
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Gym Questionnaire Modal - Combined Single Page */}
       <Modal
         visible={showGymModal}
@@ -1972,107 +2694,107 @@ function ActionScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
-              {/* Day Type Selection */}
-              <View style={styles.questionSection}>
-                <Text style={styles.questionText}>What type of day is this?</Text>
-                <View style={styles.optionsContainer}>
-                  <TouchableOpacity
+            {/* Day Type Selection */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>What type of day is this?</Text>
+              <View style={styles.optionsContainer}>
+                <TouchableOpacity
                     style={[
                       styles.optionButton,
                       gymQuestionnaire.dayType === 'active' && styles.optionButtonSelected
                     ]}
-                    onPress={() => {
+                  onPress={() => {
                       setGymQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
-                    }}
-                  >
+                  }}
+                >
                     <Text style={[
                       styles.optionButtonText,
                       gymQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
                     ]}>
-                      Active Day
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                    Active Day
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                     style={[
                       styles.optionButton,
                       gymQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
                     ]}
-                    onPress={() => {
+                  onPress={() => {
                       setGymQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
-                    }}
-                  >
+                  }}
+                >
                     <Text style={[
                       styles.optionButtonText,
                       gymQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
                     ]}>
-                      Rest Day
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                    Rest Day
+                  </Text>
+                </TouchableOpacity>
               </View>
+            </View>
 
               {/* Active Day Content */}
               {gymQuestionnaire.dayType === 'active' && (
                 <>
-                  {/* Training Type Selection */}
-                  <View style={styles.questionSection}>
-                    <Text style={styles.questionText}>What did you train?</Text>
-                    <View style={styles.trainingTypesContainer}>
-                      {trainingTypes.map((type, index) => (
-                        <TouchableOpacity
-                          key={index}
-                          style={[
-                            styles.trainingTypeButton,
-                            gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonSelected
-                          ]}
-                          onPress={() => {
-                            setGymQuestionnaire(prev => {
-                              const isSelected = prev.selectedTrainingTypes.includes(type);
-                              if (isSelected) {
-                                return { ...prev, selectedTrainingTypes: prev.selectedTrainingTypes.filter(t => t !== type) };
-                              } else {
-                                return { ...prev, selectedTrainingTypes: [...prev.selectedTrainingTypes, type] };
-                              }
-                            });
-                          }}
-                        >
-                          <Text style={[
-                            styles.trainingTypeButtonText,
-                            gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonTextSelected
-                          ]}>
-                            {type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
+            {/* Training Type Selection */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>What did you train?</Text>
+              <View style={styles.trainingTypesContainer}>
+                {trainingTypes.map((type, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.trainingTypeButton,
+                      gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonSelected
+                    ]}
+                    onPress={() => {
+                      setGymQuestionnaire(prev => {
+                        const isSelected = prev.selectedTrainingTypes.includes(type);
+                        if (isSelected) {
+                          return { ...prev, selectedTrainingTypes: prev.selectedTrainingTypes.filter(t => t !== type) };
+                        } else {
+                          return { ...prev, selectedTrainingTypes: [...prev.selectedTrainingTypes, type] };
+                        }
+                      });
+                    }}
+                  >
+                    <Text style={[
+                      styles.trainingTypeButtonText,
+                      gymQuestionnaire.selectedTrainingTypes.includes(type) && styles.trainingTypeButtonTextSelected
+                    ]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
-                  {/* Custom Training Type Input for "Other" */}
-                  {gymQuestionnaire.selectedTrainingTypes.includes('Other') && (
-                    <View style={styles.questionSection}>
-                      <Text style={styles.questionText}>What type of training was it?</Text>
-                      <TextInput
-                        style={styles.customInput}
-                        placeholder="Enter your training type..."
-                        value={gymQuestionnaire.customTrainingType}
-                        onChangeText={(text) => setGymQuestionnaire(prev => ({ ...prev, customTrainingType: text }))}
-                        placeholderTextColor="#999"
-                        multiline
-                        returnKeyType="default"
-                      />
-                    </View>
+            {/* Custom Training Type Input for "Other" */}
+            {gymQuestionnaire.selectedTrainingTypes.includes('Other') && (
+              <View style={styles.questionSection}>
+                <Text style={styles.questionText}>What type of training was it?</Text>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="Enter your training type..."
+                  value={gymQuestionnaire.customTrainingType}
+                  onChangeText={(text) => setGymQuestionnaire(prev => ({ ...prev, customTrainingType: text }))}
+                  placeholderTextColor="#999"
+                  multiline
+                  returnKeyType="default"
+                />
+              </View>
                   )}
                 </>
               )}
 
               {/* Rest Day Content */}
               {gymQuestionnaire.dayType === 'rest' && (
-                <View style={styles.questionSection}>
-                  <Text style={styles.questionText}>Rest days are important for recovery!</Text>
-                  <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
-                    Taking time to rest allows your muscles to recover and grow stronger.
-                  </Text>
-                </View>
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>Rest days are important for recovery!</Text>
+              <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
+                Taking time to rest allows your muscles to recover and grow stronger.
+              </Text>
+            </View>
               )}
             </ScrollView>
 
@@ -2652,268 +3374,268 @@ function ActionScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
-              {/* Day Type Selection */}
-              <View style={styles.questionSection}>
-                <Text style={styles.questionText}>What type of day is this?</Text>
-                <View style={styles.optionsContainer}>
-                  <TouchableOpacity
+            {/* Day Type Selection */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>What type of day is this?</Text>
+              <View style={styles.optionsContainer}>
+                <TouchableOpacity
                     style={[
                       styles.optionButton,
                       runQuestionnaire.dayType === 'active' && styles.optionButtonSelected
                     ]}
-                    onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
-                    }}
-                  >
+                  onPress={() => {
+                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
+                  }}
+                >
                     <Text style={[
                       styles.optionButtonText,
                       runQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
                     ]}>
-                      Active Day
+                    Active Day
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[
+                      styles.optionButton,
+                      runQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
+                    ]}
+                  onPress={() => {
+                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
+                  }}
+                >
+                    <Text style={[
+                      styles.optionButtonText,
+                      runQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
+                    ]}>
+                    Rest Day
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+              {/* Active Day Content */}
+            {runQuestionnaire.dayType === 'active' && (
+                <>
+                  {/* Activity Type Selection */}
+              <View style={styles.questionSection}>
+                <Text style={styles.questionText}>What type of activity?</Text>
+                <View style={styles.optionsContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.optionButton,
+                      runQuestionnaire.activityType === 'run' && styles.optionButtonSelected
+                    ]}
+                    onPress={() => {
+                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'run' }));
+                    }}
+                  >
+                    <Text style={[
+                      styles.optionButtonText,
+                      runQuestionnaire.activityType === 'run' && styles.optionButtonTextSelected
+                    ]}>
+                      Run
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[
                       styles.optionButton,
-                      runQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
+                      runQuestionnaire.activityType === 'walk' && styles.optionButtonSelected
                     ]}
                     onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
+                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'walk' }));
                     }}
                   >
                     <Text style={[
                       styles.optionButtonText,
-                      runQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
+                      runQuestionnaire.activityType === 'walk' && styles.optionButtonTextSelected
                     ]}>
-                      Rest Day
+                      Walk
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {/* Active Day Content */}
-              {runQuestionnaire.dayType === 'active' && (
-                <>
-                  {/* Activity Type Selection */}
-                  <View style={styles.questionSection}>
-                    <Text style={styles.questionText}>What type of activity?</Text>
-                    <View style={styles.optionsContainer}>
-                      <TouchableOpacity
-                        style={[
-                          styles.optionButton,
-                          runQuestionnaire.activityType === 'run' && styles.optionButtonSelected
-                        ]}
-                        onPress={() => {
-                          setRunQuestionnaire(prev => ({ ...prev, activityType: 'run' }));
-                        }}
-                      >
-                        <Text style={[
-                          styles.optionButtonText,
-                          runQuestionnaire.activityType === 'run' && styles.optionButtonTextSelected
-                        ]}>
-                          Run
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          styles.optionButton,
-                          runQuestionnaire.activityType === 'walk' && styles.optionButtonSelected
-                        ]}
-                        onPress={() => {
-                          setRunQuestionnaire(prev => ({ ...prev, activityType: 'walk' }));
-                        }}
-                      >
-                        <Text style={[
-                          styles.optionButtonText,
-                          runQuestionnaire.activityType === 'walk' && styles.optionButtonTextSelected
-                        ]}>
-                          Walk
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
                   {/* Run Type Selection - Only show if activity type is selected */}
                   {runQuestionnaire.activityType && (
                     <>
-                      <View style={styles.questionSection}>
-                        <View style={styles.otherOptionsContainer}>
-                          {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
-                            <TouchableOpacity
-                              key={type}
-                              style={[
-                                styles.otherOptionButton,
-                                runQuestionnaire.runType === type && styles.otherOptionButtonSelected
-                              ]}
-                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, runType: type }))}
-                            >
-                              <Text style={[
-                                styles.otherOptionButtonText,
-                                runQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
-                              ]}>
-                                {type}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
+            <View style={styles.questionSection}>
+              <View style={styles.otherOptionsContainer}>
+                {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.otherOptionButton,
+                      runQuestionnaire.runType === type && styles.otherOptionButtonSelected
+                    ]}
+                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, runType: type }))}
+                  >
+                    <Text style={[
+                      styles.otherOptionButtonText,
+                      runQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
+                    ]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
-                      {/* Distance Slider */}
-                      <View style={styles.questionSection}>
-                        <Text style={styles.questionText}>Distance covered?</Text>
-                        <View style={styles.sliderContainer}>
-                          {/* Popular Distance Buttons */}
-                          <View style={styles.popularDistanceButtons}>
-                            <TouchableOpacity 
-                              style={styles.popularDistanceButton}
-                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 10 }))}
-                            >
-                              <Text style={styles.popularDistanceButtonText}>5km</Text>
-                            </TouchableOpacity>
-                            
-                            <TouchableOpacity 
-                              style={styles.popularDistanceButton}
-                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 20 }))}
-                            >
-                              <Text style={styles.popularDistanceButtonText}>10km</Text>
-                            </TouchableOpacity>
-                            
-                            <TouchableOpacity 
-                              style={styles.popularDistanceButton}
-                              onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 42 }))}
-                            >
-                              <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
-                            </TouchableOpacity>
-                          </View>
-                          
-                          <Slider
-                            style={styles.slider}
-                            minimumValue={0}
-                            maximumValue={85}
-                            value={runQuestionnaire.distance}
-                            onValueChange={(value) => setRunQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
-                            minimumTrackTintColor="#10B981"
-                            maximumTrackTintColor="#E5E7EB"
-                            thumbTintColor="#10B981"
-                            step={1}
-                          />
-                          <View style={styles.sliderLabels}>
-                            <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(runQuestionnaire.distance) }]}>
-                              {formatRunDistance(runQuestionnaire.distance)}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
+            {/* Distance Slider */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>Distance covered?</Text>
+              <View style={styles.sliderContainer}>
+                {/* Popular Distance Buttons */}
+                <View style={styles.popularDistanceButtons}>
+                  <TouchableOpacity 
+                    style={styles.popularDistanceButton}
+                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 10 }))}
+                  >
+                    <Text style={styles.popularDistanceButtonText}>5km</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.popularDistanceButton}
+                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 20 }))}
+                  >
+                    <Text style={styles.popularDistanceButtonText}>10km</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.popularDistanceButton}
+                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 42 }))}
+                  >
+                    <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <Slider
+                  style={styles.slider}
+                  minimumValue={0}
+                  maximumValue={85}
+                  value={runQuestionnaire.distance}
+                  onValueChange={(value) => setRunQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
+                  minimumTrackTintColor="#10B981"
+                  maximumTrackTintColor="#E5E7EB"
+                  thumbTintColor="#10B981"
+                  step={1}
+                />
+                <View style={styles.sliderLabels}>
+                  <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(runQuestionnaire.distance) }]}>
+                    {formatRunDistance(runQuestionnaire.distance)}
+                  </Text>
+                </View>
+              </View>
+            </View>
 
-                      {/* Duration */}
-                      <View style={styles.questionSection}>
-                        <Text style={styles.questionText}>How long did it take?</Text>
-                        <View style={styles.timePickerRow}>
-                          {/* Hours column */}
-                          <View style={styles.timePickerColumn}>
-                            <Text style={styles.timePickerLabel}>Hours</Text>
-                            <ScrollView 
-                              style={styles.timePickerScroll} 
-                              showsVerticalScrollIndicator={false}
-                              snapToInterval={65}
-                              decelerationRate="fast"
-                              onMomentumScrollEnd={(event) => {
-                                const y = event.nativeEvent.contentOffset.y;
-                                const itemHeight = 65;
-                                const selectedIndex = Math.round(y / itemHeight);
-                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
-                                setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
-                              }}
-                            >
-                              {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
-                                <TouchableOpacity
-                                  key={`h-${hour}`}
-                                  style={styles.timePickerItem}
-                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
-                                >
-                                  <Text style={styles.timePickerItemText}>
-                                    {hour}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </ScrollView>
-                          </View>
+            {/* Duration */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>How long did it take?</Text>
+              <View style={styles.timePickerRow}>
+                {/* Hours column */}
+                <View style={styles.timePickerColumn}>
+                  <Text style={styles.timePickerLabel}>Hours</Text>
+                  <ScrollView 
+                    style={styles.timePickerScroll} 
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={65}
+                    decelerationRate="fast"
+                    onMomentumScrollEnd={(event) => {
+                      const y = event.nativeEvent.contentOffset.y;
+                      const itemHeight = 65;
+                      const selectedIndex = Math.round(y / itemHeight);
+                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
+                      setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
+                    }}
+                  >
+                    {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
+                      <TouchableOpacity
+                        key={`h-${hour}`}
+                        style={styles.timePickerItem}
+                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
+                      >
+                        <Text style={styles.timePickerItemText}>
+                          {hour}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
 
-                          {/* Minutes column */}
-                          <View style={styles.timePickerColumn}>
-                            <Text style={styles.timePickerLabel}>Minutes</Text>
-                            <ScrollView 
-                              style={styles.timePickerScroll} 
-                              showsVerticalScrollIndicator={false}
-                              snapToInterval={65}
-                              decelerationRate="fast"
-                              onMomentumScrollEnd={(event) => {
-                                const y = event.nativeEvent.contentOffset.y;
-                                const itemHeight = 65;
-                                const selectedIndex = Math.round(y / itemHeight);
-                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                                setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
-                              }}
-                            >
-                              {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-                                <TouchableOpacity
-                                  key={`m-${minute}`}
-                                  style={styles.timePickerItem}
-                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
-                                >
-                                  <Text style={styles.timePickerItemText}>
-                                    {minute.toString().padStart(2, '0')}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </ScrollView>
-                          </View>
+                {/* Minutes column */}
+                <View style={styles.timePickerColumn}>
+                  <Text style={styles.timePickerLabel}>Minutes</Text>
+                  <ScrollView 
+                    style={styles.timePickerScroll} 
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={65}
+                    decelerationRate="fast"
+                    onMomentumScrollEnd={(event) => {
+                      const y = event.nativeEvent.contentOffset.y;
+                      const itemHeight = 65;
+                      const selectedIndex = Math.round(y / itemHeight);
+                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
+                      setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
+                    }}
+                  >
+                    {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
+                      <TouchableOpacity
+                        key={`m-${minute}`}
+                        style={styles.timePickerItem}
+                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
+                      >
+                        <Text style={styles.timePickerItemText}>
+                          {minute.toString().padStart(2, '0')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
 
-                          {/* Seconds column */}
-                          <View style={styles.timePickerColumn}>
-                            <Text style={styles.timePickerLabel}>Seconds</Text>
-                            <ScrollView 
-                              style={styles.timePickerScroll} 
-                              showsVerticalScrollIndicator={false}
-                              snapToInterval={65}
-                              decelerationRate="fast"
-                              onMomentumScrollEnd={(event) => {
-                                const y = event.nativeEvent.contentOffset.y;
-                                const itemHeight = 65;
-                                const selectedIndex = Math.round(y / itemHeight);
-                                const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                                setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
-                              }}
-                            >
-                              {Array.from({ length: 60 }, (_, i) => i).map((second) => (
-                                <TouchableOpacity
-                                  key={`s-${second}`}
-                                  style={styles.timePickerItem}
-                                  onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
-                                >
-                                  <Text style={styles.timePickerItemText}>
-                                    {second.toString().padStart(2, '0')}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </ScrollView>
-                          </View>
-                        </View>
-                      </View>
+                {/* Seconds column */}
+                <View style={styles.timePickerColumn}>
+                  <Text style={styles.timePickerLabel}>Seconds</Text>
+                  <ScrollView 
+                    style={styles.timePickerScroll} 
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={65}
+                    decelerationRate="fast"
+                    onMomentumScrollEnd={(event) => {
+                      const y = event.nativeEvent.contentOffset.y;
+                      const itemHeight = 65;
+                      const selectedIndex = Math.round(y / itemHeight);
+                      const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
+                      setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
+                    }}
+                  >
+                    {Array.from({ length: 60 }, (_, i) => i).map((second) => (
+                      <TouchableOpacity
+                        key={`s-${second}`}
+                        style={styles.timePickerItem}
+                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
+                      >
+                        <Text style={styles.timePickerItemText}>
+                          {second.toString().padStart(2, '0')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            </View>
 
-                      {/* Run Notes */}
-                      <View style={styles.questionSection}>
-                        <Text style={styles.questionText}>How did it feel? (optional)</Text>
-                        <TextInput
-                          style={styles.customInput}
-                          placeholder="e.g., Felt strong, good pace..."
-                          value={runQuestionnaire.runNotes}
-                          onChangeText={(text) => setRunQuestionnaire(prev => ({ ...prev, runNotes: text }))}
-                          placeholderTextColor="#999"
-                          multiline
-                          textAlignVertical="top"
-                        />
-                      </View>
+            {/* Run Notes */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>How did it feel? (optional)</Text>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="e.g., Felt strong, good pace..."
+                  value={runQuestionnaire.runNotes}
+                  onChangeText={(text) => setRunQuestionnaire(prev => ({ ...prev, runNotes: text }))}
+                  placeholderTextColor="#999"
+                  multiline
+                  textAlignVertical="top"
+                />
+            </View>
                     </>
                   )}
                 </>
@@ -2932,10 +3654,10 @@ function ActionScreen() {
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={[
-                styles.submitButton,
+                              style={[
+                  styles.submitButton,
                 (!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))) && styles.submitButtonDisabled
-              ]}
+                ]}
               disabled={!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))}
               onPress={async () => {
                 try {
@@ -3378,6 +4100,8 @@ function ActionScreen() {
                           console.warn('Failed to clear habit data:', e);
                         }
                       }
+
+                      await fetchUserPoints();
                     }
                     
                     setShowUntickConfirmation(false);
@@ -3623,6 +4347,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
+  highlightCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pendingIndicatorIcon: {
+    marginTop: 2,
+  },
   highlightCardTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -3630,6 +4362,313 @@ const styles = StyleSheet.create({
   highlightCardSubtitle: {
     fontSize: 12,
     marginTop: 2,
+  },
+  customHabitOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'stretch',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  customHabitContainer: {
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    maxHeight: '98%',
+    minHeight: '90%',
+    overflow: 'hidden',
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  customHabitPager: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  customHabitPage: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 48,
+    flex: 1,
+  },
+  customHabitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  customHabitCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customHabitSearchButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customHabitTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  customHabitCategoryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  customHabitCategoryButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customHabitCategoryButtonActive: {},
+  customHabitHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  customHabitInputWrapper: {
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+  },
+  customHabitInputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  customHabitInput: {
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  customHabitInputHasArrow: {
+    paddingRight: 48,
+  },
+  customHabitInputField: {
+    position: 'relative',
+  },
+  customHabitInputActionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'absolute',
+    right: -6,
+    bottom: 4,
+  },
+  customHabitInputActionButtonDisabled: {
+    opacity: 0.4,
+  },
+  customHabitScroll: {
+    marginTop: 12,
+  },
+  customHabitScrollContent: {
+    paddingBottom: 80,
+  },
+  customHabitCharCount: {
+    textAlign: 'right',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  customHabitPresetLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  customHabitRecommendationsLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  customHabitRecommendationsList: {
+    rowGap: 12,
+    marginBottom: 20,
+  },
+  customHabitRecommendationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+  },
+  customHabitRecommendationIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  customHabitRecommendationContent: {
+    flex: 1,
+  },
+  customHabitRecommendationTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  customHabitRecommendationSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  customHabitPresetList: {
+    paddingBottom: 80,
+  },
+  customHabitPresetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    marginBottom: 10,
+  },
+  customHabitPresetIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  customHabitPresetText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmTaskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  confirmTaskBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTaskTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  confirmTaskHeaderTitleGroup: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTaskSubtitle: {
+    fontSize: 12,
+  },
+  confirmTaskContent: {
+    padding: 16,
+    paddingBottom: 20,
+  },
+  confirmTaskSection: {
+    marginBottom: 24,
+  },
+  confirmTaskSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  confirmTaskTitleWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  confirmTaskTitleInput: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  confirmTaskCharCount: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  confirmTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    marginBottom: 10,
+  },
+  confirmTaskRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  confirmTaskRowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTaskRowIconText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  confirmTaskRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+  },
+  confirmTaskRowContent: {
+    flex: 1,
+  },
+  confirmTaskRowText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmTaskRowSubtext: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  confirmTaskFrequencyControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  confirmTaskFrequencyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmTaskSaveButton: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  confirmTaskSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
   },
   highlightCardProgress: {
     height: 6,
@@ -3655,6 +4694,56 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
+  whiteHabitCard: {
+    borderRadius: 20,
+    padding: 16,
+    minHeight: 120,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  whiteHabitCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  whiteHabitCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  whiteHabitCardSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  whiteHabitCardProgress: {
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 18,
+  },
+  whiteHabitCardProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  whiteHabitCardMetricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  whiteHabitCardMetricLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  whiteHabitCardMetricValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
   headerStatsRow: {
     flex: 1,
     flexDirection: 'row',
@@ -3671,6 +4760,45 @@ const styles = StyleSheet.create({
   headerStatText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  headerGreetingBanner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  headerGreetingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  levelProgressFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 4,
+  },
+  levelProgressDash: {
+    position: 'absolute',
+    top: 14,
+    width: 1,
+    height: 8,
+    backgroundColor: '#ffffff',
+  },
+  levelProgressFloatingPoints: {
+    position: 'absolute',
+    top: 26,
+    width: 40,
+    alignItems: 'center',
+  },
+  levelProgressFloatingText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   headerTitle: {
     fontSize: 28,

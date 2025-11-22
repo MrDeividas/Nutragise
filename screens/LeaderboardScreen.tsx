@@ -186,7 +186,7 @@ export default function LeaderboardScreen({ navigation }: any) {
       </View>
 
       {/* Content */}
-      <View style={styles.content}>
+      <View style={[styles.content, { backgroundColor: theme.background }]}>
         {/* Leaderboard Tabs */}
         <View style={styles.leaderboardTabs}>
           {renderLeaderboardTab('daily', 'Daily')}

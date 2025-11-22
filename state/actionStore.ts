@@ -220,6 +220,13 @@ export const useActionStore = create<ActionState>((set, get) => ({
 			if (ok) {
 				// Optionally refresh local state
 				await get().loadDailyHabits(date);
+
+				const updatedHabits = get().dailyHabits;
+				await pointsService.updateDailyHabitsPoints(
+					userId,
+					(updatedHabits ?? {}) as DailyHabits,
+					date
+				);
 			}
 			return ok;
 		} catch (error) {

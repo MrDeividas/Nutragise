@@ -51,8 +51,8 @@ export const lightTheme: Theme = {
   textTertiary: '#9ca3af',
   
   // Primary brand colors
-  primary: '#129490',
-  primaryDark: '#0f7a78',
+  primary: '#10B981',
+  primaryDark: '#059669',
   
   // UI elements
   border: 'rgba(229, 231, 235, 0.3)',
@@ -63,14 +63,14 @@ export const lightTheme: Theme = {
   statusBarStyle: 'dark-content',
   
   // Tab bar
-  tabBarActiveTint: '#129490',
+  tabBarActiveTint: '#10B981',
   tabBarInactiveTint: '#6b7280',
   
   // Cards and containers
   cardBackground: '#FCFAF9',
   
   // Icon colors
-  iconPrimary: '#129490',
+  iconPrimary: '#10B981',
   iconSecondary: '#6b7280',
 };
 
@@ -86,8 +86,8 @@ export const darkTheme: Theme = {
   textTertiary: '#9ca3af',
   
   // Primary brand colors
-  primary: '#14b8a6',
-  primaryDark: '#0d9488',
+  primary: '#10B981',
+  primaryDark: '#059669',
   
   // UI elements
   border: 'rgba(26, 26, 26, 0.3)',
@@ -98,14 +98,14 @@ export const darkTheme: Theme = {
   statusBarStyle: 'light-content',
   
   // Tab bar
-  tabBarActiveTint: '#14b8a6',
+  tabBarActiveTint: '#10B981',
   tabBarInactiveTint: '#9ca3af',
   
   // Cards and containers
   cardBackground: '#1f1f1f',
   
   // Icon colors
-  iconPrimary: '#14b8a6',
+  iconPrimary: '#10B981',
   iconSecondary: '#9ca3af',
 };
 

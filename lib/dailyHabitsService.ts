@@ -11,48 +11,36 @@ class DailyHabitsService {
    */
   async upsertDailyHabits(userId: string, date: string, habitData: CreateDailyHabitsData): Promise<DailyHabits | null> {
     try {
-      const { data, error } = await supabase.rpc('upsert_daily_habits', {
-        p_user_id: userId,
-        p_date: date,
-        p_sleep_hours: habitData.sleep_hours,
-        p_sleep_quality: habitData.sleep_quality,
-        p_sleep_notes: habitData.sleep_notes,
-        p_sleep_bedtime_hours: habitData.sleep_bedtime_hours,
-        p_sleep_bedtime_minutes: habitData.sleep_bedtime_minutes,
-        p_sleep_wakeup_hours: habitData.sleep_wakeup_hours,
-        p_sleep_wakeup_minutes: habitData.sleep_wakeup_minutes,        p_water_intake: habitData.water_intake,
-        p_water_goal: habitData.water_goal,
-        p_water_notes: habitData.water_notes,
-        p_run_day_type: habitData.run_day_type,
-        p_run_type: habitData.run_type,
-        p_run_distance: habitData.run_distance,
-        p_run_duration: habitData.run_duration,
-        p_run_notes: habitData.run_notes,
-        p_gym_day_type: habitData.gym_day_type,
-        p_gym_training_types: habitData.gym_training_types,
-        p_gym_custom_type: habitData.gym_custom_type,
-        p_reflect_mood: habitData.reflect_mood,
-        p_reflect_energy: habitData.reflect_energy,
-        p_reflect_what_went_well: habitData.reflect_what_went_well,
-        p_reflect_friction: habitData.reflect_friction,
-        p_reflect_one_tweak: habitData.reflect_one_tweak,
-        p_reflect_nothing_to_change: habitData.reflect_nothing_to_change,
-        p_cold_shower_completed: habitData.cold_shower_completed,
-        p_focus_duration: habitData.focus_duration,
-        p_focus_start_time: habitData.focus_start_time,
-        p_focus_end_time: habitData.focus_end_time,
-        p_focus_notes: habitData.focus_notes,
-        p_focus_completed: habitData.focus_completed
-      });
+      // Try direct upsert first so we can write all fields (including newer ones like focus_*).
+      const directPayload = this.buildDirectUpsertPayload(userId, date, habitData);
+      const { data: directData, error: directError } = await supabase
+        .from('daily_habits')
+        .upsert(directPayload, { onConflict: 'user_id,date', returning: 'representation' })
+        .select()
+        .single();
 
-      if (error) {
-        console.error('Error upserting daily habits:', error);
-        throw error;
+      let result: DailyHabits | null = directData;
+
+      if (directError) {
+        console.warn('Direct daily_habits upsert failed, falling back to RPC:', directError);
+        const rpcParams = this.buildRpcParams(userId, date, habitData);
+        const { data: rpcData, error: rpcError } = await supabase.rpc('upsert_daily_habits', rpcParams);
+
+        if (rpcError) {
+          console.error('Error upserting daily habits via RPC:', rpcError);
+          throw rpcError;
+        }
+
+        result = rpcData;
       }
-      
+
+      if (!result) {
+        throw new Error('Failed to save daily habits');
+      }
+
       const today = new Date().toISOString().split('T')[0];
       console.log('🔍 Pillar tracking check:', { 
-        hasData: !!data, 
+        hasData: !!result, 
         date, 
         today, 
         isToday: date === today,
@@ -60,7 +48,7 @@ class DailyHabitsService {
       });
       
       // Track pillar progress for completed habits (only for today's date)
-      if (data && date === today) {
+      if (result && date === today) {
         console.log('✅ Pillar tracking condition met, initializing pillars...');
         
         // Initialize pillars first if they don't exist (non-blocking)
@@ -186,11 +174,59 @@ class DailyHabitsService {
         apiCache.delete(cacheKey);
       });
       
-      return data;
+      return result;
     } catch (error) {
       console.error('Error in upsertDailyHabits:', error);
       return null;
     }
+  }
+
+  private buildDirectUpsertPayload(userId: string, date: string, habitData: CreateDailyHabitsData) {
+    const { date: _ignored, ...habitFields } = habitData;
+    return this.filterUndefinedValues({
+      user_id: userId,
+      date,
+      ...habitFields,
+    });
+  }
+
+  private buildRpcParams(userId: string, date: string, habitData: CreateDailyHabitsData) {
+    return this.filterUndefinedValues({
+      p_user_id: userId,
+      p_date: date,
+      p_sleep_hours: habitData.sleep_hours,
+      p_sleep_quality: habitData.sleep_quality,
+      p_sleep_notes: habitData.sleep_notes,
+      p_sleep_bedtime_hours: habitData.sleep_bedtime_hours,
+      p_sleep_bedtime_minutes: habitData.sleep_bedtime_minutes,
+      p_sleep_wakeup_hours: habitData.sleep_wakeup_hours,
+      p_sleep_wakeup_minutes: habitData.sleep_wakeup_minutes,
+      // Always include water fields (even when null) so PostgREST selects the correct overload
+      p_water_intake: habitData.water_intake ?? null,
+      p_water_goal: habitData.water_goal ?? null,
+      p_water_notes: habitData.water_notes ?? null,
+      p_run_day_type: habitData.run_day_type,
+      p_run_type: habitData.run_type,
+      p_run_distance: habitData.run_distance,
+      p_run_duration: habitData.run_duration,
+      p_run_notes: habitData.run_notes,
+      p_gym_day_type: habitData.gym_day_type,
+      p_gym_training_types: habitData.gym_training_types,
+      p_gym_custom_type: habitData.gym_custom_type,
+      p_reflect_mood: habitData.reflect_mood,
+      p_reflect_energy: habitData.reflect_energy,
+      p_reflect_what_went_well: habitData.reflect_what_went_well,
+      p_reflect_friction: habitData.reflect_friction,
+      p_reflect_one_tweak: habitData.reflect_one_tweak,
+      p_reflect_nothing_to_change: habitData.reflect_nothing_to_change,
+      p_cold_shower_completed: habitData.cold_shower_completed,
+    });
+  }
+
+  private filterUndefinedValues(obj: Record<string, any>) {
+    return Object.fromEntries(
+      Object.entries(obj).filter(([, value]) => value !== undefined)
+    );
   }
 
   /**
