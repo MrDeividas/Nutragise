@@ -445,14 +445,14 @@ export default function InsightsScreen({ route }: any) {
           <View style={styles.headerTopRow}>
             {/* Left: AI Bot Icon (Non-interactive) */}
             <View style={styles.profileButton}>
-               <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground, borderColor: borderSecondary }]}>
+               <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground, borderColor: theme.border }]}>
                 <Ionicons name="hardware-chip-outline" size={20} color={textPrimary} />
               </View>
             </View>
 
             {/* Middle: Chat Toggle */}
              <TouchableOpacity 
-               style={[styles.profileHeaderCard, { backgroundColor: cardBackground }]}
+               style={[styles.profileHeaderCard, { backgroundColor: '#e5e7eb' }]}
                onPress={() => setIsHeaderExpanded(true)}
                activeOpacity={0.8}
              >
@@ -961,7 +961,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    borderColor: '#9CA3AF',
   },
   profileHeaderCard: {
     flex: 1,
