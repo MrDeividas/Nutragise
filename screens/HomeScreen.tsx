@@ -2484,14 +2484,14 @@ function ExploreContent({
                               // Only show caption if it exists and is not empty
                               if (currentCaption && currentCaption.trim() !== '') {
                                 return (
-                                  <Text style={styles.dailyPostTitle}>
+                                  <Text style={[styles.dailyPostTitle, { color: theme.textPrimary }]}>
                                     {currentCaption}
                                   </Text>
                                 );
                               }
                               return null; // Don't render anything if no caption
                             })()}
-                            <Text style={styles.dailyPostStats}>
+                            <Text style={[styles.dailyPostStats, { color: theme.textSecondary }]}>
                               {dailyPost.post_count} updates
                             </Text>
                           </View>
@@ -2901,13 +2901,14 @@ const styles = StyleSheet.create({
     right: 30,
     zIndex: 10,
     borderRadius: 12,
-    paddingLeft: 0,
-    paddingRight: 0,
-    paddingVertical: 0,
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingVertical: 6,
     height: 32,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   profileInfo: {
     flexDirection: 'row',
@@ -3852,12 +3853,10 @@ const styles = StyleSheet.create({
   dailyPostTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
     marginBottom: 4,
   },
   dailyPostStats: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
     fontWeight: '500',
   },
   dailyPostInteraction: {

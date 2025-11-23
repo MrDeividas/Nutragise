@@ -87,7 +87,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: '#ffffff' }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
         </View>
         <ActivityIndicator size="small" color={theme.primary} />
       </View>
@@ -98,9 +98,9 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: '#ffffff' }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
         </View>
-        <Text style={[styles.emptyText, { color: '#ffffff' }]}>
+        <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
           Start your journey by posting your first daily update!
         </Text>
       </View>
@@ -114,9 +114,9 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
   return (
     <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
       <View style={styles.journeyHeader}>
-        <Text style={[styles.journeyTitle, { color: '#ffffff' }]}>Journey</Text>
+        <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
         <TouchableOpacity onPress={onViewAll}>
-          <Text style={[styles.viewAllText, { color: '#ffffff' }]}>View All →</Text>
+          <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View All →</Text>
         </TouchableOpacity>
       </View>
       
@@ -203,7 +203,7 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
       </View>
       
       {/* Day Info */}
-      <Text style={[styles.dayLabel, { color: '#ffffff' }]}>
+      <Text style={[styles.dayLabel, { color: theme.textSecondary }]}>
         Day {dayNumber} • {formatJourneyDate(day.date)}
       </Text>
       </View>
@@ -386,12 +386,10 @@ const styles = StyleSheet.create({
   journeyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff', // Match other section titles
   },
   viewAllText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#ffffff', // Match other section text
   },
   journeyScrollView: {
     flexGrow: 0,
@@ -436,13 +434,11 @@ const styles = StyleSheet.create({
   dayLabel: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#ffffff', // Match other section text
   },
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
     fontStyle: 'italic',
-    color: '#ffffff', // Match other section text
   },
   // Modal Styles
   overlay: {

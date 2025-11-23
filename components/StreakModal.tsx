@@ -74,22 +74,26 @@ export default function StreakModal({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} animationType="fade" onRequestClose={onClose} transparent={false}>
-      <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
-        <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+    <Modal visible={visible} animationType="fade" onRequestClose={onClose} transparent={true}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleContainer}>
               <Ionicons name="flame" size={28} color="#F59E0B" />
-              <Text style={[styles.title, { color: theme.textPrimary }]}>Habit Streaks</Text>
+              <Text style={styles.title}>Habit Streaks</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={theme.textSecondary} />
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
 
           {/* Content */}
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            style={styles.content} 
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+          >
             {loading ? (
               <View style={styles.loadingState}>
                 <Ionicons name="refresh" size={48} color={theme.textSecondary} />
@@ -107,10 +111,10 @@ export default function StreakModal({ visible, onClose }: Props) {
                   const isPending = currentStreak > 0 && streak?.last_completed_date !== today;
                   
                   return (
-                                        <View key={habit.type} style={styles.streakRow}>
+                    <View key={habit.type} style={styles.streakRow}>
                       <View style={styles.rowLeft}>
                         <View style={[styles.habitIconSmall, { backgroundColor: `${habit.color}20` }]}>
-                          <Ionicons name={habit.icon as any} size={16} color={habit.color} />
+                          <Ionicons name={habit.icon as any} size={18} color={habit.color} />
                         </View>
                         <Text style={[styles.habitLabelSmall, { color: theme.textPrimary }]}>{habit.label}</Text>
                       </View>
@@ -146,25 +150,23 @@ export default function StreakModal({ visible, onClose }: Props) {
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '80%',
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
+    maxHeight: '70%',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 24,
   },
   titleContainer: {
     flexDirection: 'row',
@@ -172,51 +174,53 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
+    color: '#333',
     marginLeft: 12,
   },
-  closeButton: {
-    padding: 4,
-  },
   content: {
-    padding: 16,
-    maxHeight: 420,
+    flexShrink: 1,
+  },
+  contentContainer: {
+    paddingBottom: 0,
+    flexGrow: 0,
   },
   loadingState: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 20,
   },
   loadingText: {
     fontSize: 16,
     textAlign: 'center',
-    marginTop: 16,
+    marginTop: 12,
     opacity: 0.7,
   },
   streaksList: {
-    gap: 8,
+    gap: 4,
+    paddingBottom: 12,
   },
   // Compact row styles
   streakRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   habitIconSmall: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   habitLabelSmall: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
   },
   rowRight: {
@@ -237,9 +241,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   footer: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
   },
   footerText: {

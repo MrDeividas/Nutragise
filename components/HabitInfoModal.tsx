@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../state/themeStore';
 import { DailyHabits } from '../types/database';
 
 interface Props {
@@ -55,7 +54,8 @@ const habitConfig = {
     icon: 'sparkles',
     fields: [
       { key: 'reflect_mood', label: 'Mood', format: (value: number) => `${value}/5` },
-      { key: 'reflect_energy', label: 'Energy', format: (value: number) => `${value}/5` },
+      { key: 'reflect_motivation', label: 'Motivation', format: (value: number) => `${value}/5` },
+      { key: 'reflect_stress', label: 'Stress', format: (value: number) => `${value}/5` },
       { key: 'reflect_what_went_well', label: 'What Went Well', format: (value: string) => value || 'Not recorded' },
       { key: 'reflect_friction', label: 'Friction Points', format: (value: string) => value || 'Not recorded' },
       { key: 'reflect_one_tweak', label: 'One Tweak', format: (value: string) => value || 'Not recorded' },
@@ -72,7 +72,6 @@ const habitConfig = {
 };
 
 export default function HabitInfoModal({ visible, onClose, habitType, data }: Props) {
-  const { theme } = useTheme();
   const config = habitConfig[habitType as keyof typeof habitConfig];
 
   if (!config) return null;
@@ -83,8 +82,8 @@ export default function HabitInfoModal({ visible, onClose, habitType, data }: Pr
     
     return (
       <View key={field.key} style={styles.fieldRow}>
-        <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>{field.label}</Text>
-        <Text style={[styles.fieldValue, { color: theme.textPrimary }]}>{field.format(value)}</Text>
+        <Text style={styles.fieldLabel}>{field.label}</Text>
+        <Text style={styles.fieldValue}>{field.format(value)}</Text>
       </View>
     );
   };
@@ -92,17 +91,17 @@ export default function HabitInfoModal({ visible, onClose, habitType, data }: Pr
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+        <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.titleContainer}>
-              <View style={[styles.iconContainer, { backgroundColor: 'rgba(16,185,129,0.15)' }]}>
+              <View style={styles.iconContainer}>
                 <Ionicons name={config.icon as any} size={24} color="#10B981" />
               </View>
-              <Text style={[styles.title, { color: theme.textPrimary }]}>{config.title}</Text>
+              <Text style={styles.title}>{config.title}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={theme.textSecondary} />
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
 
@@ -113,24 +112,24 @@ export default function HabitInfoModal({ visible, onClose, habitType, data }: Pr
                 const renderedFields = config.fields.map(renderField).filter(Boolean);
                 return renderedFields.length > 0 ? renderedFields : (
                   <View style={styles.emptyState}>
-                    <Ionicons name="information-circle-outline" size={48} color={theme.textSecondary} />
-                    <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No recorded information</Text>
+                    <Ionicons name="information-circle-outline" size={48} color="#999" />
+                    <Text style={styles.emptyText}>No recorded information</Text>
                   </View>
                 );
               })()
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={48} color={theme.textSecondary} />
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No recorded information</Text>
+                <Ionicons name="information-circle-outline" size={48} color="#999" />
+                <Text style={styles.emptyText}>No recorded information</Text>
               </View>
             )}
           </ScrollView>
 
           {/* Footer - Future unlock button placeholder */}
           <View style={styles.footer}>
-            <View style={[styles.unlockPlaceholder, { backgroundColor: theme.borderSecondary }]}>
-              <Ionicons name="lock-closed" size={16} color={theme.textSecondary} />
-              <Text style={[styles.unlockText, { color: theme.textSecondary }]}>Unlock editing (coming soon)</Text>
+            <View style={styles.unlockPlaceholder}>
+              <Ionicons name="lock-closed" size={16} color="#999" />
+              <Text style={styles.unlockText}>Unlock editing (coming soon)</Text>
             </View>
           </View>
         </View>
@@ -150,17 +149,27 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 400,
     maxHeight: '80%',
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    padding: 0,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
     overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
+    padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: 'white',
   },
   titleContainer: {
     flexDirection: 'row',
@@ -174,37 +183,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    backgroundColor: 'rgba(16,185,129,0.15)',
   },
   title: {
     fontSize: 18,
     fontWeight: '700',
     flex: 1,
+    color: '#333',
   },
   closeButton: {
     padding: 4,
   },
   content: {
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
     maxHeight: 400,
+    backgroundColor: 'white',
   },
   fieldRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: '#F3F4F6',
   },
   fieldLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     flex: 1,
+    color: '#666',
   },
   fieldValue: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
     textAlign: 'right',
     flex: 1,
+    color: '#333',
   },
   emptyState: {
     alignItems: 'center',
@@ -214,12 +229,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 16,
-    opacity: 0.7,
+    color: '#999',
   },
   footer: {
-    padding: 20,
+    padding: 24,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: '#E5E7EB',
+    backgroundColor: 'white',
   },
   unlockPlaceholder: {
     flexDirection: 'row',
@@ -227,11 +243,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 12,
     borderRadius: 8,
+    backgroundColor: '#F3F4F6',
     opacity: 0.6,
   },
   unlockText: {
-    fontSize: 12,
+    fontSize: 14,
     marginLeft: 8,
     fontWeight: '500',
+    color: '#999',
   },
-}); 
+});
