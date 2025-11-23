@@ -1172,151 +1172,155 @@ export default function ProgressChart({ onClose }: Props) {
 
       {/* Summary Stats */}
       <View style={styles.summaryContainer}>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Quality</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.quality >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.quality >= 0).reduce((sum, day) => sum + day.quality, 0) / sleepData.filter(day => day.quality >= 0).length)
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.quality >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgQuality = Math.round(sleepData.filter(day => day.quality >= 0).reduce((sum, day) => sum + day.quality, 0) / sleepData.filter(day => day.quality >= 0).length);
-                    if (avgQuality <= 25) return '#EF4444'; // Red
-                    if (avgQuality <= 54) return '#F97316'; // Orange
-                    return '#10B981'; // Green
-                  })()
+        {/* First Row */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Quality</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.quality >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.quality >= 0).reduce((sum, day) => sum + day.quality, 0) / sleepData.filter(day => day.quality >= 0).length)
+                  : 'N/A'
                 }
-              ]} />
-            )}
-
+              </Text>
+              {sleepData.filter(day => day.quality >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgQuality = Math.round(sleepData.filter(day => day.quality >= 0).reduce((sum, day) => sum + day.quality, 0) / sleepData.filter(day => day.quality >= 0).length);
+                      if (avgQuality <= 25) return '#EF4444'; // Red
+                      if (avgQuality <= 54) return '#F97316'; // Orange
+                      return '#10B981'; // Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Sleep</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.hours >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.hours >= 0).reduce((sum, day) => sum + day.hours, 0) / sleepData.filter(day => day.hours >= 0).length * 10) / 10
+                  : 'N/A'
+                }
+              </Text>
+              {sleepData.filter(day => day.hours >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgHours = Math.round(sleepData.filter(day => day.hours >= 0).reduce((sum, day) => sum + day.hours, 0) / sleepData.filter(day => day.hours >= 0).length * 10) / 10;
+                      if (avgHours <= 4) return '#EF4444'; // Red
+                      if (avgHours <= 6) return '#F97316'; // Orange
+                      return '#10B981'; // Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Water</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.waterIntake >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.waterIntake >= 0).reduce((sum, day) => sum + day.waterIntake, 0) / sleepData.filter(day => day.waterIntake >= 0).length * 10) / 10
+                  : 'N/A'
+                }
+              </Text>
+              {sleepData.filter(day => day.waterIntake >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgWater = Math.round(sleepData.filter(day => day.waterIntake >= 0).reduce((sum, day) => sum + day.waterIntake, 0) / sleepData.filter(day => day.waterIntake >= 0).length * 10) / 10;
+                      if (avgWater <= 1) return '#EF4444'; // Red
+                      if (avgWater < 2) return '#F97316'; // Orange
+                      return '#10B981'; // Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
           </View>
         </View>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Sleep</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.hours >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.hours >= 0).reduce((sum, day) => sum + day.hours, 0) / sleepData.filter(day => day.hours >= 0).length * 10) / 10
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.hours >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgHours = Math.round(sleepData.filter(day => day.hours >= 0).reduce((sum, day) => sum + day.hours, 0) / sleepData.filter(day => day.hours >= 0).length * 10) / 10;
-                    if (avgHours <= 4) return '#EF4444'; // Red
-                    if (avgHours <= 6) return '#F97316'; // Orange
-                    return '#10B981'; // Green
-                  })()
+        
+        {/* Second Row */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Mood</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.mood >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.mood >= 0).reduce((sum, day) => sum + day.mood, 0) / sleepData.filter(day => day.mood >= 0).length * 10) / 10
+                  : 'N/A'
                 }
-              ]} />
-            )}
-
+              </Text>
+              {sleepData.filter(day => day.mood >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgMood = Math.round(sleepData.filter(day => day.mood >= 0).reduce((sum, day) => sum + day.mood, 0) / sleepData.filter(day => day.mood >= 0).length * 10) / 10;
+                      if (avgMood <= 1) return '#EF4444'; // Red
+                      if (avgMood <= 3) return '#F97316'; // Orange
+                      return '#10B981'; // Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
           </View>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Water</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.waterIntake >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.waterIntake >= 0).reduce((sum, day) => sum + day.waterIntake, 0) / sleepData.filter(day => day.waterIntake >= 0).length * 10) / 10
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.waterIntake >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgWater = Math.round(sleepData.filter(day => day.waterIntake >= 0).reduce((sum, day) => sum + day.waterIntake, 0) / sleepData.filter(day => day.waterIntake >= 0).length * 10) / 10;
-                    if (avgWater <= 1) return '#EF4444'; // Red
-                    if (avgWater < 2) return '#F97316'; // Orange
-                    return '#10B981'; // Green
-                  })()
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Motivation</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.motivation >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10
+                  : 'N/A'
                 }
-              ]} />
-            )}
-
+              </Text>
+              {sleepData.filter(day => day.motivation >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgMotivation = Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10;
+                      if (avgMotivation <= 1) return '#EF4444'; // Red
+                      if (avgMotivation < 3) return '#F97316'; // Orange
+                      return '#10B981'; // Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
           </View>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Mood</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.mood >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.mood >= 0).reduce((sum, day) => sum + day.mood, 0) / sleepData.filter(day => day.mood >= 0).length * 10) / 10
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.mood >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgMood = Math.round(sleepData.filter(day => day.mood >= 0).reduce((sum, day) => sum + day.mood, 0) / sleepData.filter(day => day.mood >= 0).length * 10) / 10;
-                    if (avgMood <= 1) return '#EF4444'; // Red
-                    if (avgMood <= 3) return '#F97316'; // Orange
-                    return '#10B981'; // Green
-                  })()
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Stress</Text>
+            <View style={styles.summaryValueContainer}>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {sleepData.filter(day => day.stress >= 0).length > 0 
+                  ? Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10
+                  : 'N/A'
                 }
-              ]} />
-            )}
-          </View>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Motivation</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.motivation >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.motivation >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgMotivation = Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10;
-                    if (avgMotivation <= 1) return '#EF4444'; // Red
-                    if (avgMotivation < 3) return '#F97316'; // Orange
-                    return '#10B981'; // Green
-                  })()
-                }
-              ]} />
-            )}
-          </View>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Stress</Text>
-          <View style={styles.summaryValueContainer}>
-            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.stress >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10
-                : 'N/A'
-              }
-            </Text>
-            {sleepData.filter(day => day.stress >= 0).length > 0 && (
-              <View style={[
-                styles.statusDot,
-                { 
-                  backgroundColor: (() => {
-                    const avgStress = Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10;
-                    if (avgStress >= 4) return '#EF4444'; // High stress -> Red
-                    if (avgStress >= 3) return '#F97316'; // Moderate stress -> Orange
-                    return '#10B981'; // Low stress -> Green
-                  })()
-                }
-              ]} />
-            )}
+              </Text>
+              {sleepData.filter(day => day.stress >= 0).length > 0 && (
+                <View style={[
+                  styles.statusDot,
+                  { 
+                    backgroundColor: (() => {
+                      const avgStress = Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10;
+                      if (avgStress >= 4) return '#EF4444'; // High stress -> Red
+                      if (avgStress >= 3) return '#F97316'; // Moderate stress -> Orange
+                      return '#10B981'; // Low stress -> Green
+                    })()
+                  }
+                ]} />
+              )}
+            </View>
           </View>
         </View>
       </View>
@@ -1479,11 +1483,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   summaryContainer: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.1)',
     marginTop: 16,
+    gap: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
   },
   summaryItem: {
     flex: 1,

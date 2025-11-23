@@ -20,28 +20,19 @@ export const EmojiTrendChart: React.FC<Props> = ({ title, data, type }) => {
   const emojis = type === 'stress' 
     ? ['','😌','🙂','😐','😰','🤯'] // 1 (Low) to 5 (High)
     : ['','😫','😒','😐','😤','🔥']; // 1 (Low) to 5 (High)
-  
-  // Colors for the circle background behind emoji
-  const getEmojiColor = (value: number) => {
-    if (type === 'stress') {
-      // Stress: Low is good (Green), High is bad (Red)
-      if (value <= 2) return '#10B981'; // Green
-      if (value === 3) return '#F59E0B'; // Orange
-      return '#EF4444'; // Red
-    } else {
-      // Motivation: Low is bad (Red), High is good (Green)
-      if (value <= 2) return '#EF4444'; // Red
-      if (value === 3) return '#F59E0B'; // Orange
-      return '#10B981'; // Green
-    }
-  };
 
   return (
-    <View style={[styles.container, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+    <View style={[
+      styles.container, 
+      { 
+        backgroundColor: type === 'stress' ? '#FEF3C7' : '#DBEAFE', 
+        borderColor: '#E5E7EB' 
+      }
+    ]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.textPrimary }]}>{title}</Text>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>Week</Text>
+          <Text style={styles.badgeText}>Last 7 days</Text>
         </View>
       </View>
 
@@ -55,11 +46,11 @@ export const EmojiTrendChart: React.FC<Props> = ({ title, data, type }) => {
           // 1 -> 80px top
           
           const hasValue = point.value > 0;
-          const chartHeight = 120;
+          const chartHeight = 90;
           
           // Position from top: 5=0%, 1=80%
           // (5 - value) * (chartHeight / 4)
-          const topPosition = hasValue ? ((5 - point.value) * (chartHeight - 30) / 4) : 0;
+          const topPosition = hasValue ? ((5 - point.value) * (chartHeight - 20) / 4) : 0;
 
           return (
             <View key={index} style={styles.column}>
@@ -73,7 +64,7 @@ export const EmojiTrendChart: React.FC<Props> = ({ title, data, type }) => {
                           y1="0"
                           x2="1"
                           y2="100%"
-                          stroke="#E5E7EB"
+                          stroke={theme.textSecondary}
                           strokeWidth="2"
                           strokeDasharray="4, 4"
                         />
@@ -81,17 +72,17 @@ export const EmojiTrendChart: React.FC<Props> = ({ title, data, type }) => {
                   </View>
                 )}
 
-                {/* Emoji Circle */}
+                {/* Emoji */}
                 {hasValue && (
-                  <View style={[
-                    styles.emojiCircle, 
+                  <Text style={[
+                    styles.emoji,
                     { 
+                      position: 'absolute',
                       top: topPosition,
-                      backgroundColor: getEmojiColor(point.value)
                     }
                   ]}>
-                    <Text style={styles.emoji}>{emojis[point.value]}</Text>
-                  </View>
+                    {emojis[point.value]}
+                  </Text>
                 )}
               </View>
               
@@ -107,23 +98,23 @@ export const EmojiTrendChart: React.FC<Props> = ({ title, data, type }) => {
 const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
   badge: {
@@ -141,28 +132,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
   column: {
     alignItems: 'center',
     gap: 8,
     flex: 1,
   },
-  emojiCircle: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
   emoji: {
-    fontSize: 18,
+    fontSize: 28,
   },
   dateLabel: {
-    fontSize: 12,
-    marginTop: 8,
+    fontSize: 11,
+    marginTop: 4,
   },
 });
 
