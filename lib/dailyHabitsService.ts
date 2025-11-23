@@ -220,6 +220,8 @@ class DailyHabitsService {
       p_reflect_one_tweak: habitData.reflect_one_tweak,
       p_reflect_nothing_to_change: habitData.reflect_nothing_to_change,
       p_cold_shower_completed: habitData.cold_shower_completed,
+      p_reflect_motivation: habitData.reflect_motivation,
+      p_reflect_stress: habitData.reflect_stress,
     });
   }
 

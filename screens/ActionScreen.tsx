@@ -791,7 +791,8 @@ function ActionScreen() {
   const [habitToUntick, setHabitToUntick] = useState<string | null>(null);
   const [reflectQuestionnaire, setReflectQuestionnaire] = useState({
     mood: 3,
-    energy: 3,
+    motivation: 3,
+    stress: 3,
     whatWentWell: '',
     friction: '',
     oneTweak: '',
@@ -2413,7 +2414,8 @@ function ActionScreen() {
         if (dailyHabits && dailyHabits.reflect_mood) {
           setReflectQuestionnaire({
             mood: dailyHabits.reflect_mood || 3,
-            energy: dailyHabits.reflect_energy || 3,
+            motivation: dailyHabits.reflect_motivation || 3,
+            stress: dailyHabits.reflect_stress || 3,
             whatWentWell: dailyHabits.reflect_what_went_well || '',
             friction: dailyHabits.reflect_friction || '',
             oneTweak: dailyHabits.reflect_one_tweak || '',
@@ -2423,7 +2425,8 @@ function ActionScreen() {
         } else {
           setReflectQuestionnaire({
             mood: 3,
-            energy: 3,
+            motivation: 3,
+            stress: 3,
             whatWentWell: '',
             friction: '',
             oneTweak: '',
@@ -5727,12 +5730,12 @@ function ActionScreen() {
                         maximumTrackTintColor="#E5E7EB"
                       />
                       <View style={styles.sliderLabels}>
-                        <Text style={styles.emojiLarge}>{['','😞','😐','🙂','😁','🥳'][Math.round(reflectQuestionnaire.mood)]}</Text>
+                        <Text style={styles.emojiLarge}>{['','😠','😞','😐','😌','🙂'][Math.round(reflectQuestionnaire.mood)]}</Text>
                         <Text style={styles.sliderText}>
-                          {Math.round(reflectQuestionnaire.mood) === 1 ? 'Poor' : 
-                           Math.round(reflectQuestionnaire.mood) === 2 ? 'Fair' : 
-                           Math.round(reflectQuestionnaire.mood) === 3 ? 'Good' : 
-                           Math.round(reflectQuestionnaire.mood) === 4 ? 'Great' : 'Excellent'}
+                          {Math.round(reflectQuestionnaire.mood) === 1 ? 'Angry' : 
+                           Math.round(reflectQuestionnaire.mood) === 2 ? 'Sad' : 
+                           Math.round(reflectQuestionnaire.mood) === 3 ? 'Neutral' : 
+                           Math.round(reflectQuestionnaire.mood) === 4 ? 'Calm' : 'Happy'}
                         </Text>
                       </View>
                       <Text style={styles.sliderValue}>{Math.round(reflectQuestionnaire.mood)}/5</Text>
@@ -5748,31 +5751,31 @@ function ActionScreen() {
                 </>
               )}
 
-              {/* Step 2: Energy */}
+              {/* Step 2: Motivation */}
               {reflectQuestionnaire.currentStep === 2 && (
                 <>
                   <View style={styles.questionSection}>
-                    <Text style={styles.questionText}>How's your energy level?</Text>
+                    <Text style={styles.questionText}>How motivated do you feel today?</Text>
                     <View style={styles.sliderContainer}>
                       <Slider
                         style={styles.slider}
                         minimumValue={1}
                         maximumValue={5}
-                        value={reflectQuestionnaire.energy}
-                        onValueChange={(value) => setReflectQuestionnaire(prev => ({ ...prev, energy: value }))}
+                        value={reflectQuestionnaire.motivation}
+                        onValueChange={(value) => setReflectQuestionnaire(prev => ({ ...prev, motivation: value }))}
                         minimumTrackTintColor="#10B981"
                         maximumTrackTintColor="#E5E7EB"
                       />
                       <View style={styles.sliderLabels}>
-                        <Text style={styles.emojiLarge}>{['','😞','😐','🙂','😁','🥳'][Math.round(reflectQuestionnaire.energy)]}</Text>
+                        <Text style={styles.emojiLarge}>{['','😫','😒','😐','😤','🔥'][Math.round(reflectQuestionnaire.motivation)]}</Text>
                         <Text style={styles.sliderText}>
-                          {Math.round(reflectQuestionnaire.energy) === 1 ? 'Poor' : 
-                           Math.round(reflectQuestionnaire.energy) === 2 ? 'Fair' : 
-                           Math.round(reflectQuestionnaire.energy) === 3 ? 'Good' : 
-                           Math.round(reflectQuestionnaire.energy) === 4 ? 'Great' : 'Excellent'}
+                          {Math.round(reflectQuestionnaire.motivation) === 1 ? 'Very unmotivated' : 
+                           Math.round(reflectQuestionnaire.motivation) === 2 ? 'Unmotivated' : 
+                           Math.round(reflectQuestionnaire.motivation) === 3 ? 'Neutral' : 
+                           Math.round(reflectQuestionnaire.motivation) === 4 ? 'Motivated' : 'Highly motivated'}
                         </Text>
                       </View>
-                      <Text style={styles.sliderValue}>{Math.round(reflectQuestionnaire.energy)}/5</Text>
+                      <Text style={styles.sliderValue}>{Math.round(reflectQuestionnaire.motivation)}/5</Text>
                     </View>
                   </View>
 
@@ -5793,22 +5796,32 @@ function ActionScreen() {
                 </>
               )}
 
-              {/* Step 3: What Went Well */}
+              {/* Step 3: Stress */}
               {reflectQuestionnaire.currentStep === 3 && (
                 <>
                   <View style={styles.questionSection}>
-                    <Text style={styles.questionText}>What went well today?</Text>
-                    <TextInput
-                      style={styles.customInput}
-                      value={reflectQuestionnaire.whatWentWell}
-                      onChangeText={(text) => setReflectQuestionnaire(prev => ({ ...prev, whatWentWell: text }))}
-                      placeholder="Share something positive from your day..."
-                      placeholderTextColor="#999"
-                      multiline
-                      maxLength={140}
-                      numberOfLines={3}
-                    />
-                    <Text style={styles.characterCount}>{reflectQuestionnaire.whatWentWell.length}/140</Text>
+                    <Text style={styles.questionText}>How stressed do you feel today?</Text>
+                    <View style={styles.sliderContainer}>
+                      <Slider
+                        style={styles.slider}
+                        minimumValue={1}
+                        maximumValue={5}
+                        value={reflectQuestionnaire.stress}
+                        onValueChange={(value) => setReflectQuestionnaire(prev => ({ ...prev, stress: value }))}
+                        minimumTrackTintColor="#10B981"
+                        maximumTrackTintColor="#E5E7EB"
+                      />
+                      <View style={styles.sliderLabels}>
+                        <Text style={styles.emojiLarge}>{['','😌','🙂','😐','😰','🤯'][Math.round(reflectQuestionnaire.stress)]}</Text>
+                        <Text style={styles.sliderText}>
+                          {Math.round(reflectQuestionnaire.stress) === 1 ? 'Very low' : 
+                           Math.round(reflectQuestionnaire.stress) === 2 ? 'Low' : 
+                           Math.round(reflectQuestionnaire.stress) === 3 ? 'Moderate' : 
+                           Math.round(reflectQuestionnaire.stress) === 4 ? 'High' : 'Very high'}
+                        </Text>
+                      </View>
+                      <Text style={styles.sliderValue}>{Math.round(reflectQuestionnaire.stress)}/5</Text>
+                    </View>
                   </View>
 
                   <View style={styles.navigationButtons}>
@@ -5828,22 +5841,22 @@ function ActionScreen() {
                 </>
               )}
 
-              {/* Step 4: Friction */}
+              {/* Step 4: What Went Well */}
               {reflectQuestionnaire.currentStep === 4 && (
                 <>
                   <View style={styles.questionSection}>
-                    <Text style={styles.questionText}>What got in the way today?</Text>
+                    <Text style={styles.questionText}>What went well today?</Text>
                     <TextInput
                       style={styles.customInput}
-                      value={reflectQuestionnaire.friction}
-                      onChangeText={(text) => setReflectQuestionnaire(prev => ({ ...prev, friction: text }))}
-                      placeholder="What obstacles or challenges did you face?"
+                      value={reflectQuestionnaire.whatWentWell}
+                      onChangeText={(text) => setReflectQuestionnaire(prev => ({ ...prev, whatWentWell: text }))}
+                      placeholder="Share something positive from your day..."
                       placeholderTextColor="#999"
                       multiline
                       maxLength={140}
                       numberOfLines={3}
                     />
-                    <Text style={styles.characterCount}>{reflectQuestionnaire.friction.length}/140</Text>
+                    <Text style={styles.characterCount}>{reflectQuestionnaire.whatWentWell.length}/140</Text>
                   </View>
 
                   <View style={styles.navigationButtons}>
@@ -5863,8 +5876,43 @@ function ActionScreen() {
                 </>
               )}
 
-              {/* Step 5: One Tweak */}
+              {/* Step 5: Friction */}
               {reflectQuestionnaire.currentStep === 5 && (
+                <>
+                  <View style={styles.questionSection}>
+                    <Text style={styles.questionText}>What got in the way today?</Text>
+                    <TextInput
+                      style={styles.customInput}
+                      value={reflectQuestionnaire.friction}
+                      onChangeText={(text) => setReflectQuestionnaire(prev => ({ ...prev, friction: text }))}
+                      placeholder="What obstacles or challenges did you face?"
+                      placeholderTextColor="#999"
+                      multiline
+                      maxLength={140}
+                      numberOfLines={3}
+                    />
+                    <Text style={styles.characterCount}>{reflectQuestionnaire.friction.length}/140</Text>
+                  </View>
+
+                  <View style={styles.navigationButtons}>
+                    <TouchableOpacity
+                      style={styles.backButton}
+                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 4 }))}
+                    >
+                      <Text style={styles.backButtonText}>Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.nextButton}
+                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 6 }))}
+                    >
+                      <Text style={styles.nextButtonText}>Next</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+
+              {/* Step 6: One Tweak */}
+              {reflectQuestionnaire.currentStep === 6 && (
                 <>
                   <View style={styles.questionSection}>
                     <Text style={styles.questionText}>What will you change tomorrow?</Text>
@@ -5909,13 +5957,13 @@ function ActionScreen() {
                   <View style={styles.navigationButtons}>
                     <TouchableOpacity
                       style={styles.backButton}
-                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 4 }))}
+                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 5 }))}
                     >
                       <Text style={styles.backButtonText}>Back</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.nextButton}
-                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 6 }))}
+                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 7 }))}
                     >
                       <Text style={styles.nextButtonText}>Next</Text>
                     </TouchableOpacity>
@@ -5923,15 +5971,16 @@ function ActionScreen() {
                 </>
               )}
 
-              {/* Step 6: Review & Submit */}
-              {reflectQuestionnaire.currentStep === 6 && (
+              {/* Step 7: Review & Submit */}
+              {reflectQuestionnaire.currentStep === 7 && (
                 <>
                   <View style={styles.questionSection}>
                     <Text style={styles.questionText}>Review Your Reflection</Text>
                     
                     <View style={styles.reviewSection}>
-                      <Text style={styles.reviewLabel}>Mood: {Math.round(reflectQuestionnaire.mood)}/5</Text>
-                      <Text style={styles.reviewLabel}>Energy: {Math.round(reflectQuestionnaire.energy)}/5</Text>
+                      <Text style={styles.reviewLabel}>Mood: {['','Angry','Sad','Neutral','Calm','Happy'][Math.round(reflectQuestionnaire.mood)]} ({Math.round(reflectQuestionnaire.mood)}/5)</Text>
+                      <Text style={styles.reviewLabel}>Motivation: {['','Very unmotivated','Unmotivated','Neutral','Motivated','Highly motivated'][Math.round(reflectQuestionnaire.motivation)]} ({Math.round(reflectQuestionnaire.motivation)}/5)</Text>
+                      <Text style={styles.reviewLabel}>Stress: {['','Very low','Low','Moderate','High','Very high'][Math.round(reflectQuestionnaire.stress)]} ({Math.round(reflectQuestionnaire.stress)}/5)</Text>
                       <Text style={styles.reviewLabel}>What went well: {reflectQuestionnaire.whatWentWell || 'Not specified'}</Text>
                       <Text style={styles.reviewLabel}>Friction: {reflectQuestionnaire.friction || 'Not specified'}</Text>
                       <Text style={styles.reviewLabel}>One tweak: {reflectQuestionnaire.nothingToChange ? 'Nothing to change' : (reflectQuestionnaire.oneTweak || 'Not specified')}</Text>
@@ -5941,7 +5990,7 @@ function ActionScreen() {
                   <View style={styles.navigationButtons}>
                     <TouchableOpacity
                       style={styles.backButton}
-                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 5 }))}
+                      onPress={() => setReflectQuestionnaire(prev => ({ ...prev, currentStep: 6 }))}
                     >
                       <Text style={styles.backButtonText}>Back</Text>
                     </TouchableOpacity>
@@ -5953,7 +6002,8 @@ function ActionScreen() {
                           const habitData = {
                             date,
                             reflect_mood: Math.round(reflectQuestionnaire.mood),
-                            reflect_energy: Math.round(reflectQuestionnaire.energy),
+                            reflect_motivation: Math.round(reflectQuestionnaire.motivation),
+                            reflect_stress: Math.round(reflectQuestionnaire.stress),
                             reflect_what_went_well: reflectQuestionnaire.whatWentWell,
                             reflect_friction: reflectQuestionnaire.friction,
                             reflect_one_tweak: reflectQuestionnaire.oneTweak,
@@ -5964,7 +6014,16 @@ function ActionScreen() {
                           if (success) {
                             markHabitCompleted('reflect'); // Sound plays here when animation starts
                             setShowReflectModal(false);
-                            setReflectQuestionnaire({ mood: 3, energy: 3, whatWentWell: '', friction: '', oneTweak: '', nothingToChange: false, currentStep: 1 });
+                            setReflectQuestionnaire({ 
+                              mood: 3, 
+                              motivation: 3, 
+                              stress: 3, 
+                              whatWentWell: '', 
+                              friction: '', 
+                              oneTweak: '', 
+                              nothingToChange: false, 
+                              currentStep: 1 
+                            });
                           } else {
                             console.error('Failed to save reflect data');
                           }

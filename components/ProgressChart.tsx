@@ -14,7 +14,7 @@ interface Props {
 export default function ProgressChart({ onClose }: Props) {
   const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
-  const [sleepData, setSleepData] = useState<Array<{ date: string; quality: number; hours: number; waterIntake: number; mood: number; energy: number; distance: number }>>([]);
+  const [sleepData, setSleepData] = useState<Array<{ date: string; quality: number; hours: number; waterIntake: number; mood: number; motivation: number; stress: number; distance: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
   const gridLineColor = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.15)';
@@ -148,16 +148,40 @@ export default function ProgressChart({ onClose }: Props) {
       .join(' ');
   };
 
-  // Helper function to generate energy line path
-  const generateEnergyLinePath = () => {
+  // Helper function to generate motivation line path
+  const generateMotivationLinePath = () => {
     if (sleepData.length === 0) return '';
     
     const validPoints = sleepData
       .map((day, index) => {
-        if (day.energy >= 0) {
+        if (day.motivation >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.energy * 40), // 1-5 scale with 40px spacing
+            y: 200 - (day.motivation * 40), // 1-5 scale with 40px spacing
+            hasData: true
+          };
+        }
+        return { x: 0, y: 0, hasData: false };
+      })
+      .filter(point => point.hasData);
+    
+    if (validPoints.length === 0) return '';
+    
+    return validPoints
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+      .join(' ');
+  };
+
+  // Helper function to generate stress line path
+  const generateStressLinePath = () => {
+    if (sleepData.length === 0) return '';
+    
+    const validPoints = sleepData
+      .map((day, index) => {
+        if (day.stress >= 0) {
+          return {
+            x: getXPosition(index),
+            y: 200 - (day.stress * 40), // 1-5 scale with 40px spacing
             hasData: true
           };
         }
@@ -236,7 +260,7 @@ export default function ProgressChart({ onClose }: Props) {
       
       const habits = await dailyHabitsService.getDailyHabitsRange(user.id, startDateStr, endDateStr);
       
-      const sleep: Array<{ date: string; quality: number; hours: number; waterIntake: number; mood: number; energy: number; distance: number }> = [];
+      const sleep: Array<{ date: string; quality: number; hours: number; waterIntake: number; mood: number; motivation: number; stress: number; distance: number }> = [];
       
       for (let i = 0; i < daysToShow; i++) {
         const date = new Date(startDate);
@@ -252,7 +276,8 @@ export default function ProgressChart({ onClose }: Props) {
           hours: dayHabits?.sleep_hours ?? -1,
           waterIntake: dayHabits?.water_intake ?? -1,
           mood: dayHabits?.reflect_mood ?? -1,
-          energy: dayHabits?.reflect_energy ?? -1,
+          motivation: dayHabits?.reflect_motivation ?? -1,
+          stress: dayHabits?.reflect_stress ?? -1,
           distance: dayHabits?.run_distance ?? -1
         });
       }
@@ -927,9 +952,9 @@ export default function ProgressChart({ onClose }: Props) {
             </View>
           </View>
 
-          {/* Energy Chart */}
+          {/* Motivation Chart */}
           <View style={styles.chartContainer}>
-            <Text style={[styles.chartTitle, { color: theme.textPrimary }]}>Energy</Text>
+            <Text style={[styles.chartTitle, { color: theme.textPrimary }]}>Motivation</Text>
             
             {/* Chart with Y-axis labels */}
             <View style={styles.chartWithAxis}>
@@ -950,7 +975,7 @@ export default function ProgressChart({ onClose }: Props) {
                         }
                       ]}
                     >
-                      {value === 5 ? 'Excel' : value === 4 ? 'Great' : value === 3 ? 'Good' : value === 2 ? 'Fair' : 'Poor'}
+                      {value === 5 ? 'High' : value === 4 ? 'Moti' : value === 3 ? 'Neut' : value === 2 ? 'Unmot' : 'Very'}
                     </Text>
                   );
                 })}
@@ -972,9 +997,9 @@ export default function ProgressChart({ onClose }: Props) {
                     />
                   ))}
                   
-                  {/* Energy line */}
+                  {/* Motivation line */}
                   <Path
-                    d={generateEnergyLinePath()}
+                    d={generateMotivationLinePath()}
                     stroke="#60A5FA"
                     strokeWidth="3"
                     fill="none"
@@ -982,16 +1007,124 @@ export default function ProgressChart({ onClose }: Props) {
                   
                   {/* Data points */}
                   {sleepData.map((day, index) => {
-                    if (day.energy >= 0) {
+                    if (day.motivation >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.energy * 40);
+                      const y = 200 - (day.motivation * 40);
                       return (
                         <Circle
-                          key={`energy-${day.date}`}
+                          key={`motivation-${day.date}`}
                           cx={x}
                           cy={y}
                           r="4"
                           fill="#60A5FA"
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </Svg>
+              </View>
+            </View>
+            
+            {/* X-axis labels */}
+            <View style={styles.xAxisLabelsContainer}>
+              {sleepData.map((day, index) => {
+                const x = getXPosition(index);
+                return (
+                  <View
+                    key={day.date}
+                    style={[
+                      {
+                        position: 'absolute',
+                        left: x + 4,
+                        width: 30,
+                        alignItems: 'center'
+                      }
+                    ]}
+                  >
+                    {selectedPeriod === 'week' ? (
+                      <Text
+                        style={[
+                          styles.xAxisLabel,
+                          { color: theme.textSecondary }
+                        ]}
+                      >
+                        {formatDate(day.date)}
+                      </Text>
+                    ) : (
+                      <View style={styles.monthTick} />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Stress Chart */}
+          <View style={styles.chartContainer}>
+            <Text style={[styles.chartTitle, { color: theme.textPrimary }]}>Stress</Text>
+            
+            {/* Chart with Y-axis labels */}
+            <View style={styles.chartWithAxis}>
+              {/* Y-axis labels */}
+              <View style={styles.yAxisLabels}>
+                {[5, 4, 3, 2, 1].map((value, index) => {
+                  const yPosition = 200 - (value * 40); // 1-5 scale with 40px spacing
+                  return (
+                    <Text 
+                      key={value} 
+                      style={[
+                        styles.yAxisText, 
+                        { 
+                          color: theme.textSecondary,
+                          position: 'absolute',
+                          top: yPosition - 6, // Center text on the line (-6 for half text height)
+                          right: 8
+                        }
+                      ]}
+                    >
+                      {value === 5 ? 'High' : value === 4 ? 'High' : value === 3 ? 'Mod' : value === 2 ? 'Low' : 'Low'}
+                    </Text>
+                  );
+                })}
+              </View>
+              
+              {/* Chart area */}
+              <View style={styles.chartArea}>
+                <Svg width={chartWidth - 60} height={200}>
+                  {/* Horizontal grid lines */}
+                  {[0, 1, 2, 3, 4, 5].map((value) => (
+                    <Line
+                      key={value}
+                      x1={0}
+                      y1={200 - (value * 40)}
+                      x2={chartWidth - 60}
+                      y2={200 - (value * 40)}
+                      stroke={gridLineColor}
+                      strokeWidth={1}
+                    />
+                  ))}
+                  
+                  {/* Stress line */}
+                  <Path
+                    d={generateStressLinePath()}
+                    stroke="#EF4444"
+                    strokeWidth="3"
+                    fill="none"
+                  />
+                  
+                  {/* Data points */}
+                  {sleepData.map((day, index) => {
+                    if (day.stress >= 0) {
+                      const x = getXPosition(index);
+                      const y = 200 - (day.stress * 40);
+                      return (
+                        <Circle
+                          key={`stress-${day.date}`}
+                          cx={x}
+                          cy={y}
+                          r="4"
+                          fill="#EF4444"
                         />
                       );
                     }
@@ -1139,23 +1272,47 @@ export default function ProgressChart({ onClose }: Props) {
           </View>
         </View>
         <View style={styles.summaryItem}>
-          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Energy</Text>
+          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Motivation</Text>
           <View style={styles.summaryValueContainer}>
             <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
-              {sleepData.filter(day => day.energy >= 0).length > 0 
-                ? Math.round(sleepData.filter(day => day.energy >= 0).reduce((sum, day) => sum + day.energy, 0) / sleepData.filter(day => day.energy >= 0).length * 10) / 10
+              {sleepData.filter(day => day.motivation >= 0).length > 0 
+                ? Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10
                 : 'N/A'
               }
             </Text>
-            {sleepData.filter(day => day.energy >= 0).length > 0 && (
+            {sleepData.filter(day => day.motivation >= 0).length > 0 && (
               <View style={[
                 styles.statusDot,
                 { 
                   backgroundColor: (() => {
-                    const avgEnergy = Math.round(sleepData.filter(day => day.energy >= 0).reduce((sum, day) => sum + day.energy, 0) / sleepData.filter(day => day.energy >= 0).length * 10) / 10;
-                    if (avgEnergy <= 1) return '#EF4444'; // Red
-                    if (avgEnergy < 3) return '#F97316'; // Orange
+                    const avgMotivation = Math.round(sleepData.filter(day => day.motivation >= 0).reduce((sum, day) => sum + day.motivation, 0) / sleepData.filter(day => day.motivation >= 0).length * 10) / 10;
+                    if (avgMotivation <= 1) return '#EF4444'; // Red
+                    if (avgMotivation < 3) return '#F97316'; // Orange
                     return '#10B981'; // Green
+                  })()
+                }
+              ]} />
+            )}
+          </View>
+        </View>
+        <View style={styles.summaryItem}>
+          <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Avg Stress</Text>
+          <View style={styles.summaryValueContainer}>
+            <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+              {sleepData.filter(day => day.stress >= 0).length > 0 
+                ? Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10
+                : 'N/A'
+              }
+            </Text>
+            {sleepData.filter(day => day.stress >= 0).length > 0 && (
+              <View style={[
+                styles.statusDot,
+                { 
+                  backgroundColor: (() => {
+                    const avgStress = Math.round(sleepData.filter(day => day.stress >= 0).reduce((sum, day) => sum + day.stress, 0) / sleepData.filter(day => day.stress >= 0).length * 10) / 10;
+                    if (avgStress >= 4) return '#EF4444'; // High stress -> Red
+                    if (avgStress >= 3) return '#F97316'; // Moderate stress -> Orange
+                    return '#10B981'; // Low stress -> Green
                   })()
                 }
               ]} />

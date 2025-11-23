@@ -181,6 +181,8 @@ export interface DailyHabits {
   // Reflect habit data
   reflect_mood?: number;
   reflect_energy?: number;
+  reflect_motivation?: number;
+  reflect_stress?: number;
   reflect_what_went_well?: string;
   reflect_friction?: string;
   reflect_one_tweak?: string;
@@ -223,6 +225,8 @@ export interface CreateDailyHabitsData {
   gym_custom_type?: string;
   reflect_mood?: number;
   reflect_energy?: number;
+  reflect_motivation?: number;
+  reflect_stress?: number;
   reflect_what_went_well?: string;
   reflect_friction?: string;
   reflect_one_tweak?: string;
