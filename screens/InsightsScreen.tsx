@@ -22,6 +22,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import CustomBackground from '../components/CustomBackground';
+import { dailyHabitsService } from '../lib/dailyHabitsService';
+import { EmojiTrendChart } from '../components/EmojiTrendChart';
 import { insightService } from '../lib/insightService';
 import { aiService } from '../lib/aiService';
 import { initializeAI } from '../lib/config';
@@ -66,6 +68,63 @@ export default function InsightsScreen({ route }: any) {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [lastMessageCount, setLastMessageCount] = useState(0);
   const [selectedPeriod, setSelectedPeriod] = useState<'past7' | 'currentWeek' | 'last30'>('past7');
+  const [trendData, setTrendData] = useState<{ stress: any[], motivation: any[] }>({ stress: [], motivation: [] });
+  
+  useEffect(() => {
+    const loadTrendData = async () => {
+      if (!user) return;
+      try {
+        const today = new Date();
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 6);
+        
+        const startDate = sevenDaysAgo.toISOString().split('T')[0];
+        const endDate = today.toISOString().split('T')[0];
+        
+        const habits = await dailyHabitsService.getDailyHabitsRange(user.id, startDate, endDate);
+        
+        // Process into arrays of 7 days (filling gaps with 0/null if needed)
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+           const d = new Date(sevenDaysAgo);
+           d.setDate(sevenDaysAgo.getDate() + i);
+           const dateStr = d.toISOString().split('T')[0];
+           const dayStr = `${d.getDate()}/${d.getMonth() + 1}`; // DD/MM
+           
+           const dayData = habits.find(h => h.date === dateStr);
+           days.push({
+             date: dayStr,
+             value: dayData?.reflect_stress || 0
+           });
+        }
+
+        const motivationDays = [];
+        for (let i = 0; i < 7; i++) {
+           const d = new Date(sevenDaysAgo);
+           d.setDate(sevenDaysAgo.getDate() + i);
+           const dateStr = d.toISOString().split('T')[0];
+           const dayStr = `${d.getDate()}/${d.getMonth() + 1}`; // DD/MM
+           
+           const dayData = habits.find(h => h.date === dateStr);
+           motivationDays.push({
+             date: dayStr,
+             value: dayData?.reflect_motivation || 0
+           });
+        }
+        
+        setTrendData({
+          stress: days,
+          motivation: motivationDays
+        });
+      } catch (error) {
+        console.error('Error loading trend data:', error);
+      }
+    };
+    
+    if (user) {
+        loadTrendData();
+    }
+  }, [user]);
   
   // Lazy loading states
   const [loadingPhase, setLoadingPhase] = useState<'initial' | 'basic' | 'detailed' | 'complete'>('initial');
@@ -480,7 +539,11 @@ export default function InsightsScreen({ route }: any) {
         <View style={styles.mainContent}>
           {/* Expandable Content - Now shows Insights by default (when NOT expanded) */}
           {!isHeaderExpanded && (
-            <View style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}>
+            <ScrollView 
+              style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}
+            >
             {/* Technicals Button */}
             <TouchableOpacity 
               style={styles.technicalsButton}
@@ -704,7 +767,12 @@ export default function InsightsScreen({ route }: any) {
             )}
               </>
             )}
-          </View>
+            
+            <View style={{ marginTop: 24, gap: 16 }}>
+              <EmojiTrendChart title="Stress" data={trendData.stress} type="stress" />
+              <EmojiTrendChart title="Motivation" data={trendData.motivation} type="motivation" />
+            </View>
+          </ScrollView>
         )}
 
         {/* Messages - Only show when header IS expanded (Chat is the dropdown) */}
