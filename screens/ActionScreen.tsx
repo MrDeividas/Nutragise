@@ -3467,9 +3467,9 @@ function ActionScreen() {
                       <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <Ionicons name="people" size={14} color={theme.textSecondary} />
                         <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
-                          <Text style={{ fontWeight: '700' }}>{(challenge as any).participants_count || (challenge as any).participant_count || 0}</Text>
-                      </Text>
-                    </View>
+                          <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
+                        </Text>
+                      </View>
                     </View>
                     <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
                       <View>
@@ -3587,7 +3587,7 @@ function ActionScreen() {
         </View>
 
         {/* Date Navigator with Integrated Daily Habits Summary */}
-        <View style={styles.section}>
+        <View style={[styles.section, { marginTop: 8 }]}>
           <DateNavigator
             selectedDate={selectedDate}
             onDateChange={(date) => {

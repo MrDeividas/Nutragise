@@ -342,7 +342,37 @@ class ChallengesService {
         throw error;
       }
 
-      return data?.map(item => item.challenge) || [];
+      const challenges = data?.map(item => item.challenge) || [];
+      
+      if (challenges.length === 0) {
+        return [];
+      }
+
+      // Get participant counts for all challenges in a single batch query
+      const challengeIds = challenges.map(c => c.id);
+      const { data: participantCounts, error: countError } = await supabase
+        .from('challenge_participants')
+        .select('challenge_id')
+        .in('challenge_id', challengeIds);
+
+      if (countError) {
+        console.error('Error getting participant counts:', countError);
+      }
+
+      // Create a map of challenge_id -> count
+      const countMap = new Map<string, number>();
+      if (participantCounts) {
+        participantCounts.forEach((p: any) => {
+          const current = countMap.get(p.challenge_id) || 0;
+          countMap.set(p.challenge_id, current + 1);
+        });
+      }
+
+      // Add participant_count to each challenge
+      return challenges.map(challenge => ({
+        ...challenge,
+        participant_count: countMap.get(challenge.id) || 0,
+      }));
     } catch (error) {
       console.error('Error in getUserChallenges:', error);
       throw error;

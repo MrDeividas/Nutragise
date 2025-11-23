@@ -13,7 +13,7 @@ interface DateNavigatorProps {
 }
 
 export default function DateNavigator({ selectedDate, onDateChange, onViewHistory, onHabitPress, onShowProgress, dailyHabitsData }: DateNavigatorProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickDay, setPickDay] = useState<number>(new Date(selectedDate).getDate());
@@ -144,17 +144,17 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+    <View style={styles.container}>
       <View style={styles.dateNavigation}>
         <TouchableOpacity
-          style={[styles.navButton, { backgroundColor: theme.backgroundSecondary }]}
+          style={[styles.navButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
           onPress={goToPreviousDay}
         >
           <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.dateDisplay, { backgroundColor: theme.backgroundSecondary }]}
+          style={[styles.dateDisplay, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
           onPress={() => setPickerVisible(true)}
         >
           <Text style={[styles.dateText, { color: theme.textPrimary }]}>
@@ -167,7 +167,7 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
           style={[
             styles.navButton, 
             { 
-              backgroundColor: theme.backgroundSecondary,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
               opacity: isToday(selectedDate) ? 0.5 : 1
             }
           ]}
@@ -198,7 +198,8 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
               key={habit.type}
               style={[
                 styles.habitRow,
-                loadingSelectedDate && styles.habitRowLoading
+                loadingSelectedDate && styles.habitRowLoading,
+                { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F3F4F6' }
               ]}
               onPress={() => !loadingSelectedDate && onHabitPress(habit.type, selectedDateHabits)}
               activeOpacity={loadingSelectedDate ? 1 : 0.7}
@@ -209,7 +210,7 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
                 { 
                   backgroundColor: habit.hasData 
                     ? 'rgba(16,185,129,0.15)' 
-                    : 'rgba(255,255,255,0.06)',
+                    : theme.cardBackground,
                   opacity: loadingSelectedDate ? 0.5 : 1
                 }
               ]}>
@@ -331,11 +332,18 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
     marginBottom: 20,
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   dateNavigation: {
     flexDirection: 'row',
