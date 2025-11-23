@@ -3220,11 +3220,11 @@ function ActionScreen() {
                     >
                       <Text style={[styles.levelProgressFloatingText, { color: theme.textPrimary }]}>
                         {animatedPoints}
-                      </Text>
+          </Text>
                     </Animated.View>
                   </>
                 )}
-              </View>
+        </View>
               {isLevelExpanded && (
                 <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
               )}
@@ -3234,32 +3234,32 @@ function ActionScreen() {
           {isLevelExpanded && (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ width: 20 }} />
+            <View style={{ width: 20 }} />
                 <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>EXP</Text>
               </View>
-              <TouchableOpacity 
-                onPress={async () => {
-                  // Refresh data before opening modal to ensure live updates
-                  if (user) {
-                    const today = new Date();
-                    const hour = today.getHours();
-                    const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
-                    const dateString = dateToUse.toISOString().split('T')[0];
-                    
-                    // Refresh daily habits and core habits status
-                    await Promise.all([
-                      loadDailyHabits(dateString),
-                      loadCoreHabitsStatus(),
-                      fetchUserPoints()
-                    ]);
-                  }
-                  setShowLevelModal(true);
-                }}
-                activeOpacity={0.7}
-              >
+            <TouchableOpacity 
+              onPress={async () => {
+                // Refresh data before opening modal to ensure live updates
+                if (user) {
+                  const today = new Date();
+                  const hour = today.getHours();
+                  const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
+                  const dateString = dateToUse.toISOString().split('T')[0];
+                  
+                  // Refresh daily habits and core habits status
+                  await Promise.all([
+                    loadDailyHabits(dateString),
+                    loadCoreHabitsStatus(),
+                    fetchUserPoints()
+                  ]);
+                }
+                setShowLevelModal(true);
+              }}
+              activeOpacity={0.7}
+            >
                 <Ionicons name="information-circle-outline" size={18} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+          </View>
           )}
         </View>
 
@@ -3304,8 +3304,8 @@ function ActionScreen() {
               const subtitleColor = isCompletedCard ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)';
 
               const showPendingIndicator = pendingDataHabits.has(card.habitId);
-              
-              return (
+                  
+                  return (
                 <AnimatedHabitCard
                   key={card.key}
                   card={card}
@@ -3335,6 +3335,7 @@ function ActionScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={{ overflow: 'visible' }}
             snapToInterval={spotlightCardWidth + 12}
             snapToAlignment="start"
             decelerationRate="fast"
@@ -3373,7 +3374,8 @@ function ActionScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.challengesContainer}
+              style={{ overflow: 'visible' }}
+              contentContainerStyle={[styles.challengesContainer, { paddingHorizontal: 4 }]}
               snapToInterval={spotlightCardWidth + 8}
               snapToAlignment="start"
               decelerationRate="fast"
@@ -3397,15 +3399,15 @@ function ActionScreen() {
                     <View style={styles.challengeHeader}>
                       <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                         7-Day Sugar Detox Challenge
-                      </Text>
-                    </View>
+                        </Text>
+                      </View>
                     <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       <Ionicons name="people" size={14} color={theme.textSecondary} />
                       <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
                         <Text style={{ fontWeight: '700' }}>42</Text>
                       </Text>
-                    </View>
-                  </View>
+              </View>
+            </View>
                   <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
                     <View>
                       <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.9)' }]}>
@@ -3415,8 +3417,8 @@ function ActionScreen() {
                         <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> investment</Text>
                         <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> shared pot</Text>
                       </View>
-                    </View>
-                    
+        </View>
+
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                       <View
                         style={[
@@ -3429,8 +3431,8 @@ function ActionScreen() {
                       
                       <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
                         Nutrition
-                      </Text>
-                    </View>
+            </Text>
+          </View>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -3468,8 +3470,8 @@ function ActionScreen() {
                         <Ionicons name="people" size={14} color={theme.textSecondary} />
                         <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
                           <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
-                        </Text>
-                      </View>
+                      </Text>
+                    </View>
                     </View>
                     <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
                       <View>
@@ -3516,18 +3518,18 @@ function ActionScreen() {
         {/* Combined Check-ins Section */}
         <View style={styles.section}>
           <View key={`checkins-${refreshTrigger}`} style={styles.todaysCheckinsContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  // TODO: Implement add reminder functionality
-                  Alert.alert('Add Reminder', 'Coming soon');
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="add" size={24} color={theme.textPrimary} />
-              </TouchableOpacity>
-            </View>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
+            <TouchableOpacity 
+              onPress={() => {
+                // TODO: Implement add reminder functionality
+                Alert.alert('Add Reminder', 'Coming soon');
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+          </View>
             {/* Onboarding Reminder */}
             {onboardingIncomplete && (
               <TouchableOpacity 

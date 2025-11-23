@@ -59,6 +59,7 @@ export default function InsightsScreen({ route }: any) {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const [isTechnicalsExpanded, setIsTechnicalsExpanded] = useState(false);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [insightError, setInsightError] = useState<string | null>(null);
@@ -480,197 +481,219 @@ export default function InsightsScreen({ route }: any) {
           {/* Expandable Content - Now shows Insights by default (when NOT expanded) */}
           {!isHeaderExpanded && (
             <View style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}>
-            {/* Dropdown Header */}
-            <View style={styles.dropdownHeader}>
-              <TouchableOpacity 
-                style={styles.dropdownHeaderButton}
-                onPress={() => setActiveModal('progress')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="analytics" size={20} color={primary} />
-                <Text style={[styles.dropdownHeaderText, { color: textPrimary }]}>
-                  View Progress Charts
+            {/* Technicals Button */}
+            <TouchableOpacity 
+              style={styles.technicalsButton}
+              onPress={() => setIsTechnicalsExpanded(!isTechnicalsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.technicalsButtonHeader}>
+                <Text style={[styles.technicalsButtonText, { color: textPrimary }]}>
+                  Technicals
                 </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.dropdownHeaderButton}
-                onPress={() => setActiveModal('requirements')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="information-circle" size={20} color={textSecondary} />
-                <Text style={[styles.dropdownHeaderText, { color: textSecondary }]}>
-                  Data Requirements
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.refreshIconButton}
-                onPress={refreshInsights}
-                activeOpacity={0.7}
-                disabled={isLoadingInsights}
-              >
                 <Ionicons 
-                  name="refresh" 
+                  name={isTechnicalsExpanded ? "chevron-up" : "chevron-down"} 
                   size={20} 
-                  color={isLoadingInsights ? textSecondary : primary} 
+                  color={textPrimary} 
                 />
-              </TouchableOpacity>
-            </View>
+              </View>
+            </TouchableOpacity>
 
-            {/* Cache Status Indicator */}
-            {cacheStatus && (
-              <View style={styles.cacheStatusContainer}>
-                <Ionicons 
-                  name={cacheStatus.isValid ? "checkmark-circle" : "time"} 
-                  size={16} 
-                  color={cacheStatus.isValid ? "#10B981" : textSecondary} 
-                />
-                <Text style={[styles.cacheStatusText, { color: textSecondary }]}>
-                  {cacheStatus.isValid 
-                    ? `Cached (expires in ${Math.round((cacheStatus.expiresIn || 0) / (1000 * 60 * 60))}h)`
-                    : 'No cache'
-                  }
-                </Text>
-              </View>
-            )}
-            {isLoadingInsights ? (
-              <View style={styles.loadingContainer}>
-                {isLoadingFromCache ? (
-                  <>
-                    <ActivityIndicator size="large" color={primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                      Loading cached insights...
-                    </Text>
-                  </>
-                ) : loadingPhase === 'initial' ? (
-                  <>
-                    <ActivityIndicator size="large" color={primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                      Checking for cached data...
-                    </Text>
-                  </>
-                ) : loadingPhase === 'basic' ? (
-                  <>
-                    <ActivityIndicator size="large" color={primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                      Loading basic insights...
-                    </Text>
-                    <InsightSkeleton type="card" />
-                  </>
-                ) : loadingPhase === 'detailed' ? (
-                  <>
-                    <ActivityIndicator size="large" color={primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                      Analyzing detailed patterns...
-                    </Text>
-                    <InsightSkeleton type="list" />
-                  </>
-                ) : (
-                  <>
-                    <ActivityIndicator size="large" color={primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                      Analyzing your wellness data...
-                    </Text>
-                  </>
-                )}
-              </View>
-            ) : insightError ? (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={24} color="#ff6b6b" />
-                <Text style={[styles.errorText, { color: textSecondary }]}>
-                  {insightError}
-                </Text>
-                                  <TouchableOpacity 
-                    style={[styles.retryButton, { backgroundColor: primary }]}
-                    onPress={refreshInsights}
+            {/* Dropdown Header - Shows when Technicals is expanded */}
+            {isTechnicalsExpanded && (
+              <>
+                <View style={styles.dropdownHeader}>
+                  <TouchableOpacity 
+                    style={styles.dropdownHeaderButton}
+                    onPress={() => setActiveModal('progress')}
+                    activeOpacity={0.7}
                   >
-                  <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
-                    Try Again
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : insights.length > 0 ? (
-              <ScrollView 
-                style={[
-                  styles.insightsScrollView,
-                  insights.some(insight => insight.expanded) && styles.insightsScrollViewExpanded
-                ]}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled={true}
-              >
-                {insights.map((insight, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.insightCard}
-                  onPress={() => insight.expandable && toggleInsightExpansion(index)}
-                  activeOpacity={insight.expandable ? 0.7 : 1}
-                >
-                  <View style={styles.insightHeader}>
-                    <Ionicons name={insight.icon as any} size={20} color={primary} />
-                                          <Text style={[styles.insightTitle, { color: textPrimary }]}>
-                      {insight.title || 'Insight'}
+                    <Ionicons name="analytics" size={20} color={primary} />
+                    <Text style={[styles.dropdownHeaderText, { color: textPrimary }]}>
+                      Progress Charts
                     </Text>
-                    {insight.expandable && (
-                      <Ionicons 
-                        name={insight.expanded ? "chevron-up" : "chevron-down"} 
-                        size={16} 
-                        color={textSecondary}
-                        style={styles.insightExpandIcon}
-                      />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.dropdownHeaderButton}
+                    onPress={() => setActiveModal('requirements')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="information-circle" size={20} color={textSecondary} />
+                    <Text style={[styles.dropdownHeaderText, { color: textSecondary }]}>
+                      Data Requirements
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.refreshIconButton}
+                    onPress={refreshInsights}
+                    activeOpacity={0.7}
+                    disabled={isLoadingInsights}
+                  >
+                    <Ionicons 
+                      name="refresh" 
+                      size={20} 
+                      color={isLoadingInsights ? textSecondary : primary} 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Cache Status Indicator */}
+                {cacheStatus && (
+                  <View style={styles.cacheStatusContainer}>
+                    <Ionicons 
+                      name={cacheStatus.isValid ? "checkmark-circle" : "time"} 
+                      size={16} 
+                      color={cacheStatus.isValid ? "#10B981" : textSecondary} 
+                    />
+                    <Text style={[styles.cacheStatusText, { color: textSecondary }]}>
+                      {cacheStatus.isValid 
+                        ? `Cached (expires in ${Math.round((cacheStatus.expiresIn || 0) / (1000 * 60 * 60))}h)`
+                        : 'No cache'
+                      }
+                    </Text>
+                  </View>
+                )}
+                {isLoadingInsights ? (
+                  <View style={styles.loadingContainer}>
+                    {isLoadingFromCache ? (
+                      <>
+                        <ActivityIndicator size="large" color={primary} />
+                        <Text style={[styles.loadingText, { color: textSecondary }]}>
+                          Loading cached insights...
+                        </Text>
+                      </>
+                    ) : loadingPhase === 'initial' ? (
+                      <>
+                        <ActivityIndicator size="large" color={primary} />
+                        <Text style={[styles.loadingText, { color: textSecondary }]}>
+                          Checking for cached data...
+                        </Text>
+                      </>
+                    ) : loadingPhase === 'basic' ? (
+                      <>
+                        <ActivityIndicator size="large" color={primary} />
+                        <Text style={[styles.loadingText, { color: textSecondary }]}>
+                          Loading basic insights...
+                        </Text>
+                        <InsightSkeleton type="card" />
+                      </>
+                    ) : loadingPhase === 'detailed' ? (
+                      <>
+                        <ActivityIndicator size="large" color={primary} />
+                        <Text style={[styles.loadingText, { color: textSecondary }]}>
+                          Analyzing detailed patterns...
+                        </Text>
+                        <InsightSkeleton type="list" />
+                      </>
+                    ) : (
+                      <>
+                        <ActivityIndicator size="large" color={primary} />
+                        <Text style={[styles.loadingText, { color: textSecondary }]}>
+                          Analyzing your wellness data...
+                        </Text>
+                      </>
                     )}
                   </View>
-                  {insight.expanded && (
-                                          <Text style={[styles.insightText, { color: textSecondary }]}>
-                      {insight.description || 'No description available'}
+                ) : insightError ? (
+                  <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle" size={24} color="#ff6b6b" />
+                    <Text style={[styles.errorText, { color: textSecondary }]}>
+                      {insightError}
                     </Text>
-                  )}
-                  
-                  {/* Expanded content */}
-                  {insight.expanded && insight.data && (
-                    <View style={styles.expandedData}>
-                      {insight.type === 'streak' && (
-                        <StreakInsight 
-                          data={insight.data} 
-                          textPrimary={textPrimary} 
-                          textSecondary={textSecondary} 
-                          primary={primary}
-                          selectedPeriod={selectedPeriod}
-                          onPeriodChange={setSelectedPeriod}
-                        />
-                      )}
-                      
-                      {insight.type === 'pattern' && (
-                        <PatternInsight 
-                          data={insight.data} 
-                          textPrimary={textPrimary} 
-                          textSecondary={textSecondary} 
-                          primary={primary} 
-                          insights={insights}
-                          setInsights={setInsights}
-                          index={index}
-                        />
-                      )}
-                       
-                      {insight.type === 'recommendation' && (
-                        <RecommendationInsight 
-                          data={insight.data} 
-                          textSecondary={textSecondary} 
-                        />
-                      )}
-                       
-                                             {insight.type === 'correlation' && (
-                        <CorrelationInsight 
-                          data={insight.data} 
-                          textPrimary={textPrimary} 
-                          textSecondary={textSecondary} 
+                                    <TouchableOpacity 
+                      style={[styles.retryButton, { backgroundColor: primary }]}
+                      onPress={refreshInsights}
+                    >
+                    <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
+                      Try Again
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : insights.length > 0 ? (
+                <ScrollView 
+                  style={[
+                    styles.insightsScrollView,
+                    insights.some(insight => insight.expanded) && styles.insightsScrollViewExpanded,
+                    { overflow: 'visible' }
+                  ]}
+                  contentContainerStyle={{ paddingBottom: 8 }}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled={true}
+                >
+                  {insights.map((insight, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.insightCard}
+                    onPress={() => insight.expandable && toggleInsightExpansion(index)}
+                    activeOpacity={insight.expandable ? 0.7 : 1}
+                  >
+                    <View style={styles.insightHeader}>
+                      <Ionicons name={insight.icon as any} size={20} color={primary} />
+                                            <Text style={[styles.insightTitle, { color: textPrimary }]}>
+                        {insight.title || 'Insight'}
+                      </Text>
+                      {insight.expandable && (
+                        <Ionicons 
+                          name={insight.expanded ? "chevron-up" : "chevron-down"} 
+                          size={16} 
+                          color={textSecondary}
+                          style={styles.insightExpandIcon}
                         />
                       )}
                     </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                    {insight.expanded && (
+                                            <Text style={[styles.insightText, { color: textSecondary }]}>
+                        {insight.description || 'No description available'}
+                      </Text>
+                    )}
+                    
+                    {/* Expanded content */}
+                    {insight.expanded && insight.data && (
+                      <View style={styles.expandedData}>
+                        {insight.type === 'streak' && (
+                          <StreakInsight 
+                            data={insight.data} 
+                            textPrimary={textPrimary} 
+                            textSecondary={textSecondary} 
+                            primary={primary}
+                            selectedPeriod={selectedPeriod}
+                            onPeriodChange={setSelectedPeriod}
+                          />
+                        )}
+                        
+                        {insight.type === 'pattern' && (
+                          <PatternInsight 
+                            data={insight.data} 
+                            textPrimary={textPrimary} 
+                            textSecondary={textSecondary} 
+                            primary={primary} 
+                            insights={insights}
+                            setInsights={setInsights}
+                            index={index}
+                          />
+                        )}
+                         
+                        {insight.type === 'recommendation' && (
+                          <RecommendationInsight 
+                            data={insight.data} 
+                            textSecondary={textSecondary} 
+                          />
+                        )}
+                                             
+                        {insight.type === 'correlation' && (
+                          <CorrelationInsight 
+                            data={insight.data} 
+                            textPrimary={textPrimary} 
+                            textSecondary={textSecondary} 
+                          />
+                        )}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             ) : (
               <View style={styles.emptyContainer}>
                 <Ionicons name="analytics" size={32} color={textSecondary} />
@@ -678,6 +701,8 @@ export default function InsightsScreen({ route }: any) {
                   Complete some habits to see personalized insights!
                 </Text>
               </View>
+            )}
+              </>
             )}
           </View>
         )}
@@ -1029,37 +1054,79 @@ const styles = StyleSheet.create({
   },
   dropdownHeader: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-    marginBottom: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    marginTop: 0,
+    marginBottom: 12,
     gap: 8,
+    flexWrap: 'nowrap',
+  },
+  technicalsButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  technicalsButtonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  technicalsButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   dropdownHeaderButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    flex: 1,
+    minWidth: 0,
   },
   refreshIconButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    width: 32,
-    height: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    width: 48,
+    flexShrink: 0,
   },
   dropdownHeaderText: {
     fontSize: 12,
     fontWeight: '500',
+    flexShrink: 1,
   },
   cacheStatusContainer: {
     flexDirection: 'row',
@@ -1074,12 +1141,17 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   insightCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   insightHeader: {
     flexDirection: 'row',
