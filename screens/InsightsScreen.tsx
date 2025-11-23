@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { useActionStore } from '../state/actionStore';
 import {
   View,
@@ -48,6 +48,7 @@ interface Message {
 type ModalType = 'progress' | 'requirements' | null;
 
 export default function InsightsScreen({ route }: any) {
+  const navigation = useNavigation();
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { shouldOpenGraphs, setShouldOpenGraphs } = useActionStore();
@@ -420,10 +421,10 @@ export default function InsightsScreen({ route }: any) {
     styles.messageBubble,
     isUser ? styles.userBubble : styles.aiBubble,
     { 
-      backgroundColor: isUser ? primary : cardBackground,
+      backgroundColor: isUser ? primary : '#F3F4F6',
       borderColor: isUser ? 'transparent' : borderSecondary
     }
-  ], [primary, cardBackground, borderSecondary]);
+  ], [primary, borderSecondary]);
 
   // Memoized style calculations
   const getMessageTextStyle = useMemo(() => (isUser: boolean) => [
@@ -442,34 +443,40 @@ export default function InsightsScreen({ route }: any) {
         {/* Collapsible Header */}
         <View style={[styles.header, { borderBottomColor: borderSecondary }]}>
           <View style={styles.headerTopRow}>
+            {/* Left: AI Bot Icon (Non-interactive) */}
+            <View style={styles.profileButton}>
+               <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground, borderColor: borderSecondary }]}>
+                <Ionicons name="hardware-chip-outline" size={20} color={textPrimary} />
+              </View>
+            </View>
+
+            {/* Middle: Chat Toggle */}
+             <TouchableOpacity 
+               style={[styles.profileHeaderCard, { backgroundColor: cardBackground }]}
+               onPress={() => setIsHeaderExpanded(true)}
+               activeOpacity={0.8}
+             >
+               <Text style={[styles.headerCenterText, { color: textPrimary }]}>
+                 Insights by Neutro AI Beta V.10
+               </Text>
+             </TouchableOpacity>
+
+            {/* Right: Notifications */}
             <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => setIsHeaderExpanded(!isHeaderExpanded)}
+              style={styles.notificationButton}
+              onPress={() => (navigation as any).navigate('Notifications')}
               activeOpacity={0.7}
             >
-              <View style={styles.headerContent}>
-                <View style={styles.titleContainer}>
-                  <Text style={[styles.title, { color: textPrimary }]}>Insights</Text>
-                  <Ionicons 
-                    name={isHeaderExpanded ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color={textSecondary} 
-                    style={styles.expandIcon}
-                  />
-                </View>
-                <Text style={[styles.subtitle, { color: textSecondary }]}>
-                  Neutro AI Assistant Beta V1.0
-                </Text>
-              </View>
+               <Ionicons name="notifications-outline" size={24} color={textPrimary} />
             </TouchableOpacity>
           </View>
         </View>
         
         {/* Main Content Area */}
         <View style={styles.mainContent}>
-          {/* Expandable Content */}
-          {isHeaderExpanded && (
-            <View style={[styles.expandedContent, { borderTopColor: borderSecondary }]}>
+          {/* Expandable Content - Now shows Insights by default (when NOT expanded) */}
+          {!isHeaderExpanded && (
+            <View style={[styles.content, { paddingTop: 8, paddingHorizontal: 16 }]}>
             {/* Dropdown Header */}
             <View style={styles.dropdownHeader}>
               <TouchableOpacity 
@@ -672,10 +679,10 @@ export default function InsightsScreen({ route }: any) {
           </View>
         )}
 
-        {/* Messages - Only show when header is not expanded */}
-        {!isHeaderExpanded && (
+        {/* Messages - Only show when header IS expanded (Chat is the dropdown) */}
+        {isHeaderExpanded && (
           <KeyboardAvoidingView 
-            style={styles.content} 
+            style={[styles.expandedContent, { borderTopColor: borderSecondary }]} 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
           >
@@ -774,7 +781,7 @@ export default function InsightsScreen({ route }: any) {
               placeholderTextColor={textSecondary}
               maxLength={500}
               onSubmitEditing={() => sendMessage()}
-              onFocus={() => setIsHeaderExpanded(false)}
+              onFocus={() => setIsHeaderExpanded(true)}
               autoCorrect={true}
               autoCapitalize="sentences"
               textContentType="none"
@@ -939,24 +946,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   headerTopRow: {
-    alignItems: 'center',
-    position: 'relative',
-  },
-  headerButton: {
-    alignItems: 'center',
-    width: '100%',
-  },
-
-  headerContent: {
-    alignItems: 'center',
-  },
-  titleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'space-between',
+    width: '100%',
   },
-  expandIcon: {
-    marginLeft: 8,
+  profileButton: {
+    padding: 4,
+  },
+  profileAvatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  profileHeaderCard: {
+    flex: 1,
+    height: 40,
+    marginHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  headerCenterText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notificationButton: {
+    padding: 4,
   },
   expandedContent: {
     borderTopWidth: 1,
