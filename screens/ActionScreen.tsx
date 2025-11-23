@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Animated, Easing } from 'react-native';
+import { Animated, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
 import Reanimated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -9,7 +9,7 @@ import Reanimated, {
   Easing as ReanimatedEasing,
   SharedValue
 } from 'react-native-reanimated';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions, PanResponder } from 'react-native';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
@@ -500,10 +500,10 @@ const WhiteHabitCard = React.memo(({
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
       ]}
     >
-      <View style={styles.whiteHabitCardHeader}>
+      <View style={[styles.whiteHabitCardHeader, { backgroundColor: isCreateCard ? 'transparent' : card.accent, borderRadius: 20 }]}>
         <View>
-          <Text style={[styles.whiteHabitCardTitle, { color: titleColor }]}>{card.title}</Text>
-          <Text style={[styles.whiteHabitCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
+          <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? theme.textPrimary : '#FFFFFF' }]}>{card.title}</Text>
+          <Text style={[styles.whiteHabitCardSubtitle, { color: isCreateCard ? theme.textSecondary : 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
           </View>
         {!isCreateCard && card.habit && (
       <TouchableOpacity 
@@ -515,7 +515,7 @@ const WhiteHabitCard = React.memo(({
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="ellipsis-vertical" size={16} color={iconColor} />
+            <Ionicons name="ellipsis-vertical" size={16} color="#FFFFFF" />
       </TouchableOpacity>
         )}
         {isCreateCard && (
@@ -730,6 +730,11 @@ function ActionScreen() {
     pointsInCurrentLevel: 0,
     pointsNeededForNext: 1400
   });
+  const [isLevelExpanded, setIsLevelExpanded] = useState(true);
+  const toggleLevelExpansion = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsLevelExpanded(!isLevelExpanded);
+  };
   const [totalPoints, setTotalPoints] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
   const progressFillAnim = useRef(new Animated.Value(getLevelFillPercent(levelProgress))).current;
@@ -2977,34 +2982,20 @@ function ActionScreen() {
         {/* Level Progress Bar */}
         <View style={{ marginHorizontal: 24, marginBottom: 16, marginTop: 12 }}>
           <TouchableOpacity 
-            onPress={() => {
-              const levelTitles = ['Beginner', 'Committed', 'Focused', 'Disciplined', 'Achiever', 'Challenger', 'Relentless', 'Ascended'];
-              const currentTitle = levelTitles[levelProgress.currentLevel - 1];
-              const levelThresholds = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
-              const currentLevelStart = levelThresholds[levelProgress.currentLevel - 1];
-              const currentLevelTotal = levelProgress.currentLevel < 8 
-                ? levelThresholds[levelProgress.currentLevel] - currentLevelStart 
-                : 0;
-              
-              Alert.alert(
-                'Level Progress',
-                levelProgress.currentLevel < 8 
-                  ? `You are level ${levelProgress.currentLevel} — ${currentTitle}\n${levelProgress.pointsInCurrentLevel} / ${currentLevelTotal} points\n${levelProgress.pointsNeededForNext} points to level ${levelProgress.nextLevel}`
-                  : `You are level ${levelProgress.currentLevel} — ${currentTitle}\n${levelProgress.pointsInCurrentLevel} points\nMax level reached!`,
-                [{ text: 'OK' }]
-              );
-            }}
+            onPress={toggleLevelExpansion}
             activeOpacity={0.7}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-                      <View 
-                        style={{
+            <Animated.View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: isLevelExpanded ? 30 : 10 }}>
+              {isLevelExpanded && (
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
+              )}
+              <View 
+                style={{
                   flex: 1,
                   marginHorizontal: 4,
                   height: 8,
                   backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                          borderRadius: 4,
+                  borderRadius: 4,
                   overflow: 'visible',
                   position: 'relative',
                 }}
@@ -3023,7 +3014,7 @@ function ActionScreen() {
                     },
                   ]}
                 />
-                {fillWidthInterpolation && (
+                {fillWidthInterpolation && isLevelExpanded && (
                   <>
                     <Animated.View
                       style={[
@@ -3051,18 +3042,22 @@ function ActionScreen() {
                     >
                       <Text style={[styles.levelProgressFloatingText, { color: theme.textPrimary }]}>
                         {animatedPoints}
-                        </Text>
+                      </Text>
                     </Animated.View>
-                    </>
+                  </>
                 )}
               </View>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
-            </View>
+              {isLevelExpanded && (
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
+              )}
+            </Animated.View>
           </TouchableOpacity>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-            <View style={{ width: 20 }} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginRight: 4 }}>EXP</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ width: 20 }} />
+              <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>EXP</Text>
+            </View>
             <TouchableOpacity 
               onPress={async () => {
                 // Refresh data before opening modal to ensure live updates
@@ -3083,8 +3078,8 @@ function ActionScreen() {
               }}
               activeOpacity={0.7}
             >
-              <Ionicons name="information-circle-outline" size={14} color={theme.textSecondary} />
-          </TouchableOpacity>
+              <Ionicons name="information-circle-outline" size={18} color={theme.textSecondary} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -3203,11 +3198,69 @@ function ActionScreen() {
               snapToAlignment="start"
               decelerationRate="fast"
             >
+              {/* Dummy Active Challenge Card */}
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={[
+                  styles.challengeCard,
+                  {
+                    width: spotlightCardWidth,
+                    marginRight: 8,
+                    backgroundColor: '#FFFFFF',
+                    borderColor: '#E5E7EB',
+                  },
+                ]}
+              >
+                <View style={[styles.challengeCardBlueSection, { backgroundColor: '#F97316' }]} />
+                <View style={styles.challengeCardContent}>
+                  <View style={[styles.challengeCardTopSection, { zIndex: 1 }]}>
+                    <View style={styles.challengeHeader}>
+                      <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                        7-Day Sugar Detox Challenge
+                      </Text>
+                    </View>
+                    <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="people" size={14} color={theme.textSecondary} />
+                      <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
+                        <Text style={{ fontWeight: '700' }}>42</Text>
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
+                    <View>
+                      <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.9)' }]}>
+                        Nov 20 - Nov 27
+                      </Text>
+                      <View style={{ marginTop: 4, gap: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> investment</Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> shared pot</Text>
+                      </View>
+                    </View>
+                    
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <View
+                        style={[
+                          styles.challengeStatusBadge,
+                          { backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 0 },
+                        ]}
+                      >
+                        <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Active</Text>
+                      </View>
+                      
+                      <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
+                        Nutrition
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+
               {myActiveChallenges.map((challenge, index) => {
                 const startDate = new Date(challenge.start_date);
                 const endDate = new Date(challenge.end_date);
                 const now = new Date();
                 const isActiveChallenge = now >= startDate && now <= endDate;
+                const dateRangeText = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
                 return (
                 <TouchableOpacity
@@ -3217,40 +3270,54 @@ function ActionScreen() {
                     {
                       width: spotlightCardWidth,
                       marginRight: index === myActiveChallenges.length - 1 ? 0 : 8,
-                      backgroundColor: '#3B82F6',
-                      borderColor: theme.border,
+                      backgroundColor: '#FFFFFF',
+                      borderColor: '#E5E7EB',
                     },
                   ]}
                   onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
                 >
+                  <View style={styles.challengeCardBlueSection} />
                   <View style={styles.challengeCardContent}>
-                    <View>
+                    <View style={[styles.challengeCardTopSection, { zIndex: 1 }]}>
                     <View style={styles.challengeHeader}>
-                        <Text style={[styles.challengeTitle, { color: '#FFFFFF' }]} numberOfLines={2}>
+                        <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                         {challenge.title}
                       </Text>
                       </View>
-                      <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.8)', marginTop: 4 }]}>
-                        {isActiveChallenge
-                          ? `Ends ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                          : `Starts ${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                      <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="people" size={14} color={theme.textSecondary} />
+                        <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
+                          <Text style={{ fontWeight: '700' }}>{(challenge as any).participants_count || (challenge as any).participant_count || 0}</Text>
                       </Text>
-                      {!isActiveChallenge && (
-                        <View
-                          style={[
-                            styles.challengeStatusBadge,
-                            { backgroundColor: 'rgba(255,255,255,0.2)', marginTop: 8 },
-                          ]}
-                        >
-                          <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Upcoming</Text>
                     </View>
-                      )}
-                      <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.8)', marginTop: 8 }]} numberOfLines={1}>
+                    </View>
+                    <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
+                      <View>
+                        <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.9)' }]}>
+                          {dateRangeText}
+                        </Text>
+                        <View style={{ marginTop: 4, gap: 4 }}>
+                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> investment</Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> shared pot</Text>
+                        </View>
+                  </View>
+                      
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                        {!isActiveChallenge ? (
+                          <View
+                            style={[
+                              styles.challengeStatusBadge,
+                              { backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 0 },
+                            ]}
+                          >
+                            <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Upcoming</Text>
+            </View>
+                        ) : <View />}
+                        
+                        <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
                       {challenge.category}
                     </Text>
                   </View>
-                    <View style={styles.challengeCardFooter}>
-                      <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
             </View>
                   </View>
                 </TouchableOpacity>
@@ -5887,16 +5954,11 @@ function ActionScreen() {
         <TouchableWithoutFeedback onPress={() => setShowReorderHabitsModal(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.reorderModalContainer, { backgroundColor: theme.cardBackground, opacity: 1 }]}>
-                <View style={[styles.reorderModalHeader, { borderBottomColor: theme.border }]}>
-                  <Text style={[styles.reorderModalTitle, { color: theme.textPrimary }]}>
-                    Reorder Habits
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowReorderHabitsModal(false)}
-                    style={styles.reorderModalCloseButton}
-                  >
-                    <Ionicons name="close" size={24} color={theme.textPrimary} />
+              <View style={styles.reorderModalContainer}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Reorder Habits</Text>
+                  <TouchableOpacity onPress={() => setShowReorderHabitsModal(false)}>
+                    <Ionicons name="close" size={24} color="#666" />
                   </TouchableOpacity>
                 </View>
 
@@ -5934,7 +5996,7 @@ function ActionScreen() {
                         >
                           <Ionicons
                             name="chevron-up"
-                            size={20}
+                            size={18}
                             color={index === 0 ? theme.textSecondary : theme.textPrimary}
                           />
                         </TouchableOpacity>
@@ -5949,7 +6011,7 @@ function ActionScreen() {
                         >
                           <Ionicons
                             name="chevron-down"
-                            size={20}
+                            size={18}
                             color={index === reorderableHabits.length - 1 ? theme.textSecondary : theme.textPrimary}
                           />
                         </TouchableOpacity>
@@ -6172,11 +6234,12 @@ const styles = StyleSheet.create({
     padding: 16,
     minHeight: 120,
     justifyContent: 'space-between',
-    overflow: 'hidden',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   highlightCardHeader: {
     flexDirection: 'row',
@@ -6612,10 +6675,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   whiteHabitCardDisabled: {
     opacity: 0.5,
@@ -6625,6 +6688,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 16,
+    marginHorizontal: -16,
+    marginTop: -16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
   },
   whiteHabitCardTitle: {
     fontSize: 16,
@@ -6746,16 +6814,45 @@ const styles = StyleSheet.create({
   },
   challengeCard: {
     borderRadius: 20,
-    padding: 16,
     borderWidth: 1,
     minHeight: 180,
     flexDirection: 'column',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  challengeCardBlueSection: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '65%',
+    backgroundColor: '#3B82F6',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   challengeCardContent: {
     flex: 1,
-    gap: 8,
+    position: 'relative',
+    zIndex: 1,
+  },
+  challengeCardTopSection: {
+    height: '35%',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  challengeCardBottomSection: {
+    height: '65%',
     justifyContent: 'space-between',
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   challengeHeader: {
     flexDirection: 'row',
@@ -7491,29 +7588,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reorderModalContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '80%',
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  reorderModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-  },
-  reorderModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  reorderModalCloseButton: {
-    padding: 4,
+    maxHeight: '90%',
+    minHeight: 600,
   },
   reorderModalContent: {
-    maxHeight: 400,
-    padding: 16,
+    flex: 1,
   },
   reorderHabitItem: {
     flexDirection: 'row',
@@ -7530,9 +7614,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   reorderHabitIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
