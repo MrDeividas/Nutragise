@@ -15,7 +15,8 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
-  Animated
+  Animated,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -442,41 +443,43 @@ export default function InsightsScreen({ route }: any) {
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Collapsible Header */}
         <View style={[styles.header, { borderBottomColor: borderSecondary }]}>
-          <View style={styles.headerTopRow}>
-            {/* Left: AI Bot Icon (Non-interactive) */}
-            <View style={styles.profileButton}>
-               <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground, borderColor: theme.border }]}>
-                <Ionicons name="hardware-chip-outline" size={20} color={textPrimary} />
-              </View>
+          {/* Left: AI Bot Icon (Non-interactive) */}
+          <View style={[styles.profileButton, { borderColor: theme.border }]}>
+             <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground }]}>
+              <Image 
+                source={require('../assets/robot-icon.png')} 
+                style={styles.robotIcon}
+                resizeMode="cover"
+              />
             </View>
-
-            {/* Middle: Chat Toggle */}
-             <TouchableOpacity 
-               style={[styles.profileHeaderCard, { backgroundColor: '#e5e7eb' }]}
-               onPress={() => setIsHeaderExpanded(true)}
-               activeOpacity={0.8}
-             >
-               <Text style={[styles.headerCenterText, { color: textPrimary }]}>
-                 Insights by Neutro AI Beta V.10
-               </Text>
-             </TouchableOpacity>
-
-            {/* Right: Notifications */}
-            <TouchableOpacity 
-              style={styles.notificationButton}
-              onPress={() => (navigation as any).navigate('Notifications')}
-              activeOpacity={0.7}
-            >
-               <Ionicons name="notifications-outline" size={24} color={textPrimary} />
-            </TouchableOpacity>
           </View>
+
+          {/* Middle: Chat Toggle */}
+           <TouchableOpacity 
+             style={[styles.profileHeaderCard, { backgroundColor: '#e5e7eb' }]}
+             onPress={() => setIsHeaderExpanded(!isHeaderExpanded)}
+             activeOpacity={0.8}
+           >
+             <Text style={[styles.headerCenterText, { color: textPrimary }]}>
+               Insights by Neutro AI Beta V.10
+             </Text>
+           </TouchableOpacity>
+
+          {/* Right: Notifications */}
+          <TouchableOpacity 
+            style={{ zIndex: 1 }}
+            onPress={() => (navigation as any).navigate('Notifications')}
+            activeOpacity={0.7}
+          >
+             <Ionicons name="notifications-outline" size={24} color={textPrimary} />
+          </TouchableOpacity>
         </View>
         
         {/* Main Content Area */}
         <View style={styles.mainContent}>
           {/* Expandable Content - Now shows Insights by default (when NOT expanded) */}
           {!isHeaderExpanded && (
-            <View style={[styles.content, { paddingTop: 8, paddingHorizontal: 16 }]}>
+            <View style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}>
             {/* Dropdown Header */}
             <View style={styles.dropdownHeader}>
               <TouchableOpacity 
@@ -702,7 +705,11 @@ export default function InsightsScreen({ route }: any) {
             >
               {!message.isUser && (
                 <View style={[styles.avatar, { backgroundColor: primary }]}>
-                  <Ionicons name="hardware-chip" size={16} color="#ffffff" />
+                  <Image 
+                    source={require('../assets/robot-icon.png')} 
+                    style={styles.chatRobotIcon}
+                    resizeMode="cover"
+                  />
                 </View>
               )}
               <View style={getMessageBubbleStyle(message.isUser)}>
@@ -720,7 +727,11 @@ export default function InsightsScreen({ route }: any) {
           {isTyping && (
             <View style={styles.messageContainer}>
                             <View style={[styles.avatar, { backgroundColor: primary }]}>
-                <Ionicons name="hardware-chip" size={16} color="#ffffff" />
+                <Image 
+                  source={require('../assets/robot-icon.png')} 
+                  style={styles.chatRobotIcon}
+                  resizeMode="cover"
+                />
               </View>
               <View style={getMessageBubbleStyle(false)}>
                 <View style={styles.typingIndicator}>
@@ -937,58 +948,76 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingTop: 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    position: 'relative',
   },
   mainContent: {
     flex: 1,
-    paddingHorizontal: 16,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
   },
   profileButton: {
-    padding: 4,
-  },
-  profileAvatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#9CA3AF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  profileAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  robotIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+  },
+  chatRobotIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   profileHeaderCard: {
     flex: 1,
-    height: 40,
+    height: 48,
     marginHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: '#e5e7eb',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   headerCenterText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  notificationButton: {
-    padding: 4,
-  },
   expandedContent: {
     borderTopWidth: 1,
     paddingTop: 8,
     marginTop: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     flex: 1,
   },
   insightsScrollView: {
