@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DailyHabits } from '../types/database';
 
@@ -90,50 +90,54 @@ export default function HabitInfoModal({ visible, onClose, habitType, data }: Pr
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.titleContainer}>
-              <View style={styles.iconContainer}>
-                <Ionicons name={config.icon as any} size={24} color="#10B981" />
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <View style={styles.modalContent}>
+              {/* Header */}
+              <View style={styles.header}>
+                <View style={styles.titleContainer}>
+                  <View style={styles.iconContainer}>
+                    <Ionicons name={config.icon as any} size={24} color="#10B981" />
+                  </View>
+                  <Text style={styles.title}>{config.title}</Text>
+                </View>
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.title}>{config.title}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
 
-          {/* Content */}
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {data ? (
-              (() => {
-                const renderedFields = config.fields.map(renderField).filter(Boolean);
-                return renderedFields.length > 0 ? renderedFields : (
+              {/* Content */}
+              <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {data ? (
+                  (() => {
+                    const renderedFields = config.fields.map(renderField).filter(Boolean);
+                    return renderedFields.length > 0 ? renderedFields : (
+                      <View style={styles.emptyState}>
+                        <Ionicons name="information-circle-outline" size={48} color="#999" />
+                        <Text style={styles.emptyText}>No recorded information</Text>
+                      </View>
+                    );
+                  })()
+                ) : (
                   <View style={styles.emptyState}>
                     <Ionicons name="information-circle-outline" size={48} color="#999" />
                     <Text style={styles.emptyText}>No recorded information</Text>
                   </View>
-                );
-              })()
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={48} color="#999" />
-                <Text style={styles.emptyText}>No recorded information</Text>
-              </View>
-            )}
-          </ScrollView>
+                )}
+              </ScrollView>
 
-          {/* Footer - Future unlock button placeholder */}
-          <View style={styles.footer}>
-            <View style={styles.unlockPlaceholder}>
-              <Ionicons name="lock-closed" size={16} color="#999" />
-              <Text style={styles.unlockText}>Unlock editing (coming soon)</Text>
+              {/* Footer - Future unlock button placeholder */}
+              <View style={styles.footer}>
+                <View style={styles.unlockPlaceholder}>
+                  <Ionicons name="lock-closed" size={16} color="#999" />
+                  <Text style={styles.unlockText}>Unlock editing (coming soon)</Text>
+                </View>
+              </View>
             </View>
-          </View>
+          </TouchableWithoutFeedback>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }

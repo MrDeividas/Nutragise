@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -23,17 +23,23 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
   // Local state for selected date's habits data (separate from global dailyHabits)
   const [selectedDateHabits, setSelectedDateHabits] = useState<any>(null);
   const [loadingSelectedDate, setLoadingSelectedDate] = useState(false);
+  const lastLoadedDateRef = useRef<string | null>(null);
+  const lastLoadedDataRef = useRef<any>(null);
 
   // Function to load habits data for selected date
-  const loadSelectedDateHabits = async (date: string) => {
-    if (date === new Date().toISOString().split('T')[0]) {
-      // If it's today, use the global data
+  const loadSelectedDateHabits = useCallback(async (date: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    if (date === today) {
+      // If it's today, use the global data - always update when dailyHabitsData changes
       setSelectedDateHabits(dailyHabitsData);
+      lastLoadedDateRef.current = date;
+      lastLoadedDataRef.current = dailyHabitsData;
       return;
     }
     
     // Don't reload if we already have data for this date
-    if (selectedDateHabits && selectedDateHabits.date === date) {
+    if (lastLoadedDateRef.current === date && lastLoadedDataRef.current && lastLoadedDataRef.current.date === date) {
+      setSelectedDateHabits(lastLoadedDataRef.current);
       return;
     }
     
@@ -49,15 +55,19 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
       if (user) {
         const habits = await dailyHabitsService.getDailyHabits(user.id, date);
         setSelectedDateHabits(habits);
+        lastLoadedDateRef.current = date;
+        lastLoadedDataRef.current = habits;
       }
     } catch (error) {
       console.error('Error loading selected date habits:', error);
       setSelectedDateHabits(null);
+      lastLoadedDateRef.current = null;
+      lastLoadedDataRef.current = null;
     } finally {
       clearTimeout(loadingTimeout);
       setLoadingSelectedDate(false);
     }
-  };
+  }, [dailyHabitsData]);
 
   useEffect(() => {
     const d = new Date(selectedDate);
@@ -67,7 +77,7 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
     
     // Load habits data for the selected date
     loadSelectedDateHabits(selectedDate);
-  }, [selectedDate]);
+  }, [selectedDate, loadSelectedDateHabits]);
 
   const monthNames = useMemo(() => (
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

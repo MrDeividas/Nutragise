@@ -1480,8 +1480,7 @@ function ActionScreen() {
         nextCompleted.add(habitId);
         const sorted = sortHabitsByCompletion(prevCards, nextCompleted);
         habitSpotlightCardsRef.current = sorted;
-        // Save the sorted order
-        saveCardOrder(sorted);
+        // Do not save order here to preserve user's preferred order across days
         return sorted;
       });
       // Reset animation values
@@ -1500,8 +1499,10 @@ function ActionScreen() {
     playCompletionSound();
     updateCardCompletionVisual(habitId, true, { animate: true });
     clearHabitNeedsDetails(habitId);
-    // Animate card to end
-    animateCardToEnd(habitId);
+    // Animate card to end after bar fills (450ms)
+    setTimeout(() => {
+      animateCardToEnd(habitId);
+    }, 500);
   }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails, animateCardToEnd]);
 
   const markHabitUncompleted = useCallback((habitId: string) => {
@@ -1514,8 +1515,7 @@ function ActionScreen() {
         const nextCompleted = next;
         const sorted = sortHabitsByCompletion(prevCards, nextCompleted);
         habitSpotlightCardsRef.current = sorted;
-        // Save the sorted order
-        saveCardOrder(sorted);
+        // Do not save order here
         return sorted;
       });
       return next;
@@ -1860,14 +1860,14 @@ function ActionScreen() {
     setCompletedHabits(completedSet);
   }, []);
 
-  // Load selected habits on mount
+  // Load selected habits on mount and sync completed status
   useEffect(() => {
     if (user) {
       loadSelectedHabits();
     }
-    // Also sync completed habits on mount
+    // Sync completed habits whenever data changes
     syncCompletedHabits();
-  }, [user, syncCompletedHabits]);
+  }, [user, syncCompletedHabits, dailyHabits]);
 
   // Load persisted card order on mount and sort by completion status
   useEffect(() => {
@@ -3383,63 +3383,6 @@ function ActionScreen() {
               snapToAlignment="start"
               decelerationRate="fast"
             >
-              {/* Dummy Active Challenge Card */}
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={[
-                  styles.challengeCard,
-                  {
-                    width: spotlightCardWidth,
-                    marginRight: 8,
-                    backgroundColor: '#FFFFFF',
-                    borderColor: '#E5E7EB',
-                  },
-                ]}
-              >
-                <View style={[styles.challengeCardBlueSection, { backgroundColor: '#F97316' }]} />
-                <View style={styles.challengeCardContent}>
-                  <View style={[styles.challengeCardTopSection, { zIndex: 1 }]}>
-                    <View style={styles.challengeHeader}>
-                      <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                        7-Day Sugar Detox Challenge
-                        </Text>
-                      </View>
-                    <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Ionicons name="people" size={14} color={theme.textSecondary} />
-                      <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
-                        <Text style={{ fontWeight: '700' }}>42</Text>
-                      </Text>
-              </View>
-            </View>
-                  <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
-                    <View>
-                      <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.9)' }]}>
-                        Nov 20 - Nov 27
-                      </Text>
-                      <View style={{ marginTop: 4, gap: 4 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> investment</Text>
-                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> shared pot</Text>
-                      </View>
-        </View>
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                      <View
-                        style={[
-                          styles.challengeStatusBadge,
-                          { backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 0 },
-                        ]}
-                      >
-                        <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Active</Text>
-                      </View>
-                      
-                      <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
-                        Nutrition
-            </Text>
-          </View>
-                  </View>
-                </View>
-              </TouchableOpacity>
-
               {myActiveChallenges.map((challenge, index) => {
                 const startDate = new Date(challenge.start_date);
                 const endDate = new Date(challenge.end_date);
@@ -3461,7 +3404,7 @@ function ActionScreen() {
                   ]}
                   onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
                 >
-                  <View style={styles.challengeCardBlueSection} />
+                  <View style={[styles.challengeCardBlueSection, isActiveChallenge && { backgroundColor: '#F97316' }]} />
                   <View style={styles.challengeCardContent}>
                     <View style={[styles.challengeCardTopSection, { zIndex: 1 }]}>
                     <View style={styles.challengeHeader}>
@@ -3488,16 +3431,16 @@ function ActionScreen() {
                   </View>
                       
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                        {!isActiveChallenge ? (
                           <View
                             style={[
                               styles.challengeStatusBadge,
                               { backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 0 },
                             ]}
                           >
-                            <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>Upcoming</Text>
-            </View>
-                        ) : <View />}
+                            <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>
+                              {isActiveChallenge ? 'Active' : 'Upcoming'}
+                            </Text>
+                          </View>
                         
                         <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
                       {challenge.category}
