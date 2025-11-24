@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useAuthStore } from '../state/authStore';
 import { socialService } from '../lib/socialService';
 import { challengesService } from '../lib/challengesService';
@@ -22,6 +23,7 @@ import { Challenge } from '../types/challenges';
 
 export default function CompeteScreen({ navigation }: any) {
   const { theme } = useTheme();
+  const bottomNavPadding = useBottomNavPadding();
   const { user, initialize, loading } = useAuthStore();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
@@ -127,7 +129,7 @@ export default function CompeteScreen({ navigation }: any) {
       <ScrollView 
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: bottomNavPadding }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -273,7 +275,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 0, // Padding is handled dynamically via style prop
   },
   section: {
     marginBottom: 32,

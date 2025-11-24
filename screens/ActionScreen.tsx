@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
@@ -545,6 +546,7 @@ const WhiteHabitCard = React.memo(({
 
 function ActionScreen() {
   const navigation = useNavigation() as any;
+  const bottomNavPadding = useBottomNavPadding();
   const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
@@ -3083,6 +3085,7 @@ function ActionScreen() {
         <ScrollView 
           style={[styles.scrollView, { backgroundColor: theme.background }]} 
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useActionStore } from '../state/actionStore';
 import {
   View,
@@ -52,6 +53,7 @@ type ModalType = 'progress' | 'requirements' | null;
 
 export default function InsightsScreen({ route }: any) {
   const navigation = useNavigation();
+  const bottomNavPadding = useBottomNavPadding();
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { shouldOpenGraphs, setShouldOpenGraphs } = useActionStore();
@@ -541,7 +543,7 @@ export default function InsightsScreen({ route }: any) {
           {!isHeaderExpanded && (
             <ScrollView 
               style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}
-              contentContainerStyle={{ paddingBottom: 40 }}
+              contentContainerStyle={{ paddingBottom: bottomNavPadding }}
               showsVerticalScrollIndicator={false}
             >
             {/* Technicals Button */}

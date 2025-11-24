@@ -6,6 +6,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 
+export const useBottomNavPadding = () => {
+  const insets = useSafeAreaInsets();
+  // Height of the pill/circle buttons
+  const TAB_BAR_HEIGHT = 64;
+  // Bottom padding applied to the container in CustomTabBar
+  const TAB_BAR_BOTTOM_PADDING = (insets.bottom || 20) - 8;
+  // Total height of the navigation bar
+  const TOTAL_NAV_HEIGHT = TAB_BAR_HEIGHT + TAB_BAR_BOTTOM_PADDING;
+  // Return total height + 10px spacing
+  return TOTAL_NAV_HEIGHT + 10;
+};
+
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();

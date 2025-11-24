@@ -15,6 +15,7 @@ import { useGoalsStore } from '../state/goalsStore';
 import { useAuthStore } from '../state/authStore';
 import { Goal } from '../types/database';
 import { useTheme } from '../state/themeStore';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import NewGoalModal from '../components/NewGoalModal';
 import CreatePostModal from '../components/CreatePostModal';
 import CustomBackground from '../components/CustomBackground';
@@ -25,6 +26,7 @@ interface GoalsScreenProps {
 
 export default function GoalsScreen({ navigation }: GoalsScreenProps) {
   const { user } = useAuthStore();
+  const bottomNavPadding = useBottomNavPadding();
   const { goals, loading, error, fetchGoals, toggleGoalCompletion, deleteGoal } = useGoalsStore();
   const { theme } = useTheme();
   const [showNewGoalModal, setShowNewGoalModal] = useState(false);
@@ -80,7 +82,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
     const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
     
     return (
-      <View key={goal.id} style={[styles.goalCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+      <View key={goal.id} style={styles.goalCard}>
         <TouchableOpacity
           onPress={() => {
             navigation.navigate('GoalDetail', { goal });
@@ -112,7 +114,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
                 onPress={() => handleDeleteGoal(goal)}
                 style={styles.deleteButton}
               >
-                <Ionicons name="trash-outline" size={18} color="#ffffff" />
+                <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -171,7 +173,7 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         <ScrollView 
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding }}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
           }
@@ -191,19 +193,19 @@ export default function GoalsScreen({ navigation }: GoalsScreenProps) {
         {/* Stats Section */}
         <View style={styles.keepTrackSection}>
           <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Progress</Text>
-          <View style={[styles.weeklyTrackerCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+          <View style={styles.weeklyTrackerCard}>
             <View style={styles.statsContainer}>
               <View style={styles.statBox}>
-                <Text style={styles.statNumber}>{activeGoals.length}</Text>
-                <Text style={styles.statLabel}>Active</Text>
+                <Text style={[styles.statNumber, { color: theme.textPrimary }]}>{activeGoals.length}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Active</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={[styles.statNumber, styles.completedStatNumber]}>{completedGoals.length}</Text>
-                <Text style={[styles.statLabel, styles.completedStatLabel]}>Completed</Text>
+                <Text style={[styles.statNumber, styles.completedStatNumber, { color: theme.textPrimary }]}>{completedGoals.length}</Text>
+                <Text style={[styles.statLabel, styles.completedStatLabel, { color: theme.textSecondary }]}>Completed</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={[styles.statNumber, styles.totalStatNumber]}>{goals.length}</Text>
-                <Text style={[styles.statLabel, styles.totalStatLabel]}>Total</Text>
+                <Text style={[styles.statNumber, styles.totalStatNumber, { color: theme.textPrimary }]}>{goals.length}</Text>
+                <Text style={[styles.statLabel, styles.totalStatLabel, { color: theme.textSecondary }]}>Total</Text>
               </View>
             </View>
           </View>
@@ -327,19 +329,34 @@ const styles = StyleSheet.create({
   keepTrackTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 16,
   },
   weeklyTrackerCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     paddingHorizontal: 20,
     paddingVertical: 20,
-    marginBottom: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   goalCard: {
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -355,25 +372,19 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
-    color: '#ffffff',
     fontWeight: '500',
   },
   completedStatNumber: {
-    color: '#ffffff',
   },
   completedStatLabel: {
-    color: '#ffffff',
   },
   totalStatNumber: {
-    color: '#ffffff',
   },
   totalStatLabel: {
-    color: '#ffffff',
   },
   goalHeader: {
     flexDirection: 'row',

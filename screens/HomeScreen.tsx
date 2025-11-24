@@ -25,6 +25,7 @@ import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { Goal, DailyHabits } from '../types/database';
 import { useTheme } from '../state/themeStore';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import { syncAllUserData } from '../lib/syncUserData';
 import { useSocialStore } from '../state/socialStore';
 import { Profile } from '../lib/socialService';
@@ -105,6 +106,7 @@ interface HomeScreenProps {
 
 function HomeScreen({ navigation }: HomeScreenProps) {
   const [activeTab, setActiveTab] = useState<'explore' | 'following'>('explore');
+  const bottomNavPadding = useBottomNavPadding();
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<PostWithUser[]>([]);
@@ -1703,7 +1705,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
             <ScrollView 
               style={styles.scrollView}
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={{ paddingBottom: bottomNavPadding }}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
@@ -1744,7 +1746,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
           <ScrollView 
             style={styles.scrollView}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={{ paddingBottom: bottomNavPadding }}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -2735,7 +2737,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 80,
   },
   header: {
     flexDirection: 'row',

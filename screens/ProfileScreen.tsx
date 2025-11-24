@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Animated } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
@@ -40,6 +41,7 @@ const { width } = Dimensions.get('window');
 
 function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuthStore();
+  const bottomNavPadding = useBottomNavPadding();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
   const { theme, isDark } = useTheme();
   const { segmentChecked, getActiveSegmentCount, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
@@ -671,6 +673,7 @@ function ProfileScreen({ navigation }: any) {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ScrollView 
         style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: bottomNavPadding }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -886,103 +889,6 @@ function ProfileScreen({ navigation }: any) {
           )}
         </View>
 
-                {/* Progress Bar */}
-        <TouchableOpacity 
-          onPress={() => {
-            setShowLevelModal(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-          {/* Green Progress Bar - Now first */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
-                {[...Array(8)].map((_, i) => {
-                  // Get the count of checked segments from action screen
-                  const activeSegmentCount = segmentChecked.filter(checked => checked).length;
-                  
-
-                  
-                  // Only light up the first N segments based on how many are checked
-                  const shouldBeActive = i < activeSegmentCount;
-                  
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
-                          height: 2.59,
-                          flex: 1,
-                          marginRight: i === 7 ? 0 : 2,
-                          shadowColor: '#10B981',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: shouldBeActive ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: shouldBeActive ? 3 : 0,
-                        },
-                        (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        (!shouldBeActive) && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#10B981',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-          
-          {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
-            <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={styles.leftBarBackground}>
-                {[...Array(5)].map((_, i) => {
-                  const isCompleted = coreHabitsCompleted[i];
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
-                          height: 2.59,
-                          shadowColor: '#E91E63',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: isCompleted ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: isCompleted ? 3 : 0,
-                        },
-                        i === 4 && { marginRight: 0 },
-                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        !isCompleted && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#E91E63',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        </View>
-        </TouchableOpacity>
 
         {/* Journey Section */}
         {user && (
@@ -1240,6 +1146,102 @@ function ProfileScreen({ navigation }: any) {
             </View>
           </View>
         </View>
+
+        {/* Progress Bar - Moved to bottom */}
+        <TouchableOpacity 
+          onPress={() => {
+            setShowLevelModal(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
+          {/* Green Progress Bar - Now first */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
+              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
+                {[...Array(8)].map((_, i) => {
+                  // Get the count of checked segments from action screen
+                  const activeSegmentCount = segmentChecked.filter(checked => checked).length;
+                  
+                  // Only light up the first N segments based on how many are checked
+                  const shouldBeActive = i < activeSegmentCount;
+                  
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.leftBarSegment,
+                        { 
+                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
+                          height: 2.59,
+                          flex: 1,
+                          marginRight: i === 7 ? 0 : 2,
+                          shadowColor: '#10B981',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: shouldBeActive ? 0.6 : 0,
+                          shadowRadius: 3,
+                          elevation: shouldBeActive ? 3 : 0,
+                        },
+                        (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        (!shouldBeActive) && { 
+                          backgroundColor: theme.background, 
+                          borderWidth: 0.5, 
+                          borderColor: '#10B981',
+                          shadowColor: 'transparent',
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+          
+          {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
+            <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
+              <View style={styles.leftBarBackground}>
+                {[...Array(5)].map((_, i) => {
+                  const isCompleted = coreHabitsCompleted[i];
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        styles.leftBarSegment,
+                        { 
+                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
+                          height: 2.59,
+                          shadowColor: '#E91E63',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: isCompleted ? 0.6 : 0,
+                          shadowRadius: 3,
+                          elevation: isCompleted ? 3 : 0,
+                        },
+                        i === 4 && { marginRight: 0 },
+                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        !isCompleted && { 
+                          backgroundColor: theme.background, 
+                          borderWidth: 0.5, 
+                          borderColor: '#E91E63',
+                          shadowColor: 'transparent',
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        </View>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Create Post Modal */}
