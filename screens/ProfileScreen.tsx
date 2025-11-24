@@ -35,6 +35,9 @@ import Svg, { Circle, Line, Text as SvgText, Polygon, Defs, LinearGradient, Stop
 import JourneyPreview from '../components/JourneyPreview';
 import FullJourneyModal from '../components/FullJourneyModal';
 import LevelInfoModal from '../components/LevelInfoModal';
+import AchievementModal from '../components/AchievementModal';
+import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
+import { Achievement } from '../types/database';
 
 const { width } = Dimensions.get('window');
 
@@ -104,6 +107,15 @@ function ProfileScreen({ navigation }: any) {
   // Journey modal state
   const [showFullJourney, setShowFullJourney] = useState(false);
   
+  // Activity Feed State
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  
+  // Achievements State
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  
   // Level system state
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [currentLevel, setCurrentLevel] = useState(1);
@@ -133,6 +145,7 @@ function ProfileScreen({ navigation }: any) {
       }
       // Force a refresh of the action store data to ensure live updates
       getActiveSegmentCount();
+      fetchRecentActivity();
     }, [user, userGoals.length, getActiveSegmentCount])
   );
 
@@ -169,6 +182,8 @@ function ProfileScreen({ navigation }: any) {
         const followers = await socialService.getFollowerCount(user.id);
         const following = await socialService.getFollowingCount(user.id);
         setSocialCounts({ followers, following });
+        
+        fetchRecentActivity();
       }
       
   
@@ -249,6 +264,8 @@ function ProfileScreen({ navigation }: any) {
         checkTodaysCheckIns(),
         loadCoreHabitsStatus(),
         loadPillarProgress(),
+        fetchRecentActivity(),
+        fetchAchievements(),
         user ? fetchGoals(user.id) : Promise.resolve()
       ]);
       console.log('✅ Refresh complete');
@@ -435,6 +452,8 @@ function ProfileScreen({ navigation }: any) {
       checkTodaysCheckIns();
       loadCoreHabitsStatus();
       loadPillarProgress();
+      fetchRecentActivity();
+      fetchAchievements();
     }, [user])
   );
 
@@ -445,10 +464,143 @@ function ProfileScreen({ navigation }: any) {
       loadProfileData();
       fetchUserPoints();
       fetchNotificationCount();
+      fetchRecentActivity();
+      fetchAchievements();
     });
 
     return unsubscribe;
   }, [navigation]);
+
+  const fetchRecentActivity = async () => {
+    if (!user) return;
+
+    try {
+      const today = new Date();
+      // Use local date for the query to match how habits are saved (YYYY-MM-DD)
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      
+      // For timestamps (check-ins, submissions), use start/end of day
+      const startOfDay = new Date(year, today.getMonth(), today.getDate()).toISOString();
+      const endOfDay = new Date(year, today.getMonth(), today.getDate() + 1).toISOString();
+
+      const activityItems: any[] = [];
+
+      // 1. Fetch Daily Habits
+      const { data: habits } = await supabase
+        .from('daily_habits')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', dateStr)
+        .single();
+
+      if (habits) {
+        if (habits.gym_day_type === 'active') activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#F59E0B' });
+        if (habits.run_day_type === 'active') activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#3B82F6' });
+        if (habits.water_intake > 0) activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA' });
+        if (habits.reflect_mood) activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#8B5CF6' });
+        if (habits.meditation_completed) activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#10B981' });
+        if (habits.sleep_hours > 0) activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#6366F1' });
+      }
+
+      // 2. Fetch Goal Check-ins
+      const { data: checkIns } = await supabase
+        .from('progress_photos')
+        .select('goal_id, check_in_date')
+        .eq('user_id', user.id)
+        .gte('check_in_date', startOfDay.split('T')[0]); 
+
+      if (checkIns && checkIns.length > 0) {
+        checkIns.forEach((checkIn: any) => {
+          const goal = userGoals.find(g => g.id === checkIn.goal_id);
+          if (goal) {
+            activityItems.push({ 
+              type: 'goal', 
+              label: goal.title, 
+              icon: 'flag', 
+              color: '#EF4444' 
+            });
+          }
+        });
+      }
+
+      // 3. Fetch Challenge Submissions
+      const { data: submissions } = await supabase
+        .from('challenge_submissions')
+        .select(`
+          id,
+          created_at,
+          challenge:challenges (title)
+        `)
+        .eq('user_id', user.id)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay);
+
+      if (submissions && submissions.length > 0) {
+        submissions.forEach((sub: any) => {
+           const title = (sub.challenge as any)?.title || 'Challenge';
+           activityItems.push({
+             type: 'challenge',
+             label: title,
+             icon: 'trophy',
+             color: '#F97316'
+           });
+        });
+      }
+
+      setRecentActivity(activityItems);
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+    }
+  };
+
+  const fetchAchievements = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_achievements')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching achievements:', error);
+        return;
+      }
+
+      setAchievements(data || []);
+    } catch (error) {
+      console.error('Error fetching achievements:', error);
+    }
+  };
+
+  const handleSaveAchievement = async (text: string, photoUrl: string) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from('user_achievements')
+        .insert({
+          user_id: user.id,
+          text,
+          photo_url: photoUrl || null,
+        });
+
+      if (error) {
+        console.error('Error saving achievement:', error);
+        throw error;
+      }
+
+      // Refresh achievements list
+      await fetchAchievements();
+    } catch (error) {
+      console.error('Error in handleSaveAchievement:', error);
+      throw error;
+    }
+  };
 
   const fetchGoalProgress = async () => {
     if (!user || userGoals.length === 0) return;
@@ -761,7 +913,7 @@ function ProfileScreen({ navigation }: any) {
             style={[
               styles.profilePictureCard, 
               { 
-                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                backgroundColor: '#FFFFFF',
                 borderBottomLeftRadius: isProfileCardExpanded ? 0 : 16,
                 borderBottomRightRadius: isProfileCardExpanded ? 0 : 16,
               }
@@ -822,7 +974,9 @@ function ProfileScreen({ navigation }: any) {
               style={[
                 styles.expandedProfileInfo,
                 { 
-                  backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                  backgroundColor: '#FFFFFF',
+                  borderTopWidth: 1,
+                  borderTopColor: '#E5E7EB',
                   opacity: profileCardAnimation,
                   maxHeight: profileCardAnimation.interpolate({
                     inputRange: [0, 1],
@@ -890,7 +1044,101 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
 
-        {/* Journey Section */}
+        {/* Activity and Achievements Section */}
+        <View style={styles.keepTrackSection}>
+          <View style={styles.activityAchievementsRow}>
+            <View style={{ flex: 1 }}>
+              <View style={[
+                styles.activityBox,
+                recentActivity.length > 0 ? {
+                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
+                } : {
+                  height: 88, // Empty state height
+                }
+              ]}>
+                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
+                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                  {recentActivity.length > 0 ? (
+                    recentActivity.slice(0, 4).map((item, index) => (
+                      <View key={index} style={styles.activityItem}>
+                        <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
+                          {item.iconType === 'fa5' ? (
+                            <FontAwesome5 name={item.icon} size={14} color={item.color} />
+                          ) : (
+                            <Ionicons name={item.icon as any} size={16} color={item.color} />
+                          )}
+                        </View>
+                        <Text 
+                          style={[styles.activityText, { color: theme.textSecondary }]} 
+                          numberOfLines={1}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+            <View style={{ flex: 2, marginLeft: 16 }}>
+              <View style={[
+                styles.achievementsBox,
+                achievements.length > 0 && {
+                  height: 72 + (Math.min(achievements.length, 4) * 32),
+                }
+              ]}>
+                <View style={styles.achievementsHeader}>
+                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Achievements</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowAchievementModal(true)}
+                    style={styles.addAchievementButton}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={24} color={theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                  {achievements.length > 0 ? (
+                    achievements.slice(0, 4).map((achievement, index) => (
+                      <View key={achievement.id} style={styles.achievementItem}>
+                        <Text style={styles.bulletPoint}>•</Text>
+                        <Text
+                          style={[styles.achievementText, { color: theme.textSecondary }]}
+                          numberOfLines={2}
+                        >
+                          {achievement.text}
+                        </Text>
+                        {achievement.photo_url && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedPhotoUrl(achievement.photo_url);
+                              setShowPhotoModal(true);
+                            }}
+                            style={styles.photoIconButton}
+                          >
+                            <Ionicons name="image" size={22} color={theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                      <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
+                        No achievements yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Posts Section */}
         {user && (
           <JourneyPreview 
             userId={user.id}
@@ -1138,11 +1386,11 @@ function ProfileScreen({ navigation }: any) {
           <View style={styles.bigTasksRowBoxes}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.leaderboardLabel, { color: theme.textSecondary }]}>Leaderboard</Text>
-              <View style={[styles.weeklyTrackerCard, styles.bigTaskBox, { minWidth: 0, backgroundColor: 'rgba(128, 128, 128, 0.15)' }]} />
+              <View style={styles.leaderboardCompetitionBox} />
             </View>
             <View style={{ flex: 1, marginLeft: 16 }}>
               <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Competitions</Text>
-              <View style={[styles.weeklyTrackerCard, styles.bigTaskBox, { minWidth: 0, backgroundColor: 'rgba(128, 128, 128, 0.15)' }]} />
+              <View style={styles.leaderboardCompetitionBox} />
             </View>
           </View>
         </View>
@@ -1287,6 +1535,26 @@ function ProfileScreen({ navigation }: any) {
         dailyHabits={segmentChecked}
         coreHabits={coreHabitsCompleted}
       />
+
+      {/* Achievement Modal */}
+      <AchievementModal
+        visible={showAchievementModal}
+        onClose={() => setShowAchievementModal(false)}
+        onSave={handleSaveAchievement}
+      />
+
+      {/* Full Screen Photo Modal */}
+      {selectedPhotoUrl && (
+        <FullScreenPhotoModal
+          visible={showPhotoModal}
+          photos={[selectedPhotoUrl]}
+          initialIndex={0}
+          onClose={() => {
+            setShowPhotoModal(false);
+            setSelectedPhotoUrl(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1907,6 +2175,105 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 16, // match keepTrackTitle spacing
   },
+  leaderboardCompetitionBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 120,
+  },
+  activityAchievementsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activityLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  achievementsLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  achievementsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  addAchievementButton: {
+    padding: 4,
+  },
+  achievementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+    gap: 8,
+  },
+  bulletPoint: {
+    fontSize: 18,
+    color: '#6B7280',
+  },
+  achievementText: {
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 1,
+    lineHeight: 20,
+  },
+  photoIconButton: {
+    padding: 4,
+  },
+  activityBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    width: '100%',
+  },
+  activityIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  activityText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  achievementsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 120,
+  },
   levelTextbox: {
     borderRadius: 8,
     paddingVertical: 10,
@@ -2140,6 +2507,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     paddingVertical: 0,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   profilePictureSection: {
     marginRight: 0,
@@ -2169,12 +2543,10 @@ const styles = StyleSheet.create({
   profileDisplayName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
     marginBottom: 4,
   },
   profileLocation: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '500',
   },
   profileFollowersSection: {
@@ -2184,7 +2556,6 @@ const styles = StyleSheet.create({
   },
   profileFollowers: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
     fontWeight: '400',
     marginTop: 4,
     textAlign: 'center',
@@ -2192,7 +2563,6 @@ const styles = StyleSheet.create({
   profileFollowersCount: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginTop: 2,
     textAlign: 'center',
   },
@@ -2250,7 +2620,8 @@ const styles = StyleSheet.create({
     marginTop: 0,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
-    borderRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
     padding: 20,
     paddingBottom: 6,
   },

@@ -87,7 +87,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
         <ActivityIndicator size="small" color={theme.primary} />
       </View>
@@ -98,7 +98,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
     return (
       <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
         <View style={styles.journeyHeader}>
-          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
+          <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
         <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
           Start your journey by posting your first daily update!
@@ -114,7 +114,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
   return (
     <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
       <View style={styles.journeyHeader}>
-        <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Journey</Text>
+        <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         <TouchableOpacity onPress={onViewAll}>
           <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View All →</Text>
         </TouchableOpacity>

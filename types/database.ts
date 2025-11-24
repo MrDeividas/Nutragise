@@ -241,6 +241,14 @@ export interface CreateDailyHabitsData {
 
 export interface UpdateDailyHabitsData extends Partial<CreateDailyHabitsData> {}
 
+export interface Achievement {
+  id: string;
+  user_id: string;
+  text: string;
+  photo_url: string | null;
+  created_at: string;
+}
+
 export type HabitCategory = 'custom' | 'wellbeing' | 'nutrition' | 'time' | 'avoid';
 export type HabitMode = 'positive' | 'negative' | 'timed';
 export type HabitScheduleType =

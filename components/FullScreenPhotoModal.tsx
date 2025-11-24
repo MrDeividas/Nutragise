@@ -9,6 +9,7 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -80,39 +81,42 @@ export default function FullScreenPhotoModal({
       statusBarTranslucent
     >
       <StatusBar backgroundColor="rgba(0, 0, 0, 0.9)" barStyle="light-content" />
-      <View style={styles.overlay}>
-        {/* Close Button */}
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-          <Ionicons name="close" size={24} color="white" />
-        </TouchableOpacity>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          {/* Close Button */}
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Ionicons name="close" size={24} color="white" />
+          </TouchableOpacity>
 
-        {/* Photo Counter */}
-        {photos.length > 1 && (
-          <View style={styles.counterContainer}>
-            <Text style={styles.counterText}>
-              {currentIndex + 1} of {photos.length}
-            </Text>
-          </View>
-        )}
+          {/* Photo Counter */}
+          {photos.length > 1 && (
+            <View style={styles.counterContainer}>
+              <Text style={styles.counterText}>
+                {currentIndex + 1} of {photos.length}
+              </Text>
+            </View>
+          )}
 
-        {/* Photo Carousel */}
-        <FlatList
-          ref={flatListRef}
-          data={photos}
-          renderItem={renderPhoto}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
-          style={styles.carousel}
-          getItemLayout={(_, index) => ({
-            length: screenWidth,
-            offset: screenWidth * index,
-            index,
-          })}
-          initialScrollIndex={initialIndex}
-        />
+          {/* Photo Carousel */}
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <FlatList
+              ref={flatListRef}
+              data={photos}
+              renderItem={renderPhoto}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+              style={styles.carousel}
+              getItemLayout={(_, index) => ({
+                length: screenWidth,
+                offset: screenWidth * index,
+                index,
+              })}
+              initialScrollIndex={initialIndex}
+            />
+          </TouchableWithoutFeedback>
 
         {/* Navigation Dots */}
         {photos.length > 1 && (
@@ -133,7 +137,8 @@ export default function FullScreenPhotoModal({
             ))}
           </View>
         )}
-      </View>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
