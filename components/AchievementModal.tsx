@@ -146,7 +146,7 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
 
   const handleSave = async () => {
     if (!text.trim()) {
-      Alert.alert('Text Required', 'Please enter achievement text.');
+      Alert.alert('Text Required', 'Please enter highlight text.');
       return;
     }
 
@@ -156,8 +156,8 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
       resetForm();
       onClose();
     } catch (error) {
-      console.error('Error saving achievement:', error);
-      Alert.alert('Error', 'Failed to save achievement. Please try again.');
+        console.error('Error saving highlight:', error);
+        Alert.alert('Error', 'Failed to save highlight. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -173,7 +173,7 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
             <View style={styles.modalContent}>
               {/* Header */}
               <View style={styles.header}>
-                <Text style={styles.modalTitle}>Add Achievement</Text>
+                <Text style={styles.modalTitle}>Add Highlight</Text>
                 <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                   <Ionicons name="close" size={24} color={theme.textPrimary} />
                 </TouchableOpacity>
@@ -181,10 +181,10 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
 
               {/* Text Input */}
               <View style={styles.inputSection}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Achievement Description</Text>
+                <Text style={[styles.label, { color: theme.textPrimary }]}>Highlight Description</Text>
                 <TextInput
                   style={[styles.textInput, { color: theme.textPrimary, borderColor: theme.border }]}
-                  placeholder="Describe your achievement..."
+                  placeholder="Describe your highlight..."
                   placeholderTextColor={theme.textSecondary}
                   value={text}
                   onChangeText={setText}

@@ -110,9 +110,9 @@ function ProfileScreen({ navigation }: any) {
   // Activity Feed State
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   
-  // Achievements State
+  // Highlights State
   const [showAchievementModal, setShowAchievementModal] = useState(false);
-  const [achievements, setAchievements] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<any[]>([]);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   
@@ -265,7 +265,7 @@ function ProfileScreen({ navigation }: any) {
         loadCoreHabitsStatus(),
         loadPillarProgress(),
         fetchRecentActivity(),
-        fetchAchievements(),
+        fetchHighlights(),
         user ? fetchGoals(user.id) : Promise.resolve()
       ]);
       console.log('✅ Refresh complete');
@@ -453,7 +453,7 @@ function ProfileScreen({ navigation }: any) {
       loadCoreHabitsStatus();
       loadPillarProgress();
       fetchRecentActivity();
-      fetchAchievements();
+      fetchHighlights();
     }, [user])
   );
 
@@ -465,7 +465,7 @@ function ProfileScreen({ navigation }: any) {
       fetchUserPoints();
       fetchNotificationCount();
       fetchRecentActivity();
-      fetchAchievements();
+      fetchHighlights();
     });
 
     return unsubscribe;
@@ -496,21 +496,62 @@ function ProfileScreen({ navigation }: any) {
         .eq('date', dateStr)
         .single();
 
-      if (habits) {
-        if (habits.gym_day_type === 'active') activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#F59E0B' });
-        if (habits.run_day_type === 'active') activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#3B82F6' });
-        if (habits.water_intake > 0) activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA' });
-        if (habits.reflect_mood) activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#8B5CF6' });
-        if (habits.meditation_completed) activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#10B981' });
-        if (habits.sleep_hours > 0) activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#6366F1' });
+      // 1.5 Fetch User Points Daily (for Microlearn/Meditation status)
+      const { data: userPoints } = await supabase
+        .from('user_points_daily')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', dateStr)
+        .single();
+
+      if (habits || userPoints) {
+        // Use updated_at for habits, or created_at as fallback
+        // userPoints might have a different timestamp if updated separately
+        const habitsTimestamp = habits?.updated_at || habits?.created_at;
+        const pointsTimestamp = userPoints?.updated_at || userPoints?.created_at; 
+        
+        // Timestamps for respective activities
+        const hTime = habitsTimestamp || new Date().toISOString();
+        const pTime = pointsTimestamp || new Date().toISOString();
+        
+        // Add habits in chronological order (Morning -> Night)
+        // This provides a logical timeline when timestamps are identical
+        
+        if (habits?.sleep_hours > 0) {
+          activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#6366F1', timestamp: hTime });
+        }
+        if (habits?.cold_shower_completed) {
+          activityItems.push({ type: 'habit', label: 'Cold Shower', icon: 'shower', iconType: 'fa5', color: '#06B6D4', timestamp: hTime });
+        }
+        if ((habits?.meditation_minutes && habits.meditation_minutes > 0) || userPoints?.meditation_completed) {
+          // Use pTime if it comes from userPoints and is more recent/different? 
+          // Prioritize pTime if present as it tracks the completion event specifically for points
+          activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#10B981', timestamp: pointsTimestamp || hTime });
+        }
+        if (userPoints?.microlearn_completed) {
+          activityItems.push({ type: 'habit', label: 'Microlearn', icon: 'book-reader', iconType: 'fa5', color: '#8B5CF6', timestamp: pTime });
+        }
+        if (habits?.water_intake > 0) {
+          activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA', timestamp: hTime });
+        }
+        if (habits?.run_day_type === 'active') {
+          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#3B82F6', timestamp: hTime });
+        }
+        if (habits?.gym_day_type === 'active') {
+          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#F59E0B', timestamp: hTime });
+        }
+        if (habits?.reflect_mood) {
+          activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#8B5CF6', timestamp: hTime });
+        }
       }
 
       // 2. Fetch Goal Check-ins
       const { data: checkIns } = await supabase
         .from('progress_photos')
-        .select('goal_id, check_in_date')
+        .select('goal_id, check_in_date, created_at')
         .eq('user_id', user.id)
-        .gte('check_in_date', startOfDay.split('T')[0]); 
+        .gte('check_in_date', startOfDay.split('T')[0])
+        .order('created_at', { ascending: false }); 
 
       if (checkIns && checkIns.length > 0) {
         checkIns.forEach((checkIn: any) => {
@@ -520,7 +561,8 @@ function ProfileScreen({ navigation }: any) {
               type: 'goal', 
               label: goal.title, 
               icon: 'flag', 
-              color: '#EF4444' 
+              color: '#EF4444',
+              timestamp: checkIn.created_at || (checkIn.check_in_date ? new Date(checkIn.check_in_date).toISOString() : new Date().toISOString())
             });
           }
         });
@@ -536,7 +578,8 @@ function ProfileScreen({ navigation }: any) {
         `)
         .eq('user_id', user.id)
         .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay);
+        .lte('created_at', endOfDay)
+        .order('created_at', { ascending: false });
 
       if (submissions && submissions.length > 0) {
         submissions.forEach((sub: any) => {
@@ -545,10 +588,24 @@ function ProfileScreen({ navigation }: any) {
              type: 'challenge',
              label: title,
              icon: 'trophy',
-             color: '#F97316'
+             color: '#F97316',
+             timestamp: sub.created_at || new Date().toISOString()
            });
         });
       }
+
+      // Sort by timestamp descending (most recent first)
+      activityItems.sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        
+        // Handle invalid dates
+        if (isNaN(timeA) && isNaN(timeB)) return 0;
+        if (isNaN(timeA)) return 1; // Put invalid dates at the end
+        if (isNaN(timeB)) return -1; // Put invalid dates at the end
+        
+        return timeB - timeA; // Most recent first
+      });
 
       setRecentActivity(activityItems);
     } catch (error) {
@@ -556,7 +613,7 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
-  const fetchAchievements = async () => {
+  const fetchHighlights = async () => {
     if (!user) return;
 
     try {
@@ -567,11 +624,11 @@ function ProfileScreen({ navigation }: any) {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching achievements:', error);
+        console.error('Error fetching highlights:', error);
         return;
       }
 
-      setAchievements(data || []);
+      setHighlights(data || []);
     } catch (error) {
       console.error('Error fetching achievements:', error);
     }
@@ -594,8 +651,8 @@ function ProfileScreen({ navigation }: any) {
         throw error;
       }
 
-      // Refresh achievements list
-      await fetchAchievements();
+      // Refresh highlights list
+      await fetchHighlights();
     } catch (error) {
       console.error('Error in handleSaveAchievement:', error);
       throw error;
@@ -1044,7 +1101,7 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
 
-        {/* Activity and Achievements Section */}
+        {/* Activity and Highlights Section */}
         <View style={styles.keepTrackSection}>
           <View style={styles.activityAchievementsRow}>
             <View style={{ flex: 1 }}>
@@ -1057,9 +1114,13 @@ function ProfileScreen({ navigation }: any) {
                 }
               ]}>
                 <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
-                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                <ScrollView 
+                  style={{ flex: 1, width: '100%' }}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
                   {recentActivity.length > 0 ? (
-                    recentActivity.slice(0, 4).map((item, index) => (
+                    recentActivity.map((item, index) => (
                       <View key={index} style={styles.activityItem}>
                         <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
                           {item.iconType === 'fa5' ? (
@@ -1071,6 +1132,7 @@ function ProfileScreen({ navigation }: any) {
                         <Text 
                           style={[styles.activityText, { color: theme.textSecondary }]} 
                           numberOfLines={1}
+                          ellipsizeMode="tail"
                         >
                           {item.label}
                         </Text>
@@ -1081,18 +1143,18 @@ function ProfileScreen({ navigation }: any) {
                        <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
                     </View>
                   )}
-                </View>
+                </ScrollView>
               </View>
             </View>
             <View style={{ flex: 2, marginLeft: 16 }}>
               <View style={[
                 styles.achievementsBox,
-                achievements.length > 0 && {
-                  height: 72 + (Math.min(achievements.length, 4) * 32),
+                highlights.length > 0 && {
+                  height: 72 + (Math.min(highlights.length, 4) * 32),
                 }
               ]}>
                 <View style={styles.achievementsHeader}>
-                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Achievements</Text>
+                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
                   <TouchableOpacity
                     onPress={() => setShowAchievementModal(true)}
                     style={styles.addAchievementButton}
@@ -1102,20 +1164,20 @@ function ProfileScreen({ navigation }: any) {
                   </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
-                  {achievements.length > 0 ? (
-                    achievements.slice(0, 4).map((achievement, index) => (
-                      <View key={achievement.id} style={styles.achievementItem}>
+                  {highlights.length > 0 ? (
+                    highlights.slice(0, 4).map((highlight, index) => (
+                      <View key={highlight.id} style={styles.achievementItem}>
                         <Text style={styles.bulletPoint}>•</Text>
                         <Text
                           style={[styles.achievementText, { color: theme.textSecondary }]}
                           numberOfLines={2}
                         >
-                          {achievement.text}
+                          {highlight.text}
                         </Text>
-                        {achievement.photo_url && (
+                        {highlight.photo_url && (
                           <TouchableOpacity
                             onPress={() => {
-                              setSelectedPhotoUrl(achievement.photo_url);
+                              setSelectedPhotoUrl(highlight.photo_url);
                               setShowPhotoModal(true);
                             }}
                             style={styles.photoIconButton}
@@ -1128,7 +1190,7 @@ function ProfileScreen({ navigation }: any) {
                   ) : (
                     <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
-                        No achievements yet
+                        No highlights yet
                       </Text>
                     </View>
                   )}
@@ -1258,7 +1320,7 @@ function ProfileScreen({ navigation }: any) {
         <View style={styles.keepTrackSection}>
           <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border, marginTop: 20 }]}>
             <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
                 <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
                 <View style={{
                   backgroundColor: showProgressIndicator.overall ? '#10B981' : (isDark ? '#1f1f1f' : '#111827'),
@@ -2204,7 +2266,7 @@ const styles = StyleSheet.create({
   achievementsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   addAchievementButton: {
@@ -2228,7 +2290,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   photoIconButton: {
-    padding: 4,
+    padding: 0,
+    marginLeft: 4,
   },
   activityBox: {
     backgroundColor: '#FFFFFF',
@@ -2489,7 +2552,7 @@ const styles = StyleSheet.create({
   keepTrackHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 8,
     gap: 8,
   },
