@@ -10,6 +10,7 @@ import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
 import { supabase } from './lib/supabase';
 import CustomBackground from './components/CustomBackground';
+import CustomTabBar from './components/CustomTabBar';
 
 // Core screens (loaded immediately)
 import SignInScreen from './screens/SignInScreen';
@@ -216,31 +217,16 @@ function MainTabs() {
 
   return (
     <Tab.Navigator
-      screenOptions={({ route }: any) => ({
-        tabBarActiveTintColor: theme.textPrimary,
-        tabBarInactiveTintColor: theme.textSecondary,
+      tabBar={props => <CustomTabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: theme.backgroundSecondary,
-          borderTopColor: theme.border,
-          shadowColor: 'transparent',
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0,
-          shadowRadius: 0,
+          position: 'absolute', // Required for custom floating tab bar to sit on top
+          backgroundColor: 'transparent',
           elevation: 0,
           borderTopWidth: 0,
-        },
-        headerShown: false,
-        tabBarIcon: ({ color, size }: any) => {
-          let iconName: any = 'home-outline';
-          if (route.name === 'Home') iconName = 'home-outline';
-          else if (route.name === 'Action') iconName = 'flash-outline';
-          else if (route.name === 'Insights') iconName = 'trending-up';
-          else if (route.name === 'Goals') iconName = 'walk-outline';
-          else if (route.name === 'Discover') iconName = 'podium-outline';
-          else if (route.name === 'Profile') iconName = 'person-outline';
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-      })}
+        }
+      }}
     >
       <Tab.Screen name="Action" component={ActionStack} options={{ tabBarLabel: 'Action' }} />
       <Tab.Screen 
