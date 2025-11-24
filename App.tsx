@@ -230,6 +230,16 @@ function MainTabs() {
     >
       <Tab.Screen name="Action" component={ActionStack} options={{ tabBarLabel: 'Action' }} />
       <Tab.Screen 
+        name="Discover"
+        options={{ tabBarLabel: 'Compete' }}>
+        {({ navigation }) => (
+          <Suspense fallback={<LoadingScreen />}>
+            <CompeteScreen navigation={navigation} />
+          </Suspense>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="Goals" component={GoalsStack} />
+      <Tab.Screen 
         name="Insights" 
         options={{ tabBarLabel: 'Insights' }}>
         {({ navigation }) => (
@@ -240,20 +250,10 @@ function MainTabs() {
       </Tab.Screen>
       <Tab.Screen 
         name="Home" 
-        options={{ tabBarLabel: 'Feed' }}>
+        options={{ tabBarLabel: 'Community' }}>
         {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
             <HomeScreen navigation={navigation} />
-          </Suspense>
-        )}
-      </Tab.Screen>
-      <Tab.Screen name="Goals" component={GoalsStack} />
-      <Tab.Screen 
-        name="Discover"
-        options={{ tabBarLabel: 'Compete' }}>
-        {({ navigation }) => (
-          <Suspense fallback={<LoadingScreen />}>
-            <CompeteScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>
