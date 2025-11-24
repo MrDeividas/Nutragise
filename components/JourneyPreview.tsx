@@ -85,7 +85,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
 
   if (loading) {
     return (
-      <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
+      <View style={styles.journeyPreview}>
         <View style={styles.journeyHeader}>
           <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
@@ -96,7 +96,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
 
   if (recentDays.length === 0) {
     return (
-      <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground }]}>
+      <View style={styles.journeyPreview}>
         <View style={styles.journeyHeader}>
           <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
@@ -112,7 +112,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
   const baseDate = accountCreatedAt || recentDays[recentDays.length - 1]?.date;
 
   return (
-    <View style={[styles.journeyPreview, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+    <View style={styles.journeyPreview}>
       <View style={styles.journeyHeader}>
         <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         <TouchableOpacity onPress={onViewAll}>
@@ -168,6 +168,13 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
   // Ensure photos is always an array
   const photos = Array.isArray(day.photos) ? day.photos : (day.photos ? [day.photos] : []);
   
+  // Calculate photo size to fit exactly 4 photos
+  // Container: width - 48 (margins) - 32 (padding) = width - 80
+  // Gaps: 3 gaps of 8px = 24px
+  // Available: width - 80 - 24 = width - 104
+  // Per photo: (width - 104) / 4
+  const photoSize = Math.floor((width - 104) / 4);
+  
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <View style={styles.dayPreview}>
@@ -177,7 +184,7 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
           <View style={styles.singlePhotoContainer}>
             <Image 
               source={{ uri: photos[0] }}
-              style={[styles.singlePhotoThumbnail, { borderColor: theme.borderSecondary }]}
+              style={[styles.singlePhotoThumbnail, { width: photoSize, height: photoSize }]}
               resizeMode="cover"
               blurRadius={0}
             />
@@ -193,9 +200,10 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
           // Show placeholder if no photos
           <View style={[styles.singlePhotoThumbnail, { 
             backgroundColor: 'rgba(128, 128, 128, 0.2)', 
-            borderColor: theme.borderSecondary,
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
+            width: Math.floor((width - 104) / 4),
+            height: Math.floor((width - 104) / 4),
           }]}>
             <Ionicons name="image-outline" size={24} color="rgba(255, 255, 255, 0.5)" />
           </View>
@@ -203,7 +211,7 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
       </View>
       
       {/* Day Info */}
-      <Text style={[styles.dayLabel, { color: theme.textSecondary }]}>
+      <Text style={[styles.dayLabel, { color: theme.textSecondary, width: Math.floor((width - 104) / 4) }]}>
         Day {dayNumber} • {formatJourneyDate(day.date)}
       </Text>
       </View>
@@ -374,14 +382,24 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
 
 const styles = StyleSheet.create({
   journeyPreview: {
-    paddingHorizontal: 24,
-    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    marginHorizontal: 24,
+    marginBottom: 0,
   },
   journeyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   journeyTitle: {
     fontSize: 20,
@@ -396,11 +414,12 @@ const styles = StyleSheet.create({
   },
   journeyDays: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 8,
     paddingRight: 24, // Add padding to the right for better scrolling experience
   },
   dayPreview: {
-    gap: 8,
+    gap: 6,
+    alignItems: 'center',
   },
   photoThumbnails: {
     flexDirection: 'row',
@@ -410,10 +429,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   singlePhotoThumbnail: {
-    width: 80,
-    height: 80,
     borderRadius: 12,
-    borderWidth: 1,
   },
   photoCountBadge: {
     position: 'absolute',
@@ -432,8 +448,9 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   dayLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,

@@ -63,7 +63,7 @@ export default function DailyPostInteractionBar({
       case 'large':
         return { iconSize: 24, padding: 12 };
       default:
-        return { iconSize: 20, padding: 10 };
+        return { iconSize: 22, padding: 10 };
     }
   };
 
@@ -72,23 +72,6 @@ export default function DailyPostInteractionBar({
   return (
     <View style={styles.container}>
       <View style={styles.buttonContainer}>
-        <DailyPostLikeButton
-          dailyPostId={dailyPostId}
-          initialLikeCount={initialLikeCount}
-          initialIsLiked={initialIsLiked}
-          onLikeChange={onLikeChange}
-          size={size}
-          showCount={showCounts}
-        />
-        
-        <PostCommentButton
-          postId={dailyPostId}
-          initialCommentCount={initialCommentCount}
-          onPress={onCommentPress}
-          size={size}
-          showCount={showCounts}
-        />
-
         <TouchableOpacity
           style={[styles.shareButton, { padding }]}
           onPress={handleShare}
@@ -100,6 +83,23 @@ export default function DailyPostInteractionBar({
             color={theme.textSecondary}
           />
         </TouchableOpacity>
+        
+        <PostCommentButton
+          postId={dailyPostId}
+          initialCommentCount={initialCommentCount}
+          onPress={onCommentPress}
+          size={size}
+          showCount={showCounts}
+        />
+        
+        <DailyPostLikeButton
+          dailyPostId={dailyPostId}
+          initialLikeCount={initialLikeCount}
+          initialIsLiked={initialIsLiked}
+          onLikeChange={onLikeChange}
+          size={size}
+          showCount={showCounts}
+        />
       </View>
     </View>
   );
@@ -114,8 +114,9 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     paddingHorizontal: 0,
+    gap: 24,
   },
   shareButton: {
     flexDirection: 'row',

@@ -105,7 +105,7 @@ export default function DailyPostLikeButton({
       case 'large':
         return { iconSize: 24, textSize: 16, padding: 12 };
       default:
-        return { iconSize: 20, textSize: 14, padding: 10 };
+        return { iconSize: 22, textSize: 16, padding: 10 };
     }
   };
 

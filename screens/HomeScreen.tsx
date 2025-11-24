@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { Goal, DailyHabits } from '../types/database';
@@ -2036,7 +2037,7 @@ function ExploreContent({
   return (
           <View style={styles.content}>
         {/* Spotlight Section */}
-        <View style={styles.spotlightContainer}>
+        <View style={[styles.spotlightContainer, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
           <View style={styles.spotlightHeader}>
             <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>
               Spotlight
@@ -2096,93 +2097,106 @@ function ExploreContent({
                 const goal = item;
                 return (
               <View key={goal.id} style={styles.goalCardContainer}>
-                {/* Floating Profile Section */}
-                <View style={styles.floatingProfileSection}>
-                  <View style={styles.profileInfo}>
-                    {goal.profiles?.avatar_url ? (
-                      <Image 
-                        source={{ uri: goal.profiles.avatar_url }} 
-                        style={styles.floatingAvatar}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.floatingAvatarPlaceholder}>
-                        <Text style={styles.floatingAvatarInitial}>
-                          {goal.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                {/* Goal Card */}
+                <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+                  {/* Profile Section */}
+                  <View style={styles.profileSection}>
+                    <View style={styles.profileInfo}>
+                      {goal.profiles?.avatar_url ? (
+                        <Image 
+                          source={{ uri: goal.profiles.avatar_url }} 
+                          style={styles.floatingAvatar}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.floatingAvatarPlaceholder}>
+                          <Text style={styles.floatingAvatarInitial}>
+                            {goal.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.profileTextInfo}>
+                        <View style={styles.usernameWithFollow}>
+                          <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{goal.profiles?.username || 'user'}</Text>
+                          {goal.user_id !== user?.id && (
+                            <TouchableOpacity 
+                              onPress={() => onFollow(goal.profiles?.id || '')}
+                              style={styles.followIconButton}
+                            >
+                              <Ionicons 
+                                name={goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'checkmark' : 'add'} 
+                                size={14} 
+                                color={theme.textPrimary} 
+                              />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
+                          {formatLastUpdate(goal.last_updated_at, goal.created_at)}
                         </Text>
                       </View>
-                    )}
-                    <View style={styles.profileTextInfo}>
-                      <View style={styles.usernameWithFollow}>
-                        <Text style={styles.floatingUsername}>@{goal.profiles?.username || 'user'}</Text>
-                        {goal.user_id !== user?.id && (
-                          <TouchableOpacity 
-                            onPress={() => onFollow(goal.profiles?.id || '')}
-                            style={styles.followIconButton}
-                          >
-                            <Ionicons 
-                              name={goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'checkmark' : 'add'} 
-                              size={14} 
-                              color="#FFFFFF" 
-                            />
-                          </TouchableOpacity>
-                        )}
+                    </View>
+                    
+                    {/* Today's Activity Section */}
+                    <View style={styles.activitySection}>
+                      <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
+                      <View style={styles.activityIcons}>
+                        <FontAwesome5 
+                          name="brain" 
+                          size={20} 
+                          color={false ? '#FB7185' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="spa" 
+                          size={20} 
+                          color={false ? '#2DD4BF' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="shower" 
+                          size={20} 
+                          color={goal.dailyHabits?.cold_shower_completed ? '#7DD3FC' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="journal-whills" 
+                          size={20} 
+                          color={goal.dailyHabits?.reflect_mood ? '#F59E0B' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="tint" 
+                          size={20} 
+                          color={goal.dailyHabits?.water_intake ? '#60A5FA' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="bed" 
+                          size={20} 
+                          color={goal.dailyHabits?.sleep_hours ? '#34D399' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="running" 
+                          size={20} 
+                          color={goal.dailyHabits?.run_day_type === 'active' ? '#FFEB3B' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="dumbbell" 
+                          size={20} 
+                          color={goal.dailyHabits?.gym_day_type === 'active' ? '#EF4444' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="lightbulb" 
+                          size={20} 
+                          color={false ? '#F472B6' : theme.textSecondary} 
+                        />
+                        <FontAwesome5 
+                          name="mobile-alt" 
+                          size={20} 
+                          color={false ? '#FCD34D' : theme.textSecondary} 
+                        />
                       </View>
-                      <Text style={styles.floatingTime}>
-                        {formatLastUpdate(goal.last_updated_at, goal.created_at)}
-                      </Text>
                     </View>
                   </View>
-                  
-                  {/* Mini Habit Icons - moved outside profileInfo */}
-                  <View style={styles.miniHabitIcons}>
-                    <Ionicons 
-                      name="book-outline" 
-                      size={12} 
-                      color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="leaf-outline" 
-                      size={12} 
-                      color={false ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="snow-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.cold_shower_completed ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="bulb-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.reflect_mood ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="water-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.water_intake ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="moon-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.sleep_hours ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="walk-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.run_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                    <Ionicons 
-                      name="barbell-outline" 
-                      size={12} 
-                      color={goal.dailyHabits?.gym_day_type === 'active' ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                    />
-                  </View>
-                </View>
-
-                {/* Goal Card */}
-                <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-                  {/* Media Section */}
-                  <View style={styles.mediaSection}>
+                  {/* Today's Uploads Section */}
+                  <View style={styles.uploadsSection}>
+                    <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
                     {goal.media_url && goal.media_url !== 'no-photo' ? (
                       <Image 
                         source={{ uri: goal.media_url }} 
@@ -2204,12 +2218,15 @@ function ExploreContent({
 
                   {/* Content Section */}
                   <View style={styles.contentSection}>
-                    <View style={styles.titleRow}>
-                      <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
-                        {goal.title}
-                      </Text>
-                      
-                      {/* Goal Interaction Bar */}
+                    <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
+                      {goal.title}
+                    </Text>
+                    
+                    {/* Separator */}
+                    <View style={styles.captionSeparator} />
+                    
+                    {/* Goal Interaction Bar */}
+                    <View style={styles.interactionBarContainer}>
                       <GoalInteractionBar
                         goalId={goal.id}
                         initialLikeCount={goalInteractionData[goal.id]?.likes || 0}
@@ -2232,101 +2249,114 @@ function ExploreContent({
                 const post = item;
                 return (
                   <View key={post.id} style={styles.goalCardContainer}>
-                    {/* Floating Profile Section */}
-                    <View style={styles.floatingProfileSection}>
-                      <View style={styles.profileInfo}>
-                        {post.profiles?.avatar_url ? (
-                          <Image 
-                            source={{ uri: post.profiles.avatar_url }} 
-                            style={styles.floatingAvatar}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.floatingAvatarPlaceholder}>
-                            <Text style={styles.floatingAvatarInitial}>
-                              {post.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                    {/* Post Card */}
+                    <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+                      {/* Profile Section */}
+                      <View style={styles.profileSection}>
+                        <View style={styles.profileInfo}>
+                          {post.profiles?.avatar_url ? (
+                            <Image 
+                              source={{ uri: post.profiles.avatar_url }} 
+                              style={styles.floatingAvatar}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.floatingAvatarPlaceholder}>
+                              <Text style={styles.floatingAvatarInitial}>
+                                {post.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.profileTextInfo}>
+                            <View style={styles.usernameWithFollow}>
+                              <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{post.profiles?.username || 'user'}</Text>
+                              {post.user_id !== user?.id && (
+                                <TouchableOpacity 
+                                  onPress={() => onFollow(post.profiles?.id || '')}
+                                  style={styles.followIconButton}
+                                >
+                                  <Ionicons 
+                                    name={post.profiles?.id && followingStatus.get(post.profiles.id) ? 'checkmark' : 'add'} 
+                                    size={14} 
+                                    color={theme.textPrimary} 
+                                  />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                            <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
+                              {formatLastUpdate(post.created_at, post.created_at)}
                             </Text>
                           </View>
-                        )}
-                        <View style={styles.profileTextInfo}>
-                          <View style={styles.usernameWithFollow}>
-                            <Text style={styles.floatingUsername}>@{post.profiles?.username || 'user'}</Text>
-                            {post.user_id !== user?.id && (
-                              <TouchableOpacity 
-                                onPress={() => onFollow(post.profiles?.id || '')}
-                                style={styles.followIconButton}
-                              >
-                                <Ionicons 
-                                  name={post.profiles?.id && followingStatus.get(post.profiles.id) ? 'checkmark' : 'add'} 
-                                  size={14} 
-                                  color="#FFFFFF" 
-                                />
-                              </TouchableOpacity>
-                            )}
+                        </View>
+                        
+                        {/* Today's Activity Section */}
+                        <View style={styles.activitySection}>
+                          <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
+                          <View style={styles.activityIcons}>
+                            <FontAwesome5 
+                              name="brain" 
+                              size={20} 
+                              color={post.habits_completed.includes('microlearn') ? '#FB7185' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="spa" 
+                              size={20} 
+                              color={post.habits_completed.includes('meditation') ? '#2DD4BF' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="shower" 
+                              size={20} 
+                              color={post.habits_completed.includes('cold_shower') ? '#7DD3FC' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="journal-whills" 
+                              size={20} 
+                              color={post.habits_completed.includes('reflect') ? '#F59E0B' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="tint" 
+                              size={20} 
+                              color={post.habits_completed.includes('water') ? '#60A5FA' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="bed" 
+                              size={20} 
+                              color={post.habits_completed.includes('sleep') ? '#34D399' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="running" 
+                              size={20} 
+                              color={post.habits_completed.includes('run') ? '#FFEB3B' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="dumbbell" 
+                              size={20} 
+                              color={post.habits_completed.includes('gym') || post.habits_completed.includes('workout') ? '#EF4444' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="lightbulb" 
+                              size={20} 
+                              color={post.habits_completed.includes('focus') ? '#F472B6' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="mobile-alt" 
+                              size={20} 
+                              color={post.habits_completed.includes('screen_time') ? '#FCD34D' : theme.textSecondary} 
+                            />
+                            {/* Football icon for goal progress */}
+                            <Ionicons 
+                              name="football-outline" 
+                              size={20} 
+                              color={post.goal_id ? '#ef4444' : theme.textSecondary} 
+                            />
                           </View>
-                          <Text style={styles.floatingTime}>
-                            {formatLastUpdate(post.created_at, post.created_at)}
-                          </Text>
                         </View>
                       </View>
-                      
-                      {/* Mini Habit Icons - moved outside profileInfo */}
-                      <View style={styles.miniHabitIcons}>
-                        <Ionicons 
-                          name="book-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="leaf-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="snow-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="bulb-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('reflect') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="water-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="moon-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="walk-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="barbell-outline" 
-                          size={12} 
-                          color={post.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        {/* Football icon for goal progress */}
-                        <Ionicons 
-                          name="football-outline" 
-                          size={12} 
-                          color={post.goal_id ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                      </View>
-                    </View>
-
-                    {/* Post Card */}
-                    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-                      {/* Media Section */}
-                      <View style={styles.mediaSection}>
+                      {/* Today's Uploads Section */}
+                      <View style={styles.uploadsSection}>
+                        <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
                         {post.photos && post.photos.length > 0 ? (
-                          <View>
+                          <View style={styles.photoCarouselWrapper}>
                             <GesturePhotoCarousel
                               photos={post.photos}
                               currentIndex={currentPhotoIndex[post.id] || 0}
@@ -2352,12 +2382,15 @@ function ExploreContent({
 
                       {/* Content Section */}
                       <View style={styles.contentSection}>
-                        <View style={styles.titleRow}>
-                          <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
-                            {post.caption ? post.caption.split(' | ')[currentPhotoIndex[post.id] || 0] || '' : ''}
-                          </Text>
-                          
-                          {/* Post Interaction Bar */}
+                        <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
+                          {post.caption ? post.caption.split(' | ')[currentPhotoIndex[post.id] || 0] || '' : ''}
+                        </Text>
+                        
+                        {/* Separator */}
+                        <View style={styles.captionSeparator} />
+                        
+                        {/* Post Interaction Bar */}
+                        <View style={styles.interactionBarContainer}>
                           <PostInteractionBar
                             postId={post.id}
                             initialLikeCount={postInteractionData[post.id]?.likes || 0}
@@ -2377,128 +2410,143 @@ function ExploreContent({
                 const dailyPost = item;
                 return (
                   <View key={dailyPost.id} style={styles.goalCardContainer}>
-                    {/* Floating Profile Section */}
-                    <View style={styles.floatingProfileSection}>
-                      <View style={styles.profileInfo}>
-                        {dailyPost.profiles?.avatar_url ? (
-                          <Image 
-                            source={{ uri: dailyPost.profiles.avatar_url }} 
-                            style={styles.floatingAvatar}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.floatingAvatarPlaceholder}>
-                            <Text style={styles.floatingAvatarInitial}>
-                              {dailyPost.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                    {/* Main Content Area */}
+                    <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+                      {/* Profile Section */}
+                      <View style={styles.profileSection}>
+                        <View style={styles.profileInfo}>
+                          {dailyPost.profiles?.avatar_url ? (
+                            <Image 
+                              source={{ uri: dailyPost.profiles.avatar_url }} 
+                              style={styles.floatingAvatar}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.floatingAvatarPlaceholder}>
+                              <Text style={styles.floatingAvatarInitial}>
+                                {dailyPost.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.profileTextInfo}>
+                            <View style={styles.usernameWithFollow}>
+                              <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{dailyPost.profiles?.username || 'user'}</Text>
+                              {dailyPost.user_id !== user?.id && (
+                                <TouchableOpacity 
+                                  onPress={() => onFollow(dailyPost.profiles?.id || '')}
+                                  style={styles.followIconButton}
+                                >
+                                  <Ionicons 
+                                    name={dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'checkmark' : 'add'} 
+                                    size={14} 
+                                    color={theme.textPrimary} 
+                                  />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                            <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
+                              {formatLastUpdate(dailyPost.updated_at, dailyPost.created_at)}
                             </Text>
                           </View>
-                        )}
-                        <View style={styles.profileTextInfo}>
-                          <View style={styles.usernameWithFollow}>
-                            <Text style={styles.floatingUsername}>@{dailyPost.profiles?.username || 'user'}</Text>
-                            {dailyPost.user_id !== user?.id && (
-                              <TouchableOpacity 
-                                onPress={() => onFollow(dailyPost.profiles?.id || '')}
-                                style={styles.followIconButton}
-                              >
-                                <Ionicons 
-                                  name={dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'checkmark' : 'add'} 
-                                  size={14} 
-                                  color="#FFFFFF" 
-                                />
-                              </TouchableOpacity>
-                            )}
+                        </View>
+                        
+                        {/* Today's Activity Section */}
+                        <View style={styles.activitySection}>
+                          <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
+                          <View style={styles.activityIcons}>
+                            <FontAwesome5 
+                              name="brain" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('microlearn') ? '#FB7185' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="spa" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('meditation') ? '#2DD4BF' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="shower" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('cold_shower') ? '#7DD3FC' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="tint" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('water') ? '#60A5FA' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="bed" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('sleep') ? '#34D399' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="running" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('run') ? '#FFEB3B' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="dumbbell" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('gym') || dailyPost.habits_completed.includes('workout') ? '#EF4444' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="lightbulb" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('focus') ? '#10B981' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="mobile-alt" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('screen_time') ? '#10B981' : theme.textSecondary} 
+                            />
+                            <FontAwesome5 
+                              name="journal-whills" 
+                              size={20} 
+                              color={dailyPost.habits_completed.includes('reflection') ? '#F59E0B' : theme.textSecondary} 
+                            />
                           </View>
-                          <Text style={styles.floatingTime}>
-                            {formatLastUpdate(dailyPost.updated_at, dailyPost.created_at)}
-                          </Text>
                         </View>
                       </View>
-                      
-                      {/* Mini Habit Icons */}
-                      <View style={styles.miniHabitIcons}>
-                        <Ionicons 
-                          name="book-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('microlearn') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="leaf-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('meditation') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="snow-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('cold_shower') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="water-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('water') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="moon-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('sleep') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="walk-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('run') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="barbell-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('gym') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                        <Ionicons 
-                          name="bulb-outline" 
-                          size={12} 
-                          color={dailyPost.habits_completed.includes('reflection') ? '#10B981' : 'rgba(255, 255, 255, 0.5)'} 
-                        />
-                      </View>
-                    </View>
-
-                    {/* Main Content Area */}
-                    <View style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-                      {/* Photo Gallery */}
+                      {/* Today's Uploads Section */}
                       {dailyPost.photos && dailyPost.photos.length > 0 && (
-                        <View style={styles.postPhotoContainer}>
-                          <GesturePhotoCarousel
-                            photos={dailyPost.photos}
-                            currentIndex={currentPhotoIndex[dailyPost.id] ?? 0}
-                            onIndexChange={(index) => setCurrentPhotoIndex(prev => ({ ...prev, [dailyPost.id]: index }))}
-                            onPhotoPress={() => onPhotoPress(dailyPost.photos, currentPhotoIndex[dailyPost.id] || 0)}
-                          />
+                        <View style={styles.uploadsSection}>
+                          <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
+                          <View style={styles.photoCarouselWrapper}>
+                            <GesturePhotoCarousel
+                              photos={dailyPost.photos}
+                              currentIndex={currentPhotoIndex[dailyPost.id] ?? 0}
+                              onIndexChange={(index) => setCurrentPhotoIndex(prev => ({ ...prev, [dailyPost.id]: index }))}
+                              onPhotoPress={() => onPhotoPress(dailyPost.photos, currentPhotoIndex[dailyPost.id] || 0)}
+                            />
+                          </View>
                         </View>
                       )}
 
                       {/* Content Section */}
                       <View style={styles.contentSection}>
-                        {/* Caption and Interaction Bar - Same Line */}
-                        <View style={styles.dailyPostRow}>
-                          <View style={styles.dailyPostContent}>
-                            {(() => {
-                              const currentIndex = currentPhotoIndex[dailyPost.id] || 0;
-                              const currentCaption = dailyPost.captions?.[currentIndex];
-                              
-                              // Only show caption if it exists and is not empty
-                              if (currentCaption && currentCaption.trim() !== '') {
-                                return (
-                                  <Text style={[styles.dailyPostTitle, { color: theme.textPrimary }]}>
-                                    {currentCaption}
-                                  </Text>
-                                );
-                              }
-                              return null; // Don't render anything if no caption
-                            })()}
-                            <Text style={[styles.dailyPostStats, { color: theme.textSecondary }]}>
-                              {dailyPost.post_count} updates
-                            </Text>
-                          </View>
+                        {(() => {
+                          const currentIndex = currentPhotoIndex[dailyPost.id] || 0;
+                          const currentCaption = dailyPost.captions?.[currentIndex];
                           
-                          {/* Interaction Bar - Right side, aligned with caption */}
+                          // Only show caption if it exists and is not empty
+                          if (currentCaption && currentCaption.trim() !== '') {
+                            return (
+                              <Text style={[styles.dailyPostTitle, { color: theme.textPrimary }]}>
+                                {currentCaption}
+                              </Text>
+                            );
+                          }
+                          return null; // Don't render anything if no caption
+                        })()}
+                        <Text style={[styles.dailyPostStats, { color: theme.textSecondary }]}>
+                          {dailyPost.post_count} updates
+                        </Text>
+                        
+                        {/* Separator */}
+                        <View style={styles.captionSeparator} />
+                        
+                        {/* Interaction Bar - Centered below separator */}
+                        <View style={styles.interactionBarContainer}>
                           <DailyPostInteractionBar
                             dailyPostId={dailyPost.id}
                             initialLikeCount={postInteractionData[dailyPost.id]?.likes || 0}
@@ -2768,11 +2816,21 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   spotlightContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    marginHorizontal: 24,
     marginTop: 2,
     marginBottom: 20,
   },
   spotlightHeader: {
-    paddingHorizontal: 30,
     marginBottom: 12,
   },
   spotlightTitle: {
@@ -2789,8 +2847,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   spotlightList: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   spotlightItem: {
     alignItems: 'center',
@@ -2893,8 +2950,72 @@ const styles = StyleSheet.create({
   },
   goalCardContainer: {
     position: 'relative',
-    marginBottom: 24,
+    marginBottom: 12,
     marginTop: 10,
+  },
+  profileSection: {
+    flexDirection: 'column',
+    marginBottom: 12,
+  },
+  activitySection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  activityLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  activityIcons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 16,
+  },
+  uploadsSection: {
+    marginTop: 12,
+  },
+  uploadsLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  captionSeparator: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  interactionBarContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoCarouselWrapper: {
+    marginLeft: 0,
+  },
+  smallAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  smallAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallAvatarInitial: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#6B7280',
   },
   floatingProfileSection: {
     position: 'absolute',
@@ -2910,7 +3031,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   profileInfo: {
     flexDirection: 'row',
@@ -2927,7 +3047,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 0,
@@ -2935,7 +3055,7 @@ const styles = StyleSheet.create({
   floatingAvatarInitial: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
+    color: '#6B7280',
   },
   profileTextInfo: {
     flexDirection: 'column',
@@ -2944,12 +3064,10 @@ const styles = StyleSheet.create({
   },
   floatingUsername: {
     fontSize: 12,
-    color: '#ffffff',
     fontWeight: '600',
   },
   floatingTime: {
     fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.7)',
     fontWeight: '400',
   },
   usernameWithFollow: {
@@ -2974,8 +3092,18 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   card: {
-    borderRadius: 12,
-    paddingTop: Platform.OS === 'ios' ? 32 : 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    padding: 16,
+    marginHorizontal: 24,
+    marginBottom: 8,
   },
   mediaSection: {
     marginBottom: 8,
@@ -3002,7 +3130,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   contentSection: {
-    paddingHorizontal: 30,
+    paddingHorizontal: 0,
     paddingBottom: 0,
   },
   titleRow: {

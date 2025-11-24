@@ -63,16 +63,16 @@ export default function GesturePhotoCarousel({
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         style={styles.carousel}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 0 }}
         getItemLayout={(_, index) => ({
-          length: screenWidth - 40,
-          offset: (screenWidth - 40) * index,
+          length: 140,
+          offset: 140 * index,
           index,
         })}
         initialScrollIndex={currentIndex}
         removeClippedSubviews={false}
         decelerationRate="fast"
-        snapToInterval={screenWidth - 40}
+        snapToInterval={140}
         snapToAlignment="start"
       />
       
@@ -108,11 +108,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   photoContainer: {
-    width: screenWidth - 60,
-    height: (screenWidth - 60) * 0.75,
+    width: 120,
+    height: 120,
     borderRadius: 8,
     overflow: 'hidden',
-    marginHorizontal: 10,
+    marginRight: 10,
   },
   photo: {
     width: '100%',

@@ -518,30 +518,30 @@ function ProfileScreen({ navigation }: any) {
         // This provides a logical timeline when timestamps are identical
         
         if (habits?.sleep_hours > 0) {
-          activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#6366F1', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#34D399', timestamp: hTime });
         }
         if (habits?.cold_shower_completed) {
-          activityItems.push({ type: 'habit', label: 'Cold Shower', icon: 'shower', iconType: 'fa5', color: '#06B6D4', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Cold Shower', icon: 'shower', iconType: 'fa5', color: '#7DD3FC', timestamp: hTime });
         }
         if ((habits?.meditation_minutes && habits.meditation_minutes > 0) || userPoints?.meditation_completed) {
           // Use pTime if it comes from userPoints and is more recent/different? 
           // Prioritize pTime if present as it tracks the completion event specifically for points
-          activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#10B981', timestamp: pointsTimestamp || hTime });
+          activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#2DD4BF', timestamp: pointsTimestamp || hTime });
         }
         if (userPoints?.microlearn_completed) {
-          activityItems.push({ type: 'habit', label: 'Microlearn', icon: 'book-reader', iconType: 'fa5', color: '#8B5CF6', timestamp: pTime });
+          activityItems.push({ type: 'habit', label: 'Microlearn', icon: 'book-reader', iconType: 'fa5', color: '#FB7185', timestamp: pTime });
         }
         if (habits?.water_intake > 0) {
           activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA', timestamp: hTime });
         }
         if (habits?.run_day_type === 'active') {
-          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#3B82F6', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#FFEB3B', timestamp: hTime });
         }
         if (habits?.gym_day_type === 'active') {
-          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#F59E0B', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#EF4444', timestamp: hTime });
         }
         if (habits?.reflect_mood) {
-          activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#8B5CF6', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#F59E0B', timestamp: hTime });
         }
       }
 
@@ -1200,16 +1200,8 @@ function ProfileScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Posts Section */}
-        {user && (
-          <JourneyPreview 
-            userId={user.id}
-            onViewAll={() => setShowFullJourney(true)}
-          />
-        )}
-
-        {/* Goals Section - Moved below pink progress bar */}
-        <View style={[styles.keepTrackSection, { marginTop: 20 }]}>
+        {/* Goals Section */}
+        <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
           <TouchableOpacity 
             onPress={() => navigation.navigate('Goals')}
             style={styles.goalsSectionHeader}
@@ -1315,6 +1307,14 @@ function ProfileScreen({ navigation }: any) {
             </View>
           </View>
         </View>
+
+        {/* Posts Section */}
+        {user && (
+          <JourneyPreview 
+            userId={user.id}
+            onViewAll={() => setShowFullJourney(true)}
+          />
+        )}
 
         {/* Progress Bars Section */}
         <View style={styles.keepTrackSection}>
@@ -2366,7 +2366,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   noGoalsContainer: {
     alignItems: 'center',

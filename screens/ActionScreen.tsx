@@ -1078,7 +1078,7 @@ function ActionScreen() {
       metricLabel: 'Goals',
       metricValue: '4 / 6',
       progress: 0.65,
-      accent: '#C084FC',
+      accent: '#EF4444',
     },
     {
       habitId: 'run',
@@ -1088,7 +1088,7 @@ function ActionScreen() {
       metricLabel: 'Timer',
       metricValue: '17:04:16',
       progress: 0.4,
-      accent: '#38BDF8',
+      accent: '#FFEB3B',
     },
     {
       habitId: 'meditation',
