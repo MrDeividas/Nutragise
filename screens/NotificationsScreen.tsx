@@ -7,6 +7,7 @@ import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../state/themeStore';
 import { notificationService, Notification } from '../lib/notificationService';
+import { habitInviteService } from '../lib/habitInviteService';
 import CustomBackground from '../components/CustomBackground';
 
 export default function NotificationsScreen() {
@@ -41,11 +42,52 @@ export default function NotificationsScreen() {
       if (habitRewardNotifications.length > habitRewards.length) {
         setHabitRewardsViewed(false);
       }
+
+      // Fetch partnership statuses for habit invites to determine current status
+      const inviteNotifications = otherNotifications.filter(n => n.notification_type === 'habit_invite');
+      const inviterIds = [...new Set(inviteNotifications.map(n => n.from_user_id).filter(id => id))];
+      
+      let partnershipMap = new Map();
+      
+      if (inviterIds.length > 0) {
+        const { data: partnerships } = await supabase
+          .from('habit_accountability_partners')
+          .select('*')
+          .eq('invitee_id', user.id)
+          .in('inviter_id', inviterIds as string[]);
+          
+        if (partnerships) {
+            // Group by inviter
+            const byInviter: Record<string, any[]> = {};
+            partnerships.forEach(p => {
+                if (!byInviter[p.inviter_id]) byInviter[p.inviter_id] = [];
+                byInviter[p.inviter_id].push(p);
+            });
+            partnershipMap = new Map(Object.entries(byInviter));
+        }
+      }
       
       // Transform other notifications into the expected format
       const transformedNotifications = otherNotifications.map((notification: Notification) => {
         let message = '';
         let type = notification.notification_type;
+        let inviteStatus = null;
+
+        // Determine invite status
+        if (notification.notification_type === 'habit_invite' && notification.from_user_id) {
+            const parts = partnershipMap.get(notification.from_user_id);
+            if (parts) {
+                // Check for pending first
+                const pending = parts.find((p: any) => p.status === 'pending');
+                if (pending) {
+                    inviteStatus = 'pending';
+                } else {
+                    // Use the most recent status
+                    const latest = parts.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+                    inviteStatus = latest.status;
+                }
+            }
+        }
         
         switch (notification.notification_type) {
           case 'post_like':
@@ -64,6 +106,12 @@ export default function NotificationsScreen() {
           case 'follow':
             message = 'started following you';
             break;
+          case 'habit_invite':
+            message = 'invited you to track a habit together';
+            break;
+          case 'habit_invite_accepted':
+            message = 'accepted your habit invitation';
+            break;
           default:
             message = 'interacted with your content';
         }
@@ -80,12 +128,25 @@ export default function NotificationsScreen() {
           post_id: notification.post_id,
           comment_id: notification.comment_id,
           reply_id: notification.reply_id,
-          goal_id: notification.goal_id
+          goal_id: notification.goal_id,
+          from_user_id: notification.from_user_id,
+          inviteStatus: inviteStatus
         };
+      });
+
+      // Sort: Pending invites first, then by time
+      const sortedNotifications = transformedNotifications.sort((a, b) => {
+          const aPending = a.type === 'habit_invite' && a.inviteStatus === 'pending';
+          const bPending = b.type === 'habit_invite' && b.inviteStatus === 'pending';
+          
+          if (aPending && !bPending) return -1;
+          if (!aPending && bPending) return 1;
+          
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
       
       // Set notifications
-      setNotifications(transformedNotifications);
+      setNotifications(sortedNotifications);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -124,6 +185,85 @@ export default function NotificationsScreen() {
       minute: '2-digit',
       hour12: true
     });
+  };
+
+  const handleAcceptInvite = async (notification: any) => {
+    if (!user || !notification.from_user_id) return;
+    try {
+      const { data } = await supabase
+        .from('habit_accountability_partners')
+        .select('id')
+        .eq('inviter_id', notification.from_user_id)
+        .eq('invitee_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+        
+      if (data) {
+        await habitInviteService.acceptInvite(data.id, user.id);
+        Alert.alert('Success', 'You accepted the habit invite!');
+        // Update local state to reflect change immediately and re-sort
+        setNotifications(prev => {
+            const updated = prev.map(n => 
+              n.id === notification.id ? { ...n, inviteStatus: 'accepted' } : n
+            );
+            // Re-sort: Pending invites first, then by time
+            return updated.sort((a, b) => {
+                const aPending = a.type === 'habit_invite' && a.inviteStatus === 'pending';
+                const bPending = b.type === 'habit_invite' && b.inviteStatus === 'pending';
+                
+                if (aPending && !bPending) return -1;
+                if (!aPending && bPending) return 1;
+                
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
+        });
+      } else {
+        Alert.alert('Error', 'Could not find the invitation. It may have been cancelled.');
+      }
+    } catch (error) {
+      console.error('Error accepting invite:', error);
+      Alert.alert('Error', 'Failed to accept invite.');
+    }
+  };
+
+  const handleDeclineInvite = async (notification: any) => {
+    if (!user || !notification.from_user_id) return;
+    try {
+        const { data } = await supabase
+        .from('habit_accountability_partners')
+        .select('id')
+        .eq('inviter_id', notification.from_user_id)
+        .eq('invitee_id', user.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) {
+        await habitInviteService.declineInvite(data.id, user.id);
+        Alert.alert('Declined', 'You declined the invitation.');
+        // Update local state to reflect change immediately and re-sort
+        setNotifications(prev => {
+            const updated = prev.map(n => 
+              n.id === notification.id ? { ...n, inviteStatus: 'declined' } : n
+            );
+            // Re-sort: Pending invites first, then by time
+            return updated.sort((a, b) => {
+                const aPending = a.type === 'habit_invite' && a.inviteStatus === 'pending';
+                const bPending = b.type === 'habit_invite' && b.inviteStatus === 'pending';
+                
+                if (aPending && !bPending) return -1;
+                if (!aPending && bPending) return 1;
+                
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
+        });
+      }
+    } catch (error) {
+      console.error('Error declining invite:', error);
+    }
   };
 
   const groupNotificationsByTime = (notifications: any[]) => {
@@ -255,29 +395,64 @@ export default function NotificationsScreen() {
                     </Text>
                   </View>
                 )}
-                <TouchableOpacity 
-                  style={styles.card}
-                  onPress={() => {
-                    Alert.alert(
-                      'Follow Details',
-                      `${item.name} started following you on ${getDetailedTime(item.created_at)}`,
-                      [{ text: 'OK' }]
-                    );
-                  }}
-                >
-                  {item.avatar ? (
-                    <Image source={{ uri: item.avatar }} style={styles.avatar} />
-                  ) : (
-                    <View style={[styles.avatar, { backgroundColor: theme.textTertiary }]}>
-                      <Ionicons name="person" size={20} color={theme.textSecondary} />
+                <View style={[styles.card, { flexDirection: 'column', alignItems: 'flex-start', padding: 0 }]}>
+                  <TouchableOpacity 
+                    style={{ flexDirection: 'row', alignItems: 'center', width: '100%', padding: 12 }}
+                    onPress={() => {
+                      if (item.type === 'habit_invite') return;
+                      const title = item.type === 'follow' ? 'Follow Details' : 'Notification Details';
+                      const msg = item.type === 'follow' 
+                        ? `${item.name} started following you on ${getDetailedTime(item.created_at)}`
+                        : `${item.name} ${item.message} on ${getDetailedTime(item.created_at)}`;
+                        
+                      Alert.alert(
+                        title,
+                        msg,
+                        [{ text: 'OK' }]
+                      );
+                    }}
+                  >
+                    {item.avatar ? (
+                      <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                    ) : (
+                      <View style={[styles.avatar, { backgroundColor: theme.textTertiary }]}>
+                        <Ionicons name="person" size={20} color={theme.textSecondary} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.name, { color: theme.textPrimary }]}>{item.name}</Text>
+                      <Text style={[styles.message, { color: theme.textSecondary }]}>{item.message}</Text>
+                    </View>
+                    <Text style={[styles.time, { color: theme.textTertiary }]}>{item.time}</Text>
+                  </TouchableOpacity>
+                  
+                  {item.type === 'habit_invite' && !item.inviteStatus && (
+                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 0, marginBottom: 12, marginLeft: 60 }}>
+                       <TouchableOpacity 
+                         onPress={() => handleAcceptInvite(item)} 
+                         style={{ backgroundColor: theme.primary, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}
+                       >
+                         <Text style={{ color: '#FFF', fontWeight: '600', fontSize: 12 }}>Accept</Text>
+                       </TouchableOpacity>
+                       <TouchableOpacity 
+                         onPress={() => handleDeclineInvite(item)} 
+                         style={{ backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.border, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}
+                       >
+                         <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 12 }}>Decline</Text>
+                       </TouchableOpacity>
                     </View>
                   )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.name, { color: theme.textPrimary }]}>{item.name}</Text>
-                    <Text style={[styles.message, { color: theme.textSecondary }]}>{item.message}</Text>
-                  </View>
-                  <Text style={[styles.time, { color: theme.textTertiary }]}>{item.time}</Text>
-                </TouchableOpacity>
+                  {item.type === 'habit_invite' && item.inviteStatus === 'accepted' && (
+                     <Text style={{ marginLeft: 60, marginBottom: 12, color: '#10B981', fontSize: 12, fontWeight: '600' }}>
+                        Accepted
+                     </Text>
+                  )}
+                  {item.type === 'habit_invite' && item.inviteStatus === 'declined' && (
+                     <Text style={{ marginLeft: 60, marginBottom: 12, color: theme.textSecondary, fontSize: 12, fontWeight: '600' }}>
+                        Declined
+                     </Text>
+                  )}
+                </View>
               </>
             );
           }}

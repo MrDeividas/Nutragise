@@ -317,6 +317,36 @@ export interface CreateCustomHabitInput {
   metadata?: Record<string, any>;
 }
 
+export interface HabitAccountabilityPartner {
+  id: string;
+  inviter_id: string;
+  invitee_id: string;
+  habit_type: 'core' | 'custom';
+  habit_key?: string;
+  custom_habit_id?: string;
+  mode: 'supportive' | 'competitive';
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  created_at: string;
+  accepted_at?: string;
+  // Joined profile data
+  partner?: {
+    id: string;
+    username: string;
+    display_name?: string;
+    avatar_url?: string;
+  };
+}
+
+export interface HabitPartnerProgress {
+  id: string;
+  partnership_id: string;
+  user_id: string;
+  date: string;
+  completed: boolean;
+  streak_count: number;
+  created_at: string;
+}
+
 export interface CompleteHabitPayload {
   habit_id: string;
   occur_date: string;

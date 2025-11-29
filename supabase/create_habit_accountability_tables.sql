@@ -88,3 +88,8 @@ CREATE POLICY "Users can insert/update their own progress"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+-- Enable Realtime for the tables
+-- This allows Supabase to publish changes to subscribers
+ALTER PUBLICATION supabase_realtime ADD TABLE habit_partner_progress;
+ALTER PUBLICATION supabase_realtime ADD TABLE habit_accountability_partners;
+

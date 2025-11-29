@@ -44,7 +44,9 @@ import { challengesService } from '../lib/challengesService';
 import { pointsService } from '../lib/pointsService';
 import { Challenge } from '../types/challenges';
 import { supabase } from '../lib/supabase';
-import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit } from '../types/database';
+import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, HabitAccountabilityPartner } from '../types/database';
+import InviteFriendModal from '../components/InviteFriendModal';
+import { habitInviteService } from '../lib/habitInviteService';
 
 
 
@@ -359,6 +361,9 @@ const AnimatedHabitCard = React.memo(({
   handleHabitPress,
   handleHabitLongPress,
   cardAnimations,
+  partnership,
+  partnerStatus,
+  onInvite,
   styles
 }: any) => {
   const anim = cardAnimations[card.key];
@@ -404,7 +409,14 @@ const AnimatedHabitCard = React.memo(({
             </View>
             <Text style={[styles.highlightCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
           </View>
-          <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {!partnership && (
+              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
+                <Ionicons name="person-add-outline" size={20} color="rgba(255, 255, 255, 0.65)" />
+              </TouchableOpacity>
+            )}
+            <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+          </View>
         </View>
 
         <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor }]}>
@@ -418,6 +430,26 @@ const AnimatedHabitCard = React.memo(({
             ]}
           />
         </View>
+
+        {partnership && (
+          <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`); }}>
+              <Image 
+                source={{ uri: partnership.partner?.avatar_url || 'https://via.placeholder.com/24' }} 
+                style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' }}
+              />
+            </TouchableOpacity>
+            {partnership.mode === 'supportive' ? (
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+                {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+              </Text>
+            ) : (
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+                You: {cardState?.completed ? '✓' : '✗'} • Partner: {partnerStatus?.completed ? '✓' : '✗'}
+              </Text>
+            )}
+          </View>
+        )}
 
         <View style={styles.highlightCardMetricRow}>
           <Text style={[styles.highlightCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
@@ -442,6 +474,9 @@ const WhiteHabitCard = React.memo(({
   playCompletionSound,
   loadHabitForEditing,
   setShowCustomHabitModal,
+  partnership,
+  partnerStatus,
+  onInvite,
   styles
 }: any) => {
   const isCreateCard = card.key === 'create_new_habit';
@@ -482,13 +517,13 @@ const WhiteHabitCard = React.memo(({
   const progressFillColor = card.accent;
   
   return (
-            <TouchableOpacity 
+    <TouchableOpacity 
       activeOpacity={0.85}
       onPress={isCreateCard ? handleCardPress : undefined}
       onLongPress={handleCardLongPress}
       delayLongPress={250}
       disabled={!isCreateCard && customHabitsLoading}
-              style={[
+      style={[
         styles.whiteHabitCard,
         {
           width: spotlightCardWidth,
@@ -506,7 +541,14 @@ const WhiteHabitCard = React.memo(({
           <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? theme.textPrimary : '#FFFFFF' }]}>{card.title}</Text>
           <Text style={[styles.whiteHabitCardSubtitle, { color: isCreateCard ? theme.textSecondary : 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
           </View>
-        {!isCreateCard && card.habit && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {!isCreateCard && !partnership && (
+              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
+                <Ionicons name="person-add-outline" size={20} color={isCreateCard ? theme.textSecondary : iconColor} />
+              </TouchableOpacity>
+          )}
+          
+          {!isCreateCard && card.habit && (
       <TouchableOpacity 
             onPress={(e) => {
               e.stopPropagation();
@@ -522,6 +564,7 @@ const WhiteHabitCard = React.memo(({
         {isCreateCard && (
           <Ionicons name="ellipsis-vertical" size={16} color={theme.textSecondary} />
         )}
+      </View>
     </View>
 
       <View style={[styles.whiteHabitCardProgress, { backgroundColor: progressTrackColor }]}>
@@ -535,6 +578,26 @@ const WhiteHabitCard = React.memo(({
           ]}
         />
       </View>
+
+      {partnership && !isCreateCard && (
+        <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+           <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`); }}>
+             <Image 
+               source={{ uri: partnership.partner?.avatar_url || 'https://via.placeholder.com/24' }} 
+               style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: iconColor }}
+             />
+           </TouchableOpacity>
+          {partnership.mode === 'supportive' ? (
+            <Text style={{ color: subtitleColor, fontSize: 11 }}>
+              {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+            </Text>
+          ) : (
+            <Text style={{ color: subtitleColor, fontSize: 11 }}>
+              You: {isCompleted ? '✓' : '✗'} • Partner: {partnerStatus?.completed ? '✓' : '✗'}
+            </Text>
+          )}
+        </View>
+      )}
 
       <View style={styles.whiteHabitCardMetricRow}>
         <Text style={[styles.whiteHabitCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
@@ -620,6 +683,18 @@ function ActionScreen() {
   const [selectedDaysPerMonth, setSelectedDaysPerMonth] = useState<Set<number>>(new Set([1]));
   const [selectedEveryXDays, setSelectedEveryXDays] = useState<number>(2);
   const [isSavingHabit, setIsSavingHabit] = useState(false);
+  
+  // Accountability Partner State
+  const [activePartnerships, setActivePartnerships] = useState<Record<string, HabitAccountabilityPartner>>({});
+  const [partnerCompletionStatus, setPartnerCompletionStatus] = useState<Record<string, { completed: boolean; streak: number }>>({});
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteHabitData, setInviteHabitData] = useState<{
+    type: 'core' | 'custom';
+    identifier: string;
+    title: string;
+  } | null>(null);
+  const partnerProgressSubscriptionRef = useRef<any>(null);
+
   const todayDate = useMemo(() => new Date().toISOString().split('T')[0], []);
   const colorPickerBaseColor = useMemo(() => {
     const { r, g, b } = hsvToRgb(colorPickerHue, 1, 1);
@@ -1492,6 +1567,35 @@ function ActionScreen() {
     }, 700); // Total animation duration
   }, [spotlightCardWidth, cardAnimations, completedHabits, sortHabitsByCompletion]);
 
+  const checkAndSyncPartner = useCallback(async (habitKey: string, completed: boolean) => {
+    if (!user) return;
+    const partnership = Object.values(activePartnerships).find(p => p.habit_type === 'core' && p.habit_key === habitKey);
+    if (partnership) {
+      try {
+        console.log(`[Partner Sync] Updating progress for ${habitKey}:`, { partnershipId: partnership.id, userId: user.id, date: getTodayDateString(), completed });
+        await habitInviteService.updatePartnerProgress(partnership.id, user.id, getTodayDateString(), completed);
+        console.log(`[Partner Sync] ✅ Successfully updated progress for ${habitKey}`);
+      } catch (error) {
+        console.error(`[Partner Sync] ❌ Failed to update progress for ${habitKey}:`, error);
+      }
+    }
+  }, [user, activePartnerships]);
+
+  const handleCustomHabitToggle = useCallback(async (habitId: string, date: string) => {
+    const wasCompleted = !!habitCompletions[habitId]?.status && habitCompletions[habitId]?.status === 'completed';
+    const newStatus = !wasCompleted;
+    
+    await toggleHabitCompletion(habitId, date);
+    
+    // Update partner progress
+    if (user) {
+      const partnership = Object.values(activePartnerships).find(p => p.habit_type === 'custom' && p.custom_habit_id === habitId);
+      if (partnership) {
+        habitInviteService.updatePartnerProgress(partnership.id, user.id, date, newStatus);
+      }
+    }
+  }, [toggleHabitCompletion, habitCompletions, user, activePartnerships]);
+
   const markHabitCompleted = useCallback((habitId: string) => {
     isCompletingHabitRef.current = true; // Block immediate sorting
     setCompletedHabits(prev => {
@@ -1503,11 +1607,14 @@ function ActionScreen() {
     playCompletionSound();
     updateCardCompletionVisual(habitId, true, { animate: true });
     clearHabitNeedsDetails(habitId);
+    
+    checkAndSyncPartner(habitId, true);
+
     // Animate card to end after bar fills (450ms)
     setTimeout(() => {
       animateCardToEnd(habitId);
     }, 500);
-  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails, animateCardToEnd]);
+  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails, animateCardToEnd, checkAndSyncPartner]);
 
   const markHabitUncompleted = useCallback((habitId: string) => {
     setCompletedHabits(prev => {
@@ -1526,7 +1633,9 @@ function ActionScreen() {
     });
     updateCardCompletionVisual(habitId, false, { animate: true });
     clearHabitNeedsDetails(habitId);
-  }, [updateCardCompletionVisual, clearHabitNeedsDetails, sortHabitsByCompletion]);
+
+    checkAndSyncPartner(habitId, false);
+  }, [updateCardCompletionVisual, clearHabitNeedsDetails, sortHabitsByCompletion, checkAndSyncPartner]);
 
   const persistQuickCompletion = useCallback(async (habitId: string) => {
     const date = getTodayDateString();
@@ -1602,6 +1711,7 @@ function ActionScreen() {
 
       if (success) {
         markHabitNeedsDetails(habitId);
+        checkAndSyncPartner(habitId, true);
         await fetchUserPoints();
         return true;
       }
@@ -1610,18 +1720,39 @@ function ActionScreen() {
     }
 
     return false;
-  }, [user, markHabitNeedsDetails, fetchUserPoints]);
+  }, [user, markHabitNeedsDetails, fetchUserPoints, checkAndSyncPartner]);
 
   const handleHabitLongPress = useCallback(async (habitId: string) => {
     // Focus habit cannot be quick completed
     if (habitId === 'focus') return;
     if (completedHabits.has(habitId)) return;
+    
+    console.log(`[Long Press] Marking ${habitId} as completed`);
     markHabitCompleted(habitId);
+    
     const success = await persistQuickCompletion(habitId);
+    console.log(`[Long Press] persistQuickCompletion returned:`, success);
+    
     if (!success) {
-      markHabitUncompleted(habitId);
+      // Check if habit actually exists in database before uncompleting
+      // For habits like meditation that use trackDailyHabit, the function returns false
+      // if already completed, but we should keep it marked as completed in UI
+      console.log(`[Long Press] ❌ persistQuickCompletion failed for ${habitId} - NOT reverting completion for partner-linked habit`);
+      
+      // Don't uncomplete if there's a partner - the sync already happened
+      const partnership = Object.values(activePartnerships).find(
+        p => p.habit_type === 'core' && p.habit_key === habitId
+      );
+      
+      if (!partnership) {
+        // Only revert if there's no partner
+        console.log(`[Long Press] No partnership found, reverting completion`);
+        markHabitUncompleted(habitId);
+      } else {
+        console.log(`[Long Press] Partnership exists, keeping completion despite failure`);
+      }
     }
-  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion]);
+  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion, activePartnerships]);
 
   // Automatically sort habits on initial load
   useEffect(() => {
@@ -1857,7 +1988,6 @@ function ActionScreen() {
 
   // Sync completed habits with existing data
   const syncCompletedHabits = useCallback(() => {
-    const { dailyHabits } = useActionStore.getState();
     const completedSet = new Set<string>();
     
     if (dailyHabits) {
@@ -1887,7 +2017,7 @@ function ActionScreen() {
     }
     
     setCompletedHabits(completedSet);
-  }, []);
+  }, [dailyHabits]);
 
   // Load selected habits on mount and sync completed status
   useEffect(() => {
@@ -3087,22 +3217,149 @@ function ActionScreen() {
     loadMyActiveChallenges();
   }, [loadMyActiveChallenges]);
 
+  const loadActivePartnerships = useCallback(async () => {
+    if (!user) return;
+    try {
+      const partnerships = await habitInviteService.getActivePartners(user.id);
+      const partnershipMap: Record<string, HabitAccountabilityPartner> = {};
+      const completionMap: Record<string, { completed: boolean; streak: number }> = {};
+      
+      for (const p of partnerships) {
+        const key = p.habit_type === 'core' ? `core_${p.habit_key}` : `custom_${p.custom_habit_id}`;
+        partnershipMap[key] = p;
+        
+        // Check partner completion for today
+        if (p.partner) {
+          const identifier = p.habit_type === 'core' ? p.habit_key! : p.custom_habit_id!;
+          const status = await habitInviteService.checkPartnerCompletion(
+            p.id,
+            p.partner.id,
+            getTodayDateString(),
+            p.habit_type,
+            identifier
+          );
+          completionMap[key] = status;
+        }
+      }
+      
+      setActivePartnerships(partnershipMap);
+      setPartnerCompletionStatus(completionMap);
+    } catch (error) {
+      console.error('Error loading partnerships:', error);
+    }
+  }, [user]);
+
+  // Set up real-time subscription for partner progress updates
+  useEffect(() => {
+    if (!user || Object.keys(activePartnerships).length === 0) {
+      // Clean up subscription if no partnerships
+      if (partnerProgressSubscriptionRef.current) {
+        partnerProgressSubscriptionRef.current.unsubscribe();
+        partnerProgressSubscriptionRef.current = null;
+      }
+      return;
+    }
+
+    // Get all partnership IDs
+    const partnershipIds = Object.values(activePartnerships).map(p => p.id);
+    
+    // Clean up old subscription
+    if (partnerProgressSubscriptionRef.current) {
+      partnerProgressSubscriptionRef.current.unsubscribe();
+    }
+
+    // Set up new subscription
+    // Capture user.id in a const to avoid closure issues
+    const currentUserId = user?.id;
+    
+    const channel = habitInviteService.subscribeToPartnerProgress(
+      partnershipIds,
+      async (progress) => {
+        console.log('[Partner Subscription] Received progress update:', progress);
+        console.log('[Partner Subscription] Current user ID:', currentUserId);
+        console.log('[Partner Subscription] Progress user ID:', progress.user_id);
+        
+        // CRITICAL: Ignore updates from current user (only listen to partner's updates)
+        if (!currentUserId || progress.user_id === currentUserId) {
+          console.log('[Partner Subscription] ✓ Ignoring own update');
+          return;
+        }
+
+        // Find which partnership this progress belongs to
+        const partnership = Object.values(activePartnerships).find(p => p.id === progress.partnership_id);
+        if (!partnership || !partnership.partner) {
+          console.log('[Partner Subscription] Partnership not found or no partner');
+          return;
+        }
+
+        // Only refresh if it's for today's date
+        const today = getTodayDateString();
+        if (progress.date !== today) {
+          console.log('[Partner Subscription] Update is for different date:', progress.date, 'vs', today);
+          return;
+        }
+
+        console.log('[Partner Subscription] ✓ Partner completed habit:', partnership.habit_key || partnership.custom_habit_id);
+
+        // Refresh the completion status for this specific partnership
+        const identifier = partnership.habit_type === 'core' ? partnership.habit_key! : partnership.custom_habit_id!;
+        const status = await habitInviteService.checkPartnerCompletion(
+          partnership.id,
+          partnership.partner.id,
+          today,
+          partnership.habit_type,
+          identifier
+        );
+
+        // Update the completion status
+        const key = partnership.habit_type === 'core' 
+          ? `core_${partnership.habit_key}` 
+          : `custom_${partnership.custom_habit_id}`;
+        
+        console.log('[Partner Subscription] Updating partner status:', { key, completed: status.completed });
+        
+        setPartnerCompletionStatus(prev => ({
+          ...prev,
+          [key]: status
+        }));
+      }
+    );
+
+    partnerProgressSubscriptionRef.current = channel;
+
+    // Cleanup on unmount or when partnerships change
+    return () => {
+      if (channel) {
+        channel.unsubscribe();
+      }
+    };
+  }, [user, activePartnerships]);
+
   // Refresh challenges whenever Action screen regains focus
   useFocusEffect(
     useCallback(() => {
       loadMyActiveChallenges();
-    }, [loadMyActiveChallenges])
+      loadActivePartnerships();
+    }, [loadMyActiveChallenges, loadActivePartnerships])
   );
+
+  const handleInvitePress = useCallback((type: 'core' | 'custom', identifier: string, title: string) => {
+    setInviteHabitData({ type, identifier, title });
+    setShowInviteModal(true);
+  }, []);
 
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadMyActiveChallenges();
+      await Promise.all([
+        loadMyActiveChallenges(),
+        loadActivePartnerships()
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadMyActiveChallenges]);
+  }, [loadMyActiveChallenges, loadActivePartnerships]);
 
   // Memoized helper functions for better performance
   const getDateForDayOfWeekInWeek = useCallback((dayOfWeek: number, weekDate: Date): Date => {
@@ -3384,7 +3641,8 @@ function ActionScreen() {
           >
             {habitSpotlightCards.map((card, index) => {
               const cardState = habitCardState[card.key];
-              const isCompletedCard = cardState?.completed;
+              // Check both cardState and completedHabits to determine if card is completed
+              const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
               const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
               // Show 5% if not completed (so user can see the color), otherwise use baseProgress
               const displayProgress = isCompletedCard ? baseProgress : 0.05;
@@ -3393,7 +3651,7 @@ function ActionScreen() {
                 inputRange: [0, 1],
                 outputRange: ['0%', '100%'],
               });
-              const cardBackgroundColor = isCompletedCard ? '#059669' : (isDark ? '#1f1f1f' : '#111827');
+              const cardBackgroundColor = isCompletedCard ? '#10B981' : (isDark ? '#1f1f1f' : '#111827');
               const progressTrackColor = isCompletedCard ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)';
               // Keep original accent color even when completed
               const progressFillColor = card.accent;
@@ -3419,6 +3677,9 @@ function ActionScreen() {
                   handleHabitPress={handleHabitPress}
                   handleHabitLongPress={handleHabitLongPress}
                   cardAnimations={cardAnimations}
+                  partnership={activePartnerships[`core_${card.key}`]}
+                  partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
+                  onInvite={() => handleInvitePress('core', card.key, card.title)}
                   styles={styles}
                 />
               );
@@ -3449,7 +3710,10 @@ function ActionScreen() {
                 theme={theme}
                 customHabitsDate={customHabitsDate}
                 todayDate={todayDate}
-                toggleHabitCompletion={toggleHabitCompletion}
+                partnership={activePartnerships[`custom_${card.habit?.id}`]}
+                partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
+                onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
+                toggleHabitCompletion={handleCustomHabitToggle}
                 playCompletionSound={playCompletionSound}
                 loadHabitForEditing={loadHabitForEditing}
                 setShowCustomHabitModal={setShowCustomHabitModal}
@@ -4793,6 +5057,7 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
+                    checkAndSyncPartner('gym', true);
                     markHabitCompleted('gym'); // Sound plays here when animation starts
                     setShowGymModal(false);
                     setGymQuestionnaire({ selectedTrainingTypes: [], customTrainingType: '' });
@@ -5193,6 +5458,7 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
+                    checkAndSyncPartner('sleep', true);
                     markHabitCompleted('sleep'); // Sound plays here when animation starts
                     setShowSleepModal(false);
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
@@ -5604,6 +5870,7 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
+                    checkAndSyncPartner('run', true);
                     markHabitCompleted('run'); // Sound plays here when animation starts
                     setShowExerciseModal(false);
                     setExerciseQuestionnaire({ selectedSport: '', customSport: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, exerciseNotes: '' });
@@ -5948,6 +6215,7 @@ function ActionScreen() {
                           
                           const success = await useActionStore.getState().saveDailyHabits(habitData);
                           if (success) {
+                            checkAndSyncPartner('reflect', true);
                             markHabitCompleted('reflect'); // Sound plays here when animation starts
                             setShowReflectModal(false);
                             setReflectQuestionnaire({ 
@@ -6404,6 +6672,18 @@ function ActionScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Invite Friend Modal */}
+      {inviteHabitData && (
+        <InviteFriendModal
+          visible={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          habitType={inviteHabitData.type}
+          habitIdentifier={inviteHabitData.identifier}
+          habitTitle={inviteHabitData.title}
+        />
+      )}
+
       </SafeAreaView>
     </CustomBackground>
   );
