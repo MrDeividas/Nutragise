@@ -175,7 +175,7 @@ function ProfileScreen({ navigation }: any) {
             }
           }
         } catch (err) {
-          console.log('Stats visibility column may not exist yet, defaulting to visible');
+          // Stats visibility column may not exist yet, defaulting to visible
         }
         
         // Load social counts
@@ -188,7 +188,7 @@ function ProfileScreen({ navigation }: any) {
       
   
     } catch (error) {
-      console.error('Error loading profile data:', error);
+      // Error loading profile data
     }
   };
 
@@ -208,7 +208,6 @@ function ProfileScreen({ navigation }: any) {
           .eq('id', user.id);
         
         if (error) {
-          console.error('Error updating stats_visible in database:', error);
           Alert.alert(
             'Database Update Issue',
             'Your preference is saved locally but may not sync. Please run the database migration to add the stats_visible column.'
@@ -216,7 +215,7 @@ function ProfileScreen({ navigation }: any) {
         }
       }
     } catch (error) {
-      console.error('Error saving stats visibility:', error);
+      // Error saving stats visibility
     }
   };
 
@@ -232,7 +231,6 @@ function ProfileScreen({ navigation }: any) {
         .single();
 
       if (error) {
-        console.error('Error fetching fresh user data:', error);
         return;
       }
 
@@ -246,14 +244,13 @@ function ProfileScreen({ navigation }: any) {
         });
       }
     } catch (error) {
-      console.error('Error refreshing user data:', error);
+      // Error refreshing user data
     }
   };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      console.log('🔄 Pull to refresh triggered');
       // Reload all data
       await Promise.all([
         loadProfileData(),
@@ -268,9 +265,8 @@ function ProfileScreen({ navigation }: any) {
         fetchHighlights(),
         user ? fetchGoals(user.id) : Promise.resolve()
       ]);
-      console.log('✅ Refresh complete');
     } catch (error) {
-      console.error('Error during refresh:', error);
+      // Error during refresh
     } finally {
       setRefreshing(false);
     }
@@ -290,7 +286,6 @@ function ProfileScreen({ navigation }: any) {
       setTotalPoints(total);
       setCurrentLevel(progress.currentLevel);
     } catch (error) {
-      console.error('Error fetching user points:', error);
       setTotalPoints(0);
     }
   };
@@ -314,7 +309,7 @@ function ProfileScreen({ navigation }: any) {
         .gte('created_at', sevenDaysAgo.toISOString());
 
       if (error) {
-        console.error('Error fetching notification count:', error);
+        // Error fetching notification count
         setNotificationCount(0);
         return;
       }
@@ -326,7 +321,7 @@ function ProfileScreen({ navigation }: any) {
 
       setNotificationCount(unreadNotifications.length);
     } catch (error) {
-      console.error('Error fetching notification count:', error);
+      // Error fetching notification count
       setNotificationCount(0);
     }
   };
@@ -336,7 +331,7 @@ function ProfileScreen({ navigation }: any) {
       await AsyncStorage.setItem('lastNotificationsViewed', new Date().toISOString());
       setNotificationCount(0);
     } catch (error) {
-      console.error('Error marking notifications as read:', error);
+      // Error marking notifications as read
     }
   };
 
@@ -346,7 +341,7 @@ function ProfileScreen({ navigation }: any) {
         const count = await dmService.getTotalUnreadCount(user.id);
         setDmUnreadCount(count || 0);
       } catch (error) {
-        console.error('Error loading DM unread count:', error);
+        // Error loading DM unread count
         setDmUnreadCount(0);
       }
     }
@@ -355,10 +350,8 @@ function ProfileScreen({ navigation }: any) {
   const loadPillarProgress = async () => {
     if (user) {
       try {
-        console.log('🔄 Loading pillar progress...');
         const { pillarProgressService } = await import('../lib/pillarProgressService');
         const progress = await pillarProgressService.getPillarProgress(user.id);
-        console.log('📊 Current progress:', progress);
         
         const today = new Date().toISOString().split('T')[0];
         
@@ -383,21 +376,17 @@ function ProfileScreen({ navigation }: any) {
             });
             
             if (isInvalid) {
-              console.log('⚠️ Snapshot is invalid (start > current), resetting to current as baseline');
               startOfDayProgress = progress;
               needsSnapshotReset = true;
             } else {
               startOfDayProgress = parsedSnapshot;
-              console.log('📅 Using saved start of day progress:', startOfDayProgress);
             }
           } catch (e) {
-            console.log('⚠️ Failed to parse stored progress, using current as baseline');
             startOfDayProgress = progress;
             needsSnapshotReset = true;
           }
         } else {
           // No snapshot exists yet (ActionScreen hasn't run) - use current as baseline
-          console.log('⚠️ No snapshot found, using current progress as baseline (no green indicators)');
           startOfDayProgress = progress;
         }
         
@@ -405,7 +394,6 @@ function ProfileScreen({ navigation }: any) {
         if (needsSnapshotReset) {
           await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
           await AsyncStorage.setItem(startOfDayDateKey, today);
-          console.log('🔄 Reset snapshot to current values:', progress);
         }
         
         // Compare current progress vs start of day - show indicator if increased
@@ -415,17 +403,12 @@ function ProfileScreen({ navigation }: any) {
         pillarKeys.forEach(key => {
           const currentProgress = progress[key];
           const startProgress = startOfDayProgress[key];
-          const difference = currentProgress - startProgress;
-          
-          console.log(`🔍 ${key}: current=${currentProgress.toFixed(2)}, start=${startProgress.toFixed(2)}, diff=${difference > 0 ? '+' : ''}${difference.toFixed(2)}, show=${currentProgress > startProgress}`);
           
           // Show indicator if current > start of day
           if (currentProgress > startProgress) {
             newIndicators[key] = true;
           }
         });
-        
-        console.log('✅ Green indicators:', Object.keys(newIndicators).length > 0 ? newIndicators : 'none');
         
         // Update indicators state
         setShowProgressIndicator(newIndicators);
@@ -436,7 +419,7 @@ function ProfileScreen({ navigation }: any) {
         // Update current progress - FORCE NEW OBJECT REFERENCE
         setPillarProgress({ ...progress });
       } catch (error) {
-        console.error('Error loading pillar progress:', error);
+        // Error loading pillar progress
       }
     }
   };
@@ -535,10 +518,10 @@ function ProfileScreen({ navigation }: any) {
           activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA', timestamp: hTime });
         }
         if (habits?.run_day_type === 'active') {
-          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', color: '#FFEB3B', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', iconType: 'fa5', color: '#FFEB3B', timestamp: hTime });
         }
         if (habits?.gym_day_type === 'active') {
-          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', color: '#EF4444', timestamp: hTime });
+          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', iconType: 'fa5', color: '#EF4444', timestamp: hTime });
         }
         if (habits?.reflect_mood) {
           activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#F59E0B', timestamp: hTime });
@@ -609,7 +592,7 @@ function ProfileScreen({ navigation }: any) {
 
       setRecentActivity(activityItems);
     } catch (error) {
-      console.error('Error fetching recent activity:', error);
+      // Error fetching recent activity
     }
   };
 
@@ -624,13 +607,12 @@ function ProfileScreen({ navigation }: any) {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching highlights:', error);
         return;
       }
 
       setHighlights(data || []);
     } catch (error) {
-      console.error('Error fetching achievements:', error);
+      // Error fetching achievements
     }
   };
 
@@ -647,14 +629,12 @@ function ProfileScreen({ navigation }: any) {
         });
 
       if (error) {
-        console.error('Error saving achievement:', error);
         throw error;
       }
 
       // Refresh highlights list
       await fetchHighlights();
     } catch (error) {
-      console.error('Error in handleSaveAchievement:', error);
       throw error;
     }
   };
@@ -723,7 +703,6 @@ function ProfileScreen({ navigation }: any) {
         }
       }
     } catch (error) {
-      console.error('Error fetching check-ins for week:', error);
       // Fallback to individual calls if batch fails
       for (const goal of userGoals) {
         if (!goal.completed) {

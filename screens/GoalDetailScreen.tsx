@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Goal } from '../types/database';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -8,6 +9,7 @@ import { progressService, ProgressPhoto } from '../lib/progressService';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import CustomBackground from '../components/CustomBackground';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 
 // Define the navigation param list for the Goals stack
 export type GoalsStackParamList = {
@@ -51,6 +53,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
   const { goal, onCheckInDeleted } = route.params;
   const { user } = useAuthStore();
   const { theme } = useTheme();
+  const bottomNavPadding = useBottomNavPadding();
   const [progressPhotos, setProgressPhotos] = useState<ProgressPhoto[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -129,15 +132,21 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
   return (
     <CustomBackground>
       <View style={styles.container}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Goal Details</Text>
-        </View>
+        {/* Fixed Header */}
+        <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Goal Details</Text>
+          </View>
+        </SafeAreaView>
 
+        <ScrollView 
+          style={styles.scrollView} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding + 24 }}
+        >
         {/* Goal Overview Card */}
         <View style={[styles.overviewCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
           <View style={styles.goalHeader}>
@@ -230,51 +239,53 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
         )}
 
         {/* Progress Photos Card */}
-        <View style={[styles.detailsCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Progress Photos</Text>
+        <View style={[styles.progressPhotosCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+          <View style={styles.cardHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 0 }]}>Progress Photos</Text>
+            {progressPhotos.length > 0 && (
+              <Text style={[styles.photoCount, { color: theme.textSecondary }]}>{progressPhotos.length}</Text>
+            )}
+          </View>
           
           {loading ? (
             <View style={styles.loadingContainer}>
-              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading progress...</Text>
+              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
             </View>
           ) : progressPhotos.length > 0 ? (
-            <View style={styles.photosGrid}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.photosScrollContent}
+            >
               {progressPhotos.map((photo) => (
-                <View key={photo.id} style={styles.photoCard}>
+                <View key={photo.id} style={styles.photoItem}>
                   <View style={styles.photoContainer}>
                     {photo.photo_url && photo.photo_url !== 'no-photo' ? (
                       <Image 
                         source={{ uri: photo.photo_url }} 
                         style={styles.progressPhoto}
-                        
                       />
                     ) : (
-                      <View style={[styles.noPhotoPlaceholder, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: 'rgba(128, 128, 128, 0.3)' }]}>
-                        <Ionicons name="camera-outline" size={24} color={theme.textSecondary} />
-                        <Text style={[styles.noPhotoText, { color: theme.textSecondary }]}>No photo</Text>
+                      <View style={[styles.noPhotoPlaceholder, { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' }]}>
+                        <Ionicons name="camera-outline" size={20} color={theme.textSecondary} />
                       </View>
                     )}
                     <TouchableOpacity
                       style={styles.deleteButton}
                       onPress={() => handleDeleteCheckIn(photo)}
                     >
-                      <Ionicons name="trash-outline" size={16} color="#ffffff" />
+                      <Ionicons name="trash-outline" size={14} color="#ffffff" />
                     </TouchableOpacity>
                   </View>
                   <Text style={[styles.photoDate, { color: theme.textSecondary }]}>
-                    {photo.check_in_date ? new Date(photo.check_in_date).toLocaleDateString() : new Date(photo.date_uploaded).toLocaleDateString()}
+                    {photo.check_in_date ? new Date(photo.check_in_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : new Date(photo.date_uploaded).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                   </Text>
-                  {photo.note && (
-                    <Text style={[styles.photoNote, { color: theme.textPrimary }]}>{photo.note}</Text>
-                  )}
                 </View>
               ))}
-            </View>
+            </ScrollView>
           ) : (
             <View style={styles.emptyState}>
-              <Ionicons name="camera-outline" size={48} color={theme.textSecondary} />
-              <Text style={[styles.emptyStateTitle, { color: theme.textPrimary }]}>No progress photos yet</Text>
-              <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>Start checking in to see your progress here</Text>
+              <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>No progress photos yet</Text>
             </View>
           )}
         </View>
@@ -295,7 +306,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 10,
     paddingBottom: 20,
   },
   backButton: {
@@ -438,17 +449,19 @@ const styles = StyleSheet.create({
   },
   photoContainer: {
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 6,
+    width: '100%',
+    aspectRatio: 1,
   },
   progressPhoto: {
     width: '100%',
-    height: 120,
-    borderRadius: 8,
+    height: '100%',
+    borderRadius: 12,
   },
   noPhotoPlaceholder: {
     width: '100%',
-    height: 120,
-    borderRadius: 8,
+    height: '100%',
+    borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',
     justifyContent: 'center',
@@ -460,17 +473,17 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#ef4444',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   photoDate: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     textAlign: 'center',
   },
@@ -493,5 +506,36 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 14,
     textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  progressPhotosCard: {
+    marginHorizontal: 24,
+    marginVertical: 8,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  photoCount: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  photosScrollContent: {
+    gap: 12,
+    paddingRight: 8,
+  },
+  photoItem: {
+    width: 100,
+    alignItems: 'center',
   },
 }); 

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Image,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +30,14 @@ export default function CompeteScreen({ navigation }: any) {
   const [challengesLoading, setChallengesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  
+  // Calculate card width for snap interval (matching ActionScreen pattern)
+  const { width } = Dimensions.get('window');
+  const horizontalPadding = 24 * 2;
+  const gap = 12;
+  const cardWidth = Math.max(160, (width - horizontalPadding - gap) / 2);
+  const cardMargin = 16; // marginRight from ChallengeCard
+  const snapInterval = cardWidth + cardMargin;
 
   useEffect(() => {
     // Initialize auth store if needed
@@ -67,7 +76,7 @@ export default function CompeteScreen({ navigation }: any) {
           setUserProfile(profile);
         }
       } catch (error) {
-        console.error('Error loading user profile:', error);
+        // Error loading user profile
       }
     }
   };
@@ -97,7 +106,7 @@ export default function CompeteScreen({ navigation }: any) {
       
       setChallenges(upcoming);
     } catch (error) {
-      console.error('Error loading challenges:', error);
+      // Error loading challenges
       setChallenges([]);
     } finally {
       setChallengesLoading(false);
@@ -219,7 +228,11 @@ export default function CompeteScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              snapToInterval={snapInterval}
+              snapToAlignment="start"
+              decelerationRate="fast"
               contentContainerStyle={styles.challengesScrollContent}
+              style={{ overflow: 'visible' }}
             >
               {challenges.map((challenge) => (
                 <ChallengeCard

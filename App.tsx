@@ -50,9 +50,9 @@ const Tab = createBottomTabNavigator();
 function LoadingScreen() {
   const { theme } = useTheme();
   return (
-    <View style={[styles.loadingContainer, { backgroundColor: 'rgba(20, 19, 19, 0.8)' }]}>
+    <View style={[styles.loadingContainer, { backgroundColor: '#FFFFFF' }]}>
       <ActivityIndicator size="large" color={theme.primary} />
-      <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
+      <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
     </View>
   );
 }
@@ -474,9 +474,9 @@ export default function App() {
   if (loading || (user && onboardingComplete === null)) {
     return (
       <CustomBackground>
-        <View style={[styles.loadingContainer, { backgroundColor: 'rgba(20, 19, 19, 0.8)' }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: '#FFFFFF' }]}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
+          <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
         </View>
       </CustomBackground>
     );

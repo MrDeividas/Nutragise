@@ -112,7 +112,7 @@ export default function SignInScreen({ navigation }: any) {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }, loading && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: '#EA580C' }, loading && styles.buttonDisabled]}
             onPress={handleSignIn}
             disabled={loading}
           >

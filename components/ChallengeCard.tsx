@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +11,11 @@ import { Challenge, ChallengeCardProps } from '../types/challenges';
 import { useTheme } from '../state/themeStore';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.75; // 75% of screen width
+// Match the width from ActionScreen challenge cards (spotlightCardWidth)
+// Calculation: (screenWidth - horizontalPadding - gap) / 2, but since we're in a horizontal scroll, we use the full calculated width
+const horizontalPadding = 24 * 2; // 24px padding on each side
+const gap = 12; // Gap between cards
+const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
 
 export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps) {
   const { theme } = useTheme();
@@ -116,66 +119,62 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
 
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: `${categoryColor}20` }]}
+      style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
       onPress={() => onPress(challenge)}
       activeOpacity={0.8}
     >
-      {/* Background Image */}
-      {challenge.image_url && (
-        <Image
-          source={{ uri: challenge.image_url }}
-          style={styles.backgroundImage}
-          resizeMode="cover"
-        />
-      )}
-      
-      {/* Gradient Overlay */}
-      <View style={styles.gradientOverlay} />
+      {/* Blue Section (matching ActionScreen) */}
+      <View style={[styles.blueSection, { backgroundColor: categoryColor }]} />
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Tags */}
-        <View style={styles.tagsContainer}>
-          <View style={[styles.tag, { backgroundColor: categoryColor }]}>
-            <Ionicons name={categoryIcon} size={12} color="#FFFFFF" />
-            <Text style={styles.tagText}>{challenge.category}</Text>
-          </View>
-          <View style={[styles.tag, { backgroundColor: '#FFFFFF' }]}>
-            <Text style={[styles.tagText, { color: categoryColor }]}>
-              {formatEntryFee(challenge.entry_fee)}
+        {/* Top Section (35% height) */}
+        <View style={styles.topSection}>
+          {/* Title - Moved to top */}
+          <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
+            {challenge.title}
+          </Text>
+          {/* Participants - Matching ActionScreen style (positioned in top section) */}
+          <View style={styles.participantsContainerAction}>
+            <Ionicons name="people" size={14} color={theme.textSecondary} />
+            <Text style={[styles.participantsTextAction, { color: theme.textSecondary }]}>
+              <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
             </Text>
           </View>
         </View>
 
-        {/* Time Remaining / Duration */}
-        <Text style={[styles.timeRemaining, { color: categoryColor }]}>
-          {getTimeRemaining()}
-        </Text>
-        <Text style={[styles.duration, { color: theme.textSecondary }]}>
-          {formatDuration(challenge.duration_weeks)}
-        </Text>
+        {/* Bottom Section (65% height) */}
+        <View style={styles.bottomSection}>
+          {/* Tags */}
+          <View style={styles.tagsContainer}>
+            <View style={[styles.tag, { backgroundColor: categoryColor }]}>
+              <Ionicons name={categoryIcon} size={12} color="#FFFFFF" />
+              <Text style={styles.tagText}>{challenge.category}</Text>
+            </View>
+            <View style={[styles.tag, { backgroundColor: '#FFFFFF' }]}>
+              <Text style={[styles.tagText, { color: categoryColor }]}>
+                {formatEntryFee(challenge.entry_fee)}
+              </Text>
+            </View>
+          </View>
 
-        {/* Title */}
-        <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
-          {challenge.title}
-        </Text>
+          {/* Time Remaining / Duration */}
+          <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
+            {getTimeRemaining()}
+          </Text>
+          <Text style={[styles.duration, { color: 'rgba(255,255,255,0.9)' }]}>
+            {formatDuration(challenge.duration_weeks)}
+          </Text>
 
-        {/* Participants */}
-        <View style={styles.participantsContainer}>
-          <Ionicons name="people-outline" size={16} color={theme.textSecondary} />
-          <Text style={[styles.participantsText, { color: theme.textSecondary }]}>
-            {challenge.participant_count || 0} participants
-          </Text>
-        </View>
-
-        {/* Entry Fee Display */}
-        <View style={styles.feeContainer}>
-          <Text style={[styles.feeText, { color: categoryColor }]}>
-            {formatEntryFee(challenge.entry_fee)} investment
-          </Text>
-          <Text style={[styles.potText, { color: theme.textSecondary }]}>
-            £{(challenge.participant_count || 0) * challenge.entry_fee} shared pot
-          </Text>
+          {/* Entry Fee Display */}
+          <View style={styles.feeContainer}>
+            <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
+              {formatEntryFee(challenge.entry_fee)} investment
+            </Text>
+            <Text style={[styles.potText, { color: 'rgba(255,255,255,0.9)' }]}>
+              £{(challenge.participant_count || 0) * challenge.entry_fee} shared pot
+            </Text>
+          </View>
         </View>
       </View>
     </TouchableOpacity>
@@ -185,32 +184,48 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
 const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
-    height: 200,
-    borderRadius: 16,
+    height: 280, // Increased height (was 200, now 280 - 40% taller)
+    borderRadius: 20,
+    borderWidth: 1,
     marginRight: 16,
     overflow: 'hidden',
     position: 'relative',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  backgroundImage: {
+  blueSection: {
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    opacity: 0.3,
-  },
-  gradientOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    height: '65%',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
   content: {
     flex: 1,
-    padding: 16,
+    position: 'relative',
+    zIndex: 1,
+  },
+  topSection: {
+    height: '35%',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  bottomSection: {
+    height: '65%',
     justifyContent: 'space-between',
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -254,6 +269,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   participantsText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  participantsContainerAction: {
+    position: 'absolute',
+    bottom: 8,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  participantsTextAction: {
     fontSize: 12,
     fontWeight: '500',
   },

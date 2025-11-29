@@ -8,12 +8,15 @@ import {
   RefreshControl,
   Image,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { supabase } from '../lib/supabase';
 import { pointsService } from '../lib/pointsService';
+import CustomBackground from '../components/CustomBackground';
+import Podium from '../components/Podium';
 
 interface LeaderboardUser {
   id: string;
@@ -64,6 +67,17 @@ export default function LeaderboardScreen({ navigation }: any) {
       }
 
       // Fetch points for each user
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      
+      const lastWeek = new Date(today);
+      lastWeek.setDate(today.getDate() - 7);
+      const lastWeekStr = lastWeek.toISOString().split('T')[0];
+      
+      const lastMonth = new Date(today);
+      lastMonth.setDate(today.getDate() - 30);
+      const lastMonthStr = lastMonth.toISOString().split('T')[0];
+
       const usersWithPoints = await Promise.all(
         users.map(async (user) => {
           try {
@@ -73,9 +87,10 @@ export default function LeaderboardScreen({ navigation }: any) {
               // Get today's points
               const todayPoints = await pointsService.getTodaysPoints(user.id);
               points = todayPoints?.total || 0;
-            } else {
-              // Get total points for weekly/monthly
-              points = await pointsService.getTotalPoints(user.id);
+            } else if (leaderboardPeriod === 'weekly') {
+              points = await pointsService.getPointsBetweenDates(user.id, lastWeekStr, todayStr);
+            } else if (leaderboardPeriod === 'monthly') {
+              points = await pointsService.getPointsBetweenDates(user.id, lastMonthStr, todayStr);
             }
 
             return {
@@ -98,7 +113,7 @@ export default function LeaderboardScreen({ navigation }: any) {
 
       // Filter out users with 0 points and sort by points
       const sortedUsers = usersWithPoints
-        .filter(user => user.points > 0)
+        // .filter(user => user.points > 0) // Show all users even with 0 points to ensure current user sees themselves
         .sort((a, b) => b.points - a.points)
         .map((user, index) => ({
           ...user,
@@ -115,7 +130,15 @@ export default function LeaderboardScreen({ navigation }: any) {
   };
 
   const renderLeaderboardItem = ({ item, index }: { item: LeaderboardUser; index: number }) => (
-    <View style={[styles.leaderboardItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+    <View style={[styles.leaderboardItem, { 
+      backgroundColor: '#FFFFFF',
+      borderColor: '#E5E7EB',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 3,
+    }]}>
       <View style={styles.rankContainer}>
         <Text style={[styles.rankText, { color: theme.textPrimary }]}>
           #{item.rank}
@@ -129,7 +152,7 @@ export default function LeaderboardScreen({ navigation }: any) {
           style={styles.avatar}
         />
       ) : (
-        <View style={[styles.avatar, { backgroundColor: 'rgba(128, 128, 128, 0.3)' }]}>
+        <View style={[styles.avatar, { backgroundColor: '#F3F4F6' }]}>
           <Ionicons name="person" size={20} color={theme.textSecondary} />
         </View>
       )}
@@ -165,7 +188,7 @@ export default function LeaderboardScreen({ navigation }: any) {
     >
       <Text style={[
         styles.leaderboardTabText,
-        { color: leaderboardPeriod === period ? '#EA580C' : theme.textSecondary }
+        { color: leaderboardPeriod === period ? theme.primary : theme.textSecondary }
       ]}>
         {label}
       </Text>
@@ -173,32 +196,32 @@ export default function LeaderboardScreen({ navigation }: any) {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="close" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          Leaderboard
-        </Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Content */}
-      <View style={[styles.content, { backgroundColor: theme.background }]}>
-        {/* Leaderboard Tabs */}
-        <View style={styles.leaderboardTabs}>
-          {renderLeaderboardTab('daily', 'Daily')}
-          {renderLeaderboardTab('weekly', 'Weekly')}
-          {renderLeaderboardTab('monthly', 'Monthly')}
+    <CustomBackground>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top']}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="close" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+            Leaderboard
+          </Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        {/* Leaderboard List */}
-        <View style={styles.leaderboardContainer}>
+        {/* Content */}
+        <View style={[styles.content, { backgroundColor: 'transparent' }]}>
+          {/* Leaderboard Tabs */}
+          <View style={styles.leaderboardTabs}>
+            {renderLeaderboardTab('daily', 'Daily')}
+            {renderLeaderboardTab('weekly', 'Weekly')}
+            {renderLeaderboardTab('monthly', 'Monthly')}
+          </View>
+
+          {/* Leaderboard Content */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#EA580C" />
+              <ActivityIndicator size="large" color={theme.primary} />
             </View>
           ) : leaderboardData.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -207,24 +230,45 @@ export default function LeaderboardScreen({ navigation }: any) {
               </Text>
             </View>
           ) : (
-            <FlatList
-              data={leaderboardData}
-              keyExtractor={(item) => item.id}
-              renderItem={renderLeaderboardItem}
+            <ScrollView
+              style={styles.leaderboardScrollView}
+              contentContainerStyle={styles.leaderboardContentContainer}
               showsVerticalScrollIndicator={false}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
-                  tintColor="#EA580C"
-                  colors={['#EA580C']}
+                  tintColor={theme.primary}
+                  colors={[theme.primary]}
                 />
               }
-            />
+            >
+              {/* Podium for Top 3 (Show even if fewer than 3 users) */}
+              {leaderboardData.length > 0 && (
+                <Podium
+                  users={[
+                    leaderboardData[1] || null, // 2nd place (left)
+                    leaderboardData[0] || null, // 1st place (center)
+                    leaderboardData[2] || null, // 3rd place (right)
+                  ]}
+                />
+              )}
+
+              {/* List for positions 4+ */}
+              {leaderboardData.length > 3 && (
+                <View style={styles.listContainer}>
+                  {leaderboardData.slice(3).map((item) => (
+                    <View key={item.id}>
+                      {renderLeaderboardItem({ item, index: item.rank - 1 })}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
           )}
         </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </CustomBackground>
   );
 }
 
@@ -252,13 +296,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
     paddingTop: 16,
   },
   leaderboardTabs: {
     flexDirection: 'row',
     marginBottom: 16,
-    paddingHorizontal: 4,
+    paddingHorizontal: 28,
   },
   leaderboardTab: {
     flex: 1,
@@ -273,10 +316,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  leaderboardContainer: {
+  leaderboardScrollView: {
     flex: 1,
-    borderRadius: 12,
-    overflow: 'hidden',
+  },
+  leaderboardContentContainer: {
+    paddingBottom: 24,
+  },
+  listContainer: {
+    paddingHorizontal: 24,
   },
   leaderboardItem: {
     flexDirection: 'row',
@@ -284,7 +331,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     marginBottom: 8,
-    borderRadius: 12,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   rankContainer: {
     flexDirection: 'row',

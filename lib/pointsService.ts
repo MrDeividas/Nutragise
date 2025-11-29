@@ -622,6 +622,71 @@ class PointsService {
   }
 
   /**
+   * Get points between two dates (inclusive)
+   */
+  async getPointsBetweenDates(userId: string, startDate: string, endDate: string): Promise<number> {
+    try {
+      const { data, error } = await supabase
+        .from('user_points_daily')
+        .select('daily_habits_points, core_habits_points, bonus_points')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (error) {
+        console.error('Error fetching points between dates:', error);
+        return 0;
+      }
+
+      // Sum up all points components (using components is safer than total_points_today if structure changes)
+      // Or just use total_points_today if it's reliable. logic above uses total_points_today.
+      // Let's stick to total_points_today for consistency with getTotalPoints
+      
+      // Re-fetch with total_points_today
+      return this.getTotalPointsInPeriod(userId, startDate, endDate);
+    } catch (error) {
+      console.error('Error in getPointsBetweenDates:', error);
+      return 0;
+    }
+  }
+
+  private async getTotalPointsInPeriod(userId: string, startDate: string, endDate: string): Promise<number> {
+     const { data, error } = await supabase
+        .from('user_points_daily')
+        .select('total_points_today')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (error) return 0;
+      return data?.reduce((sum, record) => sum + (record.total_points_today || 0), 0) || 0;
+  }
+
+  /**
+   * Get points between two dates (inclusive)
+   */
+  async getPointsBetweenDates(userId: string, startDate: string, endDate: string): Promise<number> {
+    try {
+      const { data, error } = await supabase
+        .from('user_points_daily')
+        .select('total_points_today')
+        .eq('user_id', userId)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (error) {
+        console.error('Error fetching points between dates:', error);
+        return 0;
+      }
+
+      return data?.reduce((sum, record) => sum + (record.total_points_today || 0), 0) || 0;
+    } catch (error) {
+      console.error('Error in getPointsBetweenDates:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Get cumulative total points - CALCULATED LIVE from daily records
    */
   async getTotalPoints(userId: string): Promise<number> {

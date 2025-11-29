@@ -30,12 +30,18 @@ const habitConfig = {
     ]
   },
   run: {
-    title: 'Run Information',
+    title: 'Exercise Information',
     icon: 'walk',
     fields: [
-      { key: 'run_day_type', label: 'Day Type', format: (value: string) => value === 'active' ? 'Active Day' : 'Rest Day' },
+      { key: 'run_activity_type', label: 'Sport', format: (value: string) => {
+        if (!value) return 'Not specified';
+        // Map 'run' back to 'Running' for display
+        if (value === 'run') return 'Running';
+        // Capitalize first letter of each word
+        return value.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+      }},
       { key: 'run_type', label: 'Run Type', format: (value: string) => value || 'Not specified' },
-      { key: 'run_distance', label: 'Distance', format: (value: number) => `${value} km` },
+      { key: 'run_distance', label: 'Distance', format: (value: number) => value ? `${value} km` : 'Not recorded' },
       { key: 'run_duration', label: 'Duration', format: (value: string) => value || 'Not recorded' },
       { key: 'run_notes', label: 'Notes', format: (value: string) => value || 'No notes' }
     ]
@@ -44,7 +50,6 @@ const habitConfig = {
     title: 'Gym Information',
     icon: 'barbell',
     fields: [
-      { key: 'gym_day_type', label: 'Day Type', format: (value: string) => value === 'active' ? 'Active Day' : 'Rest Day' },
       { key: 'gym_training_types', label: 'Training Types', format: (value: string[]) => value?.join(', ') || 'None selected' },
       { key: 'gym_custom_type', label: 'Custom Type', format: (value: string) => value || 'None' }
     ]

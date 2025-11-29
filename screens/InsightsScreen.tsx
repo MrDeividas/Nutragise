@@ -17,8 +17,10 @@ import {
   Modal,
   Alert,
   Animated,
-  Image
+  Image,
+  Dimensions
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
@@ -54,6 +56,7 @@ type ModalType = 'progress' | 'requirements' | null;
 export default function InsightsScreen({ route }: any) {
   const navigation = useNavigation();
   const bottomNavPadding = useBottomNavPadding();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { shouldOpenGraphs, setShouldOpenGraphs } = useActionStore();
@@ -151,6 +154,24 @@ export default function InsightsScreen({ route }: any) {
   const dot3Opacity = useRef(new Animated.Value(0.3)).current;
   
   const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Animated value for chat box slide animation
+  const chatBoxHeight = useRef(new Animated.Value(0)).current;
+  // Animated value for background dimming overlay
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  // Keyboard height for adjusting chat box
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  
+  // Calculate dimensions
+  const screenHeight = Dimensions.get('window').height;
+  const navBarHeight = 60; // Approximate nav bar height
+  // Button bottom: paddingTop (10) + button height (48) = 58px from SafeAreaView top
+  const buttonBottom = 58;
+  // Chat box should be 85px below the button
+  // Since chat box is absolutely positioned relative to SafeAreaView,
+  // chat box top = button bottom + 85px gap
+  const chatBoxTop = buttonBottom + 85; // 85px below the Insights button (143px from SafeAreaView top)
+  const chatBoxMaxHeight = screenHeight - (insets.top + chatBoxTop) - navBarHeight - 5; // 5px above nav bar
 
   // Destructure theme for efficiency
   const { textPrimary, textSecondary, primary, cardBackground, borderSecondary } = theme;
@@ -186,6 +207,51 @@ export default function InsightsScreen({ route }: any) {
       setShouldOpenGraphs(false);
     }
   }, [shouldOpenGraphs, setShouldOpenGraphs]);
+
+  // Listen for keyboard show/hide events
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        // Scroll to bottom when keyboard appears
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    );
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
+
+  // Animate chat box slide and overlay when header expansion changes or keyboard appears
+  useEffect(() => {
+    const targetHeight = isHeaderExpanded 
+      ? (keyboardHeight > 0 ? Math.max(chatBoxMaxHeight - keyboardHeight + 100, 200) : chatBoxMaxHeight)
+      : 0;
+    
+    Animated.parallel([
+      Animated.timing(chatBoxHeight, {
+        toValue: targetHeight,
+        duration: 300,
+        useNativeDriver: false, // height animation requires layout
+      }),
+      Animated.timing(overlayOpacity, {
+        toValue: isHeaderExpanded ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isHeaderExpanded, chatBoxMaxHeight, keyboardHeight]);
 
 
   // Combined useEffect for initialization
@@ -503,8 +569,19 @@ export default function InsightsScreen({ route }: any) {
   return (
     <CustomBackground>
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-        {/* Collapsible Header */}
-        <View style={[styles.header, { borderBottomColor: borderSecondary }]}>
+        {/* Dimming Overlay - appears when chat box is open */}
+        <Animated.View
+          style={[
+            styles.dimmingOverlay,
+            {
+              opacity: overlayOpacity,
+            }
+          ]}
+          pointerEvents={isHeaderExpanded ? 'auto' : 'none'}
+        />
+        
+        {/* Collapsible Header - above overlay */}
+        <View style={[styles.header, { borderBottomColor: borderSecondary, borderBottomWidth: isHeaderExpanded ? 0 : 1, zIndex: 1001 }]}>
           {/* Left: AI Bot Icon (Non-interactive) */}
           <View style={[styles.profileButton, { borderColor: theme.border }]}>
              <View style={[styles.profileAvatarPlaceholder, { backgroundColor: cardBackground }]}>
@@ -539,13 +616,12 @@ export default function InsightsScreen({ route }: any) {
         
         {/* Main Content Area */}
         <View style={styles.mainContent}>
-          {/* Expandable Content - Now shows Insights by default (when NOT expanded) */}
-          {!isHeaderExpanded && (
-            <ScrollView 
-              style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}
-              contentContainerStyle={{ paddingBottom: bottomNavPadding }}
-              showsVerticalScrollIndicator={false}
-            >
+          {/* Insights Content - Always visible */}
+          <ScrollView 
+            style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}
+            contentContainerStyle={{ paddingBottom: bottomNavPadding }}
+            showsVerticalScrollIndicator={false}
+          >
             {/* Technicals Button */}
             <TouchableOpacity 
               style={styles.technicalsButton}
@@ -775,20 +851,44 @@ export default function InsightsScreen({ route }: any) {
               <EmojiTrendChart title="Motivation" data={trendData.motivation} type="motivation" />
             </View>
           </ScrollView>
-        )}
+        </View>
 
-        {/* Messages - Only show when header IS expanded (Chat is the dropdown) */}
-        {isHeaderExpanded && (
-          <KeyboardAvoidingView 
-            style={[styles.expandedContent, { borderTopColor: borderSecondary }]} 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
-          >
+        {/* Sliding Chat Box - Animated (positioned relative to SafeAreaView) */}
+        <Animated.View
+          style={[
+            styles.chatBoxContainer,
+            {
+              top: chatBoxTop,
+              maxHeight: chatBoxMaxHeight,
+              height: chatBoxHeight,
+              backgroundColor: '#FFFFFF',
+              borderColor: '#E5E7EB',
+              borderLeftWidth: chatBoxHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+                extrapolate: 'clamp',
+              }),
+              borderRightWidth: chatBoxHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+                extrapolate: 'clamp',
+              }),
+              borderBottomWidth: chatBoxHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+                extrapolate: 'clamp',
+              }),
+              borderTopWidth: 0, // No top border
+            }
+          ]}
+        >
+          <View style={styles.chatBoxContent}>
         <ScrollView
           ref={scrollViewRef}
           style={styles.messagesContainer}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
         >
           {messages.map((message) => (
             <View
@@ -878,7 +978,7 @@ export default function InsightsScreen({ route }: any) {
               style={[
                 styles.textInput,
                 { 
-                  color: '#ffffff',
+                  color: textPrimary,
                 },
               ]}
               value={inputText}
@@ -889,7 +989,7 @@ export default function InsightsScreen({ route }: any) {
               onSubmitEditing={() => sendMessage()}
               onFocus={() => setIsHeaderExpanded(true)}
               autoCorrect={true}
-              autoCapitalize="sentences"
+              autoCapitalize="words"
               textContentType="none"
               autoComplete="off"
               spellCheck={true}
@@ -915,8 +1015,8 @@ export default function InsightsScreen({ route }: any) {
           </TouchableOpacity>
         </View>
         
-      </KeyboardAvoidingView>
-        )}
+          </View>
+        </Animated.View>
 
       {/* Progress Chart Modal */}
       <Modal visible={activeModal === 'progress'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
@@ -936,8 +1036,6 @@ export default function InsightsScreen({ route }: any) {
           </View>
         </View>
       </Modal>
-
-        </View>
 
       {/* Data Requirements Modal */}
       <Modal visible={activeModal === 'requirements'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
@@ -1041,6 +1139,7 @@ export default function InsightsScreen({ route }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    position: 'relative',
   },
   header: {
     flexDirection: 'row',
@@ -1054,6 +1153,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
+    position: 'relative',
   },
   profileButton: {
     width: 48,
@@ -1114,6 +1214,38 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 24,
     flex: 1,
+  },
+  dimmingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 999,
+  },
+  chatBoxContainer: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    borderRadius: 16,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopWidth: 0, // No top border
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    zIndex: 1000,
+    overflow: 'hidden',
+  },
+  chatBoxContent: {
+    flex: 1,
+    paddingHorizontal: 0,
   },
   insightsScrollView: {
     maxHeight: 400,
@@ -1314,8 +1446,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    padding: 16,
-    paddingBottom: 16,
+    padding: 24,
+    paddingBottom: 24, // Match top padding for symmetry
   },
   messageContainer: {
     flexDirection: 'row',
@@ -1380,7 +1512,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 24, // Match top padding (24px) for symmetry with greeting message
     borderTopWidth: 1,
     gap: 12,
   },
@@ -1397,7 +1530,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#ffffff',
     textAlignVertical: 'center',
     borderWidth: 0,
   },

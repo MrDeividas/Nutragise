@@ -263,10 +263,10 @@ export default function ChallengeDetailScreen({ route }: any) {
   if (loading) {
     return (
       <CustomBackground>
-        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <SafeAreaView style={[styles.container, { backgroundColor: '#FFFFFF' }]} edges={['top', 'left', 'right']}>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textPrimary }]}>
               Loading challenge details...
             </Text>
           </View>

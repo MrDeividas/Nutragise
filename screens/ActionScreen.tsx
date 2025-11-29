@@ -585,7 +585,7 @@ function ActionScreen() {
   const [showGymModal, setShowGymModal] = useState(false);
   const [showSleepModal, setShowSleepModal] = useState(false);
   const [showWaterModal, setShowWaterModal] = useState(false);
-  const [showRunModal, setShowRunModal] = useState(false);
+  const [showExerciseModal, setShowExerciseModal] = useState(false);
   const [showCustomHabitModal, setShowCustomHabitModal] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [customHabitTitle, setCustomHabitTitle] = useState('');
@@ -609,6 +609,7 @@ function ActionScreen() {
   const colorPickerFrameRef = useRef<number | null>(null);
   const pendingColorSVRef = useRef<{ s: number; v: number } | null>(null);
   const pendingHueRef = useRef<number | null>(null);
+  const isCompletingHabitRef = useRef(false); // Ref to block immediate sorting during completion animation
   const [isColorPickerInteracting, setIsColorPickerInteracting] = useState(false);
   const [taskDays, setTaskDays] = useState('Every Day');
   const [selectedTaskDaysOption, setSelectedTaskDaysOption] = useState<string>('specific-days-week');
@@ -753,7 +754,6 @@ function ActionScreen() {
   const modalPosition = useRef(new Animated.Value(0)).current;
   
   const [gymQuestionnaire, setGymQuestionnaire] = useState({
-    dayType: '', // 'active' or 'rest'
     selectedTrainingTypes: [] as string[], // multiple selected training types
     customTrainingType: '' // for "Other" option
   });
@@ -772,15 +772,15 @@ function ActionScreen() {
     waterNotes: ''
   });
   
-    const [runQuestionnaire, setRunQuestionnaire] = useState({
-    dayType: '',
-    activityType: '', // 'run' or 'walk'
-    runType: '',
-    distance: 5, // Changed to number for slider, default 5km
+    const [exerciseQuestionnaire, setExerciseQuestionnaire] = useState({
+    selectedSport: '', // Football, Basketball, Tennis, Padel, Swimming, Rugby, Cycling, Running, Other
+    customSport: '', // for "Other" option
+    runType: '', // Only shown when sport is "Running"
+    distance: 5, // Only shown when sport is "Running"
     durationHours: 0,
     durationMinutes: 30,
     durationSeconds: 0,
-    runNotes: ''
+    exerciseNotes: ''
   });
 
   const [showReflectModal, setShowReflectModal] = useState(false);
@@ -1469,9 +1469,6 @@ function ActionScreen() {
       withTiming(slideDistance, { 
         duration: 400,
         easing: ReanimatedEasing.inOut(ReanimatedEasing.ease)
-      }),
-      withTiming(0, { 
-        duration: 0 // Reset for next animation
       })
     );
     
@@ -1485,13 +1482,18 @@ function ActionScreen() {
         // Do not save order here to preserve user's preferred order across days
         return sorted;
       });
-      // Reset animation values
-      anim.scale.value = 1;
-      anim.translateX.value = 0;
+      
+      // Wait for state update/re-render to process before resetting animation values
+      setTimeout(() => {
+        anim.scale.value = 1;
+        anim.translateX.value = 0;
+        isCompletingHabitRef.current = false; // Re-enable sorting
+      }, 50);
     }, 700); // Total animation duration
-  }, [spotlightCardWidth, cardAnimations, completedHabits, sortHabitsByCompletion, saveCardOrder]);
+  }, [spotlightCardWidth, cardAnimations, completedHabits, sortHabitsByCompletion]);
 
   const markHabitCompleted = useCallback((habitId: string) => {
+    isCompletingHabitRef.current = true; // Block immediate sorting
     setCompletedHabits(prev => {
       if (prev.has(habitId)) return prev;
       const next = new Set(prev);
@@ -1524,7 +1526,7 @@ function ActionScreen() {
     });
     updateCardCompletionVisual(habitId, false, { animate: true });
     clearHabitNeedsDetails(habitId);
-  }, [updateCardCompletionVisual, clearHabitNeedsDetails, sortHabitsByCompletion, saveCardOrder]);
+  }, [updateCardCompletionVisual, clearHabitNeedsDetails, sortHabitsByCompletion]);
 
   const persistQuickCompletion = useCallback(async (habitId: string) => {
     const date = getTodayDateString();
@@ -1633,21 +1635,46 @@ function ActionScreen() {
   }, []); // Only run on mount
 
   // Sync reorderable habits when modal opens
+  // Load from saved order, not from current carousel order (which may be sorted by completion)
   useEffect(() => {
     if (showReorderHabitsModal) {
-      setReorderableHabits([...habitSpotlightCards]);
-      // Initialize reorderable custom habits based on current sorted order
-      const sortedCustomHabits = [...customHabits].sort((a, b) => {
-        const indexA = customHabitOrder.indexOf(a.id);
-        const indexB = customHabitOrder.indexOf(b.id);
-        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-        if (indexA !== -1) return -1;
-        if (indexB !== -1) return 1;
-        return 0;
-      });
-      setReorderableCustomHabits(sortedCustomHabits);
+      (async () => {
+        try {
+          // Load saved order from AsyncStorage
+          const storedOrder = await loadCardOrder();
+          
+          let orderedCards = habitSpotlightCardsBase;
+          
+          // If we have a stored order, restore it
+          if (storedOrder && storedOrder.length === habitSpotlightCardsBase.length) {
+            const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
+            orderedCards = [...habitSpotlightCardsBase].sort((a, b) => {
+              const aIndex = orderMap.get(a.habitId) ?? Infinity;
+              const bIndex = orderMap.get(b.habitId) ?? Infinity;
+              return aIndex - bIndex;
+            });
+          }
+          
+          setReorderableHabits(orderedCards);
+          
+          // Initialize reorderable custom habits based on current sorted order
+          const sortedCustomHabits = [...customHabits].sort((a, b) => {
+            const indexA = customHabitOrder.indexOf(a.id);
+            const indexB = customHabitOrder.indexOf(b.id);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return 0;
+          });
+          setReorderableCustomHabits(sortedCustomHabits);
+        } catch (error) {
+          console.warn('Failed to load saved order for reorder modal:', error);
+          // Fallback to current carousel order if loading fails
+          setReorderableHabits([...habitSpotlightCards]);
+        }
+      })();
     }
-  }, [showReorderHabitsModal, habitSpotlightCards, customHabits, customHabitOrder]);
+  }, [showReorderHabitsModal, loadCardOrder, customHabits, customHabitOrder]);
 
   // Reorder functions
   const moveHabitUp = useCallback((index: number) => {
@@ -1837,11 +1864,11 @@ function ActionScreen() {
       // Only mark as completed if the habit was actually completed (not just data exists)
       // This matches the old circle's behavior - only completed when questionnaire was finished
       
-      // Gym: Only completed if it was an active day (not rest day)
-      if (dailyHabits.gym_day_type === 'active') completedSet.add('gym');
+      // Gym: Completed if training types are present
+      if (dailyHabits.gym_training_types && dailyHabits.gym_training_types.length > 0) completedSet.add('gym');
       
-      // Run: Only completed if it was an active day (not rest day)  
-      if (dailyHabits.run_day_type === 'active') completedSet.add('run');
+      // Run/Exercise: Completed if activity type is present (run_day_type is always 'active' now, so only check activity_type)
+      if (dailyHabits.run_activity_type) completedSet.add('run');
       
       // Sleep: Only completed if quality is reasonable (not terrible sleep)
       if (dailyHabits.sleep_quality !== undefined && dailyHabits.sleep_quality >= 50) completedSet.add('sleep');
@@ -1870,6 +1897,59 @@ function ActionScreen() {
     // Sync completed habits whenever data changes
     syncCompletedHabits();
   }, [user, syncCompletedHabits, dailyHabits]);
+
+  // Track current date to detect new day
+  const getTodayDateStringHelper = useCallback((): string => {
+    const now = new Date();
+    const hour = now.getHours();
+    // If before 4am, use previous day (matching points service logic)
+    const d = hour < 4 ? new Date(now.getTime() - 24 * 60 * 60 * 1000) : now;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
+  
+  const [currentDate, setCurrentDate] = useState(() => getTodayDateStringHelper());
+  
+  // Check for new day and reset order
+  useEffect(() => {
+    const checkNewDay = () => {
+      const today = getTodayDateStringHelper();
+      if (today !== currentDate) {
+        setCurrentDate(today);
+        // New day detected - reset to saved order
+        (async () => {
+          try {
+            const storedOrder = await loadCardOrder();
+            let initialCards = habitSpotlightCardsBase;
+            
+            if (storedOrder && storedOrder.length === habitSpotlightCardsBase.length) {
+              const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
+              initialCards = [...habitSpotlightCardsBase].sort((a, b) => {
+                const aIndex = orderMap.get(a.habitId) ?? Infinity;
+                const bIndex = orderMap.get(b.habitId) ?? Infinity;
+                return aIndex - bIndex;
+              });
+            }
+            
+            // Sort by completion status (non-completed first)
+            const sorted = sortHabitsByCompletion(initialCards, completedHabits);
+            setHabitSpotlightCards(sorted);
+            habitSpotlightCardsRef.current = sorted;
+          } catch (error) {
+            console.warn('Failed to reset order on new day:', error);
+          }
+        })();
+      }
+    };
+    
+    // Check immediately and then periodically
+    checkNewDay();
+    const interval = setInterval(checkNewDay, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [currentDate, getTodayDateStringHelper, loadCardOrder, sortHabitsByCompletion, completedHabits]);
 
   // Load persisted card order on mount and sort by completion status
   useEffect(() => {
@@ -1929,7 +2009,10 @@ function ActionScreen() {
   }, [dailyHabits, syncCompletedHabits]);
 
   // Sort cards by completion status whenever completedHabits changes
+  // Note: This does NOT save the order - only the reorder modal saves the order
   useEffect(() => {
+    if (isCompletingHabitRef.current) return; // Skip if we are animating completion
+
     if (completedHabits.size === 0 && habitSpotlightCards.length === habitSpotlightCardsBase.length) {
       // Only sort if we have completion data or if cards haven't been sorted yet
       return;
@@ -1938,11 +2021,10 @@ function ActionScreen() {
     setHabitSpotlightCards(prevCards => {
       const sorted = sortHabitsByCompletion(prevCards, completedHabits);
       habitSpotlightCardsRef.current = sorted;
-      // Save the sorted order
-      saveCardOrder(sorted);
+      // Do not save order here - preserve user's preferred order across days
       return sorted;
     });
-  }, [completedHabits, sortHabitsByCompletion, saveCardOrder]);
+  }, [completedHabits, sortHabitsByCompletion]);
 
   const loadSelectedHabits = async () => {
     try {
@@ -2385,31 +2467,34 @@ function ActionScreen() {
         return;
 
       case 'run':
-        if (dailyHabits && dailyHabits.run_day_type) {
-          setRunQuestionnaire({
-            dayType: dailyHabits.run_day_type || '',
-            activityType: dailyHabits.run_activity_type || '',
+        if (dailyHabits && (dailyHabits.run_day_type || dailyHabits.run_activity_type)) {
+          // Map old data to new structure
+          const sport = dailyHabits.run_activity_type === 'run' ? 'Running' : (dailyHabits.run_activity_type || '');
+          const durationParts = dailyHabits.run_duration ? dailyHabits.run_duration.split(':') : ['0', '30', '0'];
+          setExerciseQuestionnaire({
+            selectedSport: sport,
+            customSport: '',
             runType: dailyHabits.run_type || '',
             distance: dailyHabits.run_distance ? Math.round(dailyHabits.run_distance * 2) : 5,
-            durationHours: 0,
-            durationMinutes: 30,
-            durationSeconds: 0,
-            runNotes: dailyHabits.run_notes || ''
+            durationHours: parseInt(durationParts[0]) || 0,
+            durationMinutes: parseInt(durationParts[1]) || 30,
+            durationSeconds: parseInt(durationParts[2]) || 0,
+            exerciseNotes: dailyHabits.run_notes || ''
           });
         } else {
-          setRunQuestionnaire({ 
-            dayType: '', 
-            activityType: '', 
+          setExerciseQuestionnaire({ 
+            selectedSport: '', 
+            customSport: '', 
             runType: '', 
             distance: 5, 
             durationHours: 0, 
             durationMinutes: 30, 
             durationSeconds: 0, 
-            runNotes: '' 
+            exerciseNotes: '' 
           });
         }
         modalPosition.setValue(0);
-        setShowRunModal(true);
+        setShowExerciseModal(true);
         return;
 
       case 'reflect':
@@ -2454,12 +2539,11 @@ function ActionScreen() {
       case 'gym':
         if (dailyHabits && dailyHabits.gym_day_type) {
           setGymQuestionnaire({
-            dayType: dailyHabits.gym_day_type || '',
             selectedTrainingTypes: dailyHabits.gym_training_types || [],
             customTrainingType: dailyHabits.gym_custom_type || ''
           });
         } else {
-          setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
+          setGymQuestionnaire({ selectedTrainingTypes: [], customTrainingType: '' });
         }
         modalPosition.setValue(0);
         setShowGymModal(true);
@@ -2500,15 +2584,15 @@ function ActionScreen() {
     const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
 
       // Smoothly animate modal up - different amounts for different modals
-      let liftAmount = -150; // Default for run modal (most content)
+      let liftAmount = -150; // Default for exercise modal (most content)
       
       // Check which modal is currently open to adjust lift amount
       if (showSleepModal) {
         liftAmount = -120; // Sleep modal needs moderate lift
       } else if (showWaterModal) {
         liftAmount = -80; // Water modal needs less lift (shorter content)
-      } else if (showRunModal) {
-        liftAmount = -150; // Run modal needs most lift (most content)
+      } else if (showExerciseModal) {
+        liftAmount = -150; // Exercise modal needs most lift (most content)
       } else if (showGymModal) {
         liftAmount = -100; // Gym modal needs moderate lift
       } else if (showReflectModal) {
@@ -2541,6 +2625,10 @@ function ActionScreen() {
 
   const trainingTypes = [
     'Push', 'Pull', 'Quads & Calves', 'Chest', 'Shoulders', 'Arms', 'Back', 'Hamies & Glutes', 'Abs', 'Cardio', 'HIIT', 'Other'
+  ];
+
+  const sportOptions = [
+    'Football', 'Padel', 'Running', 'Swimming', 'Rugby', 'Tennis', 'Basketball', 'Cycling', 'Other'
   ];
 
   // Helper function to get sleep quality label based on percentage
@@ -3270,16 +3358,18 @@ function ActionScreen() {
         </View>
 
         {/* Greeting Section */}
-        <View style={[styles.greetingSection, { flexDirection: 'row', alignItems: 'center' }]}>
+        <View style={[styles.greetingSection, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
           <Text style={[styles.greetingText, { color: theme.textPrimary }]}>
             Habits
           </Text>
-          <TouchableOpacity onPress={() => setShowReorderHabitsModal(true)} accessibilityRole="button" style={{ marginLeft: 8 }}>
-            <Ionicons name="swap-vertical" size={20} color={theme.textPrimary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowStreakModal(true)} accessibilityRole="button" style={{ marginLeft: 8 }}>
-            <Ionicons name="flame-outline" size={20} color={theme.textPrimary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={() => setShowStreakModal(true)} accessibilityRole="button">
+              <Ionicons name="flame-outline" size={20} color={theme.textPrimary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowReorderHabitsModal(true)} accessibilityRole="button">
+              <Ionicons name="swap-vertical" size={20} color={theme.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Habit Spotlight Cards */}
@@ -4634,48 +4724,6 @@ function ActionScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
-            {/* Day Type Selection */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>What type of day is this?</Text>
-              <View style={styles.optionsContainer}>
-                <TouchableOpacity
-                    style={[
-                      styles.optionButton,
-                      gymQuestionnaire.dayType === 'active' && styles.optionButtonSelected
-                    ]}
-                  onPress={() => {
-                      setGymQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
-                  }}
-                >
-                    <Text style={[
-                      styles.optionButtonText,
-                      gymQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
-                    ]}>
-                    Active Day
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                      styles.optionButton,
-                      gymQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
-                    ]}
-                  onPress={() => {
-                      setGymQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
-                  }}
-                >
-                    <Text style={[
-                      styles.optionButtonText,
-                      gymQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
-                    ]}>
-                    Rest Day
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-              {/* Active Day Content */}
-              {gymQuestionnaire.dayType === 'active' && (
-                <>
             {/* Training Type Selection */}
             <View style={styles.questionSection}>
               <Text style={styles.questionText}>What did you train?</Text>
@@ -4723,43 +4771,31 @@ function ActionScreen() {
                   returnKeyType="default"
                 />
               </View>
-                  )}
-                </>
-              )}
-
-              {/* Rest Day Content */}
-              {gymQuestionnaire.dayType === 'rest' && (
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Rest days are important for recovery!</Text>
-              <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
-                Taking time to rest allows your muscles to recover and grow stronger.
-              </Text>
-            </View>
-              )}
+            )}
             </ScrollView>
 
             {/* Submit Button */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                (!gymQuestionnaire.dayType || (gymQuestionnaire.dayType === 'active' && (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())))) && styles.submitButtonDisabled
+                (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())) && styles.submitButtonDisabled
               ]}
-              disabled={!gymQuestionnaire.dayType || (gymQuestionnaire.dayType === 'active' && (gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())))}
+              disabled={gymQuestionnaire.selectedTrainingTypes.length === 0 || (gymQuestionnaire.selectedTrainingTypes.includes('Other') && !gymQuestionnaire.customTrainingType.trim())}
               onPress={async () => {
                 try {
                   const date = getTodayDateString();
                   const habitData = {
                     date,
-                    gym_day_type: gymQuestionnaire.dayType as 'active' | 'rest',
-                    gym_training_types: gymQuestionnaire.dayType === 'active' ? gymQuestionnaire.selectedTrainingTypes : [],
-                    gym_custom_type: gymQuestionnaire.dayType === 'active' ? gymQuestionnaire.customTrainingType : '',
+                    gym_day_type: 'active' as 'active' | 'rest',
+                    gym_training_types: gymQuestionnaire.selectedTrainingTypes,
+                    gym_custom_type: gymQuestionnaire.customTrainingType,
                   };
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     markHabitCompleted('gym'); // Sound plays here when animation starts
                     setShowGymModal(false);
-                    setGymQuestionnaire({ dayType: '', selectedTrainingTypes: [], customTrainingType: '' });
+                    setGymQuestionnaire({ selectedTrainingTypes: [], customTrainingType: '' });
                   } else {
                     console.error('Failed to save gym data');
                   }
@@ -4769,7 +4805,7 @@ function ActionScreen() {
               }}
             >
               <Text style={styles.submitButtonText}>
-                {gymQuestionnaire.dayType === 'rest' ? 'Complete Rest Day' : 'Complete Session'}
+                Complete Session
               </Text>
             </TouchableOpacity>
             </Animated.View>
@@ -5293,12 +5329,12 @@ function ActionScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Run Questionnaire Modal - Combined Single Page */}
+      {/* Exercise Questionnaire Modal */}
       <Modal
-        visible={showRunModal}
+        visible={showExerciseModal}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowRunModal(false)}
+        onRequestClose={() => setShowExerciseModal(false)}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
@@ -5307,165 +5343,130 @@ function ActionScreen() {
               { transform: [{ translateY: modalPosition }] }
             ]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Run Session</Text>
-              <TouchableOpacity onPress={() => setShowRunModal(false)}>
+              <Text style={styles.modalTitle}>Exercise Session</Text>
+              <TouchableOpacity onPress={() => setShowExerciseModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
-            {/* Day Type Selection */}
+            {/* Sport Selection */}
             <View style={styles.questionSection}>
-              <Text style={styles.questionText}>What type of day is this?</Text>
-              <View style={styles.optionsContainer}>
-                <TouchableOpacity
-                    style={[
-                      styles.optionButton,
-                      runQuestionnaire.dayType === 'active' && styles.optionButtonSelected
-                    ]}
-                  onPress={() => {
-                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'active' }));
-                  }}
-                >
-                    <Text style={[
-                      styles.optionButtonText,
-                      runQuestionnaire.dayType === 'active' && styles.optionButtonTextSelected
-                    ]}>
-                    Active Day
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                      styles.optionButton,
-                      runQuestionnaire.dayType === 'rest' && styles.optionButtonSelected
-                    ]}
-                  onPress={() => {
-                    setRunQuestionnaire(prev => ({ ...prev, dayType: 'rest' }));
-                  }}
-                >
-                    <Text style={[
-                      styles.optionButtonText,
-                      runQuestionnaire.dayType === 'rest' && styles.optionButtonTextSelected
-                    ]}>
-                    Rest Day
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-              {/* Active Day Content */}
-            {runQuestionnaire.dayType === 'active' && (
-                <>
-                  {/* Activity Type Selection */}
-              <View style={styles.questionSection}>
-                <Text style={styles.questionText}>What type of activity?</Text>
-                <View style={styles.optionsContainer}>
+              <Text style={styles.questionText}>What sport did you do?</Text>
+              <View style={styles.trainingTypesContainer}>
+                {sportOptions.map((sport, index) => (
                   <TouchableOpacity
+                    key={index}
                     style={[
-                      styles.optionButton,
-                      runQuestionnaire.activityType === 'run' && styles.optionButtonSelected
+                      styles.trainingTypeButton,
+                      exerciseQuestionnaire.selectedSport === sport && styles.trainingTypeButtonSelected
                     ]}
                     onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'run' }));
+                      setExerciseQuestionnaire(prev => ({ ...prev, selectedSport: sport }));
                     }}
                   >
                     <Text style={[
-                      styles.optionButtonText,
-                      runQuestionnaire.activityType === 'run' && styles.optionButtonTextSelected
+                      styles.trainingTypeButtonText,
+                      { fontSize: 12 },
+                      exerciseQuestionnaire.selectedSport === sport && styles.trainingTypeButtonTextSelected
                     ]}>
-                      Run
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.optionButton,
-                      runQuestionnaire.activityType === 'walk' && styles.optionButtonSelected
-                    ]}
-                    onPress={() => {
-                      setRunQuestionnaire(prev => ({ ...prev, activityType: 'walk' }));
-                    }}
-                  >
-                    <Text style={[
-                      styles.optionButtonText,
-                      runQuestionnaire.activityType === 'walk' && styles.optionButtonTextSelected
-                    ]}>
-                      Walk
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-                  {/* Run Type Selection - Only show if activity type is selected */}
-                  {runQuestionnaire.activityType && (
-                    <>
-            <View style={styles.questionSection}>
-              <View style={styles.otherOptionsContainer}>
-                {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[
-                      styles.otherOptionButton,
-                      runQuestionnaire.runType === type && styles.otherOptionButtonSelected
-                    ]}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, runType: type }))}
-                  >
-                    <Text style={[
-                      styles.otherOptionButtonText,
-                      runQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
-                    ]}>
-                      {type}
+                      {sport}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Distance Slider */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Distance covered?</Text>
-              <View style={styles.sliderContainer}>
-                {/* Popular Distance Buttons */}
-                <View style={styles.popularDistanceButtons}>
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 10 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>5km</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 20 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>10km</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.popularDistanceButton}
-                    onPress={() => setRunQuestionnaire(prev => ({ ...prev, distance: 42 }))}
-                  >
-                    <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={85}
-                  value={runQuestionnaire.distance}
-                  onValueChange={(value) => setRunQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
-                  minimumTrackTintColor="#10B981"
-                  maximumTrackTintColor="#E5E7EB"
-                  thumbTintColor="#10B981"
-                  step={1}
+            {/* Custom Sport Input for "Other" */}
+            {exerciseQuestionnaire.selectedSport === 'Other' && (
+              <View style={styles.questionSection}>
+                <Text style={styles.questionText}>What sport was it?</Text>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="Enter your sport..."
+                  value={exerciseQuestionnaire.customSport}
+                  onChangeText={(text) => setExerciseQuestionnaire(prev => ({ ...prev, customSport: text }))}
+                  placeholderTextColor="#999"
+                  multiline
+                  returnKeyType="default"
                 />
-                <View style={styles.sliderLabels}>
-                  <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(runQuestionnaire.distance) }]}>
-                    {formatRunDistance(runQuestionnaire.distance)}
-                  </Text>
-                </View>
               </View>
-            </View>
+            )}
+
+            {/* Running Styles - Only show when Running is selected */}
+            {exerciseQuestionnaire.selectedSport === 'Running' && (
+              <>
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionText}>What type of run?</Text>
+                  <View style={styles.otherOptionsContainer}>
+                    {['Easy', 'Tempo', 'Long', 'Speed', 'Recovery', 'Race'].map((type) => (
+                      <TouchableOpacity
+                        key={type}
+                        style={[
+                          styles.otherOptionButton,
+                          exerciseQuestionnaire.runType === type && styles.otherOptionButtonSelected
+                        ]}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, runType: type }))}
+                      >
+                        <Text style={[
+                          styles.otherOptionButtonText,
+                          exerciseQuestionnaire.runType === type && styles.otherOptionButtonTextSelected
+                        ]}>
+                          {type}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Distance Slider - Only for Running */}
+                <View style={styles.questionSection}>
+                  <Text style={styles.questionText}>Distance covered?</Text>
+                  <View style={styles.sliderContainer}>
+                    {/* Popular Distance Buttons */}
+                    <View style={styles.popularDistanceButtons}>
+                      <TouchableOpacity 
+                        style={styles.popularDistanceButton}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, distance: 10 }))}
+                      >
+                        <Text style={styles.popularDistanceButtonText}>5km</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.popularDistanceButton}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, distance: 20 }))}
+                      >
+                        <Text style={styles.popularDistanceButtonText}>10km</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.popularDistanceButton}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, distance: 42 }))}
+                      >
+                        <Text style={styles.popularDistanceButtonText}>Half Marathon</Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={85}
+                      value={exerciseQuestionnaire.distance}
+                      onValueChange={(value) => setExerciseQuestionnaire(prev => ({ ...prev, distance: Math.round(value) }))}
+                      minimumTrackTintColor="#10B981"
+                      maximumTrackTintColor="#E5E7EB"
+                      thumbTintColor="#10B981"
+                      step={1}
+                    />
+                    <View style={styles.sliderLabels}>
+                      <Text style={[styles.sliderPercentage, { color: getRunDistanceColor(exerciseQuestionnaire.distance) }]}>
+                        {formatRunDistance(exerciseQuestionnaire.distance)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </>
+            )}
 
             {/* Duration */}
             <View style={styles.questionSection}>
@@ -5484,14 +5485,14 @@ function ActionScreen() {
                       const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 12));
-                      setRunQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
+                      setExerciseQuestionnaire(prev => ({ ...prev, durationHours: clampedIndex }));
                     }}
                   >
                     {Array.from({ length: 13 }, (_, i) => i).map((hour) => (
                       <TouchableOpacity
                         key={`h-${hour}`}
                         style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, durationHours: hour }))}
                       >
                         <Text style={styles.timePickerItemText}>
                           {hour}
@@ -5514,14 +5515,14 @@ function ActionScreen() {
                       const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                      setRunQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
+                      setExerciseQuestionnaire(prev => ({ ...prev, durationMinutes: clampedIndex }));
                     }}
                   >
                     {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
                       <TouchableOpacity
                         key={`m-${minute}`}
                         style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, durationMinutes: minute }))}
                       >
                         <Text style={styles.timePickerItemText}>
                           {minute.toString().padStart(2, '0')}
@@ -5544,14 +5545,14 @@ function ActionScreen() {
                       const itemHeight = 65;
                       const selectedIndex = Math.round(y / itemHeight);
                       const clampedIndex = Math.max(0, Math.min(selectedIndex, 59));
-                      setRunQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
+                      setExerciseQuestionnaire(prev => ({ ...prev, durationSeconds: clampedIndex }));
                     }}
                   >
                     {Array.from({ length: 60 }, (_, i) => i).map((second) => (
                       <TouchableOpacity
                         key={`s-${second}`}
                         style={styles.timePickerItem}
-                        onPress={() => setRunQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
+                        onPress={() => setExerciseQuestionnaire(prev => ({ ...prev, durationSeconds: second }))}
                       >
                         <Text style={styles.timePickerItemText}>
                           {second.toString().padStart(2, '0')}
@@ -5563,72 +5564,61 @@ function ActionScreen() {
               </View>
             </View>
 
-            {/* Run Notes */}
+            {/* Exercise Notes */}
             <View style={styles.questionSection}>
               <Text style={styles.questionText}>How did it feel? (optional)</Text>
                 <TextInput
                   style={styles.customInput}
                   placeholder="e.g., Felt strong, good pace..."
-                  value={runQuestionnaire.runNotes}
-                  onChangeText={(text) => setRunQuestionnaire(prev => ({ ...prev, runNotes: text }))}
+                  value={exerciseQuestionnaire.exerciseNotes}
+                  onChangeText={(text) => setExerciseQuestionnaire(prev => ({ ...prev, exerciseNotes: text }))}
                   placeholderTextColor="#999"
                   multiline
                   textAlignVertical="top"
                 />
             </View>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Rest Day Content */}
-              {runQuestionnaire.dayType === 'rest' && (
-                <View style={styles.questionSection}>
-                  <Text style={styles.questionText}>Rest days are important for recovery!</Text>
-                  <Text style={[styles.questionText, { fontSize: 16, fontWeight: '400', color: '#666' }]}>
-                    Taking time to rest allows your muscles to recover and prevents injury.
-                  </Text>
-                </View>
-              )}
             </ScrollView>
 
             {/* Submit Button */}
             <TouchableOpacity
-                              style={[
-                  styles.submitButton,
-                (!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))) && styles.submitButtonDisabled
-                ]}
-              disabled={!runQuestionnaire.dayType || (runQuestionnaire.dayType === 'active' && (!runQuestionnaire.activityType || !runQuestionnaire.runType))}
+              style={[
+                styles.submitButton,
+                (!exerciseQuestionnaire.selectedSport || (exerciseQuestionnaire.selectedSport === 'Other' && !exerciseQuestionnaire.customSport.trim()) || (exerciseQuestionnaire.selectedSport === 'Running' && !exerciseQuestionnaire.runType)) && styles.submitButtonDisabled
+              ]}
+              disabled={!exerciseQuestionnaire.selectedSport || (exerciseQuestionnaire.selectedSport === 'Other' && !exerciseQuestionnaire.customSport.trim()) || (exerciseQuestionnaire.selectedSport === 'Running' && !exerciseQuestionnaire.runType)}
               onPress={async () => {
                 try {
                   const date = getTodayDateString();
+                  const sportValue = exerciseQuestionnaire.selectedSport === 'Other' ? exerciseQuestionnaire.customSport : exerciseQuestionnaire.selectedSport;
+                  // Map sport to run_activity_type: 'run' for Running, lowercase for others
+                  const activityType = sportValue === 'Running' ? 'run' : sportValue.toLowerCase();
                   const habitData = {
                     date,
-                    run_activity_type: runQuestionnaire.dayType === 'active' ? (runQuestionnaire.activityType as 'run' | 'walk') : undefined,
-                    run_day_type: runQuestionnaire.dayType as 'active' | 'rest',
-                    run_type: runQuestionnaire.dayType === 'active' ? runQuestionnaire.runType : undefined,
-                    run_distance: runQuestionnaire.dayType === 'active' ? runQuestionnaire.distance * 0.5 : undefined,
-                    run_duration: runQuestionnaire.dayType === 'active' ? `${runQuestionnaire.durationHours}:${runQuestionnaire.durationMinutes.toString().padStart(2, '0')}:${runQuestionnaire.durationSeconds.toString().padStart(2, '0')}` : undefined,
-                    run_notes: runQuestionnaire.dayType === 'active' ? runQuestionnaire.runNotes : undefined,
+                    run_activity_type: activityType as any, // Store sport name in activity_type field
+                    run_day_type: 'active' as 'active' | 'rest', // Always active now
+                    run_type: exerciseQuestionnaire.selectedSport === 'Running' ? exerciseQuestionnaire.runType : undefined,
+                    run_distance: exerciseQuestionnaire.selectedSport === 'Running' ? exerciseQuestionnaire.distance * 0.5 : undefined,
+                    run_duration: `${exerciseQuestionnaire.durationHours}:${exerciseQuestionnaire.durationMinutes.toString().padStart(2, '0')}:${exerciseQuestionnaire.durationSeconds.toString().padStart(2, '0')}`,
+                    run_notes: exerciseQuestionnaire.exerciseNotes,
                   };
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     markHabitCompleted('run'); // Sound plays here when animation starts
-                    setShowRunModal(false);
-                    setRunQuestionnaire({ dayType: '', activityType: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, runNotes: '' });
+                    setShowExerciseModal(false);
+                    setExerciseQuestionnaire({ selectedSport: '', customSport: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, exerciseNotes: '' });
                   } else {
-                    console.error('Failed to save run data');
+                    console.error('Failed to save exercise data');
                     const error = useActionStore.getState().dailyHabitsError;
                     console.error('Error details:', error);
                   }
                 } catch (error) {
-                  console.error('Error saving run data:', error);
+                  console.error('Error saving exercise data:', error);
                 }
               }}
             >
               <Text style={styles.submitButtonText}>
-                {runQuestionnaire.dayType === 'rest' ? 'Complete Rest Day' : 'Complete Run Log'}
+                Complete Exercise
               </Text>
             </TouchableOpacity>
             </Animated.View>
