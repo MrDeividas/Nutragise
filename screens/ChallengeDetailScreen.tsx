@@ -13,10 +13,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useStripe } from '@stripe/stripe-react-native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { challengesService } from '../lib/challengesService';
+import { walletService } from '../lib/walletService';
+import { challengePotService } from '../lib/challengePotService';
 import { ChallengeWithDetails, ChallengeProgress } from '../types/challenges';
+import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
 
@@ -27,6 +31,7 @@ export default function ChallengeDetailScreen({ route }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { challengeId } = route.params;
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   
   const [challenge, setChallenge] = useState<ChallengeWithDetails | null>(null);
   const [progress, setProgress] = useState<ChallengeProgress | null>(null);
@@ -37,6 +42,8 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [activeTab, setActiveTab] = useState('about');
+  const [potStatus, setPotStatus] = useState<PotStatus | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
 
   useEffect(() => {
     loadChallengeDetails();
@@ -56,6 +63,16 @@ export default function ChallengeDetailScreen({ route }: any) {
           const progressData = await challengesService.getChallengeProgress(challengeData.id, user.id);
           setProgress(progressData);
         }
+
+        // Load pot status if challenge has entry fee
+        if (challengeData.entry_fee && challengeData.entry_fee > 0) {
+          const pot = await challengePotService.getPotStatus(challengeId);
+          setPotStatus(pot);
+        }
+
+        // Load user's wallet balance
+        const balance = await walletService.getBalance(user.id);
+        setWalletBalance(balance);
       }
     } catch (error) {
       console.error('Error loading challenge details:', error);
@@ -68,22 +85,148 @@ export default function ChallengeDetailScreen({ route }: any) {
   const handleJoinChallenge = async () => {
     if (!user || !challenge) return;
     
+    const entryFee = challenge.entry_fee || 0;
+
     try {
       setJoining(true);
-      const success = await challengesService.joinChallenge(challenge.id, user.id);
-      
-      if (success) {
-        Alert.alert('Success', 'You have joined the challenge!');
-        setIsParticipating(true);
-        // Reload progress
-        const progressData = await challengesService.getChallengeProgress(challenge.id, user.id);
-        setProgress(progressData);
+
+      // For challenges with entry fee, check wallet balance first
+      if (entryFee > 0) {
+        console.log(`💰 [ChallengeDetailScreen] Checking wallet balance for challenge payment: £${entryFee}`);
+        
+        // Check if user has sufficient wallet balance
+        const hasSufficientBalance = walletBalance >= entryFee;
+        
+        if (hasSufficientBalance) {
+          // User has enough in wallet - use wallet funds
+          console.log(`✅ [ChallengeDetailScreen] Sufficient wallet balance, using wallet funds`);
+          
+          // Step 1: Initiate join with wallet (Transfers from wallet to Stripe Escrow)
+          // The service handles the wallet deduction and Stripe Payment Intent creation
+          const { paymentIntentId } = 
+            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
+          
+          // Step 2: Complete the join (payment already processed from wallet)
+          await challengesService.completeChallengeJoin(
+            challenge.id,
+            user.id,
+            paymentIntentId
+          );
+
+          Alert.alert(
+            'Success!', 
+            `You've joined the challenge! £${entryFee.toFixed(2)} has been transferred to escrow until the challenge completes.`
+          );
+        } else {
+          // Insufficient wallet balance - show payment options
+          console.log(`⚠️ [ChallengeDetailScreen] Insufficient wallet balance, showing payment options`);
+          
+          // First, calculate the fee to show user
+          const { stripeFeeCalculator } = await import('../lib/stripeFeeCalculator');
+          const feeCalculation = stripeFeeCalculator.calculateFee(entryFee, true);
+          
+      Alert.alert(
+        'Insufficient Balance',
+            `You need £${entryFee.toFixed(2)} to join this challenge. Your current balance is £${walletBalance.toFixed(2)}.\n\nCard payment total: £${feeCalculation.totalAmount.toFixed(2)}\n(Entry: £${entryFee.toFixed(2)} + Stripe fee: £${feeCalculation.stripeFee.toFixed(2)})\n\nWould you like to:\n• Add funds to wallet (no fee)\n• Pay directly with card`,
+        [
+          {
+                text: 'Add to Wallet',
+            onPress: () => navigation.navigate('Wallet'),
+          },
+          {
+                text: `Pay £${feeCalculation.totalAmount.toFixed(2)} with Card`,
+                onPress: async () => {
+                  // Pay directly with card via Stripe
+                  try {
+                    setJoining(true);
+                    
+                    // Step 1: Initiate join (creates Stripe Payment Intent with Stripe fee)
+                    const { paymentIntentId, clientSecret, entryFee: fee, stripeFee, totalAmount } = 
+                      await challengesService.initiateChallengeJoin(challenge.id, user.id);
+                    
+                    console.log(`✅ [ChallengeDetailScreen] Payment Intent created: ${paymentIntentId}`);
+                    console.log(`💰 [ChallengeDetailScreen] Total amount: £${totalAmount.toFixed(2)} (Entry: £${fee.toFixed(2)} + Fee: £${stripeFee.toFixed(2)})`);
+                    
+                    // Step 2: Initialize Stripe Payment Sheet
+                    const { error: initError } = await initPaymentSheet({
+                      merchantDisplayName: 'NutrApp',
+                      paymentIntentClientSecret: clientSecret,
+                      defaultBillingDetails: { 
+                        name: user.email?.split('@')[0] || 'User',
+                        email: user.email || undefined,
+                      },
+                      returnURL: 'nutrapp://stripe-redirect',
+                    });
+
+                    if (initError) {
+                      console.error('❌ [ChallengeDetailScreen] Error initializing payment sheet:', initError);
+                      throw new Error(initError.message);
+                    }
+
+                    // Step 3: Present Payment Sheet
+                    const { error: presentError } = await presentPaymentSheet();
+
+                    if (presentError) {
+                      if (presentError.code === 'Canceled') {
+                        console.log('ℹ️ [ChallengeDetailScreen] Payment canceled by user');
+      return;
+    }
+                      console.error('❌ [ChallengeDetailScreen] Error presenting payment sheet:', presentError);
+                      throw new Error(presentError.message);
+                    }
+
+                    // Step 4: Payment succeeded - complete the join
+                    console.log(`✅ [ChallengeDetailScreen] Payment succeeded, completing join...`);
+                    await challengesService.completeChallengeJoin(
+                      challenge.id,
+                      user.id,
+                      paymentIntentId
+                    );
+
+      Alert.alert(
+                      'Success!', 
+                      `You've joined the challenge! £${totalAmount.toFixed(2)} has been processed (£${fee.toFixed(2)} entry + £${stripeFee.toFixed(2)} fee). Funds are held in escrow until the challenge completes.`
+                    );
+                    
+                  setIsParticipating(true);
+                  await loadChallengeDetails();
+                  } catch (error: any) {
+                    console.error('❌ [ChallengeDetailScreen] Error with card payment:', error);
+                    Alert.alert('Error', error.message || 'Payment failed. Please try again.');
+              } finally {
+                setJoining(false);
+              }
+            },
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
       } else {
-        Alert.alert('Error', 'Failed to join challenge');
+        // Free challenge - join directly (no payment needed)
+        console.log(`🆓 [ChallengeDetailScreen] Joining free challenge`);
+        await challengesService.completeChallengeJoin(
+          challenge.id,
+          user.id,
+          null
+        );
+        Alert.alert('Success!', 'You have joined the challenge!');
       }
-    } catch (error) {
-      console.error('Error joining challenge:', error);
-      Alert.alert('Error', (error as Error).message || 'Failed to join challenge');
+
+      // Reload challenge details
+      setIsParticipating(true);
+      await loadChallengeDetails();
+      
+    } catch (error: any) {
+      console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
+      Alert.alert(
+        'Error', 
+        error.message || 'Failed to join challenge. Please try again.'
+      );
     } finally {
       setJoining(false);
     }
@@ -336,14 +479,53 @@ export default function ChallengeDetailScreen({ route }: any) {
             <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>investment</Text>
           </View>
           <View style={styles.statColumn}>
-            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>£{(challenge.participants?.length || 0) * (challenge.entry_fee || 0)}</Text>
-            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>shared pot</Text>
+            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>
+              £{potStatus?.totalAmount.toFixed(2) || ((challenge.participants?.length || 0) * (challenge.entry_fee || 0)).toFixed(2)}
+            </Text>
+            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>total pot</Text>
           </View>
           <View style={styles.statColumn}>
             <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{challenge.participants?.length || 0}</Text>
             <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>players</Text>
           </View>
         </View>
+
+        {/* Investment Warning (if challenge has entry fee and user is participating) */}
+        {challenge.entry_fee && challenge.entry_fee > 0 && isParticipating && (
+          <View style={[styles.warningCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
+            <Ionicons name="warning" size={20} color="#F59E0B" />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={[styles.warningTitle, { color: '#92400E' }]}>
+                Daily Proof Required
+              </Text>
+              <Text style={[styles.warningText, { color: '#92400E' }]}>
+                Submit proof every day to avoid forfeiting your £{challenge.entry_fee.toFixed(2)} investment. Missing any day will result in loss of your share.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Wallet Balance (if not participating and has entry fee) */}
+        {challenge.entry_fee && challenge.entry_fee > 0 && !isParticipating && (
+          <View style={[styles.balanceCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderColor }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
+                  Your Wallet Balance
+                </Text>
+                <Text style={[styles.balanceValue, { color: theme.textPrimary }]}>
+                  £{walletBalance.toFixed(2)}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('Wallet')}
+                style={[styles.addFundsButton, { backgroundColor: '#10B981' }]}
+              >
+                <Text style={styles.addFundsButtonText}>Add Funds</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Tabs */}
         <View style={styles.tabsContainer}>
@@ -1033,5 +1215,48 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  warningCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  warningText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  balanceCard: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  balanceLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  balanceValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  addFundsButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addFundsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

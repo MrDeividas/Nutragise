@@ -1,5 +1,8 @@
 import { supabase } from './supabase';
 import { apiCache } from './apiCache';
+import { walletService } from './walletService';
+import { challengePotService } from './challengePotService';
+import { stripeService } from './stripeService';
 import {
   Challenge,
   ChallengeWithDetails,
@@ -78,7 +81,7 @@ class ChallengesService {
         participant_count: countMap.get(challenge.id) || 0,
       }));
 
-      // Filter recurring challenges to only show current week's instances
+      // Filter recurring challenges to only show current period's instances
       const now = new Date();
       const filteredChallenges: Challenge[] = [];
       const recurringTitles = new Set<string>();
@@ -86,7 +89,7 @@ class ChallengesService {
       for (const challenge of challenges) {
         
         if (challenge.is_recurring) {
-          // For recurring challenges, only show the current week's instance
+          const schedule = challenge.recurring_schedule || 'weekly';
           const challengeStart = new Date(challenge.start_date);
           const challengeEnd = new Date(challenge.end_date);
           
@@ -96,19 +99,49 @@ class ChallengesService {
             challengeEnd.setUTCHours(23, 59, 59, 999);
           }
           
-          // Check if this challenge is currently active OR upcoming within the next week
-          const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-          
-          const isActive = (now >= challengeStart && now <= challengeEnd);
-          const isUpcoming = (now < challengeStart && challengeStart <= oneWeekFromNow);
-          const isRecentlyEnded = (now > challengeEnd && now <= oneWeekFromNow);
-          
-          // Show if active, upcoming, or recently ended (to bridge gaps)
-          if (isActive || isUpcoming || isRecentlyEnded) {
-            // Only add if we haven't already added a challenge with this title
-            if (!recurringTitles.has(challenge.title)) {
-              filteredChallenges.push(challenge);
-              recurringTitles.add(challenge.title);
+          if (schedule === 'daily') {
+            // For daily recurring challenges, show current day's instance
+            const today = new Date(now);
+            today.setUTCHours(0, 0, 0, 0);
+            const challengeDay = new Date(challengeStart);
+            challengeDay.setUTCHours(0, 0, 0, 0);
+            
+            const isToday = challengeDay.getTime() === today.getTime();
+            const isTomorrow = challengeDay.getTime() === today.getTime() + 24 * 60 * 60 * 1000;
+            
+            // Show today's or tomorrow's instance
+            if (isToday || isTomorrow) {
+              // Auto-activate if start time has passed
+              if (challenge.status === 'upcoming' && now >= challengeStart) {
+                await supabase
+                  .from('challenges')
+                  .update({ status: 'active' })
+                  .eq('id', challenge.id);
+                challenge.status = 'active';
+              }
+              
+              // Only add if we haven't already added a challenge with this title for today
+              const key = `${challenge.title}_${challengeDay.toISOString().split('T')[0]}`;
+              if (!recurringTitles.has(key)) {
+                filteredChallenges.push(challenge);
+                recurringTitles.add(key);
+              }
+            }
+          } else {
+            // For weekly recurring challenges, show current week's instance
+            const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            
+            const isActive = (now >= challengeStart && now <= challengeEnd);
+            const isUpcoming = (now < challengeStart && challengeStart <= oneWeekFromNow);
+            const isRecentlyEnded = (now > challengeEnd && now <= oneWeekFromNow);
+            
+            // Show if active, upcoming, or recently ended (to bridge gaps)
+            if (isActive || isUpcoming || isRecentlyEnded) {
+              // Only add if we haven't already added a challenge with this title
+              if (!recurringTitles.has(challenge.title)) {
+                filteredChallenges.push(challenge);
+                recurringTitles.add(challenge.title);
+              }
             }
           }
         } else {
@@ -206,11 +239,146 @@ class ChallengesService {
   }
 
   /**
-   * Join a challenge
+   * Initiate challenge join using wallet balance
+   * Deducts from wallet and transfers to Stripe escrow (Platform account)
    */
-  async joinChallenge(challengeId: string, userId: string): Promise<boolean> {
+  async initiateChallengeJoinWithWallet(
+    challengeId: string,
+    userId: string,
+    entryFee: number
+  ): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+  }> {
     try {
-      // Check if user is already participating
+      console.log(`🔍 [initiateChallengeJoinWithWallet] Using wallet balance for challenge ${challengeId}, user ${userId}, amount: £${entryFee}`);
+      
+      // Transfer from wallet to Stripe escrow
+      // This handles both wallet deduction and Stripe Payment Intent creation/confirmation
+      // Funds are moved from user wallet DB to Stripe Platform account (conceptually escrow)
+      const { paymentIntentId } = await stripeService.transferWalletToEscrow(
+        userId,
+        challengeId,
+        entryFee
+      );
+      
+      console.log(`✅ [initiateChallengeJoinWithWallet] Funds transferred to escrow: ${paymentIntentId}`);
+      
+      return {
+        paymentIntentId,
+        clientSecret: '', // Not needed for wallet payment (already confirmed)
+      };
+    } catch (error) {
+      console.error('Error initiating challenge join with wallet:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initiate challenge join - creates Stripe Payment Intent for escrow
+   * Returns payment intent details for UI to show Stripe Payment Sheet
+   * Includes Stripe fee calculation (user covers fees)
+   */
+  async initiateChallengeJoin(challengeId: string, userId: string): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    entryFee: number; // Original entry fee (before Stripe fee)
+    stripeFee: number; // Stripe processing fee
+    totalAmount: number; // Total amount user pays (entryFee + stripeFee)
+  }> {
+    try {
+      console.log(`🔍 [initiateChallengeJoin] Initiating join for challenge ${challengeId}, user ${userId}`);
+      
+      // Get challenge details
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('*, status, start_date, max_participants, is_recurring, title, recurring_schedule, entry_fee')
+        .eq('id', challengeId)
+        .single();
+
+      if (!challenge) {
+        throw new Error('Challenge not found');
+      }
+
+      // Check if already joined
+      const { data: existing } = await supabase
+        .from('challenge_participants')
+        .select('id, status')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (existing && existing.status === 'active') {
+        throw new Error('Already joined this challenge');
+      }
+
+      if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
+        throw new Error('Challenge is not open for joining');
+      }
+
+      const entryFee = challenge.entry_fee || 0;
+
+      if (entryFee > 0) {
+        // Create Stripe Payment Intent for escrow (includes Stripe fee)
+        const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } = 
+          await stripeService.createChallengePaymentIntent(
+            entryFee,
+            userId,
+            challengeId
+          );
+
+        console.log(`✅ [initiateChallengeJoin] Payment intent created: ${paymentIntentId}`);
+        console.log(`💰 [initiateChallengeJoin] Fee breakdown: Entry £${entryFee.toFixed(2)} + Fee £${(stripeFee || 0).toFixed(2)} = Total £${(totalAmount || entryFee).toFixed(2)}`);
+
+        return {
+          paymentIntentId,
+          clientSecret,
+          entryFee: originalAmount || entryFee,
+          stripeFee: stripeFee || 0,
+          totalAmount: totalAmount || entryFee,
+        };
+      } else {
+        // Free challenge - no payment needed
+        // Create participant record immediately
+        await this.completeChallengeJoin(challengeId, userId, null);
+        return {
+          paymentIntentId: '',
+          clientSecret: '',
+          entryFee: 0,
+        };
+      }
+    } catch (error) {
+      console.error('Error initiating challenge join:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete challenge join after payment succeeds
+   * Updates participant record with payment intent ID
+   */
+  async completeChallengeJoin(
+    challengeId: string,
+    userId: string,
+    paymentIntentId: string | null
+  ): Promise<boolean> {
+    try {
+      console.log(`🔍 [completeChallengeJoin] Completing join for challenge ${challengeId}, user ${userId}, payment: ${paymentIntentId}`);
+      
+      // Get challenge details
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('entry_fee')
+        .eq('id', challengeId)
+        .single();
+
+      if (!challenge) {
+        throw new Error('Challenge not found');
+      }
+
+      const entryFee = challenge.entry_fee || 0;
+
+      // Create or update participant record
       const { data: existing } = await supabase
         .from('challenge_participants')
         .select('id')
@@ -219,18 +387,99 @@ class ChallengesService {
         .single();
 
       if (existing) {
-        return false;
+        // Update existing record
+        const { error } = await supabase
+          .from('challenge_participants')
+          .update({
+            status: 'active',
+            payment_status: entryFee > 0 && paymentIntentId ? 'paid' : 'pending',
+            investment_amount: entryFee,
+            stripe_payment_intent_id: paymentIntentId,
+          })
+          .eq('id', existing.id);
+
+        if (error) {
+          throw error;
+        }
+      } else {
+        // Create new record
+        const { error } = await supabase
+          .from('challenge_participants')
+          .insert({
+            challenge_id: challengeId,
+            user_id: userId,
+            status: 'active',
+            payment_status: entryFee > 0 && paymentIntentId ? 'paid' : 'pending',
+            investment_amount: entryFee,
+            stripe_payment_intent_id: paymentIntentId,
+          });
+
+        if (error) {
+          throw error;
+        }
       }
 
-      // Check if challenge is still open for joining
+      // Update challenge pot (for tracking, funds are in Stripe escrow)
+      if (entryFee > 0) {
+        try {
+          await challengePotService.addInvestment(challengeId, userId, entryFee);
+          console.log(`✅ [completeChallengeJoin] Investment tracked in pot (funds in Stripe escrow)`);
+        } catch (potError) {
+          console.error(`❌ [completeChallengeJoin] Error updating pot (non-critical):`, potError);
+        }
+      }
+
+      // Invalidate challenge cache
+      apiCache.delete(apiCache.generateKey('challenges', 'all'));
+      apiCache.delete(apiCache.generateKey('challenges', 'active'));
+      apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
+
+      console.log(`✅ [completeChallengeJoin] Challenge join completed`);
+      return true;
+    } catch (error) {
+      console.error('Error completing challenge join:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Join a challenge (legacy method - now uses Stripe Connect escrow)
+   * @deprecated Use initiateChallengeJoin + completeChallengeJoin instead
+   */
+  async joinChallenge(challengeId: string, userId: string): Promise<boolean> {
+    try {
+      console.log(`🔍 [joinChallenge] Attempting to join challenge ${challengeId} for user ${userId}`);
+      
+      // Get challenge details first
       const { data: challenge } = await supabase
         .from('challenges')
-        .select('status, start_date, max_participants')
+        .select('*, status, start_date, max_participants, is_recurring, title, recurring_schedule')
         .eq('id', challengeId)
         .single();
 
       if (!challenge) {
+        console.error(`❌ [joinChallenge] Challenge not found: ${challengeId}`);
         throw new Error('Challenge not found');
+      }
+
+      console.log(`🔍 [joinChallenge] Challenge found: "${challenge.title}" (status: ${challenge.status}, entry_fee: ${challenge.entry_fee})`);
+
+      // Check if user is already participating in THIS SPECIFIC challenge instance
+      // For both recurring and non-recurring challenges, we check the specific instance
+      const { data: existing } = await supabase
+        .from('challenge_participants')
+        .select('id, status')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (existing) {
+        // User is already in this specific challenge instance
+        if (existing.status === 'active') {
+          console.log('⚠️ User already joined this challenge instance');
+          return false; // Already joined this instance
+        }
+        // If status is not 'active' (e.g., 'left', 'failed'), allow them to rejoin
       }
 
       if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
@@ -249,22 +498,51 @@ class ChallengesService {
         }
       }
 
-      // TODO: Future Stripe integration - collect payment here
-      // const paymentResult = await this.processPayment(challenge.entry_fee, userId);
+      const entryFee = challenge.entry_fee || 0;
 
-      const { error } = await supabase
+      // For challenges with entry fee, payment is handled via Stripe Connect escrow
+      // The payment intent is created and user pays via Stripe Payment Sheet
+      // This function just creates the participant record - payment happens in the UI
+      let stripePaymentIntentId: string | null = null;
+
+      if (entryFee > 0) {
+        console.log(`💰 [joinChallenge] Challenge requires payment: £${entryFee}`);
+        console.log(`💡 [joinChallenge] Payment will be processed via Stripe Connect escrow`);
+        // Note: Payment Intent creation and payment happens in the UI (ChallengeDetailScreen)
+        // This function is called after payment succeeds
+      }
+
+      console.log(`📝 [joinChallenge] Creating participant record...`);
+      const { data: participant, error } = await supabase
         .from('challenge_participants')
         .insert({
           challenge_id: challengeId,
           user_id: userId,
           status: 'active',
-          payment_status: 'paid', // For now, assume free challenges are "paid"
-        });
+          payment_status: entryFee > 0 ? 'pending' : 'pending', // Will be updated when payment succeeds
+          investment_amount: entryFee,
+          stripe_payment_intent_id: stripePaymentIntentId, // Will be set when payment intent is created
+        })
+        .select()
+        .single();
 
       if (error) {
-        console.error('Error joining challenge:', error);
+        console.error('❌ [joinChallenge] Error creating participant record:', error);
         throw error;
       }
+
+      // Update challenge pot (for tracking, but funds are in Stripe escrow)
+      if (entryFee > 0) {
+        try {
+          await challengePotService.addInvestment(challengeId, userId, entryFee);
+          console.log(`✅ [joinChallenge] Investment tracked in challenge pot (funds in Stripe escrow)`);
+        } catch (potError) {
+          console.error(`❌ [joinChallenge] Error updating pot (non-critical):`, potError);
+          // Non-critical error, continue
+        }
+      }
+
+      console.log(`✅ [joinChallenge] Successfully joined challenge ${challengeId}`);
 
       // Invalidate challenge cache
       apiCache.delete(apiCache.generateKey('challenges', 'all'));
@@ -285,7 +563,7 @@ class ChallengesService {
     try {
       const { data: challenge } = await supabase
         .from('challenges')
-        .select('start_date, status')
+        .select('start_date, status, entry_fee')
         .eq('id', challengeId)
         .single();
 
@@ -301,6 +579,62 @@ class ChallengesService {
         throw new Error('Cannot leave challenge after it has started');
       }
 
+      const entryFee = challenge.entry_fee || 0;
+
+      // Get participant record to find payment method
+      const { data: participant } = await supabase
+        .from('challenge_participants')
+        .select('stripe_payment_intent_id')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId)
+        .single();
+
+      // Check if payment was made from wallet or card
+      // We'll check the Payment Intent metadata to see if paidFromWallet=true
+      let paidFromWallet = false;
+      if (participant?.stripe_payment_intent_id) {
+        try {
+          // In a real implementation, you'd fetch the Payment Intent from Stripe
+          // For now, we'll check if the Payment Intent amount was $0 (wallet payment)
+          // OR store a flag in the participant record
+          // For simplicity, if entryFee > 0 and we have a payment intent, assume card payment
+          // If no payment intent but entryFee > 0, assume wallet payment (legacy)
+          paidFromWallet = !participant.stripe_payment_intent_id || entryFee === 0;
+        } catch (error) {
+          console.error('Error checking payment method:', error);
+        }
+      }
+
+      // If challenge has entry fee, refund appropriately
+      if (entryFee > 0) {
+        try {
+          // Refund to wallet logic:
+          // Regardless of original payment method (wallet or card), we refund to the user's App Wallet.
+          // The funds remain in our Stripe Platform Account (escrow), but the user gets credit in our DB.
+          console.log(`💰 [leaveChallenge] Refunding to wallet: £${entryFee}`);
+          
+          // 1. Credit the user's wallet in DB
+          await walletService.refundChallengePayment(userId, entryFee, challengeId);
+          
+          // 2. Remove the investment from the challenge pot
+          await challengePotService.removeInvestment(challengeId, userId, entryFee);
+          
+          console.log('✅ Refunded challenge payment to wallet:', { 
+            userId, 
+            challengeId, 
+            entryFee
+          });
+          
+          // Note: We do NOT call stripeService.refundChallengePayment() anymore.
+          // That would trigger a refund to the card. We want to keep funds in the system (wallet).
+          
+        } catch (refundError) {
+          console.error('❌ Error refunding challenge payment:', refundError);
+          // Continue with leaving even if refund fails (log the error)
+        }
+      }
+
+      // Remove participant record
       const { error } = await supabase
         .from('challenge_participants')
         .delete()
@@ -317,6 +651,7 @@ class ChallengesService {
       apiCache.delete(apiCache.generateKey('challenges', 'active'));
       apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
 
+      console.log('✅ User left challenge:', { userId, challengeId, refunded: entryFee > 0 });
       return true;
     } catch (error) {
       console.error('Error in leaveChallenge:', error);
@@ -484,6 +819,8 @@ class ChallengesService {
 
       const { data: existingSubmission } = await existingSubmissionQuery.single();
 
+      let submissionId: string | undefined;
+
       if (existingSubmission) {
         // Update existing submission
         const { error } = await supabase
@@ -499,9 +836,10 @@ class ChallengesService {
           console.error('Error updating submission:', error);
           throw error;
         }
+        submissionId = existingSubmission.id;
       } else {
         // Create new submission
-        const { error } = await supabase
+        const { data: newSubmission, error } = await supabase
           .from('challenge_submissions')
           .insert({
             challenge_id: challengeId,
@@ -510,12 +848,32 @@ class ChallengesService {
             week_number: weekNumber,
             submission_notes: submissionNotes,
             verification_status: 'pending',
-          });
+          })
+          .select('id')
+          .single();
 
         if (error) {
           console.error('Error creating submission:', error);
           throw error;
         }
+        submissionId = newSubmission?.id;
+      }
+
+      // Track daily proof for pot system (if challenge has entry fee)
+      const today = new Date();
+      const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+      
+      try {
+        await challengePotService.trackDailyProof(
+          challengeId,
+          userId,
+          dateString,
+          true,
+          submissionId
+        );
+      } catch (proofError) {
+        console.error('Error tracking daily proof:', proofError);
+        // Don't fail the submission if proof tracking fails
       }
 
       // Update user's completion percentage
@@ -621,18 +979,56 @@ class ChallengesService {
 
   /**
    * Check if user is participating in a challenge
+   * Checks if user is actively participating in THIS SPECIFIC challenge instance
    */
   async isUserParticipating(challengeId: string, userId: string): Promise<boolean> {
     try {
-      const { data } = await supabase
-        .from('challenge_participants')
-        .select('id')
-        .eq('challenge_id', challengeId)
-        .eq('user_id', userId)
+      // First, get the challenge to check if it's recurring
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('is_recurring, start_date, end_date, title, recurring_schedule')
+        .eq('id', challengeId)
         .single();
 
-      return !!data;
+      if (!challenge) {
+        console.log(`🔍 [isUserParticipating] Challenge not found: ${challengeId}`);
+        return false;
+      }
+
+      console.log(`🔍 [isUserParticipating] Checking participation for "${challenge.title}" (ID: ${challengeId}, is_recurring: ${challenge.is_recurring})`);
+
+      // Always check THIS SPECIFIC challenge instance, not other instances
+      // This ensures that if a user leaves a challenge, they're no longer shown as "joined"
+      const { data: participation, error } = await supabase
+          .from('challenge_participants')
+        .select('id, status')
+          .eq('challenge_id', challengeId)
+          .eq('user_id', userId)
+          .single();
+
+      if (error) {
+        // If no record found, user is not participating (they may have left or never joined)
+        if (error.code === 'PGRST116') {
+          console.log(`❌ [isUserParticipating] User is NOT participating in challenge "${challenge.title}" (ID: ${challengeId}) - no record found`);
+          return false;
+        }
+        console.error('❌ [isUserParticipating] Error checking participation:', error);
+          return false;
+        }
+
+      // Only return true if participation exists AND status is 'active'
+      // Status can be 'active', 'completed', 'failed', or 'left' - we only want 'active'
+      const isParticipating = !!participation && participation.status === 'active';
+      
+      if (isParticipating) {
+        console.log(`✅ [isUserParticipating] User IS actively participating in "${challenge.title}" (ID: ${challengeId})`);
+      } else {
+        console.log(`❌ [isUserParticipating] User is NOT actively participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation?.status || 'not found'}`);
+      }
+
+      return isParticipating;
     } catch (error) {
+      console.error('❌ [isUserParticipating] Error:', error);
       return false;
     }
   }
@@ -708,13 +1104,12 @@ class ChallengesService {
    */
   async handleRecurringChallenges(): Promise<void> {
     try {
-      // Get all recurring challenges that need a new instance
+      // Get all recurring challenges (including those without next_recurrence set)
       const { data: recurringChallenges, error } = await supabase
         .from('challenges')
         .select('*')
         .eq('is_recurring', true)
-        .eq('status', 'active')
-        .not('next_recurrence', 'is', null);
+        .eq('status', 'active');
 
       if (error) {
         console.error('Error fetching recurring challenges:', error);
@@ -724,40 +1119,13 @@ class ChallengesService {
       const now = new Date();
 
       for (const challenge of recurringChallenges || []) {
-        const endDate = new Date(challenge.end_date);
+        const schedule = challenge.recurring_schedule || 'weekly'; // Default to weekly for backwards compatibility
         
-        // Simple: next Monday after the end date
-        // end_date is Sunday 23:59:59, so next day is Monday
-        const nextWeekStart = new Date(endDate);
-        nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday (next day after Sunday)
-        nextWeekStart.setUTCHours(0, 1, 0, 0);
-        
-        // End is 6 days later (Sunday)
-        const nextWeekEnd = new Date(nextWeekStart);
-        nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-        nextWeekEnd.setUTCHours(23, 59, 59, 999);
-        
-        // Check if it's time to create the next instance
-        // Create if:
-        // 1. The current instance has ended OR
-        // 2. It's within 7 days of the next instance starting
-        const shouldCreate = now >= endDate || (nextWeekStart.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000);
-        
-        if (shouldCreate) {
-          // Check if next week's challenge already exists
-          const { data: existingChallenge } = await supabase
-            .from('challenges')
-            .select('id')
-            .eq('title', challenge.title)
-            .eq('is_recurring', true)
-            .gte('start_date', nextWeekStart.toISOString())
-            .lte('end_date', nextWeekEnd.toISOString())
-            .single();
-
-          // Only create if no challenge exists for next week
-          if (!existingChallenge) {
-            await this.createRecurringInstance(challenge);
-          }
+        if (schedule === 'daily') {
+          await this.handleDailyRecurringChallenge(challenge, now);
+        } else {
+          // Weekly recurring logic (existing)
+          await this.handleWeeklyRecurringChallenge(challenge, now);
         }
       }
     } catch (error) {
@@ -766,7 +1134,197 @@ class ChallengesService {
   }
 
   /**
-   * Create a new instance of a recurring challenge
+   * Handle daily recurring challenge - create new instance each day
+   */
+  private async handleDailyRecurringChallenge(challenge: Challenge, now: Date): Promise<void> {
+    try {
+      const endDate = new Date(challenge.end_date);
+      const startDate = new Date(challenge.start_date);
+      
+      // For daily challenges, create next day's instance if current has ended or is ending soon
+      // Daily challenges run 1pm-7pm UTC
+      const today = new Date(now);
+      today.setUTCHours(0, 0, 0, 0);
+      
+      // Today's challenge should start at 1pm UTC
+      const todayStart = new Date(today);
+      todayStart.setUTCHours(13, 0, 0, 0); // 1pm UTC
+      
+      // Today's challenge ends at 7pm UTC
+      const todayEnd = new Date(today);
+      todayEnd.setUTCHours(19, 0, 0, 0); // 7pm UTC
+      
+      // Next day's challenge starts at 1pm UTC
+      const nextDayStart = new Date(today);
+      nextDayStart.setUTCDate(today.getUTCDate() + 1);
+      nextDayStart.setUTCHours(13, 0, 0, 0); // 1pm UTC
+      
+      // Next day's challenge ends at 7pm UTC
+      const nextDayEnd = new Date(nextDayStart);
+      nextDayEnd.setUTCHours(19, 0, 0, 0); // 7pm UTC
+      
+      // Check if today's instance exists
+      const todayStartStr = todayStart.toISOString().split('T')[0]; // YYYY-MM-DD
+      const { data: todayChallenge } = await supabase
+        .from('challenges')
+        .select('id, status')
+        .eq('title', challenge.title)
+        .eq('is_recurring', true)
+        .gte('start_date', todayStart.toISOString())
+        .lt('start_date', nextDayStart.toISOString())
+        .single();
+      
+      // If today's instance doesn't exist and it's before 7pm, create it
+      if (!todayChallenge && now < todayEnd) {
+        await this.createDailyRecurringInstance(challenge, todayStart, todayEnd);
+      }
+      
+      // Auto-activate today's challenge if start time has passed
+      if (todayChallenge && todayChallenge.status === 'upcoming' && now >= todayStart) {
+        await supabase
+          .from('challenges')
+          .update({ status: 'active' })
+          .eq('id', todayChallenge.id);
+      }
+      
+      // Check if we need to create tomorrow's instance
+      // Create if current challenge has ended or if it's after 7pm UTC today
+      const shouldCreateNext = now >= endDate || (now.getUTCHours() >= 19);
+      
+      if (shouldCreateNext) {
+        // Check if tomorrow's challenge already exists
+        const { data: existingChallenge } = await supabase
+          .from('challenges')
+          .select('id')
+          .eq('title', challenge.title)
+          .eq('is_recurring', true)
+          .gte('start_date', nextDayStart.toISOString())
+          .lt('start_date', new Date(nextDayStart.getTime() + 24 * 60 * 60 * 1000).toISOString())
+          .single();
+
+        // Only create if no challenge exists for tomorrow
+        if (!existingChallenge) {
+          await this.createDailyRecurringInstance(challenge, nextDayStart, nextDayEnd);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling daily recurring challenge:', error);
+    }
+  }
+
+  /**
+   * Handle weekly recurring challenge - create new instance each week
+   */
+  private async handleWeeklyRecurringChallenge(challenge: Challenge, now: Date): Promise<void> {
+    try {
+      const endDate = new Date(challenge.end_date);
+      
+      // Simple: next Monday after the end date
+      // end_date is Sunday 23:59:59, so next day is Monday
+      const nextWeekStart = new Date(endDate);
+      nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday (next day after Sunday)
+      nextWeekStart.setUTCHours(0, 1, 0, 0);
+      
+      // End is 6 days later (Sunday)
+      const nextWeekEnd = new Date(nextWeekStart);
+      nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+      nextWeekEnd.setUTCHours(23, 59, 59, 999);
+      
+      // Check if it's time to create the next instance
+      // Create if:
+      // 1. The current instance has ended OR
+      // 2. It's within 7 days of the next instance starting
+      const shouldCreate = now >= endDate || (nextWeekStart.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000);
+      
+      if (shouldCreate) {
+        // Check if next week's challenge already exists
+        const { data: existingChallenge } = await supabase
+          .from('challenges')
+          .select('id')
+          .eq('title', challenge.title)
+          .eq('is_recurring', true)
+          .gte('start_date', nextWeekStart.toISOString())
+          .lte('end_date', nextWeekEnd.toISOString())
+          .single();
+
+        // Only create if no challenge exists for next week
+        if (!existingChallenge) {
+          await this.createRecurringInstance(challenge);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling weekly recurring challenge:', error);
+    }
+  }
+
+  /**
+   * Create a new instance of a daily recurring challenge
+   */
+  private async createDailyRecurringInstance(
+    originalChallenge: Challenge,
+    startDate: Date,
+    endDate: Date
+  ): Promise<void> {
+    try {
+      // Create new challenge instance for next day
+      const { data: newChallenge, error: challengeError } = await supabase
+        .from('challenges')
+        .insert({
+          title: originalChallenge.title,
+          description: originalChallenge.description,
+          category: originalChallenge.category,
+          duration_weeks: originalChallenge.duration_weeks,
+          entry_fee: originalChallenge.entry_fee,
+          verification_type: originalChallenge.verification_type,
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString(),
+          created_by: originalChallenge.created_by,
+          status: 'upcoming', // Will become active at 1pm
+          image_url: originalChallenge.image_url,
+          is_recurring: true,
+          recurring_schedule: 'daily',
+          next_recurrence: new Date(endDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .select()
+        .single();
+
+      if (challengeError) {
+        console.error('Error creating daily recurring challenge instance:', challengeError);
+        return;
+      }
+
+      // Copy requirements
+      const { data: requirements } = await supabase
+        .from('challenge_requirements')
+        .select('requirement_text, frequency, target_count, requirement_order')
+        .eq('challenge_id', originalChallenge.id);
+
+      if (requirements && requirements.length > 0) {
+        const newRequirements = requirements.map(req => ({
+          challenge_id: newChallenge.id,
+          requirement_text: req.requirement_text,
+          frequency: req.frequency,
+          target_count: req.target_count,
+          requirement_order: req.requirement_order,
+        }));
+
+        const { error: reqError } = await supabase
+          .from('challenge_requirements')
+          .insert(newRequirements);
+
+        if (reqError) {
+          console.error('Error copying requirements for daily recurring challenge:', reqError);
+        }
+      }
+
+      console.log(`✅ Created daily recurring challenge instance: ${newChallenge.title} for ${startDate.toISOString()}`);
+    } catch (error) {
+      console.error('Error in createDailyRecurringInstance:', error);
+    }
+  }
+
+  /**
+   * Create a new instance of a weekly recurring challenge
    */
   private async createRecurringInstance(originalChallenge: Challenge): Promise<void> {
     try {
@@ -842,15 +1400,17 @@ class ChallengesService {
   }
 
   /**
-   * Future Stripe integration - redistribute pot when challenge ends
+   * Redistribute pot when challenge ends
    */
   async redistributePot(challengeId: string): Promise<void> {
-    // TODO: Implement Stripe integration
-    // 1. Get all participants who completed the challenge
-    // 2. Calculate total pot
-    // 3. Distribute pot among successful participants
-    // 4. Process refunds for failed participants
-    console.log('TODO: Implement Stripe pot redistribution for challenge:', challengeId);
+    try {
+      console.log('Redistributing pot for challenge:', challengeId);
+      await challengePotService.distributePot(challengeId);
+      console.log('✅ Pot redistribution complete for challenge:', challengeId);
+    } catch (error) {
+      console.error('Error redistributing pot:', error);
+      throw error;
+    }
   }
 
   /**

@@ -5,10 +5,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
 import { supabase } from './lib/supabase';
+import { stripeService } from './lib/stripeService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
 
@@ -23,6 +25,11 @@ import FollowersScreen from './screens/FollowersScreen';
 import FollowingScreen from './screens/FollowingScreen';
 import ChallengeDetailScreen from './screens/ChallengeDetailScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
+import WalletScreen from './screens/WalletScreen';
+import CompeteScreen from './screens/CompeteScreen';
+import StoreScreen from './screens/StoreScreen';
+import InventoryScreen from './screens/InventoryScreen';
+import RaffleScreen from './screens/RaffleScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
@@ -32,7 +39,6 @@ const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const HomeScreen = lazy(() => import('./screens/HomeScreen'));
 const ActionScreen = lazy(() => import('./screens/ActionScreen'));
-const CompeteScreen = lazy(() => import('./screens/CompeteScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
@@ -233,9 +239,7 @@ function MainTabs() {
         name="Discover"
         options={{ tabBarLabel: 'Compete' }}>
         {({ navigation }) => (
-          <Suspense fallback={<LoadingScreen />}>
             <CompeteScreen navigation={navigation} />
-          </Suspense>
         )}
       </Tab.Screen>
       <Tab.Screen name="Goals" component={GoalsStack} />
@@ -350,6 +354,42 @@ function AppStack() {
       <Stack.Screen 
         name="ChallengeDetail" 
         component={ChallengeDetailScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Wallet" 
+        component={WalletScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Store" 
+        component={StoreScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Inventory" 
+        component={InventoryScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="Raffle" 
+        component={RaffleScreen}
         options={{
           animation: 'slide_from_right',
           gestureEnabled: true,
@@ -484,6 +524,7 @@ export default function App() {
 
   return (
     <CustomBackground>
+      <StripeProvider publishableKey={stripeService.getPublishableKey()}>
       <SafeAreaProvider>
         <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
         <NavigationContainer
@@ -522,6 +563,7 @@ export default function App() {
            <AuthStack />}
         </NavigationContainer>
       </SafeAreaProvider>
+      </StripeProvider>
     </CustomBackground>
   );
 }

@@ -120,6 +120,7 @@ export interface SubmitChallengeProofData {
 export interface ChallengeCardProps {
   challenge: Challenge;
   onPress: (challenge: Challenge) => void;
+  isJoined?: boolean;
 }
 
 export interface ChallengeDetailScreenProps {

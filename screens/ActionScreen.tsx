@@ -47,6 +47,7 @@ import { supabase } from '../lib/supabase';
 import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, HabitAccountabilityPartner } from '../types/database';
 import InviteFriendModal from '../components/InviteFriendModal';
 import { habitInviteService } from '../lib/habitInviteService';
+import { walletService } from '../lib/walletService';
 
 
 
@@ -364,6 +365,7 @@ const AnimatedHabitCard = React.memo(({
   partnership,
   partnerStatus,
   onInvite,
+  onRemovePartner,
   styles
 }: any) => {
   const anim = cardAnimations[card.key];
@@ -415,7 +417,13 @@ const AnimatedHabitCard = React.memo(({
                 <Ionicons name="person-add-outline" size={20} color="rgba(255, 255, 255, 0.65)" />
               </TouchableOpacity>
             )}
-            <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+            {partnership ? (
+              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onRemovePartner(); }}>
+                <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+              </TouchableOpacity>
+            ) : (
+              <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+            )}
           </View>
         </View>
 
@@ -439,15 +447,9 @@ const AnimatedHabitCard = React.memo(({
                 style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' }}
               />
             </TouchableOpacity>
-            {partnership.mode === 'supportive' ? (
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-                {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
-              </Text>
-            ) : (
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-                You: {cardState?.completed ? '✓' : '✗'} • Partner: {partnerStatus?.completed ? '✓' : '✗'}
-              </Text>
-            )}
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+              {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+            </Text>
           </View>
         )}
 
@@ -477,6 +479,7 @@ const WhiteHabitCard = React.memo(({
   partnership,
   partnerStatus,
   onInvite,
+  onRemovePartner,
   styles
 }: any) => {
   const isCreateCard = card.key === 'create_new_habit';
@@ -552,8 +555,32 @@ const WhiteHabitCard = React.memo(({
       <TouchableOpacity 
             onPress={(e) => {
               e.stopPropagation();
-              if (card.habit) {
-                loadHabitForEditing(card.habit);
+              if (partnership) {
+                // Show options for Edit and Remove Partner
+                Alert.alert(
+                  card.title,
+                  'Choose an option',
+                  [
+                    {
+                      text: 'Edit Habit',
+                      onPress: () => loadHabitForEditing(card.habit)
+                    },
+                    {
+                      text: 'Remove Partner',
+                      style: 'destructive',
+                      onPress: () => onRemovePartner()
+                    },
+                    {
+                      text: 'Cancel',
+                      style: 'cancel'
+                    }
+                  ]
+                );
+              } else {
+                // No partnership, just edit
+                if (card.habit) {
+                  loadHabitForEditing(card.habit);
+                }
               }
             }}
             activeOpacity={0.7}
@@ -587,15 +614,9 @@ const WhiteHabitCard = React.memo(({
                style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: iconColor }}
              />
            </TouchableOpacity>
-          {partnership.mode === 'supportive' ? (
-            <Text style={{ color: subtitleColor, fontSize: 11 }}>
-              {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
-            </Text>
-          ) : (
-            <Text style={{ color: subtitleColor, fontSize: 11 }}>
-              You: {isCompleted ? '✓' : '✗'} • Partner: {partnerStatus?.completed ? '✓' : '✗'}
-            </Text>
-          )}
+          <Text style={{ color: subtitleColor, fontSize: 11 }}>
+            {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+          </Text>
         </View>
       )}
 
@@ -632,6 +653,7 @@ function ActionScreen() {
   const { segmentChecked, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
   
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [reorderTab, setReorderTab] = useState<'core' | 'custom'>('core');
   const [reorderableCustomHabits, setReorderableCustomHabits] = useState<CustomHabit[]>([]);
   const [customHabitOrder, setCustomHabitOrder] = useState<string[]>([]);
@@ -1987,7 +2009,7 @@ function ActionScreen() {
 
 
   // Sync completed habits with existing data
-  const syncCompletedHabits = useCallback(() => {
+  const syncCompletedHabits = useCallback(async () => {
     const completedSet = new Set<string>();
     
     if (dailyHabits) {
@@ -2016,8 +2038,34 @@ function ActionScreen() {
       if (dailyHabits.focus_completed === true) completedSet.add('focus');
     }
     
+    // Also check partner progress table for habits with partnerships
+    if (user && Object.keys(activePartnerships).length > 0) {
+      const today = getTodayDateString();
+      
+      // Check each partnership to see if current user completed it
+      for (const [key, partnership] of Object.entries(activePartnerships)) {
+        if (partnership.habit_type === 'core') {
+          try {
+            const { data } = await supabase
+              .from('habit_partner_progress')
+              .select('completed')
+              .eq('partnership_id', partnership.id)
+              .eq('user_id', user.id)
+              .eq('date', today)
+              .single();
+            
+            if (data?.completed && partnership.habit_key) {
+              completedSet.add(partnership.habit_key);
+            }
+          } catch (error) {
+            // Ignore errors (no data found is normal)
+          }
+        }
+      }
+    }
+    
     setCompletedHabits(completedSet);
-  }, [dailyHabits]);
+  }, [dailyHabits, user, activePartnerships]);
 
   // Load selected habits on mount and sync completed status
   useEffect(() => {
@@ -3217,6 +3265,16 @@ function ActionScreen() {
     loadMyActiveChallenges();
   }, [loadMyActiveChallenges]);
 
+  const loadWalletBalance = useCallback(async () => {
+    if (!user) return;
+    try {
+      const balance = await walletService.getBalance(user.id);
+      setWalletBalance(balance);
+    } catch (error) {
+      console.error('Error loading wallet balance:', error);
+    }
+  }, [user]);
+
   const loadActivePartnerships = useCallback(async () => {
     if (!user) return;
     try {
@@ -3335,12 +3393,13 @@ function ActionScreen() {
     };
   }, [user, activePartnerships]);
 
-  // Refresh challenges whenever Action screen regains focus
+  // Refresh challenges and wallet balance whenever Action screen regains focus
   useFocusEffect(
     useCallback(() => {
       loadMyActiveChallenges();
       loadActivePartnerships();
-    }, [loadMyActiveChallenges, loadActivePartnerships])
+      loadWalletBalance();
+    }, [loadMyActiveChallenges, loadActivePartnerships, loadWalletBalance])
   );
 
   const handleInvitePress = useCallback((type: 'core' | 'custom', identifier: string, title: string) => {
@@ -3348,18 +3407,48 @@ function ActionScreen() {
     setShowInviteModal(true);
   }, []);
 
+  const handleRemovePartner = useCallback((partnershipId: string, partnerName: string, habitTitle: string) => {
+    Alert.alert(
+      'Remove Partner',
+      `Remove ${partnerName} from tracking ${habitTitle}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user) return;
+            
+            const success = await habitInviteService.removePartnership(partnershipId, user.id);
+            if (success) {
+              // Reload partnerships to update UI
+              await loadActivePartnerships();
+              Alert.alert('Success', 'Partner removed from habit tracking');
+            } else {
+              Alert.alert('Error', 'Failed to remove partner. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  }, [user, loadActivePartnerships]);
+
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await Promise.all([
         loadMyActiveChallenges(),
-        loadActivePartnerships()
+        loadActivePartnerships(),
+        loadWalletBalance()
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadMyActiveChallenges, loadActivePartnerships]);
+  }, [loadMyActiveChallenges, loadActivePartnerships, loadWalletBalance]);
 
   // Memoized helper functions for better performance
   const getDateForDayOfWeekInWeek = useCallback((dayOfWeek: number, weekDate: Date): Date => {
@@ -3461,44 +3550,55 @@ function ActionScreen() {
             )}
           </TouchableOpacity>
 
-          <View style={styles.profileHeaderCard}>
-            <Animated.View
-              style={[
-                styles.headerGreetingBanner,
-                {
-                  opacity: headerGreetingOpacity,
-                  transform: [
+          {/* Middle: Wallet/Greeting Banner */}
+          <TouchableOpacity 
+            style={[styles.profileHeaderCard, { zIndex: 20 }]}
+            onPress={() => {
+              console.log('🔥 WALLET PRESSED - Opening Wallet Screen');
+              navigation.navigate('Wallet');
+            }}
+            activeOpacity={0.7}
+          >
+                <Animated.View
+                  style={[
+                    styles.headerGreetingBanner,
                     {
-                      translateY: headerGreetingOpacity.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-10, 0],
-                      }),
+                  opacity: headerGreetingOpacity,
+                      transform: [
+                        {
+                          translateY: headerGreetingOpacity.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [-10, 0],
+                          }),
+                        },
+                      ],
                     },
-                  ],
-                },
-              ]}
+                  ]}
+              pointerEvents="none"
+                >
+                  <Text style={[styles.headerGreetingText, { color: theme.textPrimary }]}>
+                    {headerGreetingMessage}
+                  </Text>
+                </Animated.View>
+
+            <Animated.View 
+              style={[styles.headerStatsRow, { opacity: headerStatsOpacity }]}
               pointerEvents="none"
             >
-              <Text style={[styles.headerGreetingText, { color: theme.textPrimary }]}>
-                {headerGreetingMessage}
-              </Text>
-            </Animated.View>
-
-            <Animated.View style={[styles.headerStatsRow, { opacity: headerStatsOpacity }]}>
-              <View style={styles.headerStat}>
-                <Ionicons name="cash-outline" size={18} color={theme.textPrimary} />
-                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>40</Text>
-              </View>
-              <View style={styles.headerStat}>
-                <Ionicons name="diamond-outline" size={18} color={theme.textPrimary} />
-                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>100</Text>
-              </View>
-            </Animated.View>
-          </View>
+                  <View style={styles.headerStat}>
+                    <Ionicons name="wallet-outline" size={18} color={theme.textPrimary} />
+                    <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>£{walletBalance.toFixed(0)}</Text>
+                  </View>
+                  <View style={styles.headerStat}>
+                    <Ionicons name="diamond-outline" size={18} color={theme.textPrimary} />
+                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>{totalPoints}</Text>
+                  </View>
+                </Animated.View>
+          </TouchableOpacity>
           
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            {/* Title centered */}
-          </Text>
+          <View style={[styles.headerTitle, { zIndex: -1 }]} pointerEvents="none">
+            {/* Title centered placeholder */}
+          </View>
           
           <TouchableOpacity 
             onPress={() => (navigation as any).navigate('Notifications')}
@@ -3680,6 +3780,12 @@ function ActionScreen() {
                   partnership={activePartnerships[`core_${card.key}`]}
                   partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
                   onInvite={() => handleInvitePress('core', card.key, card.title)}
+                  onRemovePartner={() => {
+                    const partnership = activePartnerships[`core_${card.key}`];
+                    if (partnership) {
+                      handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                    }
+                  }}
                   styles={styles}
                 />
               );
@@ -3713,6 +3819,12 @@ function ActionScreen() {
                 partnership={activePartnerships[`custom_${card.habit?.id}`]}
                 partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
                 onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
+                onRemovePartner={() => {
+                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                  if (partnership) {
+                    handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                  }
+                }}
                 toggleHabitCompletion={handleCustomHabitToggle}
                 playCompletionSound={playCompletionSound}
                 loadHabitForEditing={loadHabitForEditing}
@@ -6621,8 +6733,6 @@ function ActionScreen() {
         onClose={() => setShowLevelModal(false)}
         currentLevel={levelProgress.currentLevel}
         totalPoints={totalPoints}
-        dailyHabits={segmentChecked}
-        coreHabits={coreHabitsCompleted}
       />
 
 

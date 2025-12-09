@@ -111,7 +111,7 @@ export default function StreakModal({ visible, onClose }: Props) {
                   const isPending = currentStreak > 0 && streak?.last_completed_date !== today;
                   
                   return (
-                    <View key={habit.type} style={styles.streakRow}>
+                                        <View key={habit.type} style={styles.streakRow}>
                       <View style={styles.rowLeft}>
                         <View style={[styles.habitIconSmall, { backgroundColor: `${habit.color}20` }]}>
                           <Ionicons name={habit.icon as any} size={18} color={habit.color} />

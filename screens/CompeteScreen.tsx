@@ -27,16 +27,18 @@ export default function CompeteScreen({ navigation }: any) {
   const bottomNavPadding = useBottomNavPadding();
   const { user, initialize, loading } = useAuthStore();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [freeChallenges, setFreeChallenges] = useState<Challenge[]>([]);
+  const [investChallenges, setInvestChallenges] = useState<Challenge[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [joinedChallengeIds, setJoinedChallengeIds] = useState<Set<string>>(new Set());
   
-  // Calculate card width for snap interval (matching ActionScreen pattern)
   const { width } = Dimensions.get('window');
   const horizontalPadding = 24 * 2;
   const gap = 12;
   const cardWidth = Math.max(160, (width - horizontalPadding - gap) / 2);
-  const cardMargin = 16; // marginRight from ChallengeCard
+  const cardMargin = 16;
   const snapInterval = cardWidth + cardMargin;
 
   useEffect(() => {
@@ -83,6 +85,10 @@ export default function CompeteScreen({ navigation }: any) {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // Clear cache to force fresh data
+    const { apiCache } = await import('../lib/apiCache');
+    apiCache.clear();
+    console.log('🔄 [CompeteScreen] Cache cleared, loading fresh challenges...');
     await loadChallenges();
     setRefreshing(false);
   };
@@ -98,16 +104,61 @@ export default function CompeteScreen({ navigation }: any) {
       const allChallenges = await challengesService.getChallenges();
       const now = new Date();
       
-      // Only show upcoming challenges (challenges that haven't started yet)
-      const upcoming = allChallenges.filter(challenge => {
-        const startDate = new Date(challenge.start_date);
-        return now < startDate;
+      // Debug: Log all challenges
+      console.log('🔍 [CompeteScreen] All challenges from service:', allChallenges.length);
+      const smileChallenges = allChallenges.filter(c => c.title?.includes('Smile'));
+      console.log('🔍 [CompeteScreen] Smile challenges found:', smileChallenges.length);
+      smileChallenges.forEach(c => {
+        console.log('  -', c.title, 'entry_fee:', c.entry_fee, 'start:', c.start_date, 'end:', c.end_date, 'is_recurring:', c.is_recurring);
       });
       
-      setChallenges(upcoming);
+      // Show both upcoming AND active challenges (not yet ended)
+      const availableChallenges = allChallenges.filter(challenge => {
+        const endDate = new Date(challenge.end_date);
+        const shouldShow = now < endDate;
+        if (challenge.title?.includes('Smile')) {
+          console.log('🔍 [CompeteScreen] Smile challenge filter:', {
+            title: challenge.title,
+            now: now.toISOString(),
+            endDate: endDate.toISOString(),
+            shouldShow
+          });
+        }
+        return shouldShow;
+      });
+      
+      // Check participation status for each challenge
+      const joinedIds = new Set<string>();
+      if (user?.id) {
+        await Promise.all(
+          availableChallenges.map(async (challenge) => {
+            const isJoined = await challengesService.isUserParticipating(challenge.id, user.id);
+            if (isJoined) {
+              joinedIds.add(challenge.id);
+            }
+          })
+        );
+        setJoinedChallengeIds(joinedIds);
+        console.log('🔍 [CompeteScreen] User has joined', joinedIds.size, 'challenges');
+      }
+      
+      // Separate free and investment challenges
+      const free = availableChallenges.filter(challenge => !challenge.entry_fee || challenge.entry_fee === 0);
+      const invest = availableChallenges.filter(challenge => challenge.entry_fee && challenge.entry_fee > 0);
+      
+      console.log('🔍 [CompeteScreen] Final counts - available:', availableChallenges.length, 'free:', free.length, 'invest:', invest.length);
+      invest.forEach(c => {
+        console.log('  - Invest challenge:', c.title, 'entry_fee:', c.entry_fee);
+      });
+      
+      setChallenges(availableChallenges);
+      setFreeChallenges(free);
+      setInvestChallenges(invest);
     } catch (error) {
-      // Error loading challenges
+      console.error('Error loading challenges:', error);
       setChallenges([]);
+      setFreeChallenges([]);
+      setInvestChallenges([]);
     } finally {
       setChallengesLoading(false);
     }
@@ -121,17 +172,32 @@ export default function CompeteScreen({ navigation }: any) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeftSpacer} />
+        <View style={styles.headerLeft}>
+          <TouchableOpacity 
+            onPress={() => {
+              console.log('🎁 RAFFLE PRESSED - Opening Raffle Screen');
+              navigation.navigate('Raffle');
+            }}
+            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="gift" size={24} color={theme.primary} />
+          </TouchableOpacity>
+          {userProfile?.is_pro && (
+            <Text style={[styles.proBadge, { color: theme.primary }]}>Pro</Text>
+          )}
+        </View>
+        
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
           Compete
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity 
-            onPress={() => navigation.getParent()?.navigate('Leaderboard')}
-          >
-            <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
-        </View>
+        
+        <TouchableOpacity 
+          onPress={() => navigation.getParent()?.navigate('Leaderboard')}
+          style={{ zIndex: 1 }}
+        >
+          <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* Content */}
@@ -199,7 +265,54 @@ export default function CompeteScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* Challenges Section */}
+        {/* Investment Challenges Section */}
+        {investChallenges.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="wallet" size={20} color="#10B981" />
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  Invest
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.seeAllButton}>
+                <Text style={[styles.seeAllText, { color: theme.textSecondary }]}>
+                  See all
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.challengesContent}>
+              {challengesLoading ? (
+                <View style={styles.challengesLoadingContainer}>
+                  <ActivityIndicator size="large" color="#10B981" />
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={snapInterval}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.challengesScrollContent}
+                  style={{ overflow: 'visible' }}
+                >
+                  {investChallenges.map((challenge) => (
+                    <ChallengeCard
+                      key={challenge.id}
+                      challenge={challenge}
+                      onPress={handleChallengePress}
+                      isJoined={joinedChallengeIds.has(challenge.id)}
+                    />
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Free Challenges Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
@@ -215,34 +328,35 @@ export default function CompeteScreen({ navigation }: any) {
           
           <View style={styles.challengesContent}>
             {challengesLoading ? (
-            <View style={styles.challengesLoadingContainer}>
-              <ActivityIndicator size="large" color="#EA580C" />
-            </View>
-          ) : challenges.length === 0 ? (
-            <View style={styles.emptyChallengesContainer}>
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No upcoming challenges available
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={snapInterval}
-              snapToAlignment="start"
-              decelerationRate="fast"
-              contentContainerStyle={styles.challengesScrollContent}
-              style={{ overflow: 'visible' }}
-            >
-              {challenges.map((challenge) => (
-                <ChallengeCard
-                  key={challenge.id}
-                  challenge={challenge}
-                  onPress={handleChallengePress}
-                />
-              ))}
-            </ScrollView>
-          )}
+              <View style={styles.challengesLoadingContainer}>
+                <ActivityIndicator size="large" color="#EA580C" />
+              </View>
+            ) : freeChallenges.length === 0 ? (
+              <View style={styles.emptyChallengesContainer}>
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  No upcoming free challenges available
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={snapInterval}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                contentContainerStyle={styles.challengesScrollContent}
+                style={{ overflow: 'visible' }}
+              >
+                {freeChallenges.map((challenge) => (
+                  <ChallengeCard
+                    key={challenge.id}
+                    challenge={challenge}
+                    onPress={handleChallengePress}
+                    isJoined={joinedChallengeIds.has(challenge.id)}
+                  />
+                ))}
+              </ScrollView>
+            )}
           </View>
         </View>
 
@@ -263,7 +377,16 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 20,
     borderBottomWidth: 0,
-    position: 'relative',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 1,
+  },
+  proBadge: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   headerLeftSpacer: {
     width: 24,
@@ -300,6 +423,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 24,
     paddingVertical: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   createGameContent: {
     flexDirection: 'row',

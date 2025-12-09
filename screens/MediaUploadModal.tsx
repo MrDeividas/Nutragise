@@ -48,11 +48,11 @@ export default function MediaUploadModal({
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8, // Restored original quality for progress photos
         exif: false, // Remove EXIF data for privacy (keeps file size optimization)
         base64: false, // Don't include base64 to save memory
+        presentationStyle: 'fullScreen',
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -72,8 +72,7 @@ export default function MediaUploadModal({
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8, // Restored original quality for progress photos
         exif: false, // Remove EXIF data for privacy (keeps file size optimization)
         base64: false, // Don't include base64 to save memory

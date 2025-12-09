@@ -63,9 +63,9 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
+        presentationStyle: 'fullScreen',
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -85,8 +85,7 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
       });
 

@@ -19,6 +19,7 @@ import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
 import { progressService } from '../lib/progressService';
 import { getDailyPostDate } from '../lib/timeService';
 import { useActionStore } from '../state/actionStore';
+import CustomCamera from './CustomCamera';
 
 interface CreatePostModalProps {
   visible: boolean;
@@ -54,6 +55,7 @@ export default function CreatePostModal({
   React.useEffect(() => {
     if (visible && user) {
       checkForExistingDailyPost();
+      loadCompletedHabits();
     }
   }, [visible, user, targetCheckInDate]); // Add targetCheckInDate as dependency
 
@@ -63,6 +65,70 @@ export default function CreatePostModal({
       setSelectedGoal(preSelectedGoal);
     }
   }, [visible, preSelectedGoal]);
+
+  // Load user's completed habits for the day
+  const loadCompletedHabits = async (): Promise<string[]> => {
+    if (!user) return [];
+    
+    try {
+      const dateToCheck = targetCheckInDate || new Date();
+      const dailyPostDate = getDailyPostDate(dateToCheck);
+      
+      // Fetch daily habits
+      const { data: dailyHabits, error: habitsError } = await supabase
+        .from('daily_habits')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', dailyPostDate)
+        .single();
+      
+      // Fetch points data for meditation/microlearn
+      const { data: pointsData, error: pointsError } = await supabase
+        .from('user_points_daily')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', dailyPostDate)
+        .single();
+      
+      const completedHabits: string[] = [];
+      
+      if (dailyHabits) {
+        // Check if any sleep data exists (hours, quality, bedtime, wakeup)
+        if (dailyHabits.sleep_hours || dailyHabits.sleep_quality || dailyHabits.sleep_bedtime_hours || dailyHabits.sleep_wakeup_hours) {
+          completedHabits.push('sleep');
+        }
+        // Check if any water data exists
+        if (dailyHabits.water_intake || dailyHabits.water_goal) {
+          completedHabits.push('water');
+        }
+        // Check if run was logged (active day or any run data)
+        if (dailyHabits.run_day_type === 'active' || dailyHabits.run_activity_type || dailyHabits.run_distance) {
+          completedHabits.push('run');
+        }
+        // Check if gym was logged (active day or training types)
+        if (dailyHabits.gym_day_type === 'active' || (dailyHabits.gym_training_types && dailyHabits.gym_training_types.length > 0)) {
+          completedHabits.push('gym');
+        }
+        // Check if any reflection data exists
+        if (dailyHabits.reflect_mood || dailyHabits.reflect_energy || dailyHabits.reflect_what_went_well || dailyHabits.reflect_friction) {
+          completedHabits.push('reflect');
+        }
+        if (dailyHabits.cold_shower_completed) completedHabits.push('cold_shower');
+        if (dailyHabits.focus_completed || dailyHabits.focus_duration) completedHabits.push('focus');
+      }
+      
+      if (pointsData) {
+        if (pointsData.meditation_completed) completedHabits.push('meditation');
+        if (pointsData.microlearn_completed) completedHabits.push('microlearn');
+      }
+      
+      setSelectedHabits(completedHabits);
+      return completedHabits;
+    } catch (error) {
+      console.error('Error loading completed habits:', error);
+      return [];
+    }
+  };
 
   const checkForExistingDailyPost = async () => {
     if (!user) return;
@@ -89,6 +155,7 @@ export default function CreatePostModal({
   const [energyLevel, setEnergyLevel] = useState<number>(3);
   const [isCreating, setIsCreating] = useState(false);
   const [existingDailyPost, setExistingDailyPost] = useState<DailyPost | null>(null);
+  const [showCustomCamera, setShowCustomCamera] = useState(false);
   const [checkingExistingPost, setCheckingExistingPost] = useState(false);
   const [captionModalVisible, setCaptionModalVisible] = useState(false);
   const [editingCaptionIndex, setEditingCaptionIndex] = useState<number>(-1);
@@ -120,36 +187,25 @@ export default function CreatePostModal({
     return true;
   };
 
-  const takePhoto = async () => {
+  const takePhoto = () => {
     if (selectedPhotos.length >= 5) {
       Alert.alert('Photo Limit', 'You can only upload up to 5 photos per post.');
       return;
     }
+    setShowCustomCamera(true);
+  };
 
-    const hasPermissions = await requestPermissions();
-    if (!hasPermissions) return;
-
+  const handlePhotoTaken = async (uri: string) => {
     try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-        exif: false,
-        base64: false,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        // Upload photo to Supabase storage
-        const photoUrl = await uploadPhotoToStorage(result.assets[0].uri);
-        if (photoUrl) {
-          setSelectedPhotos(prev => [photoUrl, ...prev]); // Add new photo at the beginning (most recent first)
-          setPhotoCaptions(prev => ['', ...prev]); // Add empty caption for new photo at the beginning
-        }
+      // Upload photo to Supabase storage
+      const photoUrl = await uploadPhotoToStorage(uri);
+      if (photoUrl) {
+        setSelectedPhotos(prev => [photoUrl, ...prev]); // Add new photo at the beginning (most recent first)
+        setPhotoCaptions(prev => ['', ...prev]); // Add empty caption for new photo at the beginning
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+      console.error('Error uploading photo:', error);
+      Alert.alert('Error', 'Failed to upload photo. Please try again.');
     }
   };
 
@@ -292,10 +348,13 @@ export default function CreatePostModal({
   const submitPost = async () => {
     setIsCreating(true);
     try {
+      // Fetch latest completed habits right before saving
+      const latestHabits = await loadCompletedHabits();
+      
       const dailyPostData = {
         photos: selectedPhotos,
         captions: photoCaptions,
-        habits_completed: selectedHabits,
+        habits_completed: latestHabits, // Use freshly loaded habits
       };
 
       let result;
@@ -658,6 +717,21 @@ export default function CreatePostModal({
           </View>
         </View>
       </Modal>
+
+      {/* Custom Camera Modal */}
+      {showCustomCamera && (
+        <Modal
+          visible={showCustomCamera}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowCustomCamera(false)}
+        >
+          <CustomCamera
+            onPhotoTaken={handlePhotoTaken}
+            onClose={() => setShowCustomCamera(false)}
+          />
+        </Modal>
+      )}
     </Modal>
   );
 }

@@ -426,7 +426,7 @@ export default function NotificationsScreen() {
                     <Text style={[styles.time, { color: theme.textTertiary }]}>{item.time}</Text>
                   </TouchableOpacity>
                   
-                  {item.type === 'habit_invite' && !item.inviteStatus && (
+                  {item.type === 'habit_invite' && (item.inviteStatus === 'pending' || !item.inviteStatus) && (
                     <View style={{ flexDirection: 'row', gap: 12, marginTop: 0, marginBottom: 12, marginLeft: 60 }}>
                        <TouchableOpacity 
                          onPress={() => handleAcceptInvite(item)} 

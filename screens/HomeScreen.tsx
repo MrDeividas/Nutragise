@@ -910,11 +910,10 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         }
 
         if (posts && posts.length > 0) {
-          // Attach profile data and daily habits to posts
+          // Attach profile data to posts
           const postsWithProfiles = posts.map(post => ({
             ...post,
             profiles: profileMap.get(post.user_id),
-            dailyHabits: dailyHabitsMap.get(post.user_id),
             type: 'post' as const
           }));
 
@@ -928,12 +927,84 @@ function HomeScreen({ navigation }: HomeScreenProps) {
       }
 
       if (dailyPostsData && dailyPostsData.length > 0) {
-        // Attach profile data to daily posts
-        const dailyPostsWithProfiles = dailyPostsData.map(dailyPost => ({
-          ...dailyPost,
-          profiles: profileMap.get(dailyPost.user_id),
-          type: 'daily_post' as const
-        }));
+        // Extract all unique dates from daily posts
+        const uniqueDates = [...new Set(dailyPostsData.map(post => {
+          const dateStr = post.date || post.created_at;
+          return new Date(dateStr).toISOString().split('T')[0];
+        }))];
+
+        console.log('🔍 Loading habits for dates:', uniqueDates);
+
+        // Fetch daily_habits for all user_ids and all unique dates
+        const { data: dailyHabitsData, error: habitsError } = await supabase
+          .from('daily_habits')
+          .select('*')
+          .in('user_id', userIds)
+          .in('date', uniqueDates);
+
+        // Fetch user_points_daily for all user_ids and all unique dates
+        const { data: userPointsData, error: pointsError } = await supabase
+          .from('user_points_daily')
+          .select('*')
+          .in('user_id', userIds)
+          .in('date', uniqueDates);
+
+        if (habitsError) console.error('Error fetching daily habits:', habitsError);
+        if (pointsError) console.error('Error fetching user points:', pointsError);
+
+        console.log('📊 Fetched daily_habits records:', dailyHabitsData?.length || 0);
+        console.log('📊 Fetched user_points_daily records:', userPointsData?.length || 0);
+
+        // Create maps for quick lookup: userId_date -> habitData
+        const habitsMap = new Map<string, any>();
+        dailyHabitsData?.forEach(habit => {
+          const key = `${habit.user_id}_${habit.date}`;
+          habitsMap.set(key, habit);
+        });
+
+        const pointsMap = new Map<string, any>();
+        userPointsData?.forEach(point => {
+          const key = `${point.user_id}_${point.date}`;
+          pointsMap.set(key, point);
+        });
+
+        // Attach profile data and real-time habit data to daily posts
+        const dailyPostsWithProfiles = dailyPostsData.map(dailyPost => {
+          const dateStr = dailyPost.date || new Date(dailyPost.created_at).toISOString().split('T')[0];
+          const key = `${dailyPost.user_id}_${dateStr}`;
+          
+          const habitData = habitsMap.get(key);
+          const pointData = pointsMap.get(key);
+
+          // Build real-time habits_completed array
+          const realTimeHabits: string[] = [];
+          
+          if (habitData) {
+            // Check each habit type
+            if (habitData.sleep_quality || habitData.sleep_duration || habitData.sleep_hours) realTimeHabits.push('sleep');
+            if (habitData.water_intake > 0) realTimeHabits.push('water');
+            if (habitData.run_completed || habitData.run_distance || habitData.run_day_type || habitData.run_activity_type) realTimeHabits.push('run');
+            if (habitData.gym_day_type === 'active' || (habitData.gym_training_types && habitData.gym_training_types.length > 0)) realTimeHabits.push('gym');
+            if (habitData.reflect_completed || habitData.reflect_text) realTimeHabits.push('reflection');
+            if (habitData.cold_shower_completed) realTimeHabits.push('cold_shower');
+            if (habitData.focus_completed || habitData.focus_duration) realTimeHabits.push('focus');
+          }
+
+          if (pointData) {
+            if (pointData.meditation_completed) realTimeHabits.push('meditation');
+            if (pointData.microlearn_completed) realTimeHabits.push('microlearn');
+            if (pointData.screen_time_completed) realTimeHabits.push('screen_time');
+          }
+
+          console.log(`🎯 Post ${dailyPost.id} (${dateStr}):`, realTimeHabits);
+
+          return {
+            ...dailyPost,
+            profiles: profileMap.get(dailyPost.user_id),
+            type: 'daily_post' as const,
+            habits_completed: realTimeHabits // Override with real-time data
+          };
+        });
 
         setDailyPosts(dailyPostsWithProfiles);
         // Load interaction data for daily posts
@@ -2037,13 +2108,13 @@ function ExploreContent({
   return (
           <View style={styles.content}>
         {/* Spotlight Section */}
+        <View style={styles.spotlightHeader}>
+          <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>
+            Spotlight
+          </Text>
+        </View>
+        
         <View style={[styles.spotlightContainer, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
-          <View style={styles.spotlightHeader}>
-            <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>
-              Spotlight
-            </Text>
-          </View>
-          
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
@@ -2084,7 +2155,7 @@ function ExploreContent({
           </Text>
         </View>
         
-        <View style={[styles.section, { marginTop: 24 }]}>
+        <View style={[styles.section, { marginTop: 8 }]}>
           
           {loading ? (
           <View style={styles.loadingContainer}>
@@ -2139,52 +2210,61 @@ function ExploreContent({
                     
                     {/* Today's Activity Section */}
                     <View style={styles.activitySection}>
-                      <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
+                      <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
                       <View style={styles.activityIcons}>
                         <FontAwesome5 
                           name="brain" 
                           size={20} 
-                          color={false ? '#FB7185' : theme.textSecondary} 
+                          color={goal.pointsData?.microlearn_completed ? '#FB7185' : '#D1D5DB'} 
+                          style={{ opacity: goal.pointsData?.microlearn_completed ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="spa" 
                           size={20} 
-                          color={false ? '#2DD4BF' : theme.textSecondary} 
+                          color={goal.pointsData?.meditation_completed ? '#2DD4BF' : '#D1D5DB'} 
+                          style={{ opacity: goal.pointsData?.meditation_completed ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="shower" 
                           size={20} 
-                          color={goal.dailyHabits?.cold_shower_completed ? '#7DD3FC' : theme.textSecondary} 
+                          color={goal.dailyHabits?.cold_shower_completed ? '#7DD3FC' : '#D1D5DB'} 
+                          style={{ opacity: goal.dailyHabits?.cold_shower_completed ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="journal-whills" 
                           size={20} 
-                          color={goal.dailyHabits?.reflect_mood ? '#F59E0B' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.reflect_mood || goal.dailyHabits?.reflect_energy || goal.dailyHabits?.reflect_what_went_well || goal.dailyHabits?.reflect_friction) ? '#F59E0B' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.reflect_mood || goal.dailyHabits?.reflect_energy || goal.dailyHabits?.reflect_what_went_well || goal.dailyHabits?.reflect_friction) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="tint" 
                           size={20} 
-                          color={goal.dailyHabits?.water_intake ? '#60A5FA' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.water_intake || goal.dailyHabits?.water_goal) ? '#60A5FA' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.water_intake || goal.dailyHabits?.water_goal) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="bed" 
                           size={20} 
-                          color={goal.dailyHabits?.sleep_hours ? '#34D399' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.sleep_hours || goal.dailyHabits?.sleep_quality || goal.dailyHabits?.sleep_bedtime_hours || goal.dailyHabits?.sleep_wakeup_hours) ? '#34D399' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.sleep_hours || goal.dailyHabits?.sleep_quality || goal.dailyHabits?.sleep_bedtime_hours || goal.dailyHabits?.sleep_wakeup_hours) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="running" 
                           size={20} 
-                          color={goal.dailyHabits?.run_day_type === 'active' ? '#FFEB3B' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.run_day_type === 'active' || goal.dailyHabits?.run_activity_type || goal.dailyHabits?.run_distance) ? '#FFEB3B' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.run_day_type === 'active' || goal.dailyHabits?.run_activity_type || goal.dailyHabits?.run_distance) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="dumbbell" 
                           size={20} 
-                          color={goal.dailyHabits?.gym_day_type === 'active' ? '#EF4444' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.gym_day_type === 'active' || (goal.dailyHabits?.gym_training_types && goal.dailyHabits.gym_training_types.length > 0)) ? '#EF4444' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.gym_day_type === 'active' || (goal.dailyHabits?.gym_training_types && goal.dailyHabits.gym_training_types.length > 0)) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="lightbulb" 
                           size={20} 
-                          color={false ? '#F472B6' : theme.textSecondary} 
+                          color={(goal.dailyHabits?.focus_completed || goal.dailyHabits?.focus_duration) ? '#F472B6' : '#D1D5DB'} 
+                          style={{ opacity: (goal.dailyHabits?.focus_completed || goal.dailyHabits?.focus_duration) ? 1 : 0.3 }}
                         />
                         <FontAwesome5 
                           name="mobile-alt" 
@@ -2196,7 +2276,7 @@ function ExploreContent({
                   </View>
                   {/* Today's Uploads Section */}
                   <View style={styles.uploadsSection}>
-                    <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
+                    <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
                     {goal.media_url && goal.media_url !== 'no-photo' ? (
                       <Image 
                         source={{ uri: goal.media_url }} 
@@ -2247,10 +2327,11 @@ function ExploreContent({
             );
               } else if (item.type === 'post') {
                 const post = item;
+                const habits = Array.isArray(post.habits_completed) ? post.habits_completed : [];
                 return (
                   <View key={post.id} style={styles.goalCardContainer}>
                     {/* Post Card */}
-                    <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+                    <View style={styles.card}>
                       {/* Profile Section */}
                       <View style={styles.profileSection}>
                         <View style={styles.profileInfo}>
@@ -2291,57 +2372,67 @@ function ExploreContent({
                         
                         {/* Today's Activity Section */}
                         <View style={styles.activitySection}>
-                          <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
+                          <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
                           <View style={styles.activityIcons}>
                             <FontAwesome5 
                               name="brain" 
                               size={20} 
-                              color={post.habits_completed.includes('microlearn') ? '#FB7185' : theme.textSecondary} 
+                              color={habits.includes('microlearn') ? '#FB7185' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('microlearn') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="spa" 
                               size={20} 
-                              color={post.habits_completed.includes('meditation') ? '#2DD4BF' : theme.textSecondary} 
+                              color={habits.includes('meditation') ? '#2DD4BF' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('meditation') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="shower" 
                               size={20} 
-                              color={post.habits_completed.includes('cold_shower') ? '#7DD3FC' : theme.textSecondary} 
+                              color={habits.includes('cold_shower') ? '#7DD3FC' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('cold_shower') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="journal-whills" 
                               size={20} 
-                              color={post.habits_completed.includes('reflect') ? '#F59E0B' : theme.textSecondary} 
+                              color={habits.includes('reflect') ? '#F59E0B' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('reflect') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="tint" 
                               size={20} 
-                              color={post.habits_completed.includes('water') ? '#60A5FA' : theme.textSecondary} 
+                              color={habits.includes('water') ? '#60A5FA' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('water') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="bed" 
                               size={20} 
-                              color={post.habits_completed.includes('sleep') ? '#34D399' : theme.textSecondary} 
+                              color={habits.includes('sleep') ? '#34D399' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('sleep') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="running" 
                               size={20} 
-                              color={post.habits_completed.includes('run') ? '#FFEB3B' : theme.textSecondary} 
+                              color={habits.includes('run') ? '#FFEB3B' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('run') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="dumbbell" 
                               size={20} 
-                              color={post.habits_completed.includes('gym') || post.habits_completed.includes('workout') ? '#EF4444' : theme.textSecondary} 
+                              color={habits.includes('gym') || habits.includes('workout') ? '#EF4444' : '#D1D5DB'} 
+                              style={{ opacity: (habits.includes('gym') || habits.includes('workout')) ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="lightbulb" 
                               size={20} 
-                              color={post.habits_completed.includes('focus') ? '#F472B6' : theme.textSecondary} 
+                              color={habits.includes('focus') ? '#F472B6' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('focus') ? 1 : 0.3 }}
                             />
                             <FontAwesome5 
                               name="mobile-alt" 
                               size={20} 
-                              color={post.habits_completed.includes('screen_time') ? '#FCD34D' : theme.textSecondary} 
+                              color={habits.includes('screen_time') ? '#FCD34D' : '#D1D5DB'} 
+                              style={{ opacity: habits.includes('screen_time') ? 1 : 0.3 }}
                             />
                             {/* Football icon for goal progress */}
                             <Ionicons 
@@ -2354,7 +2445,7 @@ function ExploreContent({
                       </View>
                       {/* Today's Uploads Section */}
                       <View style={styles.uploadsSection}>
-                        <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
+                        <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
                         {post.photos && post.photos.length > 0 ? (
                           <View style={styles.photoCarouselWrapper}>
                             <GesturePhotoCarousel
@@ -2408,10 +2499,11 @@ function ExploreContent({
                 );
               } else if (item.type === 'daily_post') {
                 const dailyPost = item;
+                const habits = Array.isArray(dailyPost.habits_completed) ? dailyPost.habits_completed : [];
                 return (
                   <View key={dailyPost.id} style={styles.goalCardContainer}>
                     {/* Main Content Area */}
-                    <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
+                    <View style={styles.card}>
                       {/* Profile Section */}
                       <View style={styles.profileSection}>
                         <View style={styles.profileInfo}>
@@ -2450,67 +2542,49 @@ function ExploreContent({
                           </View>
                         </View>
                         
-                        {/* Today's Activity Section */}
-                        <View style={styles.activitySection}>
-                          <Text style={[styles.activityLabel, { color: theme.textSecondary }]}>Today's Activity</Text>
-                          <View style={styles.activityIcons}>
-                            <FontAwesome5 
-                              name="brain" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('microlearn') ? '#FB7185' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="spa" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('meditation') ? '#2DD4BF' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="shower" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('cold_shower') ? '#7DD3FC' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="tint" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('water') ? '#60A5FA' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="bed" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('sleep') ? '#34D399' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="running" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('run') ? '#FFEB3B' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="dumbbell" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('gym') || dailyPost.habits_completed.includes('workout') ? '#EF4444' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="lightbulb" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('focus') ? '#10B981' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="mobile-alt" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('screen_time') ? '#10B981' : theme.textSecondary} 
-                            />
-                            <FontAwesome5 
-                              name="journal-whills" 
-                              size={20} 
-                              color={dailyPost.habits_completed.includes('reflection') ? '#F59E0B' : theme.textSecondary} 
-                            />
+                        {/* Today's Activity Section - Only show completed habits */}
+                        {habits.length > 0 && (
+                          <View style={styles.activitySection}>
+                            <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
+                            <View style={styles.activityIcons}>
+                              {habits.includes('microlearn') && (
+                                <FontAwesome5 name="brain" size={20} color="#FB7185" />
+                              )}
+                              {habits.includes('meditation') && (
+                                <FontAwesome5 name="spa" size={20} color="#2DD4BF" />
+                              )}
+                              {habits.includes('cold_shower') && (
+                                <FontAwesome5 name="shower" size={20} color="#7DD3FC" />
+                              )}
+                              {habits.includes('water') && (
+                                <FontAwesome5 name="tint" size={20} color="#60A5FA" />
+                              )}
+                              {habits.includes('sleep') && (
+                                <FontAwesome5 name="bed" size={20} color="#34D399" />
+                              )}
+                              {habits.includes('run') && (
+                                <FontAwesome5 name="running" size={20} color="#FFEB3B" />
+                              )}
+                              {(habits.includes('gym') || habits.includes('workout')) && (
+                                <FontAwesome5 name="dumbbell" size={20} color="#EF4444" />
+                              )}
+                              {habits.includes('focus') && (
+                                <FontAwesome5 name="lightbulb" size={20} color="#10B981" />
+                              )}
+                              {habits.includes('screen_time') && (
+                                <FontAwesome5 name="mobile-alt" size={20} color="#10B981" />
+                              )}
+                              {habits.includes('reflection') && (
+                                <FontAwesome5 name="journal-whills" size={20} color="#F59E0B" />
+                              )}
+                            </View>
                           </View>
-                        </View>
+                        )}
                       </View>
-                      {/* Today's Uploads Section */}
+                      {/* Uploads Section */}
                       {dailyPost.photos && dailyPost.photos.length > 0 && (
                         <View style={styles.uploadsSection}>
-                          <Text style={[styles.uploadsLabel, { color: theme.textSecondary }]}>Today's Uploads</Text>
+                          <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Uploads</Text>
                           <View style={styles.photoCarouselWrapper}>
                             <GesturePhotoCarousel
                               photos={dailyPost.photos}
@@ -2826,12 +2900,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
-    marginHorizontal: 24,
-    marginTop: 2,
+    width: '100%',
+    marginTop: 8,
     marginBottom: 20,
   },
   spotlightHeader: {
-    marginBottom: 12,
+    paddingHorizontal: 30,
+    marginTop: 0,
+    marginBottom: 4,
   },
   spotlightTitle: {
     fontSize: 18,
@@ -2840,7 +2916,7 @@ const styles = StyleSheet.create({
   activityHeader: {
     paddingHorizontal: 30,
     marginTop: 0,
-    marginBottom: 12,
+    marginBottom: 4,
   },
   activityTitle: {
     fontSize: 18,
@@ -2946,12 +3022,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardsContainer: {
-    gap: 16,
+    gap: 4,
   },
   goalCardContainer: {
     position: 'relative',
-    marginBottom: 12,
-    marginTop: 10,
+    marginBottom: 4,
+    marginTop: 4,
   },
   profileSection: {
     flexDirection: 'column',
@@ -2960,8 +3036,6 @@ const styles = StyleSheet.create({
   activitySection: {
     marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
   },
   activityLabel: {
     fontSize: 11,
@@ -3102,8 +3176,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     padding: 16,
-    marginHorizontal: 24,
-    marginBottom: 8,
+    marginBottom: 4,
+    width: '100%',
   },
   mediaSection: {
     marginBottom: 8,
@@ -3163,13 +3237,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   userName: {
-    fontSize: 16,
+    fontSize: 21,
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: 2,
   },
   userHandle: {
-    fontSize: 14,
+    fontSize: 18,
     color: '#6b7280',
   },
   followButton: {
@@ -3183,14 +3257,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   goalTitle: {
-    fontSize: 18,
+    fontSize: 23,
     fontWeight: '700',
     color: '#1f2937',
   },
   goalDescription: {
-    fontSize: 14,
+    fontSize: 18,
     color: '#6b7280',
-    lineHeight: 20,
+    lineHeight: 26,
     marginBottom: 16,
   },
   goalStats: {
@@ -4017,9 +4091,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   postContent: {
-    fontSize: 14,
+    fontSize: 18,
     color: '#ffffff',
-    lineHeight: 20,
+    lineHeight: 26,
     marginBottom: 8,
   },
   postInteractionContainer: {

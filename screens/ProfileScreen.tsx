@@ -1573,8 +1573,6 @@ function ProfileScreen({ navigation }: any) {
         onClose={() => setShowLevelModal(false)}
         currentLevel={currentLevel}
         totalPoints={totalPoints}
-        dailyHabits={segmentChecked}
-        coreHabits={coreHabitsCompleted}
       />
 
       {/* Achievement Modal */}

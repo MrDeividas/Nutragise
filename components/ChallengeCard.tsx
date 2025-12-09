@@ -11,13 +11,11 @@ import { Challenge, ChallengeCardProps } from '../types/challenges';
 import { useTheme } from '../state/themeStore';
 
 const { width } = Dimensions.get('window');
-// Match the width from ActionScreen challenge cards (spotlightCardWidth)
-// Calculation: (screenWidth - horizontalPadding - gap) / 2, but since we're in a horizontal scroll, we use the full calculated width
-const horizontalPadding = 24 * 2; // 24px padding on each side
-const gap = 12; // Gap between cards
+const horizontalPadding = 24 * 2;
+const gap = 12;
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
 
-export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps) {
+export default function ChallengeCard({ challenge, onPress, isJoined }: ChallengeCardProps) {
   const { theme } = useTheme();
 
   const getCategoryColor = (category: string) => {
@@ -123,18 +121,22 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
       onPress={() => onPress(challenge)}
       activeOpacity={0.8}
     >
-      {/* Blue Section (matching ActionScreen) */}
+      {/* Blue Section */}
       <View style={[styles.blueSection, { backgroundColor: categoryColor }]} />
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Top Section (35% height) */}
+        {/* Top Section */}
         <View style={styles.topSection}>
-          {/* Title - Moved to top */}
           <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
             {challenge.title}
           </Text>
-          {/* Participants - Matching ActionScreen style (positioned in top section) */}
+          {isJoined && (
+            <View style={styles.joinedBadge}>
+              <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+              <Text style={styles.joinedText}>Joined</Text>
+            </View>
+          )}
           <View style={styles.participantsContainerAction}>
             <Ionicons name="people" size={14} color={theme.textSecondary} />
             <Text style={[styles.participantsTextAction, { color: theme.textSecondary }]}>
@@ -143,9 +145,8 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
           </View>
         </View>
 
-        {/* Bottom Section (65% height) */}
+        {/* Bottom Section */}
         <View style={styles.bottomSection}>
-          {/* Tags */}
           <View style={styles.tagsContainer}>
             <View style={[styles.tag, { backgroundColor: categoryColor }]}>
               <Ionicons name={categoryIcon} size={12} color="#FFFFFF" />
@@ -158,7 +159,6 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
             </View>
           </View>
 
-          {/* Time Remaining / Duration */}
           <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
             {getTimeRemaining()}
           </Text>
@@ -166,7 +166,6 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
             {formatDuration(challenge.duration_weeks)}
           </Text>
 
-          {/* Entry Fee Display */}
           <View style={styles.feeContainer}>
             <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
               {formatEntryFee(challenge.entry_fee)} investment
@@ -184,7 +183,7 @@ export default function ChallengeCard({ challenge, onPress }: ChallengeCardProps
 const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
-    height: 280, // Increased height (was 200, now 280 - 40% taller)
+    height: 280,
     borderRadius: 20,
     borderWidth: 1,
     marginRight: 16,
@@ -262,16 +261,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flex: 1,
   },
-  participantsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
-  },
-  participantsText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
   participantsContainerAction: {
     position: 'absolute',
     bottom: 8,
@@ -283,6 +272,22 @@ const styles = StyleSheet.create({
   participantsTextAction: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  joinedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  joinedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10B981',
   },
   feeContainer: {
     alignItems: 'flex-start',

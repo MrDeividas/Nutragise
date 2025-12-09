@@ -45,12 +45,6 @@ export default function GesturePhotoCarousel({
     }
   };
 
-  const scrollToIndex = (index: number) => {
-    if (flatListRef.current) {
-      flatListRef.current.scrollToIndex({ index, animated: true });
-    }
-  };
-
   return (
     <View style={[styles.container, style]}>
       <FlatList
@@ -65,36 +59,16 @@ export default function GesturePhotoCarousel({
         style={styles.carousel}
         contentContainerStyle={{ paddingHorizontal: 0 }}
         getItemLayout={(_, index) => ({
-          length: 140,
-          offset: 140 * index,
+          length: 172,
+          offset: 172 * index,
           index,
         })}
         initialScrollIndex={currentIndex}
         removeClippedSubviews={false}
         decelerationRate="fast"
-        snapToInterval={140}
+        snapToInterval={172}
         snapToAlignment="start"
       />
-      
-      {/* Navigation Dots */}
-      {photos.length > 1 && (
-        <View style={styles.dotsContainer}>
-          {photos.map((_, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.dot, 
-                { 
-                  backgroundColor: index === currentIndex ? '#ffffff' : 'rgba(255, 255, 255, 0.3)',
-                  width: index === currentIndex ? 8 : 6,
-                  height: index === currentIndex ? 8 : 6,
-                }
-              ]}
-              onPress={() => scrollToIndex(index)}
-            />
-          ))}
-        </View>
-      )}
     </View>
   );
 }
@@ -104,33 +78,19 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   carousel: {
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   photoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
+    width: 160,
+    height: 285, // 9:16 aspect ratio (160 * 16/9 ≈ 285)
+    borderRadius: 12,
     overflow: 'hidden',
-    marginRight: 10,
+    marginRight: 12,
   },
   photo: {
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
-  },
-  dotsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'absolute',
-    bottom: 8,
-    left: 0,
-    right: 0,
-    gap: 4,
-    zIndex: 1,
-  },
-  dot: {
-    borderRadius: 4,
   },
 });

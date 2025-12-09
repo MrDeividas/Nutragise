@@ -44,10 +44,11 @@ export default function InviteFriendModal({
   const [mode, setMode] = useState<'supportive' | 'competitive'>('supportive');
   const [sendingInvite, setSendingInvite] = useState<string | null>(null);
 
-  // Load following list on mount
+  // Load following list on mount and ensure mode is supportive
   useEffect(() => {
     if (visible && user) {
       loadFollowing();
+      setMode('supportive'); // Always default to supportive (competitive coming soon)
     }
   }, [visible, user]);
 
@@ -202,23 +203,40 @@ export default function InviteFriendModal({
                 style={[
                   styles.modeOption,
                   { 
-                    borderColor: mode === 'competitive' ? '#F59E0B' : theme.border,
-                    backgroundColor: mode === 'competitive' ? (isDark ? 'rgba(245, 158, 11, 0.1)' : '#FFFBEB') : 'transparent'
+                    borderColor: theme.border,
+                    backgroundColor: 'transparent',
+                    opacity: 0.5
                   }
                 ]}
-                onPress={() => setMode('competitive')}
+                disabled={true}
               >
                 <Ionicons 
                   name="trophy" 
                   size={24} 
-                  color={mode === 'competitive' ? '#F59E0B' : theme.textSecondary} 
+                  color={theme.textSecondary} 
                 />
-                <Text style={[
-                  styles.modeTitle, 
-                  { color: mode === 'competitive' ? '#F59E0B' : theme.textPrimary }
-                ]}>
-                  Competitive
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[
+                    styles.modeTitle, 
+                    { color: theme.textPrimary }
+                  ]}>
+                    Competitive
+                  </Text>
+                  <View style={{ 
+                    backgroundColor: theme.primary, 
+                    paddingHorizontal: 6, 
+                    paddingVertical: 2, 
+                    borderRadius: 8 
+                  }}>
+                    <Text style={{ 
+                      color: '#FFFFFF', 
+                      fontSize: 10, 
+                      fontWeight: '600' 
+                    }}>
+                      Coming Soon
+                    </Text>
+                  </View>
+                </View>
                 <Text style={[styles.modeDescription, { color: theme.textSecondary }]}>
                   Track streaks and compete daily.
                 </Text>

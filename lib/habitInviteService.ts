@@ -200,6 +200,27 @@ class HabitInviteService {
   }
 
   /**
+   * Remove/cancel an active partnership
+   */
+  async removePartnership(partnershipId: string, userId: string): Promise<boolean> {
+    try {
+      // Update status to 'cancelled' instead of deleting
+      // This preserves the history
+      const { error } = await supabase
+        .from('habit_accountability_partners')
+        .update({ status: 'cancelled' })
+        .eq('id', partnershipId)
+        .or(`inviter_id.eq.${userId},invitee_id.eq.${userId}`); // Allow either user to cancel
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error removing partnership:', error);
+      return false;
+    }
+  }
+
+  /**
    * Update partner progress
    */
   async updatePartnerProgress(
@@ -317,9 +338,9 @@ class HabitInviteService {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Partner progress subscription active');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Partner progress subscription failed:', err);
+          console.log('ℹ️ Partner progress subscription status:', status, err?.message || 'No error details');
         } else if (status === 'TIMED_OUT') {
-          console.error('⏱️ Partner progress subscription timed out');
+          console.log('⏱️ Partner progress subscription timed out (retrying automatically)');
         }
       });
 

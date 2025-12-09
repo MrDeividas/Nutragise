@@ -1,5 +1,5 @@
 // Configuration for API keys and environment variables
-import { DEEPSEEK_API_KEY } from '@env';
+import { DEEPSEEK_API_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } from '@env';
 export const config = {
   // DeepSeek API Configuration
   deepseek: {
@@ -8,6 +8,13 @@ export const config = {
     model: 'deepseek-chat',
     maxTokens: 500,
     temperature: 0.7,
+  },
+  
+  // Stripe Configuration
+  stripe: {
+    publishableKey: STRIPE_PUBLISHABLE_KEY || '',
+    secretKey: STRIPE_SECRET_KEY || '',
+    webhookSecret: STRIPE_WEBHOOK_SECRET || '',
   },
   
   // App Configuration
@@ -22,6 +29,7 @@ export const config = {
     progressCharts: true,
     correlations: true,
     recommendations: true,
+    walletInvestments: true, // New feature flag for wallet/investment system
   },
 };
 

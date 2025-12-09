@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from '../state/authStore';
 
 interface DateNavigatorProps {
   selectedDate: string;
@@ -14,6 +16,7 @@ interface DateNavigatorProps {
 
 export default function DateNavigator({ selectedDate, onDateChange, onViewHistory, onHabitPress, onShowProgress, dailyHabitsData }: DateNavigatorProps) {
   const { theme, isDark } = useTheme();
+  const { user } = useAuthStore();
 
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickDay, setPickDay] = useState<number>(new Date(selectedDate).getDate());
@@ -22,13 +25,27 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
   
   // Local state for selected date's habits data (separate from global dailyHabits)
   const [selectedDateHabits, setSelectedDateHabits] = useState<any>(null);
+  const [pointsData, setPointsData] = useState<any>(null);
   const [loadingSelectedDate, setLoadingSelectedDate] = useState(false);
   const lastLoadedDateRef = useRef<string | null>(null);
   const lastLoadedDataRef = useRef<any>(null);
 
   // Function to load habits data for selected date
   const loadSelectedDateHabits = useCallback(async (date: string) => {
+    if (!user) return;
+    
     const today = new Date().toISOString().split('T')[0];
+    
+    // Fetch points data for meditation/microlearn/screen_time
+    const { data: points } = await supabase
+      .from('user_points_daily')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('date', date)
+      .single();
+    
+    setPointsData(points);
+    
     if (date === today) {
       // If it's today, use the global data - always update when dailyHabitsData changes
       setSelectedDateHabits(dailyHabitsData);
@@ -202,7 +219,11 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
             { type: 'run', label: 'Run', icon: 'walk', hasData: !!selectedDateHabits?.run_day_type },
             { type: 'gym', label: 'Gym', icon: 'barbell', hasData: !!selectedDateHabits?.gym_day_type },
             { type: 'reflect', label: 'Reflect', icon: 'sparkles', hasData: !!selectedDateHabits?.reflect_mood },
-            { type: 'cold_shower', label: 'Cold Shower', icon: 'snow', hasData: !!selectedDateHabits?.cold_shower_completed }
+            { type: 'cold_shower', label: 'Cold Shower', icon: 'snow', hasData: !!selectedDateHabits?.cold_shower_completed },
+            { type: 'focus', label: 'Focus', icon: 'flash', hasData: !!(selectedDateHabits?.focus_completed || selectedDateHabits?.focus_duration) },
+            { type: 'meditation', label: 'Meditation', icon: 'leaf', hasData: !!pointsData?.meditation_completed },
+            { type: 'microlearn', label: 'Microlearn', icon: 'book', hasData: !!pointsData?.microlearn_completed },
+            { type: 'screen_time', label: 'Screen Time', icon: 'phone-portrait', hasData: !!pointsData?.screen_time_completed }
           ].map((habit) => (
             <TouchableOpacity
               key={habit.type}
