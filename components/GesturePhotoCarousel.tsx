@@ -1,10 +1,11 @@
 import React, { useRef, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Image, TouchableOpacity, FlatList } from 'react-native';
+import { View, StyleSheet, Dimensions, Image, TouchableOpacity, FlatList, Text } from 'react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 interface GesturePhotoCarouselProps {
   photos: string[];
+  captions?: string[];
   currentIndex: number;
   onIndexChange: (index: number) => void;
   onPhotoPress?: () => void;
@@ -13,6 +14,7 @@ interface GesturePhotoCarouselProps {
 
 export default function GesturePhotoCarousel({ 
   photos, 
+  captions,
   currentIndex, 
   onIndexChange, 
   onPhotoPress,
@@ -22,19 +24,29 @@ export default function GesturePhotoCarousel({
 
   if (!photos || photos.length === 0) return null;
 
-  const renderItem = ({ item }: { item: string }) => (
-    <TouchableOpacity 
-      style={styles.photoContainer} 
-      onPress={onPhotoPress}
-      activeOpacity={0.9}
-    >
-      <Image 
-        source={{ uri: item }} 
-        style={styles.photo} 
-        resizeMode="cover" 
-      />
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item, index }: { item: string; index: number }) => {
+    const caption = captions?.[index];
+    const hasCaption = caption && caption.trim() !== '';
+    
+    return (
+      <View style={styles.photoContainer}>
+        <TouchableOpacity 
+          style={styles.photoTouchable} 
+          onPress={onPhotoPress}
+          activeOpacity={0.9}
+        >
+          <Image 
+            source={{ uri: item }} 
+            style={styles.photo} 
+            resizeMode="cover" 
+          />
+        </TouchableOpacity>
+        {hasCaption && (
+          <Text style={styles.caption}>{caption}</Text>
+        )}
+      </View>
+    );
+  };
 
   const onViewableItemsChanged = ({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
@@ -79,18 +91,28 @@ const styles = StyleSheet.create({
   },
   carousel: {
     borderRadius: 12,
-    overflow: 'hidden',
   },
   photoContainer: {
     width: 160,
-    height: 285, // 9:16 aspect ratio (160 * 16/9 ≈ 285)
+    marginRight: 12,
+  },
+  photoTouchable: {
+    width: 160,
+    height: 200, // 4:5 aspect ratio (160 * 5/4 = 200)
     borderRadius: 12,
     overflow: 'hidden',
-    marginRight: 12,
   },
   photo: {
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  caption: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    textAlign: 'center',
+    width: 160,
   },
 });

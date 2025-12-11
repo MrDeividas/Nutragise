@@ -19,7 +19,6 @@ import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
 import { progressService } from '../lib/progressService';
 import { getDailyPostDate } from '../lib/timeService';
 import { useActionStore } from '../state/actionStore';
-import CustomCamera from './CustomCamera';
 
 interface CreatePostModalProps {
   visible: boolean;
@@ -155,7 +154,6 @@ export default function CreatePostModal({
   const [energyLevel, setEnergyLevel] = useState<number>(3);
   const [isCreating, setIsCreating] = useState(false);
   const [existingDailyPost, setExistingDailyPost] = useState<DailyPost | null>(null);
-  const [showCustomCamera, setShowCustomCamera] = useState(false);
   const [checkingExistingPost, setCheckingExistingPost] = useState(false);
   const [captionModalVisible, setCaptionModalVisible] = useState(false);
   const [editingCaptionIndex, setEditingCaptionIndex] = useState<number>(-1);
@@ -187,12 +185,21 @@ export default function CreatePostModal({
     return true;
   };
 
-  const takePhoto = () => {
+  const takePhoto = async () => {
     if (selectedPhotos.length >= 5) {
       Alert.alert('Photo Limit', 'You can only upload up to 5 photos per post.');
       return;
     }
-    setShowCustomCamera(true);
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const uri = result.assets[0].uri;
+      await handlePhotoTaken(uri);
+    }
   };
 
   const handlePhotoTaken = async (uri: string) => {
@@ -719,19 +726,6 @@ export default function CreatePostModal({
       </Modal>
 
       {/* Custom Camera Modal */}
-      {showCustomCamera && (
-        <Modal
-          visible={showCustomCamera}
-          animationType="slide"
-          presentationStyle="fullScreen"
-          onRequestClose={() => setShowCustomCamera(false)}
-        >
-          <CustomCamera
-            onPhotoTaken={handlePhotoTaken}
-            onClose={() => setShowCustomCamera(false)}
-          />
-        </Modal>
-      )}
     </Modal>
   );
 }

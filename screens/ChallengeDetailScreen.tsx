@@ -475,35 +475,20 @@ export default function ChallengeDetailScreen({ route }: any) {
         {/* Stats Card */}
         <View style={[styles.statsCard, { backgroundColor: theme.cardBackground }]}>
           <View style={styles.statColumn}>
-            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>£{challenge.entry_fee || 0}</Text>
-            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>investment</Text>
+            <Text style={[styles.statValue, { color: '#1F2937' }]}>£{challenge.entry_fee || 0}</Text>
+            <Text style={[styles.statLabel, { color: '#6B7280' }]}>investment</Text>
           </View>
           <View style={styles.statColumn}>
-            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>
+            <Text style={[styles.statValue, { color: '#1F2937' }]}>
               £{potStatus?.totalAmount.toFixed(2) || ((challenge.participants?.length || 0) * (challenge.entry_fee || 0)).toFixed(2)}
             </Text>
-            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>total pot</Text>
+            <Text style={[styles.statLabel, { color: '#6B7280' }]}>total pot</Text>
           </View>
           <View style={styles.statColumn}>
-            <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{challenge.participants?.length || 0}</Text>
-            <Text style={[styles.statLabel, { color: '#FFFFFF' }]}>players</Text>
+            <Text style={[styles.statValue, { color: '#1F2937' }]}>{challenge.participants?.length || 0}</Text>
+            <Text style={[styles.statLabel, { color: '#6B7280' }]}>players</Text>
           </View>
         </View>
-
-        {/* Investment Warning (if challenge has entry fee and user is participating) */}
-        {challenge.entry_fee && challenge.entry_fee > 0 && isParticipating && (
-          <View style={[styles.warningCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
-            <Ionicons name="warning" size={20} color="#F59E0B" />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.warningTitle, { color: '#92400E' }]}>
-                Daily Proof Required
-              </Text>
-              <Text style={[styles.warningText, { color: '#92400E' }]}>
-                Submit proof every day to avoid forfeiting your £{challenge.entry_fee.toFixed(2)} investment. Missing any day will result in loss of your share.
-              </Text>
-            </View>
-          </View>
-        )}
 
         {/* Wallet Balance (if not participating and has entry fee) */}
         {challenge.entry_fee && challenge.entry_fee > 0 && !isParticipating && (
@@ -566,6 +551,19 @@ export default function ChallengeDetailScreen({ route }: any) {
               Details
             </Text>
             {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.tab} 
+            onPress={() => setActiveTab('participants')}
+          >
+            <Text style={[
+              styles.tabText, 
+              { color: activeTab === 'participants' ? theme.textPrimary : theme.textSecondary }
+            ]}>
+              Participants
+            </Text>
+            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
           </TouchableOpacity>
         </View>
 
@@ -752,6 +750,21 @@ export default function ChallengeDetailScreen({ route }: any) {
         {activeTab === 'details' && (
           <View style={styles.tabContent}>
             <View style={styles.detailsContainer}>
+              {/* Daily Proof Warning (if challenge has entry fee and user is participating) */}
+              {challenge.entry_fee && challenge.entry_fee > 0 && isParticipating && (
+                <View style={[styles.warningCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', marginBottom: 16 }]}>
+                  <Ionicons name="warning" size={20} color="#F59E0B" />
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={[styles.warningTitle, { color: '#92400E' }]}>
+                      Daily Proof Required
+                    </Text>
+                    <Text style={[styles.warningText, { color: '#92400E' }]}>
+                      Submit proof every day to avoid forfeiting your £{challenge.entry_fee.toFixed(2)} investment. Missing any day will result in loss of your share.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
               <View style={styles.detailSection}>
                 <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
                   How to Win
@@ -778,6 +791,64 @@ export default function ChallengeDetailScreen({ route }: any) {
                   At the end of the challenge, all participants who completed every single day will split the total pot equally. If you miss any day, you forfeit your entry fee and are not eligible for any winnings. The more people who complete the challenge, the bigger the pot!
                 </Text>
               </View>
+            </View>
+          </View>
+        )}
+
+        {activeTab === 'participants' && (
+          <View style={styles.tabContent}>
+            <View style={styles.participantsContainer}>
+              {challenge.participants && challenge.participants.length > 0 ? (
+                challenge.participants.map((participant, index) => (
+                  <View 
+                    key={participant.id || index} 
+                    style={[styles.participantItem, { borderBottomColor: theme.borderColor }]}
+                  >
+                    {participant.user?.avatar_url ? (
+                      <Image 
+                        source={{ uri: participant.user.avatar_url }} 
+                        style={styles.participantAvatar}
+                      />
+                    ) : (
+                      <View style={[styles.participantAvatarPlaceholder, { backgroundColor: categoryColor }]}>
+                        <Text style={styles.participantAvatarInitial}>
+                          {(participant.user?.username || participant.user?.display_name || 'U').charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.participantInfo}>
+                      <Text style={[styles.participantName, { color: theme.textPrimary }]}>
+                        {participant.user?.display_name || participant.user?.username || 'Anonymous'}
+                      </Text>
+                      <Text style={[styles.participantStatus, { color: theme.textSecondary }]}>
+                        {participant.completion_percentage}% complete
+                      </Text>
+                    </View>
+                    {participant.status === 'completed' && (
+                      <View style={[styles.statusBadge, { backgroundColor: '#10B981' }]}>
+                        <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                    {participant.status === 'active' && (
+                      <View style={[styles.statusBadge, { backgroundColor: categoryColor }]}>
+                        <Ionicons name="time-outline" size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                    {participant.status === 'failed' && (
+                      <View style={[styles.statusBadge, { backgroundColor: '#EF4444' }]}>
+                        <Ionicons name="close-circle" size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </View>
+                ))
+              ) : (
+                <View style={styles.emptyParticipants}>
+                  <Ionicons name="people-outline" size={48} color={theme.textSecondary} />
+                  <Text style={[styles.emptyParticipantsText, { color: theme.textSecondary }]}>
+                    No participants yet
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -1065,14 +1136,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    justifyContent: 'space-between',
   },
   tab: {
-    flex: 1,
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 8,
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
     marginBottom: 4,
   },
@@ -1258,5 +1330,60 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  participantsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  participantItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  participantAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  participantAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  participantAvatarInitial: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  participantInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  participantName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  participantStatus: {
+    fontSize: 13,
+  },
+  statusBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyParticipants: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyParticipantsText: {
+    fontSize: 16,
+    marginTop: 12,
   },
 });

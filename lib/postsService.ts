@@ -315,6 +315,30 @@ class PostsService {
       return 'incomplete';
     }
   }
+
+  /**
+   * Get all public posts from all users
+   */
+  async getAllPublicPosts(limit: number = 50): Promise<Post[]> {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('Error fetching all public posts:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getAllPublicPosts:', error);
+      return [];
+    }
+  }
 }
 
 export const postsService = new PostsService();
