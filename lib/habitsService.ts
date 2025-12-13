@@ -56,6 +56,25 @@ export const habitsService = {
     return data ?? [];
   },
 
+  async fetchCompletionsForMonth(userId: string, habitId: string, year: number, month: number): Promise<CustomHabitCompletion[]> {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+    
+    const { data, error } = await supabase
+      .from<CustomHabitCompletion>(COMPLETIONS_TABLE)
+      .select('*')
+      .eq('user_id', userId)
+      .eq('habit_id', habitId)
+      .gte('occur_date', startDate)
+      .lte('occur_date', endDate);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data ?? [];
+  },
+
   async updateHabit(userId: string, habitId: string, payload: Partial<CreateCustomHabitInput>): Promise<CustomHabit> {
     const { data, error } = await supabase
       .from<CustomHabit>(HABITS_TABLE)

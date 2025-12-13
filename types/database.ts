@@ -402,4 +402,128 @@ export interface TypingIndicator {
   user_id: string;
   is_typing: boolean;
   updated_at: string;
+}
+
+export interface WorkoutExercise {
+  id: string;
+  user_id: string;
+  exercise_name: string;
+  muscle_group?: string | null;
+  sub_category?: string | null;
+  current_weight?: number | null;
+  sets?: number | null;
+  reps?: number | null;
+  goal_weight?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkoutExerciseData {
+  exercise_name: string;
+  muscle_group?: string | null;
+  sub_category?: string | null;
+  current_weight?: number | null;
+  sets?: number | null;
+  reps?: number | null;
+  goal_weight?: number | null;
+}
+
+export interface WorkoutSplitDay {
+  day: string;
+  focus: string;
+  exercises: string[];
+}
+
+export interface WorkoutSplit {
+  id: string;
+  user_id: string;
+  split_name: string;
+  split_type: 'premade' | 'custom';
+  frequency?: string | null;
+  premade_split_name?: string | null;
+  days: WorkoutSplitDay[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkoutSplitData {
+  split_name: string;
+  split_type: 'premade' | 'custom';
+  frequency?: string | null;
+  premade_split_name?: string | null;
+  days: WorkoutSplitDay[];
+}
+
+export interface WorkoutCompletion {
+  id: string;
+  user_id: string;
+  split_id: string;
+  day_index: number;
+  completed_date: string;
+  created_at: string;
+}
+
+export interface WorkoutExerciseLog {
+  id: string;
+  user_id: string;
+  completion_id: string;
+  exercise_name: string;
+  weight?: number | null;
+  sets?: number | null;
+  reps?: number | null;
+  goal_weight?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkoutExerciseLogData {
+  completion_id: string;
+  exercise_name: string;
+  weight?: number | null;
+  sets?: number | null;
+  reps?: number | null;
+  goal_weight?: number | null;
+}
+
+export interface WorkoutSplitDay {
+  day: string;
+  focus: string;
+  exercises: string[];
+}
+
+export interface WorkoutSplit {
+  id: string;
+  user_id: string;
+  split_name: string;
+  split_type: 'premade' | 'custom';
+  frequency?: string | null;
+  premade_split_name?: string | null;
+  days: WorkoutSplitDay[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkoutSplitData {
+  split_name: string;
+  split_type: 'premade' | 'custom';
+  frequency?: string | null;
+  premade_split_name?: string | null;
+  days: WorkoutSplitDay[];
+}
+
+export interface WorkoutCompletion {
+  id: string;
+  user_id: string;
+  split_id: string;
+  day_index: number;
+  completed_date: string;
+  created_at: string;
+}
+
+export interface CreateWorkoutCompletionData {
+  split_id: string;
+  day_index: number;
+  completed_date: string;
 } 

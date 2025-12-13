@@ -48,6 +48,7 @@ import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, 
 import InviteFriendModal from '../components/InviteFriendModal';
 import { habitInviteService } from '../lib/habitInviteService';
 import { walletService } from '../lib/walletService';
+import { habitsService } from '../lib/habitsService';
 
 
 
@@ -412,11 +413,6 @@ const AnimatedHabitCard = React.memo(({
             <Text style={[styles.highlightCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            {!partnership && (
-              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
-                <Ionicons name="person-add-outline" size={20} color="rgba(255, 255, 255, 0.65)" />
-              </TouchableOpacity>
-            )}
             {partnership ? (
               <TouchableOpacity onPress={(e) => { e.stopPropagation(); onRemovePartner(); }}>
                 <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
@@ -439,7 +435,7 @@ const AnimatedHabitCard = React.memo(({
           />
         </View>
 
-        {partnership && (
+        {partnership ? (
           <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`); }}>
               <Image 
@@ -449,6 +445,15 @@ const AnimatedHabitCard = React.memo(({
             </TouchableOpacity>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
               {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+            </Text>
+          </View>
+        ) : (
+          <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
+              <Ionicons name="person-add-outline" size={20} color="rgba(255, 255, 255, 0.7)" />
+            </TouchableOpacity>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+              Invite friend
             </Text>
           </View>
         )}
@@ -483,7 +488,10 @@ const WhiteHabitCard = React.memo(({
   styles
 }: any) => {
   const isCreateCard = card.key === 'create_new_habit';
+  const [isExpanded, setIsExpanded] = useState(false);
   const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
+  const [expandAnimation] = useState(new Animated.Value(0));
+  const [monthCompletions, setMonthCompletions] = useState<{ [date: string]: 'completed' | 'skipped' | 'missed' }>({});
   
   useEffect(() => {
     Animated.timing(progressAnimated, {
@@ -493,6 +501,41 @@ const WhiteHabitCard = React.memo(({
       useNativeDriver: false,
     }).start();
   }, [card.progress, progressAnimated]);
+
+  useEffect(() => {
+    Animated.timing(expandAnimation, {
+      toValue: isExpanded ? 1 : 0,
+      duration: 300,
+      easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+      useNativeDriver: false,
+    }).start();
+  }, [isExpanded, expandAnimation]);
+
+  const { user } = useAuthStore();
+
+  // Fetch completions for current month when expanded
+  useEffect(() => {
+    if (isExpanded && !isCreateCard && card.habit && user) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      habitsService.fetchCompletionsForMonth(user.id, card.habit.id, year, month)
+        .then(completions => {
+          const completionMap: { [date: string]: 'completed' | 'skipped' | 'missed' } = {};
+          completions.forEach(completion => {
+            const date = new Date(completion.occur_date).getDate();
+            completionMap[date] = completion.status;
+          });
+          setMonthCompletions(completionMap);
+        })
+        .catch(error => {
+          console.error('Error fetching month completions:', error);
+        });
+    } else {
+      setMonthCompletions({});
+    }
+  }, [isExpanded, isCreateCard, card.habit, user]);
 
   const animatedWidth = progressAnimated.interpolate({
     inputRange: [0, 1],
@@ -504,6 +547,13 @@ const WhiteHabitCard = React.memo(({
       setShowCustomHabitModal(true);
     }
   }, [isCreateCard, setShowCustomHabitModal]);
+
+  const handleHeaderPress = useCallback((e: any) => {
+    if (!isCreateCard && card.habit) {
+      e.stopPropagation();
+      setIsExpanded(!isExpanded);
+    }
+  }, [isCreateCard, card.habit, isExpanded]);
 
   const handleCardLongPress = useCallback(() => {
     if (isCreateCard || !card.habit) return;
@@ -518,14 +568,14 @@ const WhiteHabitCard = React.memo(({
   const iconColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
   const progressTrackColor = isCompleted ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.1)';
   const progressFillColor = card.accent;
+
+  const animatedBackgroundColor = expandAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [cardBackgroundColor, isCreateCard ? '#9CA3AF' : card.accent],
+  });
   
   return (
-    <TouchableOpacity 
-      activeOpacity={0.85}
-      onPress={isCreateCard ? handleCardPress : undefined}
-      onLongPress={handleCardLongPress}
-      delayLongPress={250}
-      disabled={!isCreateCard && customHabitsLoading}
+    <Animated.View
       style={[
         styles.whiteHabitCard,
         {
@@ -533,24 +583,35 @@ const WhiteHabitCard = React.memo(({
           marginRight: index === totalCards - 1 ? 0 : 12,
           marginVertical: 8,
           shadowColor: whiteCardShadowColor,
-          backgroundColor: cardBackgroundColor,
+          backgroundColor: animatedBackgroundColor,
           borderColor: isCompleted ? 'transparent' : '#E5E7EB',
         },
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
       ]}
     >
-      <View style={[styles.whiteHabitCardHeader, { backgroundColor: isCreateCard ? 'transparent' : card.accent, borderRadius: 20 }]}>
-        <View>
-          <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? theme.textPrimary : '#FFFFFF' }]}>{card.title}</Text>
-          <Text style={[styles.whiteHabitCardSubtitle, { color: isCreateCard ? theme.textSecondary : 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
+      <TouchableOpacity 
+        activeOpacity={0.85}
+        onPress={isCreateCard ? handleCardPress : handleHeaderPress}
+        onLongPress={handleCardLongPress}
+        delayLongPress={250}
+        disabled={!isCreateCard && customHabitsLoading}
+        style={{ flex: 1 }}
+      >
+      <View style={[styles.whiteHabitCardHeader, { 
+        backgroundColor: isCreateCard ? '#9CA3AF' : card.accent, 
+        borderRadius: 20,
+        marginBottom: isExpanded ? 4 : 16,
+        alignItems: isExpanded ? 'center' : 'flex-start'
+      }]}>
+        <View style={{ alignItems: isExpanded ? 'center' : 'flex-start' }}>
+          <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? '#FFFFFF' : '#FFFFFF' }]}>
+            {isExpanded ? new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase() : card.title}
+          </Text>
+          {!isExpanded && (
+            <Text style={[styles.whiteHabitCardSubtitle, { color: isCreateCard ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
+          )}
           </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          {!isCreateCard && !partnership && (
-              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
-                <Ionicons name="person-add-outline" size={20} color={isCreateCard ? theme.textSecondary : iconColor} />
-              </TouchableOpacity>
-          )}
-          
           {!isCreateCard && card.habit && (
       <TouchableOpacity 
             onPress={(e) => {
@@ -589,11 +650,12 @@ const WhiteHabitCard = React.memo(({
       </TouchableOpacity>
         )}
         {isCreateCard && (
-          <Ionicons name="ellipsis-vertical" size={16} color={theme.textSecondary} />
+          <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.8)" />
         )}
       </View>
     </View>
 
+      {!isExpanded && (
       <View style={[styles.whiteHabitCardProgress, { backgroundColor: progressTrackColor }]}>
         <Animated.View
           style={[
@@ -605,9 +667,12 @@ const WhiteHabitCard = React.memo(({
           ]}
         />
       </View>
+      )}
 
-      {partnership && !isCreateCard && (
+      {!isExpanded && !isCreateCard && (
         <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {partnership ? (
+            <>
            <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`); }}>
              <Image 
                source={{ uri: partnership.partner?.avatar_url || 'https://via.placeholder.com/24' }} 
@@ -617,14 +682,76 @@ const WhiteHabitCard = React.memo(({
           <Text style={{ color: subtitleColor, fontSize: 11 }}>
             {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
           </Text>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
+                <Ionicons name="person-add-outline" size={20} color={iconColor} />
+              </TouchableOpacity>
+              <Text style={{ color: subtitleColor, fontSize: 11 }}>
+                Invite friend
+              </Text>
+            </>
+          )}
         </View>
       )}
 
+      {!isExpanded && (
       <View style={styles.whiteHabitCardMetricRow}>
         <Text style={[styles.whiteHabitCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
         <Text style={[styles.whiteHabitCardMetricValue, { color: titleColor }]}>{card.metricValue}</Text>
       </View>
+      )}
+
+      {isExpanded && !isCreateCard && (
+        <View style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, marginTop: -12 }}>
+          {/* Calendar Grid */}
+          <View>
+            <View style={{ flexDirection: 'row', marginBottom: 1 }}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
+                <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '600' }}>{day}</Text>
+                </View>
+              ))}
+            </View>
+            
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {Array.from({ length: 31 }, (_, i) => {
+                const day = i + 1;
+                const today = new Date().getDate();
+                const isPast = day < today;
+                const isToday = day === today;
+                const isFuture = day > today;
+                
+                // Get real completion status from database
+                const completionStatus = monthCompletions[day];
+                const isCompleted = completionStatus === 'completed';
+                const isMissed = isPast && (completionStatus === 'missed' || (!completionStatus && isPast));
+                
+                return (
+                  <View key={i} style={{ width: '14.28%', alignItems: 'center', justifyContent: 'center', paddingVertical: 1 }}>
+                    {isFuture ? (
+                      <View style={{ width: 15, height: 15, borderRadius: 7.5, backgroundColor: 'rgba(255,255,255,0.15)' }} />
+                    ) : isCompleted ? (
+                      <View style={{ width: 15, height: 15, borderRadius: 7.5, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                      </View>
+                    ) : isMissed ? (
+                      <View style={{ width: 15, height: 15, borderRadius: 7.5, alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="close" size={11} color="#FFFFFF" />
+                      </View>
+                    ) : (
+                      <View style={{ width: 15, height: 15, borderRadius: 7.5, backgroundColor: 'rgba(255,255,255,0.3)', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      )}
     </TouchableOpacity>
+    </Animated.View>
   );
 });
 
@@ -909,7 +1036,7 @@ function ActionScreen() {
   const whiteHabitCards = useMemo(() => {
     const createCard = {
       key: 'create_new_habit',
-      title: 'Create New Habit',
+      title: 'New Habit',
       subtitle: 'Custom',
       metricLabel: 'Add',
       metricValue: '+',

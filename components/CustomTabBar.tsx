@@ -79,7 +79,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
             let iconName: any = 'home-outline';
             if (route.name === 'Home') iconName = isFocused ? 'people' : 'people-outline'; // Community icon
             else if (route.name === 'Action') iconName = isFocused ? 'flash' : 'flash-outline';
-            else if (route.name === 'Goals') iconName = isFocused ? 'walk' : 'walk-outline';
+            else if (route.name === 'Goals') iconName = isFocused ? 'trending-up' : 'trending-up-outline';
             else if (route.name === 'Discover') iconName = isFocused ? 'podium' : 'podium-outline';
             // Profile uses avatar image instead of icon
 
@@ -151,10 +151,15 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           activeOpacity={0.8}
         >
           <View style={styles.circleContent}>
-            <Ionicons 
-              name="trending-up" 
-              size={24} 
-              color={isInsightsFocused ? theme.primary : '#9CA3AF'} 
+            <Image 
+              source={require('../assets/robot-icon.png')} 
+              style={[
+                styles.robotIcon,
+                { 
+                  opacity: isInsightsFocused ? 1 : 0.6,
+                }
+              ]}
+              resizeMode="cover"
             />
             <Text style={[
               styles.tabLabel, 
@@ -273,6 +278,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
-  }
+  },
+  robotIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+  },
 });
 

@@ -20,6 +20,9 @@ import SignUpScreen from './screens/SignUpScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import GoalsScreen from './screens/GoalsScreen';
+import WorkoutSplitScreen from './screens/WorkoutSplitScreen';
+import CreateCustomSplitScreen from './screens/CreateCustomSplitScreen';
+import WorkoutHistoryScreen from './screens/WorkoutHistoryScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
 import FollowersScreen from './screens/FollowersScreen';
 import FollowingScreen from './screens/FollowingScreen';
@@ -81,6 +84,18 @@ function GoalsStack() {
           gestureEnabled: true,
           gestureDirection: 'vertical'
         }}
+      />
+      <Stack.Screen 
+        name="WorkoutSplit" 
+        component={WorkoutSplitScreen}
+      />
+      <Stack.Screen 
+        name="CreateCustomSplit" 
+        component={CreateCustomSplitScreen}
+      />
+      <Stack.Screen 
+        name="WorkoutHistory" 
+        component={WorkoutHistoryScreen}
       />
     </Stack.Navigator>
   );

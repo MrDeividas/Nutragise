@@ -367,12 +367,12 @@ export default function WalletScreen() {
               </Text>
 
               <View style={{ flexDirection: 'row', gap: 12 }}>
-                <TouchableOpacity
-                  style={styles.addFundsButton}
-                  onPress={handleAddFunds}
-                >
-                  <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-                  <Text style={styles.addFundsButtonText}>Add Funds</Text>
+              <TouchableOpacity
+                style={styles.addFundsButton}
+                onPress={handleAddFunds}
+              >
+                <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                <Text style={styles.addFundsButtonText}>Add Funds</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity

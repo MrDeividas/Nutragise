@@ -192,12 +192,12 @@ export default function CompeteScreen({ navigation }: any) {
           Compete
         </Text>
         
-        <TouchableOpacity 
-          onPress={() => navigation.getParent()?.navigate('Leaderboard')}
+          <TouchableOpacity 
+            onPress={() => navigation.getParent()?.navigate('Leaderboard')}
           style={{ zIndex: 1 }}
-        >
-          <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
+          >
+            <Ionicons name="podium-outline" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
       </View>
 
       {/* Content */}

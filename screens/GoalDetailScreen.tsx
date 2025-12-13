@@ -148,7 +148,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
           contentContainerStyle={{ paddingBottom: bottomNavPadding + 24 }}
         >
         {/* Goal Overview Card */}
-        <View style={[styles.overviewCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+        <View style={[styles.overviewCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
           <View style={styles.goalHeader}>
             <Text style={styles.goalIcon}>{getCategoryIcon(goal.category || 'default')}</Text>
             <View style={styles.goalInfo}>
@@ -160,7 +160,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
         </View>
 
         {/* Goal Details Card */}
-        <View style={[styles.detailsCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+        <View style={[styles.detailsCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
           <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Goal Details</Text>
           
           <View style={styles.detailRow}>
@@ -212,7 +212,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
 
         {/* Success Criteria Card */}
         {(goal.success_criteria || (goal.milestones && goal.milestones.length > 0)) && (
-          <View style={[styles.detailsCard, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
+          <View style={[styles.detailsCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Success Plan</Text>
             
             {goal.success_criteria && (
@@ -321,8 +321,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     marginTop: 16,
     marginBottom: 8,
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   goalHeader: {
     flexDirection: 'row',
@@ -352,8 +358,14 @@ const styles = StyleSheet.create({
   detailsCard: {
     marginHorizontal: 24,
     marginVertical: 8,
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   sectionTitle: {
     fontSize: 18,
