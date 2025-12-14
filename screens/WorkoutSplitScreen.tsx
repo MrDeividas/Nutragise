@@ -28,6 +28,7 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   const [activeTab, setActiveTab] = useState<'premade' | 'custom'>('premade');
   const [customSplits, setCustomSplits] = useState<WorkoutSplit[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedSplitIndex, setExpandedSplitIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (user && activeTab === 'custom') {
@@ -67,12 +68,19 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
         splitId = existing.id;
       } else {
         // Create new split from premade
+        // Convert Exercise objects back to string arrays for database
+        const daysForDb = split.days.map(day => ({
+          day: day.day,
+          focus: day.focus,
+          exercises: day.exercises.map(ex => ex.name), // Convert Exercise[] to string[]
+        }));
+        
         const newSplit = await workoutSplitService.createSplit(user.id, {
           split_name: split.name,
           split_type: 'premade',
           frequency: split.frequency,
           premade_split_name: split.name,
-          days: split.days,
+          days: daysForDb,
         });
         splitId = newSplit.id;
       }
@@ -158,26 +166,71 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
         >
           {activeTab === 'premade' ? (
             <View style={styles.content}>
-              {PREMADE_WORKOUT_SPLITS.map((split, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => handleSelectPremadeSplit(split)}
-                  style={[styles.splitCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
-                  activeOpacity={0.7}
-                  disabled={loading}
-                >
-                  <View style={styles.splitCardHeader}>
-                    <Text style={[styles.splitName, { color: theme.textPrimary }]}>{split.name}</Text>
-                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+              {PREMADE_WORKOUT_SPLITS.map((split, index) => {
+                const isExpanded = expandedSplitIndex === index;
+                return (
+                  <View
+                    key={index}
+                    style={[styles.splitCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
+                  >
+                    <TouchableOpacity
+                      onPress={() => handleSelectPremadeSplit(split)}
+                      activeOpacity={0.7}
+                      disabled={loading}
+                    >
+                      <View style={styles.splitCardHeader}>
+                        <Text style={[styles.splitName, { color: theme.textPrimary }]}>{split.name}</Text>
+                        <View style={styles.headerIcons}>
+                          <TouchableOpacity
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setExpandedSplitIndex(isExpanded ? null : index);
+                            }}
+                            style={styles.infoButton}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Ionicons name="information-circle-outline" size={22} color={theme.primary} />
+                          </TouchableOpacity>
+                          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                        </View>
+                      </View>
+                      <Text style={[styles.splitFrequency, { color: theme.textSecondary }]}>
+                        {split.frequency}
+                      </Text>
+                      <Text style={[styles.splitDays, { color: theme.textSecondary }]}>
+                        {split.days.length} {split.days.length === 1 ? 'day' : 'days'}
+                      </Text>
+                    </TouchableOpacity>
+                    
+                    {isExpanded && (
+                      <View style={styles.expandedContent}>
+                        {split.days.map((day, dayIndex) => (
+                          <View key={dayIndex} style={styles.daySection}>
+                            <Text style={[styles.dayTitle, { color: theme.textPrimary }]}>
+                              {day.day} {day.focus && `- ${day.focus}`}
+                            </Text>
+                            <View style={styles.exercisesList}>
+                              {day.exercises.map((exercise, exerciseIndex) => (
+                                <View key={exerciseIndex} style={styles.exerciseItem}>
+                                  <View style={[styles.exerciseBullet, { backgroundColor: theme.primary }]} />
+                                  <View style={styles.exerciseInfo}>
+                                    <Text style={[styles.exerciseName, { color: theme.textPrimary }]}>
+                                      {exercise.name}
+                                    </Text>
+                                    <Text style={[styles.exerciseSetsReps, { color: theme.textSecondary }]}>
+                                      {exercise.sets} sets × {exercise.reps} reps
+                                    </Text>
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
-                  <Text style={[styles.splitFrequency, { color: theme.textSecondary }]}>
-                    {split.frequency}
-                  </Text>
-                  <Text style={[styles.splitDays, { color: theme.textSecondary }]}>
-                    {split.days.length} {split.days.length === 1 ? 'day' : 'days'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           ) : (
             <View style={styles.content}>
@@ -288,6 +341,60 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  infoButton: {
+    padding: 4,
+  },
+  expandedContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  daySection: {
+    marginBottom: 20,
+  },
+  dayTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  exercisesList: {
+    gap: 8,
+  },
+  exerciseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 4,
+    marginBottom: 8,
+  },
+  exerciseBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 12,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  exerciseInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  exerciseName: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  exerciseSetsReps: {
+    fontSize: 13,
+    marginLeft: 8,
   },
   splitName: {
     fontSize: 18,

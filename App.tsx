@@ -498,9 +498,6 @@ export default function App() {
           .eq('id', user.id)
           .single();
         
-        console.log('🔍 Checking onboarding status for user:', user.id);
-        console.log('📊 Profile data:', data);
-        console.log('❌ Error:', error);
         
         // If onboarding is completed, or if user has progressed past step 1 (has exited), show main app
         const isComplete = data?.onboarding_completed || false;
@@ -509,9 +506,6 @@ export default function App() {
         // Show main app if completed OR if user has partial progress (exited onboarding)
         const shouldShowMainApp = isComplete || hasPartialProgress;
         
-        console.log('✅ Onboarding complete:', isComplete);
-        console.log('📍 Has partial progress:', hasPartialProgress);
-        console.log('🏠 Show main app:', shouldShowMainApp);
         
         // Add small delay to prevent navigation stack conflicts
         // Longer delay for new sign-ups to ensure SignUpScreen can be seen

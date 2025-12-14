@@ -104,6 +104,40 @@ export const workoutExerciseLogService = {
     };
   },
 
+  async getHighestWeightAndReps(userId: string, exerciseName: string): Promise<{
+    weight?: number | null;
+    reps?: number | null;
+  }> {
+    // Get all logs for this exercise
+    const { data: logs, error } = await supabase
+      .from<WorkoutExerciseLog>(WORKOUT_EXERCISE_LOGS_TABLE)
+      .select('weight, reps')
+      .eq('user_id', userId)
+      .eq('exercise_name', exerciseName)
+      .not('weight', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (error || !logs || logs.length === 0) {
+      return { weight: null, reps: null };
+    }
+
+    // Find the log with the highest weight
+    let highestWeight = 0;
+    let associatedReps: number | null = null;
+
+    for (const log of logs) {
+      if (log.weight && log.weight > highestWeight) {
+        highestWeight = log.weight;
+        associatedReps = log.reps ?? null;
+      }
+    }
+
+    return {
+      weight: highestWeight > 0 ? highestWeight : null,
+      reps: associatedReps,
+    };
+  },
+
   async getExerciseHistory(userId: string, exerciseName: string): Promise<WorkoutExerciseLog[]> {
     const { data, error } = await supabase
       .from<WorkoutExerciseLog>(WORKOUT_EXERCISE_LOGS_TABLE)

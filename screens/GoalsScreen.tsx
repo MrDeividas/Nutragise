@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGoalsStore } from '../state/goalsStore';
 import { useAuthStore } from '../state/authStore';
 import { Goal } from '../types/database';
+import GoalItem from '../components/GoalItem';
 import { useTheme } from '../state/themeStore';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -29,6 +30,7 @@ import { workoutService } from '../lib/workoutService';
 import { workoutSplitService } from '../lib/workoutSplitService';
 import { workoutExerciseLogService } from '../lib/workoutExerciseLogService';
 import { supabase } from '../lib/supabase';
+import { getExerciseSetsReps } from '../lib/workoutSplitsData';
 import { Animated } from 'react-native';
 import { WorkoutSplit, WorkoutSplitDay, CreateWorkoutExerciseLogData } from '../types/database';
 
@@ -188,6 +190,10 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   const [activeSplit, setActiveSplit] = useState<WorkoutSplit | null>(null);
   const [nextWorkout, setNextWorkout] = useState<{ day: WorkoutSplitDay; dayIndex: number } | null>(null);
   const [loadingSplit, setLoadingSplit] = useState(false);
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
+  const [customExerciseName, setCustomExerciseName] = useState('');
+  const [editingExercise, setEditingExercise] = useState<string | null>(null);
   const [exerciseData, setExerciseData] = useState<Record<string, Array<{
     id: string; // Unique ID for each row
     weight: string;
@@ -195,6 +201,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
     reps: string;
     goalWeight?: number | null;
     prevWeight?: number | null;
+    prevReps?: number | null;
   }>>>({});
   const [completionId, setCompletionId] = useState<string | null>(null);
   const saveTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
@@ -234,13 +241,15 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
         
         // Load previous exercise data for each exercise in the next workout
         if (next) {
-          const exerciseDataMap: Record<string, {
+          const exerciseDataMap: Record<string, Array<{
+            id: string;
             weight: string;
             sets: string;
             reps: string;
             goalWeight?: number | null;
             prevWeight?: number | null;
-          }> = {};
+            prevReps?: number | null;
+          }>> = {};
           
           // Check if completion already exists for today
           const today = new Date().toISOString().split('T')[0];
@@ -266,42 +275,68 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             });
             
             for (const exercise of next.day.exercises) {
-              const previousData = await workoutExerciseLogService.getPreviousExerciseData(user.id, exercise);
-              const existingLogs = logsByExercise[exercise] || [];
+              const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+              const previousData = await workoutExerciseLogService.getPreviousExerciseData(user.id, exerciseName);
+              const highestWeightData = await workoutExerciseLogService.getHighestWeightAndReps(user.id, exerciseName);
+              const existingLogs = logsByExercise[exerciseName] || [];
               
               if (existingLogs.length > 0) {
-                exerciseDataMap[exercise] = existingLogs.map((log, index) => ({
+                exerciseDataMap[exerciseName] = existingLogs.map((log, index) => ({
                   id: `log_${log.id}`,
                   weight: log.weight?.toString() || '',
                   sets: log.sets?.toString() || '',
                   reps: log.reps?.toString() || '',
                   goalWeight: log.goal_weight ?? previousData.goal_weight ?? null,
-                  prevWeight: index === 0 ? (previousData.weight ?? null) : null, // Only show prev on first row
+                  prevWeight: index === 0 ? (highestWeightData.weight ?? null) : null, // Only show prev on first row
+                  prevReps: index === 0 ? (highestWeightData.reps ?? null) : null, // Only show prev on first row
                 }));
               } else {
-                // No existing logs, create one empty row
-                exerciseDataMap[exercise] = [{
-                  id: `row_${Date.now()}_${exercise}`,
-                  weight: '',
-                  sets: '',
-                  reps: '',
-                  goalWeight: previousData.goal_weight ?? null,
-                  prevWeight: previousData.weight ?? null,
-                }];
+                // No existing logs, create rows based on recommended sets
+                const recommendedSetsReps = typeof exercise === 'object' && (exercise as any).sets && (exercise as any).reps
+                  ? { sets: (exercise as any).sets, reps: (exercise as any).reps }
+                  : getExerciseSetsReps(exerciseName);
+                
+                const initialRows = [];
+                for (let i = 0; i < recommendedSetsReps.sets; i++) {
+                  initialRows.push({
+                    id: `row_${Date.now()}_${exerciseName}_${i}`,
+                    weight: '',
+                    sets: '',
+                    reps: '',
+                    goalWeight: previousData.goal_weight ?? null,
+                    prevWeight: i === 0 ? (highestWeightData.weight ?? null) : null, // Only first row shows previous
+                    prevReps: i === 0 ? (highestWeightData.reps ?? null) : null, // Only first row shows previous
+                  });
+                }
+                exerciseDataMap[exerciseName] = initialRows;
               }
             }
           } else {
             setCompletionId(null);
             for (const exercise of next.day.exercises) {
-              const previousData = await workoutExerciseLogService.getPreviousExerciseData(user.id, exercise);
-              exerciseDataMap[exercise] = [{
-                id: `row_${Date.now()}_${exercise}`,
-                weight: '',
-                sets: '',
-                reps: '',
-                goalWeight: previousData.goal_weight ?? null,
-                prevWeight: previousData.weight ?? null,
-              }];
+              const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+              const previousData = await workoutExerciseLogService.getPreviousExerciseData(user.id, exerciseName);
+              const highestWeightData = await workoutExerciseLogService.getHighestWeightAndReps(user.id, exerciseName);
+              
+              // Get recommended sets to initialize rows
+              const recommendedSetsReps = typeof exercise === 'object' && (exercise as any).sets && (exercise as any).reps
+                ? { sets: (exercise as any).sets, reps: (exercise as any).reps }
+                : getExerciseSetsReps(exerciseName);
+              
+              // Initialize with recommended number of sets
+              const initialRows = [];
+              for (let i = 0; i < recommendedSetsReps.sets; i++) {
+                initialRows.push({
+                  id: `row_${Date.now()}_${exerciseName}_${i}`,
+                  weight: '',
+                  sets: '',
+                  reps: '',
+                  goalWeight: previousData.goal_weight ?? null,
+                  prevWeight: i === 0 ? (highestWeightData.weight ?? null) : null, // Only first row shows previous
+                  prevReps: i === 0 ? (highestWeightData.reps ?? null) : null, // Only first row shows previous
+                });
+              }
+              exerciseDataMap[exerciseName] = initialRows;
             }
           }
           
@@ -336,13 +371,14 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             reps: '',
             goalWeight: lastRow?.goalWeight ?? null,
             prevWeight: null, // Only first row shows previous
+            prevReps: null, // Only first row shows previous
           },
         ],
       };
     });
   };
 
-  const handleRemoveExerciseRow = async (exerciseName: string, rowId: string) => {
+  const handleRemoveExerciseRow = async (exerciseName: string, rowId: string, isEditMode: boolean = false) => {
     if (!user) return;
     
     // If this is an existing log, delete it from the database
@@ -357,12 +393,25 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
     
     setExerciseData(prev => {
       const currentRows = prev[exerciseName] || [];
-      if (currentRows.length <= 1) return prev; // Don't allow removing the last row
+      // In edit mode, allow removing any row (but keep at least 1)
+      // Otherwise, respect the recommended minimum
+      if (!isEditMode) {
+        const recommendedSets = getExerciseSetsReps(exerciseName).sets;
+        if (currentRows.length <= recommendedSets) return prev;
+      } else {
+        // In edit mode, allow removing but keep at least 1 row
+        if (currentRows.length <= 1) return prev;
+      }
       return {
         ...prev,
         [exerciseName]: currentRows.filter(row => row.id !== rowId),
       };
     });
+    
+    // Exit edit mode after removing a set
+    if (isEditMode) {
+      setEditingExercise(null);
+    }
   };
 
   // Auto-save exercise data with debounce
@@ -506,91 +555,6 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
     return diffDays;
   };
 
-  const renderGoalItem = React.useCallback((goal: Goal) => {
-    const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
-    
-    return (
-      <View key={goal.id} style={styles.goalCard}>
-        <TouchableOpacity
-          onPress={() => {
-            navigation.navigate('GoalDetail', { goal });
-          }}
-          activeOpacity={0.85}
-        >
-          <View>
-          <View style={styles.goalHeader}>
-            <View style={styles.goalTitleContainer}>
-              <Text style={[styles.goalTitle, { color: theme.textPrimary }, goal.completed && styles.completedGoalTitle]}>
-                {goal.title}
-              </Text>
-              {goal.category && (
-                <Text style={[styles.goalCategory, { color: theme.primary }]}>
-                  {goal.category}
-                </Text>
-              )}
-            </View>
-            <View style={styles.goalActions}>
-              <TouchableOpacity
-                onPress={() => handleToggleCompletion(goal.id)}
-                style={[styles.checkboxContainer, goal.completed && styles.checkboxCompleted]}
-              >
-                {goal.completed && (
-                  <Ionicons name="checkmark-outline" size={16} color="#ffffff" />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleDeleteGoal(goal)}
-                style={styles.deleteButton}
-              >
-                <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {goal.description && (
-            <Text style={[styles.goalDescription, { color: theme.textSecondary }]}>
-              {goal.description}
-            </Text>
-          )}
-
-          <View style={styles.goalDateContainer}>
-            <Text style={styles.goalDate}>
-              Started: {goal.start_date ? formatDate(goal.start_date) : 'Not set'}
-            </Text>
-            {goal.end_date && (
-              <Text style={[
-                styles.goalDate,
-                styles.goalTargetDate,
-                daysUntilTarget !== null && daysUntilTarget < 0 && styles.overdue,
-                daysUntilTarget !== null && daysUntilTarget <= 7 && daysUntilTarget >= 0 && styles.dueSoon
-              ]}>
-                {daysUntilTarget !== null && daysUntilTarget < 0 
-                  ? `${Math.abs(daysUntilTarget)} days overdue`
-                  : daysUntilTarget !== null && daysUntilTarget === 0
-                  ? 'Due today'
-                  : daysUntilTarget !== null && daysUntilTarget === 1
-                  ? '1 day left'
-                  : daysUntilTarget !== null
-                  ? `${daysUntilTarget} days left`
-                  : 'No target date'
-                }
-              </Text>
-            )}
-          </View>
-
-          {goal.completed && (
-            <View style={styles.completedIndicator}>
-              <Text style={styles.completedText}>
-                ✅ Completed
-              </Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-        </View>
-    );
-  }, [theme]);
-
   const activeGoals = React.useMemo(() => goals.filter(goal => !goal.completed), [goals]);
   const completedGoals = React.useMemo(() => goals.filter(goal => goal.completed), [goals]);
 
@@ -709,7 +673,17 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 </View>
               ) : (
                 <View>
-                  {[...activeGoals, ...completedGoals].map(renderGoalItem)}
+                  {[...activeGoals, ...completedGoals].map(goal => (
+                    <GoalItem
+                      key={goal.id}
+                      goal={goal}
+                      theme={theme}
+                      navigation={navigation}
+                      onToggle={handleToggleCompletion}
+                      onDelete={handleDeleteGoal}
+                      styles={styles}
+                    />
+                  ))}
                 </View>
               )}
             </View>
@@ -740,14 +714,16 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
               </View>
               {loadingSplit ? (
                 <View style={styles.emptyState}>
-                  <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>Loading...</Text>
+                  <Text style={[styles.emptyStateTitle, { color: theme.textSecondary }]}>Loading...</Text>
                 </View>
               ) : nextWorkout ? (
                 <View style={styles.nextWorkoutContent}>
                   <View style={styles.nextWorkoutExercises}>
                     {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
-                      const exerciseRows = exerciseData[exercise] || [{
-                        id: `row_${Date.now()}_${exercise}`,
+                      // Handle both string and object exercise formats
+                      const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+                      const exerciseRows = exerciseData[exerciseName] || [{
+                        id: `row_${Date.now()}_${exerciseName}`,
                         weight: '',
                         sets: '',
                         reps: '',
@@ -756,46 +732,131 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                       }];
                       const firstRow = exerciseRows[0];
                       
+                      // Get recommended sets and reps
+                      const recommendedSetsReps = typeof exercise === 'object' && (exercise as any).sets && (exercise as any).reps
+                        ? { sets: (exercise as any).sets, reps: (exercise as any).reps }
+                        : getExerciseSetsReps(exerciseName);
+                      
                       return (
                         <View key={exerciseIndex} style={styles.exerciseItem}>
                           {exerciseIndex > 0 && (
                             <View style={styles.exerciseDivider} />
                           )}
                           <View style={styles.exerciseCardHeader}>
-                            <Text style={[styles.exerciseCardName, { color: theme.textPrimary }]}>
-                              {exercise}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => handleAddExerciseRow(exercise)}
-                              style={styles.addRowButton}
-                            >
-                              <Ionicons name="add-circle-outline" size={24} color={theme.primary} />
-                            </TouchableOpacity>
+                            <View style={styles.exerciseNameContainer}>
+                              <View style={styles.exerciseNameRow}>
+                                <Text style={[styles.exerciseCardName, { color: theme.textPrimary }]}>
+                                  {exerciseName}
+                                </Text>
+                                <Text style={[styles.exerciseSetsReps, { color: theme.textSecondary }]}>
+                                  {recommendedSetsReps.sets} sets × {recommendedSetsReps.reps} reps
+                                </Text>
+                              </View>
+                            </View>
+                            {editingExercise === exerciseName ? (
+                              <View style={styles.editButtonsContainer}>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    handleAddExerciseRow(exerciseName);
+                                    setEditingExercise(null);
+                                  }}
+                                  style={[styles.editButton, { backgroundColor: theme.primary }]}
+                                >
+                                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    Alert.alert(
+                                      'Remove Exercise',
+                                      `Are you sure you want to remove "${exerciseName}" from this workout?`,
+                                      [
+                                        { text: 'Cancel', style: 'cancel' },
+                                        {
+                                          text: 'Remove',
+                                          style: 'destructive',
+                                          onPress: async () => {
+                                            if (!user || !activeSplit || !nextWorkout) return;
+                                            try {
+                                              const updatedDays = [...activeSplit.days];
+                                              const currentDay = updatedDays[nextWorkout.dayIndex];
+                                              
+                                              // Remove the exercise from the day
+                                              const currentExercisesList = currentDay.exercises
+                                                .map(ex => typeof ex === 'string' ? ex : (typeof ex === 'object' ? (ex as any).name : String(ex)))
+                                                .filter(ex => ex !== exerciseName);
+                                              
+                                              updatedDays[nextWorkout.dayIndex] = {
+                                                ...currentDay,
+                                                exercises: currentExercisesList,
+                                              };
+                                              
+                                              // Update the split in the database
+                                              await workoutSplitService.updateSplit(user.id, activeSplit.id, {
+                                                days: updatedDays,
+                                              });
+                                              
+                                              // Reload the active split to show the updated workout
+                                              await loadActiveSplit();
+                                              setEditingExercise(null);
+                                            } catch (error: any) {
+                                              console.error('Error removing exercise:', error);
+                                              alert(error.message || 'Failed to remove exercise');
+                                            }
+                                          },
+                                        },
+                                      ]
+                                    );
+                                  }}
+                                  style={[styles.editButton, { backgroundColor: '#EF4444' }]}
+                                >
+                                  <Ionicons name="remove" size={18} color="#FFFFFF" />
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <TouchableOpacity
+                                onPress={() => setEditingExercise(exerciseName)}
+                                style={styles.editIconButton}
+                              >
+                                <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
+                              </TouchableOpacity>
+                            )}
                           </View>
                           
-                          {firstRow && (
-                            <View style={styles.exerciseCardRow}>
-                              {firstRow.prevWeight !== null && firstRow.prevWeight !== undefined && (
-                                <Text style={[styles.exerciseCardPrev, { color: theme.textSecondary }]}>
-                                  Prev: {firstRow.prevWeight} kg
-                                </Text>
-                              )}
-                              {firstRow.goalWeight !== null && firstRow.goalWeight !== undefined && (
-                                <Text style={[styles.exerciseCardGoal, { color: theme.textSecondary }]}>
-                                  Goal: {firstRow.goalWeight} kg
-                                </Text>
-                              )}
+                          {/* Labels row - shown once at the top */}
+                          <View style={styles.exerciseLabelsRow}>
+                            <View style={styles.setLabelGroup} />
+                            <View style={styles.exerciseLabelGroup}>
+                              <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>
+                                Weight
+                                {firstRow?.prevWeight !== null && firstRow?.prevWeight !== undefined && (
+                                  <Text style={[styles.previousValue, { color: theme.textSecondary }]}>
+                                    {' '}Prev: {firstRow.prevWeight}kg
+                                  </Text>
+                                )}
+                              </Text>
                             </View>
-                          )}
+                            <View style={styles.exerciseLabelGroup}>
+                              <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>
+                                Reps
+                                {firstRow?.prevReps !== null && firstRow?.prevReps !== undefined && (
+                                  <Text style={[styles.previousValue, { color: theme.textSecondary }]}>
+                                    {' '}Prev: {firstRow.prevReps}
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                          </View>
 
+                          {/* Input rows - Set number, Weight, and Reps */}
                           {exerciseRows.map((row, rowIndex) => (
                             <View key={row.id} style={styles.exerciseRowContainer}>
-                              {rowIndex > 0 && (
-                                <View style={styles.exerciseRowDivider} />
-                              )}
                               <View style={styles.exerciseInputsRow}>
+                                <View style={styles.setLabelGroup}>
+                                  <Text style={[styles.setNumberLabel, { color: theme.textSecondary }]}>
+                                    Set {rowIndex + 1}
+                                  </Text>
+                                </View>
                                 <View style={styles.exerciseInputGroup}>
-                                  <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>Weight (kg)</Text>
                                   <TextInput
                                     style={[styles.exerciseInput, { 
                                       backgroundColor: '#F9FAFB',
@@ -805,29 +866,12 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                                     placeholder="0"
                                     placeholderTextColor={theme.textTertiary}
                                     value={row.weight}
-                                    onChangeText={(value) => handleExerciseDataChange(exercise, row.id, 'weight', value)}
+                                    onChangeText={(value) => handleExerciseDataChange(exerciseName, row.id, 'weight', value)}
                                     keyboardType="decimal-pad"
                                   />
                                 </View>
 
                                 <View style={styles.exerciseInputGroup}>
-                                  <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>Sets</Text>
-                                  <TextInput
-                                    style={[styles.exerciseInput, { 
-                                      backgroundColor: '#F9FAFB',
-                                      borderColor: '#E5E7EB',
-                                      color: theme.textPrimary 
-                                    }]}
-                                    placeholder="0"
-                                    placeholderTextColor={theme.textTertiary}
-                                    value={row.sets}
-                                    onChangeText={(value) => handleExerciseDataChange(exercise, row.id, 'sets', value)}
-                                    keyboardType="number-pad"
-                                  />
-                                </View>
-
-                                <View style={styles.exerciseInputGroup}>
-                                  <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>Reps</Text>
                                   <TextInput
                                     style={[styles.exerciseInput, { 
                                       backgroundColor: '#F9FAFB',
@@ -837,14 +881,14 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                                     placeholder="0"
                                     placeholderTextColor={theme.textTertiary}
                                     value={row.reps}
-                                    onChangeText={(value) => handleExerciseDataChange(exercise, row.id, 'reps', value)}
+                                    onChangeText={(value) => handleExerciseDataChange(exerciseName, row.id, 'reps', value)}
                                     keyboardType="number-pad"
                                   />
                                 </View>
                                 
-                                {exerciseRows.length > 1 && (
+                                {editingExercise === exerciseName && (
                                   <TouchableOpacity
-                                    onPress={() => handleRemoveExerciseRow(exercise, row.id)}
+                                    onPress={() => handleRemoveExerciseRow(exerciseName, row.id, true)}
                                     style={styles.removeRowButton}
                                   >
                                     <Ionicons name="close-circle-outline" size={20} color="#EF4444" />
@@ -857,6 +901,27 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                       );
                     })}
                   </View>
+                  
+                  {/* Add Exercise Button */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!user || !activeSplit || !nextWorkout) return;
+                      setShowAddExerciseModal(true);
+                      setExerciseSearchQuery('');
+                      setCustomExerciseName('');
+                    }}
+                    style={[styles.addExerciseButton, { 
+                      backgroundColor: '#F9FAFB',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                    }]}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color={theme.primary} style={{ marginRight: 8 }} />
+                    <Text style={[styles.addExerciseButtonText, { color: theme.primary }]}>Add Exercise</Text>
+                  </TouchableOpacity>
+                  
+                  {/* Mark as Complete Button */}
                   <TouchableOpacity
                     onPress={async () => {
                       if (!user || !activeSplit || !nextWorkout) return;
@@ -872,13 +937,14 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                         // Save all exercise logs (in case any weren't auto-saved)
                         if (currentCompletionId) {
                           for (const exercise of nextWorkout.day.exercises) {
-                            const exerciseRows = exerciseData[exercise] || [];
+                            const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+                            const exerciseRows = exerciseData[exerciseName] || [];
                             for (const row of exerciseRows) {
                               if (row.weight || row.sets || row.reps) {
                                 const existingLogId = row.id.startsWith('log_') ? row.id.replace('log_', '') : undefined;
                                 await workoutExerciseLogService.saveExerciseLog(user.id, {
                                   completion_id: currentCompletionId,
-                                  exercise_name: exercise,
+                                  exercise_name: exerciseName,
                                   weight: row.weight ? parseFloat(row.weight) : null,
                                   sets: row.sets ? parseInt(row.sets, 10) : null,
                                   reps: row.reps ? parseInt(row.reps, 10) : null,
@@ -1001,7 +1067,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                           return exercises.map((exercise: string, index: number) => (
                             <TouchableOpacity
                               key={index}
-                              style={[styles.exerciseItem, { borderColor: '#E5E7EB' }]}
+                              style={[styles.exerciseCardItem, { borderColor: '#E5E7EB' }]}
                               activeOpacity={0.7}
                               onPress={() => {
                                 setSelectedExercise(exercise);
@@ -1212,6 +1278,189 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             </View>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Add Exercise Modal */}
+      <Modal
+        visible={showAddExerciseModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          setShowAddExerciseModal(false);
+          setExerciseSearchQuery('');
+          setCustomExerciseName('');
+        }}
+      >
+        <SafeAreaView style={[styles.addExerciseModalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => {
+              setShowAddExerciseModal(false);
+              setExerciseSearchQuery('');
+              setCustomExerciseName('');
+            }} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Add Exercise</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <Ionicons name="search-outline" size={20} color={theme.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { 
+                color: theme.textPrimary,
+                backgroundColor: theme.cardBackground,
+                borderColor: theme.borderSecondary,
+              }]}
+              placeholder="Search exercises..."
+              placeholderTextColor={theme.textTertiary}
+              value={exerciseSearchQuery}
+              onChangeText={setExerciseSearchQuery}
+            />
+          </View>
+
+          {/* Custom Exercise Input */}
+          <View style={styles.customExerciseContainer}>
+            <Text style={[styles.customExerciseLabel, { color: theme.textSecondary }]}>Or add custom exercise:</Text>
+            <TextInput
+              style={[styles.customExerciseInput, { 
+                color: theme.textPrimary,
+                backgroundColor: theme.cardBackground,
+                borderColor: theme.borderSecondary,
+              }]}
+              placeholder="Enter exercise name"
+              placeholderTextColor={theme.textTertiary}
+              value={customExerciseName}
+              onChangeText={setCustomExerciseName}
+            />
+          </View>
+
+          {/* Exercise List */}
+          <ScrollView style={styles.exerciseListContainer} showsVerticalScrollIndicator={false}>
+            {(() => {
+              // Get all available exercises
+              const allExercises: string[] = [];
+              Object.values(EXERCISE_DATA).forEach(category => {
+                Object.values(category).forEach(subCategory => {
+                  if (Array.isArray(subCategory)) {
+                    allExercises.push(...subCategory);
+                  }
+                });
+              });
+
+              // Filter out exercises already in the workout
+              const currentExercises = nextWorkout?.day.exercises.map(ex => 
+                typeof ex === 'string' ? ex : (ex as any).name
+              ) || [];
+              const availableExercises = allExercises.filter(ex => !currentExercises.includes(ex));
+
+              // Filter by search query
+              const filteredExercises = availableExercises.filter(ex => 
+                ex.toLowerCase().includes(exerciseSearchQuery.toLowerCase())
+              );
+
+              // Show custom exercise option if there's a custom name
+              const hasCustomExercise = customExerciseName.trim().length > 0 && 
+                !currentExercises.includes(customExerciseName.trim()) &&
+                customExerciseName.trim().toLowerCase().includes(exerciseSearchQuery.toLowerCase());
+
+              if (filteredExercises.length === 0 && !hasCustomExercise) {
+                return (
+                  <View style={styles.addExerciseEmptyState}>
+                    <Ionicons name="barbell-outline" size={48} color={theme.textTertiary} />
+                    <Text style={[styles.addExerciseEmptyStateText, { color: theme.textSecondary }]}>
+                      {exerciseSearchQuery ? 'No exercises found' : 'No exercises available'}
+                    </Text>
+                  </View>
+                );
+              }
+
+              return (
+                <>
+                  {hasCustomExercise && (
+                    <TouchableOpacity
+                      style={[styles.addExerciseModalItem, {
+                        backgroundColor: theme.cardBackground,
+                        borderColor: theme.borderSecondary,
+                      }]}
+                      onPress={async () => {
+                        if (!user || !activeSplit || !nextWorkout) return;
+                        try {
+                          const exerciseName = customExerciseName.trim();
+                          const updatedDays = [...activeSplit.days];
+                          const currentDay = updatedDays[nextWorkout.dayIndex];
+                          const currentExercisesList = currentDay.exercises.map(ex => 
+                            typeof ex === 'string' ? ex : (typeof ex === 'object' ? (ex as any).name : String(ex))
+                          );
+                          currentExercisesList.push(exerciseName);
+                          updatedDays[nextWorkout.dayIndex] = {
+                            ...currentDay,
+                            exercises: currentExercisesList,
+                          };
+                          await workoutSplitService.updateSplit(user.id, activeSplit.id, {
+                            days: updatedDays,
+                          });
+                          await loadActiveSplit();
+                          setShowAddExerciseModal(false);
+                          setExerciseSearchQuery('');
+                          setCustomExerciseName('');
+                        } catch (error: any) {
+                          console.error('Error adding exercise:', error);
+                          alert(error.message || 'Failed to add exercise');
+                        }
+                      }}
+                    >
+                      <Text style={[styles.addExerciseModalItemText, { color: theme.textPrimary }]}>
+                        {customExerciseName.trim()} (Custom)
+                      </Text>
+                      <Ionicons name="add-circle" size={24} color={theme.primary} />
+                    </TouchableOpacity>
+                  )}
+                  {filteredExercises.map((exercise, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[styles.addExerciseModalItem, {
+                        backgroundColor: theme.cardBackground,
+                        borderColor: theme.borderSecondary,
+                      }]}
+                      onPress={async () => {
+                        if (!user || !activeSplit || !nextWorkout) return;
+                        try {
+                          const updatedDays = [...activeSplit.days];
+                          const currentDay = updatedDays[nextWorkout.dayIndex];
+                          const currentExercisesList = currentDay.exercises.map(ex => 
+                            typeof ex === 'string' ? ex : (typeof ex === 'object' ? (ex as any).name : String(ex))
+                          );
+                          currentExercisesList.push(exercise);
+                          updatedDays[nextWorkout.dayIndex] = {
+                            ...currentDay,
+                            exercises: currentExercisesList,
+                          };
+                          await workoutSplitService.updateSplit(user.id, activeSplit.id, {
+                            days: updatedDays,
+                          });
+                          await loadActiveSplit();
+                          setShowAddExerciseModal(false);
+                          setExerciseSearchQuery('');
+                          setCustomExerciseName('');
+                        } catch (error: any) {
+                          console.error('Error adding exercise:', error);
+                          alert(error.message || 'Failed to add exercise');
+                        }
+                      }}
+                    >
+                      <Text style={[styles.addExerciseModalItemText, { color: theme.textPrimary }]}>
+                        {exercise}
+                      </Text>
+                      <Ionicons name="add-circle" size={24} color={theme.primary} />
+                    </TouchableOpacity>
+                  ))}
+                </>
+              );
+            })()}
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </CustomBackground>
   );
@@ -1523,7 +1772,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  exerciseItem: {
+  exerciseCardItem: {
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
@@ -1623,6 +1872,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
+  addExerciseButton: {
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    flexDirection: 'row',
+  },
+  addExerciseButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   completeWorkoutButton: {
     borderRadius: 12,
     padding: 16,
@@ -1636,7 +1897,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   exerciseItem: {
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
   exerciseDivider: {
     height: 1,
@@ -1646,16 +1908,44 @@ const styles = StyleSheet.create({
   exerciseCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
+  },
+  exerciseNameContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
   },
   exerciseCardName: {
     fontSize: 16,
     fontWeight: '700',
-    flex: 1,
+  },
+  exerciseSetsReps: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   addRowButton: {
     padding: 4,
+  },
+  editIconButton: {
+    padding: 4,
+  },
+  editButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  editButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   exerciseCardRow: {
     flexDirection: 'row',
@@ -1663,12 +1953,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   exerciseRowContainer: {
-    marginBottom: 12,
-  },
-  exerciseRowDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 12,
+    marginBottom: 8,
   },
   removeRowButton: {
     padding: 8,
@@ -1683,17 +1968,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+  exerciseLabelsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  setLabelGroup: {
+    width: 60,
+    justifyContent: 'center',
+  },
+  exerciseLabelGroup: {
+    flex: 1,
+  },
   exerciseInputsRow: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   exerciseInputGroup: {
     flex: 1,
+  },
+  setNumberLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   exerciseInputLabel: {
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 6,
+  },
+  previousValue: {
+    fontSize: 11,
+    fontWeight: '400',
+    fontStyle: 'italic',
   },
   exerciseInput: {
     borderWidth: 1,
@@ -1704,5 +2012,89 @@ const styles = StyleSheet.create({
   },
   historyButton: {
     padding: 4,
+  },
+  addExerciseModalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
+  customExerciseContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  customExerciseLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  customExerciseInput: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    fontSize: 16,
+  },
+  exerciseListContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  addExerciseModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  addExerciseModalItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+  addExerciseEmptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  addExerciseEmptyStateText: {
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
   },
 }); 

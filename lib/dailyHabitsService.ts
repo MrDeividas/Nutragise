@@ -782,41 +782,55 @@ class DailyHabitsService {
         );
       
       if (error) {
-        // Log detailed error information
-        console.error('Error recording login day:', {
-          error: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint,
-          userId,
-          date
-        });
+        // Log detailed error information (but only in development)
+        if (__DEV__) {
+          console.error('Error recording login day:', {
+            error: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            userId,
+            date
+          });
+        }
         
-        // If table doesn't exist or RLS issue, don't throw - just return false
-        // This prevents breaking the app if the feature isn't set up yet
-        if (error.code === '42P01' || error.code === 'PGRST301') {
-          console.warn('user_login_days table may not exist or has RLS restrictions. Skipping login day recording.');
+        // If table doesn't exist, RLS issue, or server error, don't throw - just return false
+        // This prevents breaking the app if the feature isn't set up yet or server is having issues
+        if (error.code === '42P01' || error.code === 'PGRST301' || error.code === undefined) {
+          // Server errors (500) often have undefined error codes
+          if (__DEV__) {
+            console.warn('user_login_days table may not exist, has RLS restrictions, or server error. Skipping login day recording.');
+          }
           return false;
         }
         
-        throw error;
+        // For other errors, still return false instead of throwing
+        return false;
       }
       
       // Check login streak and track discipline pillar if > 3 days
-      const streak = await this.getLoginStreak(userId);
-      if (streak.currentStreak > 3) {
-        pillarProgressService.trackAction(userId, 'discipline', 'login_streak').catch(console.error);
+      try {
+        const streak = await this.getLoginStreak(userId);
+        if (streak.currentStreak > 3) {
+          pillarProgressService.trackAction(userId, 'discipline', 'login_streak').catch(() => {
+            // Silently fail - this is non-critical
+          });
+        }
+      } catch (streakError) {
+        // Silently fail streak check - non-critical
       }
       
       return true;
     } catch (error: any) {
-      // Additional error handling for unexpected errors
-      console.error('Error recording login day (catch block):', {
-        error: error?.message || error,
-        stack: error?.stack,
-        userId,
-        date
-      });
+      // Additional error handling for unexpected errors (only log in development)
+      if (__DEV__) {
+        console.error('Error recording login day (catch block):', {
+          error: error?.message || error,
+          stack: error?.stack,
+          userId,
+          date
+        });
+      }
       return false;
     }
   }

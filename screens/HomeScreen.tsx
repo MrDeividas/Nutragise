@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Animated } from 'react-native';
+import { Image } from 'expo-image';
 import {
   View,
   Text,
@@ -7,7 +8,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Image,
   ActivityIndicator,
   FlatList,
   RefreshControl,
@@ -933,27 +933,27 @@ function HomeScreen({ navigation }: HomeScreenProps) {
           return new Date(dateStr).toISOString().split('T')[0];
         }))];
 
-        console.log('🔍 Loading habits for dates:', uniqueDates);
 
-        // Fetch daily_habits for all user_ids and all unique dates
-        const { data: dailyHabitsData, error: habitsError } = await supabase
-          .from('daily_habits')
-          .select('*')
-          .in('user_id', userIds)
-          .in('date', uniqueDates);
-
-        // Fetch user_points_daily for all user_ids and all unique dates
-        const { data: userPointsData, error: pointsError } = await supabase
-          .from('user_points_daily')
-          .select('*')
-          .in('user_id', userIds)
-          .in('date', uniqueDates);
+        // Fetch daily_habits and user_points_daily in parallel
+        const [
+          { data: dailyHabitsData, error: habitsError },
+          { data: userPointsData, error: pointsError }
+        ] = await Promise.all([
+          supabase
+            .from('daily_habits')
+            .select('*')
+            .in('user_id', userIds)
+            .in('date', uniqueDates),
+          supabase
+            .from('user_points_daily')
+            .select('*')
+            .in('user_id', userIds)
+            .in('date', uniqueDates)
+        ]);
 
         if (habitsError) console.error('Error fetching daily habits:', habitsError);
         if (pointsError) console.error('Error fetching user points:', pointsError);
 
-        console.log('📊 Fetched daily_habits records:', dailyHabitsData?.length || 0);
-        console.log('📊 Fetched user_points_daily records:', userPointsData?.length || 0);
 
         // Create maps for quick lookup: userId_date -> habitData
         const habitsMap = new Map<string, any>();
@@ -996,7 +996,6 @@ function HomeScreen({ navigation }: HomeScreenProps) {
             if (pointData.screen_time_completed) realTimeHabits.push('screen_time');
           }
 
-          console.log(`🎯 Post ${dailyPost.id} (${dateStr}):`, realTimeHabits);
 
           return {
             ...dailyPost,
@@ -2099,7 +2098,6 @@ function ExploreContent({
                 style={styles.spotlightItem}
                 onPress={() => {
                   // Navigate to spotlight view
-                  console.log('View spotlight:', profile.username);
                 }}
               >
                 <View style={styles.spotlightRing}>
