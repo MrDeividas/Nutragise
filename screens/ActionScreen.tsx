@@ -1026,7 +1026,9 @@ function ActionScreen() {
     currentStep: 1
   });
 
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const customHabitContainerSlide = useRef(new Animated.Value(screenHeight)).current;
+  const customHabitContainerOpacity = useRef(new Animated.Value(0)).current;
   const spotlightCardWidth = useMemo(() => {
     const horizontalPadding = 24 * 2;
     const gap = 12;
@@ -1152,6 +1154,47 @@ function ActionScreen() {
       setSelectedColor('#10B981');
     }
   }, [showCustomHabitModal, customHabitSlide]);
+
+  // Animate container slide up/down when modal opens/closes
+  useEffect(() => {
+    if (showCustomHabitModal) {
+      // Reset to off-screen and invisible before animating
+      customHabitContainerSlide.setValue(screenHeight);
+      customHabitContainerOpacity.setValue(0);
+      // Small delay to ensure it's off-screen, then animate
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(customHabitContainerSlide, {
+            toValue: 0,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(customHabitContainerOpacity, {
+            toValue: 1,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }, 10);
+    } else {
+      Animated.parallel([
+        Animated.timing(customHabitContainerSlide, {
+          toValue: screenHeight,
+          duration: 250,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(customHabitContainerOpacity, {
+          toValue: 0,
+          duration: 250,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showCustomHabitModal, customHabitContainerSlide, customHabitContainerOpacity, screenHeight]);
 
   useEffect(() => {
     // Reset scroll to top when category changes
@@ -4160,11 +4203,21 @@ function ActionScreen() {
       <Modal
         visible={showCustomHabitModal}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowCustomHabitModal(false)}
       >
         <View style={styles.customHabitOverlay}>
-          <View style={[styles.customHabitContainer, { backgroundColor: customHabitColors.background, width: screenWidth }]}>
+          <Animated.View 
+            style={[
+              styles.customHabitContainer, 
+              { 
+                backgroundColor: customHabitColors.background, 
+                width: screenWidth,
+                transform: [{ translateY: customHabitContainerSlide }],
+                opacity: customHabitContainerOpacity,
+              }
+            ]}
+          >
             <Animated.View
               style={[
                 styles.customHabitPager,
@@ -4184,7 +4237,7 @@ function ActionScreen() {
                     <Ionicons name="close" size={24} color={customHabitColors.text} />
                   </TouchableOpacity>
                   <Text style={[styles.customHabitTitle, { color: customHabitColors.text }]}>
-                    {editingHabitId ? 'Edit Task' : 'Add Task'}
+                    {editingHabitId ? 'Edit Habit' : 'Add Habit'}
                   </Text>
                   <TouchableOpacity
                     style={[styles.customHabitSearchButton, { backgroundColor: customHabitColors.iconBackground }]}
@@ -5201,7 +5254,7 @@ function ActionScreen() {
                 </ScrollView>
               </View>
             </Animated.View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -7543,7 +7596,7 @@ const styles = StyleSheet.create({
   },
   levelProgressFloatingPoints: {
     position: 'absolute',
-    top: 26,
+    top: 18,
     width: 40,
     alignItems: 'center',
   },

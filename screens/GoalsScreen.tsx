@@ -190,6 +190,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   const [activeSplit, setActiveSplit] = useState<WorkoutSplit | null>(null);
   const [nextWorkout, setNextWorkout] = useState<{ day: WorkoutSplitDay; dayIndex: number } | null>(null);
   const [loadingSplit, setLoadingSplit] = useState(false);
+  const [nextWorkoutExpanded, setNextWorkoutExpanded] = useState(false);
   const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState('');
   const [customExerciseName, setCustomExerciseName] = useState('');
@@ -707,19 +708,55 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
 
             {/* Next Workout Box */}
             <View style={[styles.weeklyTrackerCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-              <View style={styles.nextWorkoutHeader}>
-                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>
-                  Next Workout: {nextWorkout ? (nextWorkout.day.focus || nextWorkout.day.day) : ''}
-                </Text>
-              </View>
+              <TouchableOpacity
+                onPress={() => setNextWorkoutExpanded(!nextWorkoutExpanded)}
+                activeOpacity={0.7}
+                disabled={!nextWorkout || loadingSplit}
+              >
+                <View style={styles.nextWorkoutHeader}>
+                  <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>
+                    Next Workout: {nextWorkout ? (nextWorkout.day.focus || nextWorkout.day.day) : ''}
+                  </Text>
+                  {nextWorkout && !loadingSplit && (
+                    <Ionicons
+                      name={nextWorkoutExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={theme.textSecondary}
+                    />
+                  )}
+                </View>
+              </TouchableOpacity>
               {loadingSplit ? (
                 <View style={styles.emptyState}>
                   <Text style={[styles.emptyStateTitle, { color: theme.textSecondary }]}>Loading...</Text>
                 </View>
               ) : nextWorkout ? (
-                <View style={styles.nextWorkoutContent}>
-                  <View style={styles.nextWorkoutExercises}>
-                    {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
+                <>
+                  {!nextWorkoutExpanded ? (
+                    /* Collapsed View - Exercise Preview */
+                    <View style={styles.exercisePreview}>
+                      {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
+                        const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+                        const recommendedSetsReps = typeof exercise === 'object' && (exercise as any).sets && (exercise as any).reps
+                          ? { sets: (exercise as any).sets, reps: (exercise as any).reps }
+                          : getExerciseSetsReps(exerciseName);
+                        return (
+                          <View key={exerciseIndex} style={styles.exercisePreviewItem}>
+                            <Text style={[styles.exercisePreviewName, { color: theme.textPrimary }]}>
+                              {exerciseName}
+                            </Text>
+                            <Text style={[styles.exercisePreviewSetsReps, { color: theme.textSecondary }]}>
+                              {recommendedSetsReps.sets} sets × {recommendedSetsReps.reps} reps
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    /* Expanded View - Full Details */
+                    <View style={styles.nextWorkoutContent}>
+                      <View style={styles.nextWorkoutExercises}>
+                        {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
                       // Handle both string and object exercise formats
                       const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
                       const exerciseRows = exerciseData[exerciseName] || [{
@@ -729,6 +766,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                         reps: '',
                         goalWeight: null,
                         prevWeight: null,
+                        prevReps: null,
                       }];
                       const firstRow = exerciseRows[0];
                       
@@ -921,53 +959,55 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                     <Text style={[styles.addExerciseButtonText, { color: theme.primary }]}>Add Exercise</Text>
                   </TouchableOpacity>
                   
-                  {/* Mark as Complete Button */}
-                  <TouchableOpacity
-                    onPress={async () => {
-                      if (!user || !activeSplit || !nextWorkout) return;
-                      try {
-                        // Ensure completion exists (it should already exist from auto-save, but check)
-                        let currentCompletionId = completionId;
-                        if (!currentCompletionId) {
-                          const completion = await workoutSplitService.completeWorkout(user.id, activeSplit.id, nextWorkout.dayIndex);
-                          currentCompletionId = completion.id;
-                          setCompletionId(completion.id);
-                        }
-                        
-                        // Save all exercise logs (in case any weren't auto-saved)
-                        if (currentCompletionId) {
-                          for (const exercise of nextWorkout.day.exercises) {
-                            const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
-                            const exerciseRows = exerciseData[exerciseName] || [];
-                            for (const row of exerciseRows) {
-                              if (row.weight || row.sets || row.reps) {
-                                const existingLogId = row.id.startsWith('log_') ? row.id.replace('log_', '') : undefined;
-                                await workoutExerciseLogService.saveExerciseLog(user.id, {
-                                  completion_id: currentCompletionId,
-                                  exercise_name: exerciseName,
-                                  weight: row.weight ? parseFloat(row.weight) : null,
-                                  sets: row.sets ? parseInt(row.sets, 10) : null,
-                                  reps: row.reps ? parseInt(row.reps, 10) : null,
-                                  goal_weight: row.goalWeight ?? null,
-                                  logId: existingLogId,
-                                });
+                      {/* Mark as Complete Button */}
+                      <TouchableOpacity
+                        onPress={async () => {
+                          if (!user || !activeSplit || !nextWorkout) return;
+                          try {
+                            // Ensure completion exists (it should already exist from auto-save, but check)
+                            let currentCompletionId = completionId;
+                            if (!currentCompletionId) {
+                              const completion = await workoutSplitService.completeWorkout(user.id, activeSplit.id, nextWorkout.dayIndex);
+                              currentCompletionId = completion.id;
+                              setCompletionId(completion.id);
+                            }
+                            
+                            // Save all exercise logs (in case any weren't auto-saved)
+                            if (currentCompletionId) {
+                              for (const exercise of nextWorkout.day.exercises) {
+                                const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
+                                const exerciseRows = exerciseData[exerciseName] || [];
+                                for (const row of exerciseRows) {
+                                  if (row.weight || row.sets || row.reps) {
+                                    const existingLogId = row.id.startsWith('log_') ? row.id.replace('log_', '') : undefined;
+                                    await workoutExerciseLogService.saveExerciseLog(user.id, {
+                                      completion_id: currentCompletionId,
+                                      exercise_name: exerciseName,
+                                      weight: row.weight ? parseFloat(row.weight) : null,
+                                      sets: row.sets ? parseInt(row.sets, 10) : null,
+                                      reps: row.reps ? parseInt(row.reps, 10) : null,
+                                      goal_weight: row.goalWeight ?? null,
+                                      logId: existingLogId,
+                                    });
+                                  }
+                                }
                               }
                             }
+                            
+                            await loadActiveSplit(); // Reload to get next workout
+                          } catch (error: any) {
+                            console.error('Error completing workout:', error);
+                            alert(error.message || 'Failed to complete workout');
                           }
-                        }
-                        
-                        await loadActiveSplit(); // Reload to get next workout
-                      } catch (error: any) {
-                        console.error('Error completing workout:', error);
-                        alert(error.message || 'Failed to complete workout');
-                      }
-                    }}
-                    style={[styles.completeWorkoutButton, { backgroundColor: theme.primary }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.completeWorkoutButtonText}>Mark as Complete</Text>
-                  </TouchableOpacity>
-                </View>
+                        }}
+                        style={[styles.completeWorkoutButton, { backgroundColor: theme.primary }]}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.completeWorkoutButtonText}>Mark as Complete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
               ) : (
                 <View style={styles.emptyState}>
                   <Ionicons name="barbell-outline" size={64} color="#d1d5db" />
@@ -981,109 +1021,19 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
               )}
             </View>
 
-            {/* Exercise Box */}
-            <View style={[styles.exerciseBox, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-              <TouchableOpacity
-                onPress={() => {
-                  setExerciseBoxExpanded(!exerciseBoxExpanded);
-                  if (!exerciseBoxExpanded) {
-                    setSelectedMuscleGroup(null);
-                    setSelectedSubCategory(null);
-                  }
-                }}
-                style={styles.exerciseBoxHeader}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseBoxTitle, { color: theme.textPrimary }]}>Exercise</Text>
-                <Ionicons 
-                  name={exerciseBoxExpanded ? "remove" : "add"} 
-                  size={24} 
-                  color={theme.textPrimary} 
-                />
-              </TouchableOpacity>
-
-              {exerciseBoxExpanded && (
-                <View style={styles.exerciseBoxContent}>
-                  {!selectedMuscleGroup ? (
-                    /* Muscle Group Selection */
-                    <View style={styles.muscleGroupContainer}>
-                      {Object.keys(EXERCISE_DATA).map((muscleGroup) => (
-                        <TouchableOpacity
-                          key={muscleGroup}
-                          onPress={() => setSelectedMuscleGroup(muscleGroup)}
-                          style={[styles.muscleGroupButton, { backgroundColor: theme.cardBackground, borderColor: '#E5E7EB' }]}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.muscleGroupText, { color: theme.textPrimary }]}>{muscleGroup}</Text>
-                          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : !selectedSubCategory ? (
-                    /* Subcategory Selection */
-                    <View>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedMuscleGroup(null);
-                          setSelectedSubCategory(null);
-                        }}
-                        style={styles.backButton}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
-                        <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>{selectedMuscleGroup}</Text>
-                      </TouchableOpacity>
-                      <View style={styles.subCategoryContainer}>
-                        {Object.keys(EXERCISE_DATA[selectedMuscleGroup as keyof typeof EXERCISE_DATA]).map((subCategory) => (
-                          <TouchableOpacity
-                            key={subCategory}
-                            onPress={() => setSelectedSubCategory(subCategory)}
-                            style={[styles.subCategoryButton, { backgroundColor: theme.cardBackground, borderColor: '#E5E7EB' }]}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={[styles.subCategoryText, { color: theme.textPrimary }]}>{subCategory}</Text>
-                            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  ) : (
-                    /* Exercise List */
-                    <View>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedSubCategory(null);
-                        }}
-                        style={styles.backButton}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
-                        <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>{selectedSubCategory}</Text>
-                      </TouchableOpacity>
-                      <View>
-                        {(() => {
-                          const muscleGroup = EXERCISE_DATA[selectedMuscleGroup as keyof typeof EXERCISE_DATA];
-                          const exercises = muscleGroup && selectedSubCategory ? (muscleGroup as any)[selectedSubCategory] : [];
-                          return exercises.map((exercise: string, index: number) => (
-                            <TouchableOpacity
-                              key={index}
-                              style={[styles.exerciseCardItem, { borderColor: '#E5E7EB' }]}
-                              activeOpacity={0.7}
-                              onPress={() => {
-                                setSelectedExercise(exercise);
-                                setShowExerciseModal(true);
-                              }}
-                            >
-                              <Text style={[styles.exerciseItemText, { color: theme.textPrimary }]}>{exercise}</Text>
-                            </TouchableOpacity>
-                          ));
-                        })()}
-                      </View>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
+            {/* My Exercises Box */}
+            <TouchableOpacity
+              onPress={() => {
+                navigation.navigate('MyExercises');
+              }}
+              style={[styles.exerciseBox, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
+              activeOpacity={0.7}
+            >
+              <View style={styles.exerciseBoxHeader}>
+                <Text style={[styles.exerciseBoxTitle, { color: theme.textPrimary }]}>My Exercises</Text>
+                <Ionicons name="chevron-forward" size={24} color={theme.textPrimary} />
+              </View>
+            </TouchableOpacity>
           </View>
         )}
         </ScrollView>
@@ -1848,7 +1798,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   nextWorkoutHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  exercisePreview: {
+    marginTop: 8,
+    gap: 8,
+  },
+  exercisePreviewItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  exercisePreviewName: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  exercisePreviewSetsReps: {
+    fontSize: 13,
+    marginLeft: 12,
   },
   nextWorkoutContent: {
     marginTop: 0,

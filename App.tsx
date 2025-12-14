@@ -23,6 +23,7 @@ import GoalsScreen from './screens/GoalsScreen';
 import WorkoutSplitScreen from './screens/WorkoutSplitScreen';
 import CreateCustomSplitScreen from './screens/CreateCustomSplitScreen';
 import WorkoutHistoryScreen from './screens/WorkoutHistoryScreen';
+import MyExercisesScreen from './screens/MyExercisesScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
 import FollowersScreen from './screens/FollowersScreen';
 import FollowingScreen from './screens/FollowingScreen';
@@ -96,6 +97,10 @@ function GoalsStack() {
       <Stack.Screen 
         name="WorkoutHistory" 
         component={WorkoutHistoryScreen}
+      />
+      <Stack.Screen 
+        name="MyExercises" 
+        component={MyExercisesScreen}
       />
     </Stack.Navigator>
   );

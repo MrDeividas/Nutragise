@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,12 +30,26 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   const [customSplits, setCustomSplits] = useState<WorkoutSplit[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedSplitIndex, setExpandedSplitIndex] = useState<number | null>(null);
+  const [currentActiveSplit, setCurrentActiveSplit] = useState<WorkoutSplit | null>(null);
 
   useEffect(() => {
-    if (user && activeTab === 'custom') {
-      loadCustomSplits();
+    if (user) {
+      if (activeTab === 'custom') {
+        loadCustomSplits();
+      }
+      loadCurrentActiveSplit();
     }
   }, [user, activeTab]);
+
+  const loadCurrentActiveSplit = async () => {
+    if (!user) return;
+    try {
+      const active = await workoutSplitService.getActiveSplit(user.id);
+      setCurrentActiveSplit(active);
+    } catch (error) {
+      console.error('Error loading active split:', error);
+    }
+  };
 
   const loadCustomSplits = async () => {
     if (!user) return;
@@ -51,6 +66,29 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   };
 
   const handleSelectPremadeSplit = async (split: PremadeWorkoutSplit) => {
+    if (!user) return;
+
+    // Check if there's already an active split
+    if (currentActiveSplit) {
+      Alert.alert(
+        'Change Split?',
+        `Are you sure you want to change from "${currentActiveSplit.split_name}" to "${split.name}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Change',
+            style: 'default',
+            onPress: () => confirmSelectPremadeSplit(split),
+          },
+        ]
+      );
+    } else {
+      // No active split, proceed directly
+      confirmSelectPremadeSplit(split);
+    }
+  };
+
+  const confirmSelectPremadeSplit = async (split: PremadeWorkoutSplit) => {
     if (!user) return;
 
     try {
@@ -97,6 +135,29 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   };
 
   const handleSelectCustomSplit = async (split: WorkoutSplit) => {
+    if (!user) return;
+
+    // Check if there's already an active split
+    if (currentActiveSplit) {
+      Alert.alert(
+        'Change Split?',
+        `Are you sure you want to change from "${currentActiveSplit.split_name}" to "${split.split_name}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Change',
+            style: 'default',
+            onPress: () => confirmSelectCustomSplit(split),
+          },
+        ]
+      );
+    } else {
+      // No active split, proceed directly
+      confirmSelectCustomSplit(split);
+    }
+  };
+
+  const confirmSelectCustomSplit = async (split: WorkoutSplit) => {
     if (!user) return;
 
     try {

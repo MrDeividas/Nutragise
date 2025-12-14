@@ -282,15 +282,7 @@ export default function WalletScreen() {
     const color = getTransactionColor(item.type, item.amount);
 
     return (
-      <View
-        style={[
-          styles.transactionCard,
-          {
-            backgroundColor: theme.cardBackground,
-            borderColor: theme.borderColor,
-          },
-        ]}
-      >
+      <View style={styles.transactionCard}>
         <View style={styles.transactionLeft}>
           <View style={[styles.transactionIcon, { backgroundColor: color + '20' }]}>
             <Ionicons name={getTransactionIcon(item.type)} size={20} color={color} />
@@ -316,7 +308,7 @@ export default function WalletScreen() {
             },
           ]}
         >
-          {isPositive ? '+' : ''}£{Math.abs(item.amount).toFixed(2)}
+          {isPositive ? '+' : '-'}£{Math.abs(item.amount).toFixed(2)}
         </Text>
       </View>
     );
@@ -335,7 +327,7 @@ export default function WalletScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.borderColor }]}>
+      <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
         </TouchableOpacity>
@@ -350,15 +342,7 @@ export default function WalletScreen() {
         ListHeaderComponent={
           <>
             {/* Balance Card */}
-            <View
-              style={[
-                styles.balanceCard,
-                {
-                  backgroundColor: theme.cardBackground,
-                  borderColor: theme.borderColor,
-                },
-              ]}
-            >
+            <View style={styles.balanceCard}>
               <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
                 Available Balance
               </Text>
@@ -436,7 +420,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
   },
   backButton: {
     width: 40,
@@ -445,18 +428,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 28,
+    fontWeight: '700',
   },
   listContent: {
     padding: 16,
   },
   balanceCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
+    borderColor: '#E5E7EB',
     padding: 24,
     marginBottom: 24,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   balanceLabel: {
     fontSize: 14,
@@ -492,10 +482,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
+    borderColor: '#E5E7EB',
     padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   transactionLeft: {
     flexDirection: 'row',

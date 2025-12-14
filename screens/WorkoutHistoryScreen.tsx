@@ -186,35 +186,50 @@ export default function WorkoutHistoryScreen({ navigation }: WorkoutHistoryScree
                       {expandedCompletions.has(completion.id) && (
                         <View style={styles.exerciseDetails}>
                           {completion.exerciseLogs && completion.exerciseLogs.length > 0 ? (
-                            completion.exerciseLogs.map((log, index) => (
-                              <View key={index} style={[styles.exerciseLogItem, { borderColor: '#E5E7EB' }]}>
-                                <Text style={[styles.exerciseLogName, { color: theme.textPrimary }]}>
-                                  {log.exercise_name}
-                                </Text>
-                                <View style={styles.exerciseLogDetails}>
-                                  {log.weight !== null && log.weight !== undefined && (
-                                    <Text style={[styles.exerciseLogDetail, { color: theme.textSecondary }]}>
-                                      Weight: {log.weight} kg
-                                    </Text>
-                                  )}
-                                  {log.sets !== null && log.sets !== undefined && (
-                                    <Text style={[styles.exerciseLogDetail, { color: theme.textSecondary }]}>
-                                      Sets: {log.sets}
-                                    </Text>
-                                  )}
-                                  {log.reps !== null && log.reps !== undefined && (
-                                    <Text style={[styles.exerciseLogDetail, { color: theme.textSecondary }]}>
-                                      Reps: {log.reps}
-                                    </Text>
-                                  )}
-                                  {log.goal_weight !== null && log.goal_weight !== undefined && (
-                                    <Text style={[styles.exerciseLogDetail, { color: theme.textSecondary }]}>
-                                      Goal: {log.goal_weight} kg
+                            (() => {
+                              // Group logs by exercise name
+                              const groupedByExercise = completion.exerciseLogs.reduce((acc, log) => {
+                                if (!acc[log.exercise_name]) {
+                                  acc[log.exercise_name] = [];
+                                }
+                                acc[log.exercise_name].push(log);
+                                return acc;
+                              }, {} as Record<string, typeof completion.exerciseLogs>);
+
+                              return Object.entries(groupedByExercise).map(([exerciseName, logs]) => (
+                                <View key={exerciseName} style={[styles.exerciseLogItem, { borderColor: '#E5E7EB' }]}>
+                                  <Text style={[styles.exerciseLogName, { color: theme.textPrimary }]}>
+                                    {exerciseName}
+                                  </Text>
+                                  <View style={styles.setsContainer}>
+                                    {logs.map((log, setIndex) => (
+                                      <View key={setIndex} style={styles.setItem}>
+                                        <Text style={[styles.setNumber, { color: theme.textSecondary }]}>
+                                          Set {setIndex + 1}:
+                                        </Text>
+                                        <View style={styles.setDetails}>
+                                          {log.weight !== null && log.weight !== undefined && (
+                                            <Text style={[styles.setDetail, { color: theme.textSecondary }]}>
+                                              {log.weight}kg
+                                            </Text>
+                                          )}
+                                          {log.reps !== null && log.reps !== undefined && (
+                                            <Text style={[styles.setDetail, { color: theme.textSecondary }]}>
+                                              × {log.reps} reps
+                                            </Text>
+                                          )}
+                                        </View>
+                                      </View>
+                                    ))}
+                                  </View>
+                                  {logs[0]?.goal_weight !== null && logs[0]?.goal_weight !== undefined && (
+                                    <Text style={[styles.goalWeight, { color: theme.textSecondary }]}>
+                                      Goal: {logs[0].goal_weight} kg
                                     </Text>
                                   )}
                                 </View>
-                              </View>
-                            ))
+                              ));
+                            })()
                           ) : (
                             <Text style={[styles.noExerciseLogs, { color: theme.textSecondary }]}>
                               No exercise details recorded
@@ -314,13 +329,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  exerciseLogDetails: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  setsContainer: {
+    marginTop: 8,
+    gap: 6,
   },
-  exerciseLogDetail: {
+  setItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  setNumber: {
     fontSize: 13,
+    fontWeight: '600',
+    minWidth: 50,
+  },
+  setDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  setDetail: {
+    fontSize: 13,
+  },
+  goalWeight: {
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   noExerciseLogs: {
     fontSize: 14,
