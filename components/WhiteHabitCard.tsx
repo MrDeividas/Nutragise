@@ -158,7 +158,16 @@ const WhiteHabitCard = React.memo(({
       >
       <View style={[styles.whiteHabitCardHeader, { 
         backgroundColor: isCreateCard ? '#9CA3AF' : card.accent, 
-        borderRadius: 20,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        borderBottomLeftRadius: isExpanded ? 0 : 20,
+        borderBottomRightRadius: isExpanded ? 0 : 20,
+        marginTop: -16,
+        marginLeft: -16,
+        marginRight: -16,
+        paddingTop: 16,
+        paddingLeft: 16,
+        paddingRight: 16,
         marginBottom: isExpanded ? 4 : 16,
         alignItems: isExpanded ? 'center' : 'flex-start'
       }]}>

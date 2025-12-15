@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
 import { walletService } from '../lib/walletService';
 import { stripeService } from '../lib/stripeService';
+import { challengesService } from '../lib/challengesService';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import { WalletTransaction } from '../types/wallet';
@@ -35,6 +36,7 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [depositAmount, setDepositAmount] = useState<number>(10);
+  const [challengeNames, setChallengeNames] = useState<Record<string, string>>({});
 
   // Load wallet data
   const loadWalletData = useCallback(async () => {
@@ -48,6 +50,29 @@ export default function WalletScreen() {
 
       setBalance(userBalance);
       setTransactions(userTransactions);
+
+      // Fetch challenge names for transactions with challenge_id
+      const challengeIds = userTransactions
+        .filter(t => t.challenge_id && t.type === 'challenge_payment')
+        .map(t => t.challenge_id!)
+        .filter((id, index, self) => self.indexOf(id) === index); // Remove duplicates
+
+      if (challengeIds.length > 0) {
+        const namesMap: Record<string, string> = {};
+        await Promise.all(
+          challengeIds.map(async (challengeId) => {
+            try {
+              const challenge = await challengesService.getChallengeById(challengeId);
+              if (challenge) {
+                namesMap[challengeId] = challenge.title;
+              }
+            } catch (error) {
+              console.error(`Error fetching challenge ${challengeId}:`, error);
+            }
+          })
+        );
+        setChallengeNames(namesMap);
+      }
     } catch (error) {
       console.error('Error loading wallet data:', error);
       Alert.alert('Error', 'Failed to load wallet data');
@@ -233,11 +258,14 @@ export default function WalletScreen() {
   };
 
   // Format transaction type for display
-  const formatTransactionType = (type: string): string => {
-    switch (type) {
+  const formatTransactionType = (transaction: WalletTransaction): string => {
+    switch (transaction.type) {
       case 'deposit':
         return 'Deposit';
       case 'challenge_payment':
+        if (transaction.challenge_id && challengeNames[transaction.challenge_id]) {
+          return challengeNames[transaction.challenge_id];
+        }
         return 'Challenge Investment';
       case 'payout':
         return 'Challenge Payout';
@@ -246,7 +274,7 @@ export default function WalletScreen() {
       case 'fee':
         return 'Platform Fee';
       default:
-        return type;
+        return transaction.type;
     }
   };
 
@@ -289,7 +317,7 @@ export default function WalletScreen() {
           </View>
           <View style={styles.transactionInfo}>
             <Text style={[styles.transactionType, { color: theme.textPrimary }]}>
-              {formatTransactionType(item.type)}
+              {formatTransactionType(item)}
             </Text>
             <Text style={[styles.transactionDate, { color: theme.textSecondary }]}>
               {new Date(item.created_at).toLocaleDateString('en-GB', {

@@ -755,6 +755,30 @@ const WhiteHabitCard = React.memo(({
   );
 });
 
+// Motivational quotes array
+const MOTIVATIONAL_QUOTES = [
+  { quote: "Discipline is the bridge between goals and accomplishment.", author: "Jim Rohn" },
+  { quote: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
+  { quote: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Will Durant" },
+  { quote: "Don't watch the clock; do what it does. Keep going.", author: "Sam Levenson" },
+  { quote: "The future depends on what you do today.", author: "Mahatma Gandhi" },
+  { quote: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+  { quote: "Suffer the pain of discipline or suffer the pain of regret.", author: "Jim Rohn" },
+  { quote: "Hard choices, easy life. Easy choices, hard life.", author: "Jerzy Gregorek" },
+  { quote: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
+  { quote: "The only limit to our realization of tomorrow is our doubts of today.", author: "Franklin D. Roosevelt" },
+  { quote: "Do what you can, with what you have, where you are.", author: "Theodore Roosevelt" },
+  { quote: "Motivation gets you started. Habit keeps you going.", author: "Jim Ryun" },
+  { quote: "Action is the foundational key to all success.", author: "Pablo Picasso" },
+  { quote: "If you're going through hell, keep going.", author: "Winston Churchill" },
+  { quote: "It always seems impossible until it's done.", author: "Nelson Mandela" },
+  { quote: "What we fear doing most is usually what we most need to do.", author: "Tim Ferriss" },
+  { quote: "Success usually comes to those who are too busy to be looking for it.", author: "Henry David Thoreau" },
+  { quote: "You don't have to be great to start, but you have to start to be great.", author: "Zig Ziglar" },
+  { quote: "The man who moves a mountain begins by carrying away small stones.", author: "Confucius" },
+  { quote: "Fall seven times, stand up eight.", author: "Japanese proverb" },
+];
+
 function ActionScreen() {
   const navigation = useNavigation() as any;
   const bottomNavPadding = useBottomNavPadding();
@@ -778,6 +802,14 @@ function ActionScreen() {
     customHabitsDate,
   } = useActionStore();
   const { segmentChecked, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
+  
+  // Loading state and random quote
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const loadStartTime = useRef(Date.now());
+  const [selectedQuote, setSelectedQuote] = useState(() => {
+    const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
+    return MOTIVATIONAL_QUOTES[randomIndex];
+  });
   
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
   const [walletBalance, setWalletBalance] = useState<number>(0);
@@ -2058,37 +2090,58 @@ function ActionScreen() {
     useActionStore.getState().loadCustomHabits(todayDate);
   }, [todayDate]);
 
+  // Check if initial loading is complete
   useEffect(() => {
-    headerGreetingOpacity.setValue(0);
-    headerStatsOpacity.setValue(0);
-    const animation = Animated.sequence([
-      Animated.delay(150),
-      Animated.timing(headerGreetingOpacity, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.delay(4000),
-      Animated.parallel([
+    // Check if all critical data has loaded
+    const isDataLoaded = !customHabitsLoading && !loading && user !== null;
+    
+    if (isDataLoaded && isInitialLoad) {
+      // Calculate how long the quote has been displayed
+      const elapsedTime = Date.now() - loadStartTime.current;
+      const minimumDisplayTime = 3000; // 3 seconds
+      const remainingTime = Math.max(0, minimumDisplayTime - elapsedTime);
+      
+      // Wait for remaining time to ensure quote shows for at least 2.5 seconds
+      setTimeout(() => {
+        setIsInitialLoad(false);
+      }, remainingTime);
+    }
+  }, [customHabitsLoading, loading, user, isInitialLoad]);
+
+  useEffect(() => {
+    // Only start greeting animation after initial load is complete
+    if (!isInitialLoad) {
+      headerGreetingOpacity.setValue(0);
+      headerStatsOpacity.setValue(0);
+      const animation = Animated.sequence([
+        Animated.delay(150),
         Animated.timing(headerGreetingOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(headerStatsOpacity, {
           toValue: 1,
           duration: 400,
           useNativeDriver: true,
         }),
-      ]),
-    ]);
+        Animated.delay(5000), // Show greeting for 5 seconds
+        Animated.parallel([
+          Animated.timing(headerGreetingOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headerStatsOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]);
 
-    animation.start();
+      animation.start();
 
-    return () => {
-      animation.stop();
-    };
-  }, [headerGreetingOpacity, headerStatsOpacity]);
+      return () => {
+        animation.stop();
+      };
+    }
+  }, [headerGreetingOpacity, headerStatsOpacity, isInitialLoad]);
 
   useEffect(() => {
     const listenerId = progressPointsAnim.addListener(({ value }) => {
@@ -3403,13 +3456,56 @@ function ActionScreen() {
       const challenges = await challengesService.getUserChallenges(user.id);
       const now = new Date();
       
+      // Debug: Log all challenges fetched
+      console.log('🔍 [ActionScreen] All user challenges fetched:', challenges.length);
+      challenges.forEach(c => {
+        console.log(`  - ${c.title} (ID: ${c.id})`);
+        console.log(`    Start: ${c.start_date}, End: ${c.end_date}`);
+        console.log(`    Participants: ${c.participant_count || 0}`);
+        console.log(`    Entry Fee: £${c.entry_fee || 0}`);
+      });
+      
+      // Helper function to normalize dates to start of day for comparison
+      const normalizeDate = (date: Date) => {
+        const normalized = new Date(date);
+        normalized.setHours(0, 0, 0, 0);
+        return normalized;
+      };
+      
+      // Helper function to get end of day
+      const getEndOfDay = (date: Date) => {
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+        return endOfDay;
+      };
+      
       // Show challenges that are active or upcoming
       const relevant = challenges
         .map(challenge => {
-        const startDate = new Date(challenge.start_date);
-        const endDate = new Date(challenge.end_date);
-          const isActive = now >= startDate && now <= endDate;
-          const isUpcoming = now < startDate;
+          const startDate = new Date(challenge.start_date);
+          const endDate = new Date(challenge.end_date);
+          
+          // Normalize dates for comparison (compare date parts only)
+          const normalizedStart = normalizeDate(startDate);
+          const normalizedEnd = getEndOfDay(endDate); // Include full end day
+          const normalizedNow = normalizeDate(now);
+          
+          // Challenge is active if today is between start and end (inclusive)
+          const isActive = normalizedNow >= normalizedStart && normalizedNow <= normalizedEnd;
+          const isUpcoming = normalizedNow < normalizedStart;
+          
+          // Debug: Log smile challenges specifically
+          if (challenge.title?.toLowerCase().includes('smile')) {
+            console.log('🔍 [ActionScreen] Smile Challenge Details:');
+            console.log(`  Title: ${challenge.title}`);
+            console.log(`  Start Date: ${startDate.toISOString()} (normalized: ${normalizedStart.toISOString()})`);
+            console.log(`  End Date: ${endDate.toISOString()} (normalized: ${normalizedEnd.toISOString()})`);
+            console.log(`  Now: ${now.toISOString()} (normalized: ${normalizedNow.toISOString()})`);
+            console.log(`  Is Active: ${isActive}`);
+            console.log(`  Is Upcoming: ${isUpcoming}`);
+            console.log(`  Participants: ${challenge.participant_count || 0}`);
+          }
+          
           return { challenge, startDate, endDate, isActive, isUpcoming };
         })
         .filter(entry => entry.isActive || entry.isUpcoming)
@@ -3420,6 +3516,11 @@ function ActionScreen() {
           return a.startDate.getTime() - b.startDate.getTime();
         })
         .map(entry => entry.challenge);
+
+      console.log('🔍 [ActionScreen] Relevant challenges (active/upcoming):', relevant.length);
+      relevant.forEach(c => {
+        console.log(`  - ${c.title} (Participants: ${c.participant_count || 0})`);
+      });
 
       setMyActiveChallenges(relevant);
     } catch (error) {
@@ -3682,6 +3783,26 @@ function ActionScreen() {
     'cold_shower': 6,
     'gym': 7
   };
+
+  // Loading screen with motivational quote
+  if (isInitialLoad) {
+    return (
+      <CustomBackground>
+        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+          <View style={styles.loadingContainer}>
+            <View style={styles.quoteContainer}>
+              <Text style={[styles.quoteText, { color: theme.textPrimary }]}>
+                "{selectedQuote.quote}"
+              </Text>
+              <Text style={[styles.quoteAuthor, { color: theme.textSecondary }]}>
+                — {selectedQuote.author}
+              </Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      </CustomBackground>
+    );
+  }
 
   return (
     <CustomBackground>
@@ -4025,6 +4146,10 @@ function ActionScreen() {
               {myActiveChallenges.map((challenge, index) => {
                 const startDate = new Date(challenge.start_date);
                 const endDate = new Date(challenge.end_date);
+                
+                // Set end date to end of day to include the full last day
+                endDate.setHours(23, 59, 59, 999);
+                
                 const now = new Date();
                 const isActiveChallenge = now >= startDate && now <= endDate;
                 const dateRangeText = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
@@ -4064,8 +4189,8 @@ function ActionScreen() {
                           {dateRangeText}
                         </Text>
                         <View style={{ marginTop: 4, gap: 4 }}>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> investment</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£0</Text> shared pot</Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£{challenge.entry_fee || 0}</Text> investment</Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£{Math.round((challenge.participant_count || 0) * (challenge.entry_fee || 0))}</Text> shared pot</Text>
                         </View>
                   </View>
                       
@@ -6985,6 +7110,29 @@ export default React.memo(ActionScreen);
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  quoteContainer: {
+    alignItems: 'center',
+    maxWidth: 400,
+  },
+  quoteText: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 28,
+  },
+  quoteAuthor: {
+    fontSize: 16,
+    fontWeight: '400',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   scrollView: {
     flex: 1,

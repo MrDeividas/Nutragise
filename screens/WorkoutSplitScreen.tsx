@@ -35,7 +35,7 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   useEffect(() => {
     if (user) {
       if (activeTab === 'custom') {
-        loadCustomSplits();
+      loadCustomSplits();
       }
       loadCurrentActiveSplit();
     }
@@ -234,13 +234,13 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
                     key={index}
                     style={[styles.splitCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
                   >
-                    <TouchableOpacity
-                      onPress={() => handleSelectPremadeSplit(split)}
-                      activeOpacity={0.7}
-                      disabled={loading}
-                    >
-                      <View style={styles.splitCardHeader}>
-                        <Text style={[styles.splitName, { color: theme.textPrimary }]}>{split.name}</Text>
+                <TouchableOpacity
+                  onPress={() => handleSelectPremadeSplit(split)}
+                  activeOpacity={0.7}
+                  disabled={loading}
+                >
+                  <View style={styles.splitCardHeader}>
+                    <Text style={[styles.splitName, { color: theme.textPrimary }]}>{split.name}</Text>
                         <View style={styles.headerIcons}>
                           <TouchableOpacity
                             onPress={(e) => {
@@ -252,16 +252,16 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
                           >
                             <Ionicons name="information-circle-outline" size={22} color={theme.primary} />
                           </TouchableOpacity>
-                          <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+                    <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
                         </View>
-                      </View>
-                      <Text style={[styles.splitFrequency, { color: theme.textSecondary }]}>
-                        {split.frequency}
-                      </Text>
-                      <Text style={[styles.splitDays, { color: theme.textSecondary }]}>
-                        {split.days.length} {split.days.length === 1 ? 'day' : 'days'}
-                      </Text>
-                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.splitFrequency, { color: theme.textSecondary }]}>
+                    {split.frequency}
+                  </Text>
+                  <Text style={[styles.splitDays, { color: theme.textSecondary }]}>
+                    {split.days.length} {split.days.length === 1 ? 'day' : 'days'}
+                  </Text>
+                </TouchableOpacity>
                     
                     {isExpanded && (
                       <View style={styles.expandedContent}>

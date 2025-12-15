@@ -198,7 +198,7 @@ export default function WorkoutHistoryScreen({ navigation }: WorkoutHistoryScree
 
                               return Object.entries(groupedByExercise).map(([exerciseName, logs]) => (
                                 <View key={exerciseName} style={[styles.exerciseLogItem, { borderColor: '#E5E7EB' }]}>
-                                  <Text style={[styles.exerciseLogName, { color: theme.textPrimary }]}>
+                                <Text style={[styles.exerciseLogName, { color: theme.textPrimary }]}>
                                     {exerciseName}
                                   </Text>
                                   <View style={styles.setsContainer}>
@@ -206,18 +206,18 @@ export default function WorkoutHistoryScreen({ navigation }: WorkoutHistoryScree
                                       <View key={setIndex} style={styles.setItem}>
                                         <Text style={[styles.setNumber, { color: theme.textSecondary }]}>
                                           Set {setIndex + 1}:
-                                        </Text>
+                                </Text>
                                         <View style={styles.setDetails}>
-                                          {log.weight !== null && log.weight !== undefined && (
+                                  {log.weight !== null && log.weight !== undefined && (
                                             <Text style={[styles.setDetail, { color: theme.textSecondary }]}>
                                               {log.weight}kg
-                                            </Text>
-                                          )}
-                                          {log.reps !== null && log.reps !== undefined && (
+                                    </Text>
+                                  )}
+                                  {log.reps !== null && log.reps !== undefined && (
                                             <Text style={[styles.setDetail, { color: theme.textSecondary }]}>
                                               × {log.reps} reps
-                                            </Text>
-                                          )}
+                                    </Text>
+                                  )}
                                         </View>
                                       </View>
                                     ))}

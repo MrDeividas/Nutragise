@@ -784,14 +784,14 @@ class DailyHabitsService {
       if (error) {
         // Log detailed error information (but only in development)
         if (__DEV__) {
-          console.error('Error recording login day:', {
-            error: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint,
-            userId,
-            date
-          });
+        console.error('Error recording login day:', {
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          userId,
+          date
+        });
         }
         
         // If table doesn't exist, RLS issue, or server error, don't throw - just return false
@@ -810,8 +810,8 @@ class DailyHabitsService {
       
       // Check login streak and track discipline pillar if > 3 days
       try {
-        const streak = await this.getLoginStreak(userId);
-        if (streak.currentStreak > 3) {
+      const streak = await this.getLoginStreak(userId);
+      if (streak.currentStreak > 3) {
           pillarProgressService.trackAction(userId, 'discipline', 'login_streak').catch(() => {
             // Silently fail - this is non-critical
           });
@@ -824,12 +824,12 @@ class DailyHabitsService {
     } catch (error: any) {
       // Additional error handling for unexpected errors (only log in development)
       if (__DEV__) {
-        console.error('Error recording login day (catch block):', {
-          error: error?.message || error,
-          stack: error?.stack,
-          userId,
-          date
-        });
+      console.error('Error recording login day (catch block):', {
+        error: error?.message || error,
+        stack: error?.stack,
+        userId,
+        date
+      });
       }
       return false;
     }

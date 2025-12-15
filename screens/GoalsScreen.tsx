@@ -301,10 +301,10 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 for (let i = 0; i < recommendedSetsReps.sets; i++) {
                   initialRows.push({
                     id: `row_${Date.now()}_${exerciseName}_${i}`,
-                    weight: '',
-                    sets: '',
-                    reps: '',
-                    goalWeight: previousData.goal_weight ?? null,
+                  weight: '',
+                  sets: '',
+                  reps: '',
+                  goalWeight: previousData.goal_weight ?? null,
                     prevWeight: i === 0 ? (highestWeightData.weight ?? null) : null, // Only first row shows previous
                     prevReps: i === 0 ? (highestWeightData.reps ?? null) : null, // Only first row shows previous
                   });
@@ -329,10 +329,10 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
               for (let i = 0; i < recommendedSetsReps.sets; i++) {
                 initialRows.push({
                   id: `row_${Date.now()}_${exerciseName}_${i}`,
-                  weight: '',
-                  sets: '',
-                  reps: '',
-                  goalWeight: previousData.goal_weight ?? null,
+                weight: '',
+                sets: '',
+                reps: '',
+                goalWeight: previousData.goal_weight ?? null,
                   prevWeight: i === 0 ? (highestWeightData.weight ?? null) : null, // Only first row shows previous
                   prevReps: i === 0 ? (highestWeightData.reps ?? null) : null, // Only first row shows previous
                 });
@@ -713,10 +713,10 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 activeOpacity={0.7}
                 disabled={!nextWorkout || loadingSplit}
               >
-                <View style={styles.nextWorkoutHeader}>
-                  <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>
-                    Next Workout: {nextWorkout ? (nextWorkout.day.focus || nextWorkout.day.day) : ''}
-                  </Text>
+              <View style={styles.nextWorkoutHeader}>
+                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>
+                  Next Workout: {nextWorkout ? (nextWorkout.day.focus || nextWorkout.day.day) : ''}
+                </Text>
                   {nextWorkout && !loadingSplit && (
                     <Ionicons
                       name={nextWorkoutExpanded ? 'chevron-up' : 'chevron-down'}
@@ -724,7 +724,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                       color={theme.textSecondary}
                     />
                   )}
-                </View>
+              </View>
               </TouchableOpacity>
               {loadingSplit ? (
                 <View style={styles.emptyState}>
@@ -754,9 +754,9 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                     </View>
                   ) : (
                     /* Expanded View - Full Details */
-                    <View style={styles.nextWorkoutContent}>
-                      <View style={styles.nextWorkoutExercises}>
-                        {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
+                <View style={styles.nextWorkoutContent}>
+                  <View style={styles.nextWorkoutExercises}>
+                    {nextWorkout.day.exercises.map((exercise, exerciseIndex) => {
                       // Handle both string and object exercise formats
                       const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
                       const exerciseRows = exerciseData[exerciseName] || [{
@@ -783,9 +783,9 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                           <View style={styles.exerciseCardHeader}>
                             <View style={styles.exerciseNameContainer}>
                               <View style={styles.exerciseNameRow}>
-                                <Text style={[styles.exerciseCardName, { color: theme.textPrimary }]}>
+                            <Text style={[styles.exerciseCardName, { color: theme.textPrimary }]}>
                                   {exerciseName}
-                                </Text>
+                            </Text>
                                 <Text style={[styles.exerciseSetsReps, { color: theme.textSecondary }]}>
                                   {recommendedSetsReps.sets} sets × {recommendedSetsReps.reps} reps
                                 </Text>
@@ -793,13 +793,13 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                             </View>
                             {editingExercise === exerciseName ? (
                               <View style={styles.editButtonsContainer}>
-                                <TouchableOpacity
+                            <TouchableOpacity
                                   onPress={() => {
                                     handleAddExerciseRow(exerciseName);
                                     setEditingExercise(null);
                                   }}
                                   style={[styles.editButton, { backgroundColor: theme.primary }]}
-                                >
+                            >
                                   <Ionicons name="add" size={18} color="#FFFFFF" />
                                 </TouchableOpacity>
                                 <TouchableOpacity
@@ -848,7 +848,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                                   style={[styles.editButton, { backgroundColor: '#EF4444' }]}
                                 >
                                   <Ionicons name="remove" size={18} color="#FFFFFF" />
-                                </TouchableOpacity>
+                            </TouchableOpacity>
                               </View>
                             ) : (
                               <TouchableOpacity
@@ -869,9 +869,9 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                                 {firstRow?.prevWeight !== null && firstRow?.prevWeight !== undefined && (
                                   <Text style={[styles.previousValue, { color: theme.textSecondary }]}>
                                     {' '}Prev: {firstRow.prevWeight}kg
-                                  </Text>
-                                )}
-                              </Text>
+                                </Text>
+                              )}
+                                </Text>
                             </View>
                             <View style={styles.exerciseLabelGroup}>
                               <Text style={[styles.exerciseInputLabel, { color: theme.textSecondary }]}>
@@ -960,52 +960,52 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                   </TouchableOpacity>
                   
                       {/* Mark as Complete Button */}
-                      <TouchableOpacity
-                        onPress={async () => {
-                          if (!user || !activeSplit || !nextWorkout) return;
-                          try {
-                            // Ensure completion exists (it should already exist from auto-save, but check)
-                            let currentCompletionId = completionId;
-                            if (!currentCompletionId) {
-                              const completion = await workoutSplitService.completeWorkout(user.id, activeSplit.id, nextWorkout.dayIndex);
-                              currentCompletionId = completion.id;
-                              setCompletionId(completion.id);
-                            }
-                            
-                            // Save all exercise logs (in case any weren't auto-saved)
-                            if (currentCompletionId) {
-                              for (const exercise of nextWorkout.day.exercises) {
+                  <TouchableOpacity
+                    onPress={async () => {
+                      if (!user || !activeSplit || !nextWorkout) return;
+                      try {
+                        // Ensure completion exists (it should already exist from auto-save, but check)
+                        let currentCompletionId = completionId;
+                        if (!currentCompletionId) {
+                          const completion = await workoutSplitService.completeWorkout(user.id, activeSplit.id, nextWorkout.dayIndex);
+                          currentCompletionId = completion.id;
+                          setCompletionId(completion.id);
+                        }
+                        
+                        // Save all exercise logs (in case any weren't auto-saved)
+                        if (currentCompletionId) {
+                          for (const exercise of nextWorkout.day.exercises) {
                                 const exerciseName = typeof exercise === 'string' ? exercise : (exercise as any).name;
                                 const exerciseRows = exerciseData[exerciseName] || [];
-                                for (const row of exerciseRows) {
-                                  if (row.weight || row.sets || row.reps) {
-                                    const existingLogId = row.id.startsWith('log_') ? row.id.replace('log_', '') : undefined;
-                                    await workoutExerciseLogService.saveExerciseLog(user.id, {
-                                      completion_id: currentCompletionId,
+                            for (const row of exerciseRows) {
+                              if (row.weight || row.sets || row.reps) {
+                                const existingLogId = row.id.startsWith('log_') ? row.id.replace('log_', '') : undefined;
+                                await workoutExerciseLogService.saveExerciseLog(user.id, {
+                                  completion_id: currentCompletionId,
                                       exercise_name: exerciseName,
-                                      weight: row.weight ? parseFloat(row.weight) : null,
-                                      sets: row.sets ? parseInt(row.sets, 10) : null,
-                                      reps: row.reps ? parseInt(row.reps, 10) : null,
-                                      goal_weight: row.goalWeight ?? null,
-                                      logId: existingLogId,
-                                    });
-                                  }
-                                }
+                                  weight: row.weight ? parseFloat(row.weight) : null,
+                                  sets: row.sets ? parseInt(row.sets, 10) : null,
+                                  reps: row.reps ? parseInt(row.reps, 10) : null,
+                                  goal_weight: row.goalWeight ?? null,
+                                  logId: existingLogId,
+                                });
                               }
                             }
-                            
-                            await loadActiveSplit(); // Reload to get next workout
-                          } catch (error: any) {
-                            console.error('Error completing workout:', error);
-                            alert(error.message || 'Failed to complete workout');
                           }
-                        }}
-                        style={[styles.completeWorkoutButton, { backgroundColor: theme.primary }]}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.completeWorkoutButtonText}>Mark as Complete</Text>
-                      </TouchableOpacity>
-                    </View>
+                        }
+                        
+                        await loadActiveSplit(); // Reload to get next workout
+                      } catch (error: any) {
+                        console.error('Error completing workout:', error);
+                        alert(error.message || 'Failed to complete workout');
+                      }
+                    }}
+                    style={[styles.completeWorkoutButton, { backgroundColor: theme.primary }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.completeWorkoutButtonText}>Mark as Complete</Text>
+                  </TouchableOpacity>
+                </View>
                   )}
                 </>
               ) : (
@@ -1022,18 +1022,18 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             </View>
 
             {/* My Exercises Box */}
-            <TouchableOpacity
-              onPress={() => {
+              <TouchableOpacity
+                onPress={() => {
                 navigation.navigate('MyExercises');
-              }}
+                }}
               style={[styles.exerciseBox, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
-              activeOpacity={0.7}
-            >
+                activeOpacity={0.7}
+              >
               <View style={styles.exerciseBoxHeader}>
                 <Text style={[styles.exerciseBoxTitle, { color: theme.textPrimary }]}>My Exercises</Text>
                 <Ionicons name="chevron-forward" size={24} color={theme.textPrimary} />
-              </View>
-            </TouchableOpacity>
+                    </View>
+                      </TouchableOpacity>
           </View>
         )}
         </ScrollView>

@@ -348,6 +348,21 @@ export default function ChallengeDetailScreen({ route }: any) {
   };
 
   const formatDuration = (weeks: number) => {
+    // Calculate actual duration in days
+    const startDate = new Date(challenge?.start_date || '');
+    const endDate = new Date(challenge?.end_date || '');
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    // If it's a same-day challenge (0 diff or 1 day inclusive)
+    if (startDate.toDateString() === endDate.toDateString()) {
+      return '1 day';
+    }
+    
+    if (diffDays < 7) {
+      return `${diffDays + 1} days`;
+    }
+    
     if (weeks === 1) return '1 week';
     return `${weeks} weeks`;
   };
@@ -362,6 +377,9 @@ export default function ChallengeDetailScreen({ route }: any) {
     const now = new Date();
     const startDate = new Date(challenge.start_date);
     const endDate = new Date(challenge.end_date);
+    
+    // Set end date to end of day to include the full last day
+    endDate.setHours(23, 59, 59, 999);
     
     // Check if challenge is upcoming
     if (now.getTime() < startDate.getTime()) {
