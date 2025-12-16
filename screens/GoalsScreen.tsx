@@ -563,14 +563,6 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   return (
     <CustomBackground>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-        <ScrollView 
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: bottomNavPadding }}
-          refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
-          }
-        >
         {/* Header */}
         <View style={styles.header}>
           {activeTab === 'workout' ? (
@@ -618,6 +610,15 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             )}
           </View>
         </View>
+
+        <ScrollView 
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding }}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
+          }
+        >
 
         {activeTab === 'goals' ? (
           <>
@@ -1428,7 +1429,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 10,
+    paddingTop: 4,
     paddingBottom: 20,
     position: 'relative',
   },
@@ -1458,6 +1459,8 @@ const styles = StyleSheet.create({
     right: 0,
     textAlign: 'center',
     zIndex: 0,
+    top: '50%',
+    transform: [{ translateY: -12 }],
   },
   headerRightButtons: {
     flexDirection: 'row',

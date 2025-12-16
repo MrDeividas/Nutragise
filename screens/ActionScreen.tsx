@@ -9,7 +9,7 @@ import Reanimated, {
   Easing as ReanimatedEasing,
   SharedValue
 } from 'react-native-reanimated';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions, PanResponder, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback, RefreshControl, Image, useWindowDimensions, PanResponder, Pressable, Linking } from 'react-native';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
@@ -48,6 +48,7 @@ import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, 
 import InviteFriendModal from '../components/InviteFriendModal';
 import { habitInviteService } from '../lib/habitInviteService';
 import { walletService } from '../lib/walletService';
+import AppleHealthKit, { HealthValue, HealthKitPermissions } from 'react-native-health';
 import { habitsService } from '../lib/habitsService';
 
 
@@ -231,7 +232,6 @@ async function savePillarProgressSnapshot(userId: string, today: string): Promis
     const startOfDayDateKey = `pillar_progress_start_of_day_date_${userId}`;
     const storedDate = await AsyncStorage.getItem(startOfDayDateKey);
     
-    console.log(`📸 Snapshot check: stored="${storedDate}", today="${today}"`);
     
     // Only save if we haven't saved today already (new calendar day)
     if (storedDate !== today) {
@@ -240,9 +240,7 @@ async function savePillarProgressSnapshot(userId: string, today: string): Promis
       
       await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
       await AsyncStorage.setItem(startOfDayDateKey, today);
-      console.log('📸 NEW DAY: Saved pillar progress snapshot:', progress);
     } else {
-      console.log('📸 SAME DAY: Snapshot already exists, keeping original baseline');
     }
   } catch (error) {
     console.error('Error saving pillar progress snapshot:', error);
@@ -831,6 +829,8 @@ function ActionScreen() {
   const [showWaterModal, setShowWaterModal] = useState(false);
   const [showExerciseModal, setShowExerciseModal] = useState(false);
   const [showCustomHabitModal, setShowCustomHabitModal] = useState(false);
+  const [showScreenTimeModal, setShowScreenTimeModal] = useState(false);
+  const [showGoalSelectionModal, setShowGoalSelectionModal] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [customHabitTitle, setCustomHabitTitle] = useState('');
   const [selectedCustomHabitType, setSelectedCustomHabitType] = useState('custom');
@@ -1026,6 +1026,11 @@ function ActionScreen() {
     waterIntake: 5, // Changed to number for slider, default 2.25 liters (5 * 0.45)
     waterGoal: '',
     waterNotes: ''
+  });
+  
+  const [screenTimeQuestionnaire, setScreenTimeQuestionnaire] = useState({
+    hours: 0,
+    minutes: 0
   });
   
     const [exerciseQuestionnaire, setExerciseQuestionnaire] = useState({
@@ -1578,6 +1583,143 @@ function ActionScreen() {
     return null;
   }, [user]);
 
+  // Initialize HealthKit
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      try {
+        // Check if AppleHealthKit is available and has the required methods
+        if (!AppleHealthKit || typeof AppleHealthKit.initHealthKit !== 'function') {
+          return;
+        }
+
+        const permissions: HealthKitPermissions = {
+          permissions: {
+            read: [
+              AppleHealthKit.Constants.Permissions.SleepAnalysis,
+              AppleHealthKit.Constants.Permissions.Steps,
+              AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
+            ],
+            write: []
+          }
+        };
+
+        AppleHealthKit.initHealthKit(permissions, (error: string) => {
+          // HealthKit initialized
+        });
+      } catch (error) {
+        // Error initializing HealthKit
+      }
+    }
+  }, []);
+
+  // Load sleep data from Apple Health
+  const loadSleepFromiPhone = useCallback(() => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
+      return;
+    }
+
+    if (!AppleHealthKit || typeof AppleHealthKit.getSleepSamples !== 'function') {
+      Alert.alert('Not Available', 'Apple Health integration is not available. Please ensure the app has proper permissions.');
+      return;
+    }
+
+    const options = {
+      startDate: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Last 24 hours
+      endDate: new Date().toISOString(),
+    };
+
+    AppleHealthKit.getSleepSamples(options, (err: Object, results: HealthValue[]) => {
+      if (err) {
+        Alert.alert('Error', 'Could not load sleep data. Make sure you\'ve granted permission in Settings > Health > Data Access & Devices.');
+        return;
+      }
+
+      if (results && results.length > 0) {
+        // Calculate total sleep duration
+        let totalSleepMinutes = 0;
+        let bedtime: Date | null = null;
+        let wakeTime: Date | null = null;
+
+        results.forEach((sample: any) => {
+          if (sample.value === 'ASLEEP' || sample.value === 'INBED') {
+            const start = new Date(sample.startDate);
+            const end = new Date(sample.endDate);
+            const duration = (end.getTime() - start.getTime()) / (1000 * 60); // minutes
+            totalSleepMinutes += duration;
+
+            if (!bedtime || start < bedtime) bedtime = start;
+            if (!wakeTime || end > wakeTime) wakeTime = end;
+          }
+        });
+
+        const hours = Math.floor(totalSleepMinutes / 60);
+        const minutes = Math.round(totalSleepMinutes % 60);
+
+        // Auto-fill sleep data
+        setSleepQuestionnaire(prev => ({
+          ...prev,
+          sleepQuality: Math.min(100, Math.round((totalSleepMinutes / 480) * 100)), // 8 hours = 100%
+          bedtimeHours: bedtime ? bedtime.getHours() : 22,
+          bedtimeMinutes: bedtime ? bedtime.getMinutes() : 0,
+          wakeupHours: wakeTime ? wakeTime.getHours() : 6,
+          wakeupMinutes: wakeTime ? wakeTime.getMinutes() : 0,
+        }));
+
+        Alert.alert('Success!', `Loaded ${hours}h ${minutes}m of sleep from Apple Health`);
+      } else {
+        Alert.alert('No Data', 'No sleep data found in Apple Health for the last 24 hours.');
+      }
+    });
+  }, []);
+
+  // Load exercise data from Apple Health (steps and distance)
+  const loadExerciseFromiPhone = useCallback(() => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
+      return;
+    }
+
+    if (!AppleHealthKit || typeof AppleHealthKit.getStepCount !== 'function') {
+      Alert.alert('Not Available', 'Apple Health integration is not available. Please ensure the app has proper permissions.');
+      return;
+    }
+
+    const options = {
+      date: new Date().toISOString(),
+    };
+
+    // Get steps
+    AppleHealthKit.getStepCount(options, (err: Object, stepsResult: HealthValue) => {
+      if (err) {
+        Alert.alert('Error', 'Could not load step data. Make sure you\'ve granted permission in Settings > Health > Data Access & Devices.');
+        return;
+      }
+
+      const steps = stepsResult?.value || 0;
+
+      // Get distance
+      AppleHealthKit.getDistanceWalkingRunning(options, (err: Object, distanceResult: HealthValue) => {
+        const distanceMeters = distanceResult?.value || 0;
+        const distanceKm = (distanceMeters / 1000).toFixed(2);
+
+        // Auto-select Running if there's significant distance
+        if (distanceMeters > 1000) {
+          setExerciseQuestionnaire(prev => ({
+            ...prev,
+            selectedSport: 'Running',
+            distance: parseFloat(distanceKm),
+          }));
+        }
+
+        Alert.alert(
+          'Success!', 
+          `Loaded from Apple Health:\n\n${steps.toLocaleString()} steps\n${distanceKm} km distance${distanceMeters > 1000 ? '\n\nAuto-selected Running sport' : ''}`
+        );
+      });
+    });
+  }, []);
+
   const habitIdToCardMap = useMemo(() => {
     const map: Record<string, (typeof habitSpotlightCards)[number]> = {};
     habitSpotlightCards.forEach(card => {
@@ -1796,9 +1938,7 @@ function ActionScreen() {
     const partnership = Object.values(activePartnerships).find(p => p.habit_type === 'core' && p.habit_key === habitKey);
     if (partnership) {
       try {
-        console.log(`[Partner Sync] Updating progress for ${habitKey}:`, { partnershipId: partnership.id, userId: user.id, date: getTodayDateString(), completed });
         await habitInviteService.updatePartnerProgress(partnership.id, user.id, getTodayDateString(), completed);
-        console.log(`[Partner Sync] ✅ Successfully updated progress for ${habitKey}`);
       } catch (error) {
         console.error(`[Partner Sync] ❌ Failed to update progress for ${habitKey}:`, error);
       }
@@ -1951,17 +2091,14 @@ function ActionScreen() {
     if (habitId === 'focus') return;
     if (completedHabits.has(habitId)) return;
     
-    console.log(`[Long Press] Marking ${habitId} as completed`);
     markHabitCompleted(habitId);
     
     const success = await persistQuickCompletion(habitId);
-    console.log(`[Long Press] persistQuickCompletion returned:`, success);
     
     if (!success) {
       // Check if habit actually exists in database before uncompleting
       // For habits like meditation that use trackDailyHabit, the function returns false
       // if already completed, but we should keep it marked as completed in UI
-      console.log(`[Long Press] ❌ persistQuickCompletion failed for ${habitId} - NOT reverting completion for partner-linked habit`);
       
       // Don't uncomplete if there's a partner - the sync already happened
       const partnership = Object.values(activePartnerships).find(
@@ -1970,10 +2107,8 @@ function ActionScreen() {
       
       if (!partnership) {
         // Only revert if there's no partner
-        console.log(`[Long Press] No partnership found, reverting completion`);
         markHabitUncompleted(habitId);
       } else {
-        console.log(`[Long Press] Partnership exists, keeping completion despite failure`);
       }
     }
   }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion, activePartnerships]);
@@ -2952,13 +3087,14 @@ function ActionScreen() {
 
       case 'focus':
       case 'update_goal':
+        setShowGoalSelectionModal(true);
+        return;
+
       case 'screen_time':
-        // Not implemented yet
-        console.log(`${habitId} modal not implemented yet`);
+        setShowScreenTimeModal(true);
         return;
 
       default:
-        console.log(`Unknown habit: ${habitId}`);
         return;
     }
   }, [navigation, modalPosition]);
@@ -2998,6 +3134,8 @@ function ActionScreen() {
         liftAmount = -100; // Gym modal needs moderate lift
       } else if (showReflectModal) {
         liftAmount = -200; // Reflect modal needs most lift (most content)
+      } else if (showScreenTimeModal) {
+        liftAmount = -80; // Screen time modal needs less lift (short content)
       }
       
       Animated.timing(modalPosition, {
@@ -3412,6 +3550,12 @@ function ActionScreen() {
         
         // Save pillar progress snapshot at start of day (for green indicator comparison)
         await savePillarProgressSnapshot(user.id, today);
+        
+        // Process completed challenges (non-blocking)
+        const { challengePotService } = await import('../lib/challengePotService');
+        challengePotService.processCompletedChallenges().catch((error) => {
+          console.error('Error processing completed challenges:', error);
+        });
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
           console.error('Error initializing ActionScreen data:', error);
@@ -3457,12 +3601,7 @@ function ActionScreen() {
       const now = new Date();
       
       // Debug: Log all challenges fetched
-      console.log('🔍 [ActionScreen] All user challenges fetched:', challenges.length);
       challenges.forEach(c => {
-        console.log(`  - ${c.title} (ID: ${c.id})`);
-        console.log(`    Start: ${c.start_date}, End: ${c.end_date}`);
-        console.log(`    Participants: ${c.participant_count || 0}`);
-        console.log(`    Entry Fee: £${c.entry_fee || 0}`);
       });
       
       // Helper function to normalize dates to start of day for comparison
@@ -3496,14 +3635,6 @@ function ActionScreen() {
           
           // Debug: Log smile challenges specifically
           if (challenge.title?.toLowerCase().includes('smile')) {
-            console.log('🔍 [ActionScreen] Smile Challenge Details:');
-            console.log(`  Title: ${challenge.title}`);
-            console.log(`  Start Date: ${startDate.toISOString()} (normalized: ${normalizedStart.toISOString()})`);
-            console.log(`  End Date: ${endDate.toISOString()} (normalized: ${normalizedEnd.toISOString()})`);
-            console.log(`  Now: ${now.toISOString()} (normalized: ${normalizedNow.toISOString()})`);
-            console.log(`  Is Active: ${isActive}`);
-            console.log(`  Is Upcoming: ${isUpcoming}`);
-            console.log(`  Participants: ${challenge.participant_count || 0}`);
           }
           
           return { challenge, startDate, endDate, isActive, isUpcoming };
@@ -3517,9 +3648,7 @@ function ActionScreen() {
         })
         .map(entry => entry.challenge);
 
-      console.log('🔍 [ActionScreen] Relevant challenges (active/upcoming):', relevant.length);
       relevant.forEach(c => {
-        console.log(`  - ${c.title} (Participants: ${c.participant_count || 0})`);
       });
 
       setMyActiveChallenges(relevant);
@@ -3604,31 +3733,24 @@ function ActionScreen() {
     const channel = habitInviteService.subscribeToPartnerProgress(
       partnershipIds,
       async (progress) => {
-        console.log('[Partner Subscription] Received progress update:', progress);
-        console.log('[Partner Subscription] Current user ID:', currentUserId);
-        console.log('[Partner Subscription] Progress user ID:', progress.user_id);
         
         // CRITICAL: Ignore updates from current user (only listen to partner's updates)
         if (!currentUserId || progress.user_id === currentUserId) {
-          console.log('[Partner Subscription] ✓ Ignoring own update');
           return;
         }
 
         // Find which partnership this progress belongs to
         const partnership = Object.values(activePartnerships).find(p => p.id === progress.partnership_id);
         if (!partnership || !partnership.partner) {
-          console.log('[Partner Subscription] Partnership not found or no partner');
           return;
         }
 
         // Only refresh if it's for today's date
         const today = getTodayDateString();
         if (progress.date !== today) {
-          console.log('[Partner Subscription] Update is for different date:', progress.date, 'vs', today);
           return;
         }
 
-        console.log('[Partner Subscription] ✓ Partner completed habit:', partnership.habit_key || partnership.custom_habit_id);
 
         // Refresh the completion status for this specific partnership
         const identifier = partnership.habit_type === 'core' ? partnership.habit_key! : partnership.custom_habit_id!;
@@ -3645,7 +3767,6 @@ function ActionScreen() {
           ? `core_${partnership.habit_key}` 
           : `custom_${partnership.custom_habit_id}`;
         
-        console.log('[Partner Subscription] Updating partner status:', { key, completed: status.completed });
         
         setPartnerCompletionStatus(prev => ({
           ...prev,
@@ -3845,7 +3966,6 @@ function ActionScreen() {
           <TouchableOpacity 
             style={[styles.profileHeaderCard, { zIndex: 20 }]}
             onPress={() => {
-              console.log('🔥 WALLET PRESSED - Opening Wallet Screen');
               navigation.navigate('Wallet');
             }}
             activeOpacity={0.7}
@@ -5516,7 +5636,14 @@ function ActionScreen() {
               </TouchableOpacity>
             </View>
 
-
+            {/* Load from iPhone Button */}
+            <TouchableOpacity 
+              style={styles.loadFromiPhoneButton}
+              onPress={() => loadSleepFromiPhone()}
+            >
+              <Ionicons name="phone-portrait" size={20} color="#10B981" />
+              <Text style={styles.loadFromiPhoneText}>Load from Apple Health</Text>
+            </TouchableOpacity>
 
             {/* Sleep Quality Slider */}
             <View style={styles.questionSection}>
@@ -6012,6 +6139,173 @@ function ActionScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* Screen Time Modal */}
+      <Modal
+        visible={showScreenTimeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowScreenTimeModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <Animated.View style={[
+              styles.modalContent,
+              { transform: [{ translateY: modalPosition }] }
+            ]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Yesterday's Screen Time</Text>
+                <TouchableOpacity onPress={() => setShowScreenTimeModal(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Instructions */}
+              <View style={[styles.questionSection, { paddingBottom: 8 }]}>
+                <Text style={[styles.questionText, { fontSize: 14, color: '#666', fontWeight: '400' }]}>
+                  Enter your total screen time from yesterday
+                </Text>
+              </View>
+
+              {/* Time Input */}
+              <View style={styles.questionSection}>
+                <Text style={styles.questionText}>Total Screen Time</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'center', marginTop: 12 }}>
+                  {/* Hours */}
+                  <View style={{ alignItems: 'center' }}>
+                    <View style={{
+                      borderWidth: 2,
+                      borderColor: '#10B981',
+                      borderRadius: 12,
+                      paddingHorizontal: 20,
+                      paddingVertical: 12,
+                      minWidth: 80,
+                      backgroundColor: '#F9FAFB'
+                    }}>
+                      <TextInput
+                        style={{
+                          fontSize: 32,
+                          fontWeight: '700',
+                          textAlign: 'center',
+                          color: '#333',
+                          padding: 0,
+                          margin: 0
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        value={screenTimeQuestionnaire.hours.toString()}
+                        onChangeText={(text) => {
+                          const num = parseInt(text) || 0;
+                          setScreenTimeQuestionnaire(prev => ({ ...prev, hours: Math.min(23, num) }));
+                        }}
+                        placeholder="0"
+                        placeholderTextColor="#CCC"
+                      />
+                    </View>
+                    <Text style={{ marginTop: 6, fontSize: 14, fontWeight: '600', color: '#666' }}>hours</Text>
+                  </View>
+
+                  <Text style={{ fontSize: 32, fontWeight: '700', color: '#999' }}>:</Text>
+
+                  {/* Minutes */}
+                  <View style={{ alignItems: 'center' }}>
+                    <View style={{
+                      borderWidth: 2,
+                      borderColor: '#10B981',
+                      borderRadius: 12,
+                      paddingHorizontal: 20,
+                      paddingVertical: 12,
+                      minWidth: 80,
+                      backgroundColor: '#F9FAFB'
+                    }}>
+                      <TextInput
+                        style={{
+                          fontSize: 32,
+                          fontWeight: '700',
+                          textAlign: 'center',
+                          color: '#333',
+                          padding: 0,
+                          margin: 0
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        value={screenTimeQuestionnaire.minutes.toString()}
+                        onChangeText={(text) => {
+                          const num = parseInt(text) || 0;
+                          setScreenTimeQuestionnaire(prev => ({ ...prev, minutes: Math.min(59, num) }));
+                        }}
+                        placeholder="0"
+                        placeholderTextColor="#CCC"
+                      />
+                    </View>
+                    <Text style={{ marginTop: 6, fontSize: 14, fontWeight: '600', color: '#666' }}>minutes</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* How to Find Screen Time Button */}
+              <View style={[styles.questionSection, { paddingTop: 8 }]}>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 12,
+                    borderRadius: 10,
+                    backgroundColor: '#F3F4F6',
+                    borderWidth: 1,
+                    borderColor: '#E5E7EB'
+                  }}
+                  onPress={() => {
+                    Alert.alert(
+                      'Find Your Screen Time',
+                      '1. Exit this app\n2. Open Settings app\n3. Tap "Screen Time"\n4. Tap "See All Activity"\n5. View yesterday\'s total',
+                      [{ text: 'Got it', style: 'default' }]
+                    );
+                  }}
+                >
+                  <Ionicons name="help-circle-outline" size={20} color="#666" style={{ marginRight: 8 }} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#666' }}>
+                    How to Find Screen Time
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  (screenTimeQuestionnaire.hours === 0 && screenTimeQuestionnaire.minutes === 0) && styles.submitButtonDisabled
+                ]}
+                disabled={screenTimeQuestionnaire.hours === 0 && screenTimeQuestionnaire.minutes === 0}
+                onPress={async () => {
+                  try {
+                    const date = getTodayDateString();
+                    const totalMinutes = (screenTimeQuestionnaire.hours * 60) + screenTimeQuestionnaire.minutes;
+                    const habitData = {
+                      date,
+                      screen_time_minutes: totalMinutes,
+                    };
+                    
+                    const success = await useActionStore.getState().saveDailyHabits(habitData);
+                    if (success) {
+                      markHabitCompleted('screen_time');
+                      setShowScreenTimeModal(false);
+                      setScreenTimeQuestionnaire({ hours: 0, minutes: 0 });
+                    } else {
+                      console.error('Failed to save screen time data');
+                    }
+                  } catch (error) {
+                    console.error('Error saving screen time data:', error);
+                  }
+                }}
+              >
+                <Text style={styles.submitButtonText}>Complete Screen Time Log</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* Exercise Questionnaire Modal */}
       <Modal
         visible={showExerciseModal}
@@ -6031,6 +6325,15 @@ function ActionScreen() {
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
+
+            {/* Load from iPhone Button */}
+            <TouchableOpacity 
+              style={styles.loadFromiPhoneButton}
+              onPress={() => loadExerciseFromiPhone()}
+            >
+              <Ionicons name="phone-portrait" size={20} color="#10B981" />
+              <Text style={styles.loadFromiPhoneText}>Load Steps & Distance from Apple Health</Text>
+            </TouchableOpacity>
 
             <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
             {/* Sport Selection */}
@@ -6350,7 +6653,7 @@ function ActionScreen() {
                         maximumTrackTintColor="#E5E7EB"
                       />
                       <View style={styles.sliderLabels}>
-                        <Text style={styles.emojiLarge}>{['','😠','😞','😐','😌','🙂'][Math.round(reflectQuestionnaire.mood)]}</Text>
+                        <Text style={styles.emojiLarge}>{['','😠','😞','😐','😊','😄'][Math.round(reflectQuestionnaire.mood)]}</Text>
                         <Text style={styles.sliderText}>
                           {Math.round(reflectQuestionnaire.mood) === 1 ? 'Angry' : 
                            Math.round(reflectQuestionnaire.mood) === 2 ? 'Sad' : 
@@ -7051,7 +7354,7 @@ function ActionScreen() {
         <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={[styles.actionModal, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+              <View style={[styles.actionModal, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
                 <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>
                   What would you like to do?
                 </Text>
@@ -7077,13 +7380,86 @@ function ActionScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity 
-                  style={[styles.cancelButton, { borderColor: theme.borderSecondary }]}
+                  style={[styles.cancelButton, { borderColor: '#E5E7EB' }]}
                   onPress={() => setShowActionModal(false)}
                 >
                   <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Goal Selection Modal */}
+      <Modal
+        visible={showGoalSelectionModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowGoalSelectionModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <Animated.View style={[
+              styles.modalContent,
+              { transform: [{ translateY: modalPosition }] }
+            ]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select a Goal to Update</Text>
+                <TouchableOpacity onPress={() => setShowGoalSelectionModal(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+                {userGoals.length === 0 ? (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Ionicons name="flag-outline" size={48} color="#999" />
+                    <Text style={[styles.emptyGoalsText, { color: '#666', marginTop: 12 }]}>
+                      No goals yet. Create one to get started!
+                    </Text>
+                    <TouchableOpacity 
+                      style={[styles.submitButton, { backgroundColor: '#10B981', marginTop: 16 }]}
+                      onPress={() => {
+                        setShowGoalSelectionModal(false);
+                        setShowNewGoalModal(true);
+                      }}
+                    >
+                      <Text style={styles.submitButtonText}>Create Goal</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  userGoals.filter(goal => goal && goal.id).map((goal) => (
+                    <TouchableOpacity
+                      key={goal.id}
+                      style={[styles.goalSelectionItem, { 
+                        backgroundColor: '#f8f9fa', 
+                        borderColor: '#e5e7eb' 
+                      }]}
+                      onPress={() => {
+                        setShowGoalSelectionModal(false);
+                        navigation.navigate('GoalDetail', { goal: goal });
+                      }}
+                    >
+                      <View style={[styles.goalSelectionIcon, { backgroundColor: goal.color || '#10B981' }]}>
+                        <Text style={styles.goalSelectionIconText}>
+                          {goal.category ? getCategoryIcon(goal.category) : '🎯'}
+                        </Text>
+                      </View>
+                      <View style={styles.goalSelectionInfo}>
+                        <Text style={[styles.goalSelectionTitle, { color: '#333' }]} numberOfLines={1}>
+                          {goal.title || 'Untitled Goal'}
+                        </Text>
+                        <Text style={[styles.goalSelectionCategory, { color: '#666' }]}>
+                          {goal.category || 'General'} • {goal.frequency || 'Not set'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#999" />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </Animated.View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
@@ -8731,6 +9107,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333',
   },
+  loadFromiPhoneButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  loadFromiPhoneText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+  },
   questionSection: {
     marginBottom: 15,
     paddingVertical: 5,
@@ -9211,6 +9605,40 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  goalSelectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  goalSelectionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  goalSelectionIconText: {
+    fontSize: 24,
+  },
+  goalSelectionInfo: {
+    flex: 1,
+  },
+  goalSelectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  goalSelectionCategory: {
+    fontSize: 13,
+  },
+  emptyGoalsText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,

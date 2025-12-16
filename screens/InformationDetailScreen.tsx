@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -24,7 +24,7 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   const memoizedInformation = React.useMemo(() => information, [information]);
 
   // Consolidated state for better performance
-  const [currentStep, setCurrentStep] = useState<'reading' | 'quiz' | 'results' | 'review'>('reading');
+  const [currentStep, setCurrentStep] = useState<'preview' | 'reading' | 'quiz' | 'results' | 'review'>('preview');
   const [questions, setQuestions] = useState<any[]>([]);
   const [userAnswers, setUserAnswers] = useState<{[key: string]: string}>({});
   const [loading, setLoading] = useState(true);
@@ -45,10 +45,135 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   const [previousAnswers, setPreviousAnswers] = useState<{[key: string]: string}>({});
   const [loadingAnswers, setLoadingAnswers] = useState(false);
 
+  // Book/Lesson state
+  const isBook = memoizedInformation.category === 'Books' || memoizedInformation.is_book;
+  const [lessons, setLessons] = useState<any[]>([]);
+  const [currentLessonIndex, setCurrentLessonIndex] = useState(0);
+  const pageScrollViewRef = useRef<any>(null);
+
+  // Parse lessons from book content
+  const parseLessons = () => {
+    if (!isBook || !memoizedInformation.content_text) return [];
+    
+    const content = memoizedInformation.content_text;
+    const lessons: any[] = [];
+    let lessonOrder = 0;
+    
+    // Split content by PART (h1 tags)
+    const part1Match = content.match(/<h1>PART 1[^<]*<\/h1>([\s\S]*?)(?=<h1>PART 2|$)/);
+    const part2Match = content.match(/<h1>PART 2[^<]*<\/h1>([\s\S]*)/);
+    
+    // Add Part 1 as a single lesson
+    if (part1Match) {
+      const part1Title = content.match(/<h1>(PART 1[^<]*)<\/h1>/)?.[1]?.trim() || 'Part 1';
+      const part1Content = '<h1>' + part1Title + '</h1>' + part1Match[1];
+      
+      lessons.push({
+        id: `lesson-${lessonOrder}`,
+        title: part1Title,
+        content: part1Content,
+        order: lessonOrder
+      });
+      lessonOrder++;
+    }
+    
+    // Split Part 2 by h3 sections (Introduction, Lesson 1, Lesson 2, etc.)
+    if (part2Match) {
+      const part2Content = part2Match[0];
+      
+      // Extract Part 2 title and subtitle
+      const part2Title = part2Content.match(/<h1>(PART 2[^<]*)<\/h1>/)?.[1]?.trim() || 'Part 2';
+      const part2Subtitle = part2Content.match(/<h2>([^<]+)<\/h2>/)?.[1]?.trim() || '';
+      
+      // Find all h3 sections
+      const h3Matches = part2Content.match(/<h3>[^<]+<\/h3>/g);
+      
+      if (h3Matches && h3Matches.length > 0) {
+        h3Matches.forEach((match: string, index: number) => {
+          const sectionStart = part2Content.indexOf(match);
+          const nextMatch = index < h3Matches.length - 1 ? h3Matches[index + 1] : null;
+          const sectionEnd = nextMatch 
+            ? part2Content.indexOf(nextMatch, sectionStart + 1)
+            : part2Content.length;
+          
+          const sectionContent = part2Content.substring(sectionStart, sectionEnd);
+          const sectionTitle = match.match(/<h3>([^<]+)<\/h3>/)?.[1]?.trim() || `Section ${index + 1}`;
+          
+          // Include Part 2 header on first section only
+          const fullContent = index === 0 
+            ? `<h1>${part2Title}</h1><h2>${part2Subtitle}</h2>${sectionContent}`
+            : sectionContent;
+          
+          lessons.push({
+            id: `lesson-${lessonOrder}`,
+            title: sectionTitle,
+            content: fullContent,
+            order: lessonOrder
+          });
+          lessonOrder++;
+        });
+      } else {
+        // Fallback: Add Part 2 as a single lesson if no h3 sections found
+        lessons.push({
+          id: `lesson-${lessonOrder}`,
+          title: part2Title,
+          content: part2Content,
+          order: lessonOrder
+        });
+      }
+    }
+    
+    return lessons;
+  };
+
+  // Auto-scroll to center the active page dot
+  useEffect(() => {
+    if (pageScrollViewRef.current && lessons.length > 0) {
+      // Small delay to ensure ScrollView is rendered
+      setTimeout(() => {
+        // Calculate scroll position to center the active dot
+        const dotWidth = 40; // Width of inactive dot
+        const activeDotWidth = 44; // Width of active dot
+        const gap = 10; // Gap between dots
+        
+        // Calculate the x position of the current dot
+        let xPosition = 0;
+        for (let i = 0; i < currentLessonIndex; i++) {
+          xPosition += dotWidth + gap;
+        }
+        
+        // Add half of the active dot width to center it
+        xPosition += activeDotWidth / 2;
+        
+        // Calculate the offset to center in viewport
+        // Assuming viewport width is around 350px (adjust based on device)
+        const viewportWidth = 350;
+        const centerOffset = viewportWidth / 2;
+        
+        // Calculate final scroll position
+        const scrollX = Math.max(0, xPosition - centerOffset);
+        
+        pageScrollViewRef.current?.scrollTo({ x: scrollX, animated: true });
+      }, 100);
+    }
+  }, [currentLessonIndex, lessons.length]);
+
   // Optimized initialization - move heavy operations to background
   useEffect(() => {
     // Set initial loading state immediately
     setLoading(true);
+    
+    // Parse lessons if it's a book
+    if (isBook) {
+      const parsedLessons = parseLessons();
+      setLessons(parsedLessons);
+      // If no preview needed, go straight to reading
+      if (parsedLessons.length === 0) {
+        setCurrentStep('reading');
+      }
+    } else {
+      setCurrentStep('reading');
+    }
     
     // Use setTimeout to move heavy operations to next tick
     const timer = setTimeout(() => {
@@ -243,7 +368,191 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     setCurrentStep('reading');
   };
 
-  const renderReadingContent = () => (
+  const handleBackPress = () => {
+    if (isBook && (currentStep === 'reading' || currentStep === 'preview')) {
+      Alert.alert(
+        'Exit Reading?',
+        'Are you sure you want to exit? Your progress will be saved.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Exit',
+            style: 'destructive',
+            onPress: () => navigation.goBack()
+          }
+        ]
+      );
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const renderPreview = () => {
+    const bookLessons = parseLessons();
+    
+    return (
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.previewContainer}>
+          <View style={styles.previewHeader}>
+            <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>
+              {memoizedInformation.title}
+            </Text>
+            <Text style={[styles.previewSubtitle, { color: theme.textSecondary }]}>
+              {memoizedInformation.duration_minutes} min read
+            </Text>
+          </View>
+
+          <View style={styles.previewDescription}>
+            <Text style={[styles.previewDescriptionText, { color: theme.textPrimary }]}>
+              A comprehensive guide to financial literacy and wealth building. Learn the fundamental principles that separate the rich from the poor and discover how to make money work for you.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.startReadingButton, { backgroundColor: theme.primary }]}
+            onPress={() => setCurrentStep('reading')}
+          >
+            <Text style={styles.startReadingButtonText}>Start Reading</Text>
+            <Ionicons name="arrow-forward" size={20} color="white" />
+          </TouchableOpacity>
+
+          {bookLessons.length > 0 && (
+            <View style={styles.lessonsPreview}>
+              <Text style={[styles.lessonsPreviewTitle, { color: theme.textPrimary }]}>
+                Pages
+              </Text>
+              {bookLessons.map((lesson, index) => (
+                <View key={lesson.id} style={styles.lessonPreviewItem}>
+                  <Text style={[styles.lessonPreviewNumber, { color: theme.primary }]}>
+                    {index + 1}
+                  </Text>
+                  <Text style={[styles.lessonPreviewTitle, { color: theme.textPrimary }]}>
+                    {lesson.title}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    );
+  };
+
+  const renderReadingContent = () => {
+    // If it's a book with lessons, show lesson navigation
+    if (isBook && lessons.length > 0) {
+      const currentLesson = lessons[currentLessonIndex];
+      
+      return (
+        <View style={styles.content}>
+          {/* Lesson Content */}
+          <ScrollView 
+            style={styles.lessonContent} 
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.lessonScrollContent}
+          >
+            <View style={styles.readingContainer}>
+              <RenderHtml
+                contentWidth={300}
+                source={{ html: currentLesson.content }}
+                baseStyle={{
+                  color: theme.textPrimary,
+                  fontSize: 16,
+                  lineHeight: 24,
+                }}
+                tagsStyles={{
+                  h1: { fontSize: 20, fontWeight: 'bold', marginBottom: 16, marginTop: 0 },
+                  h2: { fontSize: 18, fontWeight: '600', marginBottom: 12, marginTop: 16 },
+                  h3: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, marginTop: 14 },
+                  p: { marginBottom: 12 },
+                  ul: { marginBottom: 12, paddingLeft: 0, listStyleType: 'none' },
+                  ol: { marginBottom: 12, paddingLeft: 20 },
+                  li: { marginBottom: 4 },
+                  strong: { fontWeight: 'bold' },
+                  em: { fontStyle: 'italic' },
+                  u: { textDecorationLine: 'underline' },
+                }}
+              />
+            </View>
+          </ScrollView>
+
+          {/* Fixed Navigation at Bottom */}
+          <View style={[styles.fixedBottomNav, { backgroundColor: theme.background }]}>
+            {/* Page Navigation Dots */}
+            <View style={styles.pageNavigationFixed}>
+              <ScrollView 
+                ref={pageScrollViewRef}
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pageDotsContainer}
+              >
+                {lessons.map((lesson, index) => (
+                  <TouchableOpacity
+                    key={lesson.id}
+                    style={[
+                      styles.pageDot,
+                      index === currentLessonIndex && styles.pageDotActive,
+                      { 
+                        backgroundColor: index === currentLessonIndex ? theme.primary : 'rgba(128, 128, 128, 0.3)',
+                      }
+                    ]}
+                    onPress={() => setCurrentLessonIndex(index)}
+                  >
+                    <Text style={[
+                      styles.pageDotText,
+                      { color: index === currentLessonIndex ? 'white' : theme.textSecondary }
+                    ]}>
+                      {index + 1}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Lesson Navigation Buttons */}
+            <View style={styles.lessonActions}>
+              {currentLessonIndex > 0 ? (
+                <TouchableOpacity
+                  style={[styles.lessonNavButton, { borderColor: theme.primary }]}
+                  onPress={() => setCurrentLessonIndex(currentLessonIndex - 1)}
+                >
+                  <Ionicons name="arrow-back" size={20} color={theme.primary} />
+                  <Text style={[styles.lessonNavButtonText, { color: theme.primary }]}>
+                    Previous
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.lessonNavButtonPlaceholder} />
+              )}
+              
+              {currentLessonIndex < lessons.length - 1 ? (
+                <TouchableOpacity
+                  style={[styles.lessonNavButton, { backgroundColor: theme.primary }]}
+                  onPress={() => setCurrentLessonIndex(currentLessonIndex + 1)}
+                >
+                  <Text style={styles.lessonNavButtonTextWhite}>Next</Text>
+                  <Ionicons name="arrow-forward" size={20} color="white" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.startQuizButton, { backgroundColor: theme.primary }]}
+                  onPress={() => setCurrentStep('quiz')}
+                >
+                  <Text style={styles.startQuizButtonText}>Start Quiz</Text>
+                  <Ionicons name="arrow-forward" size={20} color="white" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      );
+    }
+    
+    // Regular content (non-book)
+    return (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.readingContainer}>
         <View style={styles.metaInfo}>
@@ -340,7 +649,8 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         </View>
       </View>
     </ScrollView>
-  );
+    );
+  };
 
   const renderQuiz = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -568,13 +878,14 @@ export default function InformationDetailScreen({ route, navigation }: any) {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <TouchableOpacity 
-            onPress={() => navigation.goBack()}
+            onPress={handleBackPress}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            {currentStep === 'reading' ? memoizedInformation.title : 
+            {currentStep === 'preview' ? memoizedInformation.title :
+             currentStep === 'reading' ? memoizedInformation.title :
              currentStep === 'quiz' ? 'Quiz' : 
              currentStep === 'results' ? 'Results' :
              currentStep === 'review' ? 'Review' : memoizedInformation.title}
@@ -602,6 +913,7 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         </View>
       ) : (
         <>
+          {currentStep === 'preview' && renderPreview()}
           {currentStep === 'reading' && renderReadingContent()}
           {currentStep === 'quiz' && renderQuiz()}
           {currentStep === 'results' && renderResults()}
@@ -962,4 +1274,144 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'white',
   },
-}); 
+  previewContainer: {
+    padding: 24,
+  },
+  previewHeader: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  previewTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  previewSubtitle: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  previewDescription: {
+    marginBottom: 32,
+  },
+  previewDescriptionText: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  startReadingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    marginBottom: 32,
+  },
+  lessonsPreview: {
+    marginBottom: 32,
+  },
+  lessonsPreviewTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  lessonPreviewItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+  },
+  lessonPreviewNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginRight: 12,
+    width: 32,
+    textAlign: 'center',
+  },
+  lessonPreviewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  startReadingButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  lessonContent: {
+    flex: 1,
+  },
+  lessonScrollContent: {
+    paddingBottom: 20,
+  },
+  fixedBottomNav: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128, 128, 128, 0.2)',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  pageNavigationFixed: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pageDotsContainer: {
+    gap: 10,
+    justifyContent: 'center',
+  },
+  pageDot: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pageDotActive: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  pageDotText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  lessonTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 20,
+    lineHeight: 32,
+  },
+  lessonActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  lessonNavButtonPlaceholder: {
+    flex: 1,
+  },
+  lessonNavButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 2,
+    gap: 8,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  lessonNavButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  lessonNavButtonTextWhite: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+ 

@@ -8,6 +8,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,11 +23,17 @@ import { useActionStore } from '../state/actionStore';
 export default function MicrolearningScreen({ navigation }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
+  const { width: screenWidth } = useWindowDimensions();
   
   const [information, setInformation] = useState<any[]>([]);
   const [userProgress, setUserProgress] = useState<{[key: string]: any}>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Calculate book dimensions (show ~3.3 books)
+  const HORIZONTAL_PADDING = 24;
+  const BOOK_GAP = 12;
+  const bookWidth = (screenWidth - (HORIZONTAL_PADDING * 2) - (BOOK_GAP * 2.3)) / 3.3;
 
   const handleCompleteMicrolearn = async () => {
     try {
@@ -151,63 +159,98 @@ export default function MicrolearningScreen({ navigation }: any) {
     }
   };
 
-  const renderLearningCard = (info: any) => {
+  // Book colors based on category or completion
+  const getBookColor = (info: any) => {
     const progress = userProgress[info.id];
     const isCompleted = progress?.completed;
     const isPassed = progress?.passed;
 
+    if (isCompleted && isPassed) return '#22C55E'; // Green for passed
+    if (isCompleted && !isPassed) return '#EF4444'; // Red for failed
+    
+    // Different colors for different categories
+    const categoryColors: { [key: string]: string } = {
+      'Nutrition': '#3B82F6',
+      'Fitness': '#EC4899',
+      'Mindfulness': '#8B5CF6',
+      'General': '#F59E0B',
+      'Health': '#10B981',
+      'Productivity': '#6366F1',
+    };
+    
+    return categoryColors[info.category] || '#6B7280';
+  };
+
+  const renderBookCard = (info: any, index: number) => {
+    const progress = userProgress[info.id];
+    const isCompleted = progress?.completed;
+    const isPassed = progress?.passed;
+    const bookColor = getBookColor(info);
+    const totalBooks = information.length;
+    
+    // Rich Dad Poor Dad book cover image
+    const isRichDadBook = info.title === 'Rich Dad Poor Dad';
+    const bookCoverImage = isRichDadBook 
+      ? 'https://images-na.ssl-images-amazon.com/images/I/81bsw6fnUiL.jpg'
+      : null;
+
     return (
-      <TouchableOpacity
+      <View
         key={info.id}
         style={[
-          styles.card, 
-          { 
-            backgroundColor: isCompleted 
-              ? 'rgba(34, 197, 94, 0.1)' // Green tint for completed
-              : 'rgba(128, 128, 128, 0.15)' 
+          styles.bookContainer,
+          {
+            marginRight: index === totalBooks - 1 ? 0 : BOOK_GAP,
           }
         ]}
-              onPress={() => {
-        navigation.navigate('InformationDetail', { information: info });
-      }}
       >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardIconContainer}>
-            <Text style={styles.cardIcon}>📚</Text>
-            {isCompleted && (
-              <View style={[
-                styles.completionBadge,
-                isPassed ? { backgroundColor: '#22C55E' } : { backgroundColor: '#EF4444' }
-              ]}>
-                <Ionicons 
-                  name={isPassed ? "checkmark" : "close"} 
-                  size={12} 
-                  color="white" 
-                />
-              </View>
-            )}
-          </View>
-          <View style={styles.cardMeta}>
-            <Text style={[styles.cardDuration, { color: theme.textSecondary }]}>
-              {info.duration_minutes} min read
-            </Text>
-            <Text style={[styles.cardCategory, { color: theme.textTertiary }]}>
-              {info.category || 'General'}
-            </Text>
-            {isCompleted && (
-              <Text style={[
-                styles.completionStatus,
-                isPassed ? { color: '#22C55E' } : { color: '#EF4444' }
-              ]}>
-                {isPassed ? '✓ Passed' : '✗ Failed'}
+        <TouchableOpacity
+          style={[
+            styles.book,
+            {
+              width: bookWidth,
+            }
+          ]}
+          onPress={() => {
+            navigation.navigate('InformationDetail', { information: info });
+          }}
+          activeOpacity={0.85}
+        >
+          {bookCoverImage ? (
+            // Book cover image
+            <Image
+              source={{ uri: bookCoverImage }}
+              style={styles.bookCoverImage}
+              resizeMode="cover"
+            />
+          ) : (
+            // Book spine with title (fallback for books without images)
+            <View style={styles.bookSpine}>
+              <Text 
+                style={styles.bookTitle}
+                numberOfLines={3}
+              >
+                {info.title}
               </Text>
-            )}
-          </View>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Duration and completion indicator below book */}
+        <View style={styles.bookMeta}>
+          <Text style={[styles.durationText, { color: theme.textSecondary }]}>
+            {info.duration_minutes} min
+          </Text>
+          {isCompleted && (
+            <Ionicons 
+              name={isPassed ? "checkmark-circle" : "close-circle"} 
+              size={20} 
+              color={isPassed ? '#22C55E' : '#EF4444'} 
+              style={styles.completionIcon}
+            />
+          )}
         </View>
-        <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
-          {info.title}
-        </Text>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -224,10 +267,12 @@ export default function MicrolearningScreen({ navigation }: any) {
             >
               <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Ionicons name="book-outline" size={28} color={theme.textPrimary} />
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-              Microlearning
-            </Text>
+            <View style={styles.titleContainer}>
+              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+                Microlearning
+              </Text>
+            </View>
+            <View style={{ width: 40 }} />
           </View>
           <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
             Quick insights for personal growth
@@ -265,7 +310,6 @@ export default function MicrolearningScreen({ navigation }: any) {
       <ScrollView 
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
       >
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -298,31 +342,70 @@ export default function MicrolearningScreen({ navigation }: any) {
             </Text>
           </View>
         ) : (
-          <View style={styles.cardsContainer}>
-            {/* Incomplete Items */}
-            {information.filter(info => !userProgress[info.id]?.completed).length > 0 && (
-              <>
+          <>
+            {/* Books Section */}
+            {information.filter(info => info.category === 'Books' || info.is_book).length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionHeader, { color: theme.textPrimary }]}>
+                  Books
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={bookWidth + BOOK_GAP}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.booksCarousel}
+                >
+                  {information
+                    .filter(info => info.category === 'Books' || info.is_book)
+                    .map((info, index) => renderBookCard(info, index))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* To Complete Section */}
+            {information.filter(info => (info.category !== 'Books' && !info.is_book) && !userProgress[info.id]?.completed).length > 0 && (
+              <View style={styles.section}>
                 <Text style={[styles.sectionHeader, { color: theme.textPrimary }]}>
                   To Complete
                 </Text>
-                {information
-                  .filter(info => !userProgress[info.id]?.completed)
-                  .map(renderLearningCard)}
-              </>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={bookWidth + BOOK_GAP}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.booksCarousel}
+                >
+                  {information
+                    .filter(info => (info.category !== 'Books' && !info.is_book) && !userProgress[info.id]?.completed)
+                    .map((info, index) => renderBookCard(info, index))}
+                </ScrollView>
+              </View>
             )}
 
-            {/* Completed Items */}
-            {information.filter(info => userProgress[info.id]?.completed).length > 0 && (
-              <>
+            {/* Completed Section */}
+            {information.filter(info => (info.category !== 'Books' && !info.is_book) && userProgress[info.id]?.completed).length > 0 && (
+              <View style={styles.section}>
                 <Text style={[styles.sectionHeader, { color: theme.textSecondary }]}>
                   Completed
                 </Text>
-                {information
-                  .filter(info => userProgress[info.id]?.completed)
-                  .map(renderLearningCard)}
-              </>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={bookWidth + BOOK_GAP}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.booksCarousel}
+                >
+                  {information
+                    .filter(info => (info.category !== 'Books' && !info.is_book) && userProgress[info.id]?.completed)
+                    .map((info, index) => renderBookCard(info, index))}
+                </ScrollView>
+              </View>
             )}
-          </View>
+          </>
         )}
       </ScrollView>
       </SafeAreaView>
@@ -340,88 +423,98 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   headerContent: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   titleSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
     marginBottom: 8,
   },
   backButton: {
-    marginRight: 12,
+    padding: 8,
+  },
+  titleContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    marginLeft: 12,
+    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 16,
     lineHeight: 22,
-    marginLeft: 40,
+    textAlign: 'center',
+    marginTop: 4,
   },
   content: {
     flex: 1,
   },
-  contentContainer: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  cardsContainer: {
-    gap: 12,
+  section: {
+    marginBottom: 32,
   },
   sectionHeader: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    marginBottom: 12,
-    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 24,
   },
-  card: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+  booksCarousel: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingLeft: 20,
+    paddingRight: 20,
   },
-  cardHeader: {
-    flexDirection: 'row',
+  bookContainer: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
   },
-  cardIcon: {
-    fontSize: 24,
+  book: {
+    height: 180,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
   },
-  cardIconContainer: {
-    position: 'relative',
-  },
-  cardMeta: {
-    alignItems: 'flex-end',
-  },
-  cardDuration: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  cardCategory: {
-    fontSize: 10,
-    marginTop: 2,
-  },
-  completionBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  bookSpine: {
+    flex: 1,
+    padding: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  completionStatus: {
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 2,
+  bookCoverImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
-  cardTitle: {
-    fontSize: 16,
+  bookTitle: {
+    color: '#111827',
+    fontSize: 15,
     fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  bookMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  durationText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  completionIcon: {
+    marginLeft: 4,
   },
   loadingContainer: {
     flex: 1,

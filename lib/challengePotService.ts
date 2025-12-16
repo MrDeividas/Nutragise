@@ -341,6 +341,19 @@ class ChallengePotService {
         return;
       }
 
+      // Get all participants
+      const { data: allParticipantsData, error: allParticipantsError } = await supabase
+        .from('challenge_participants')
+        .select('*')
+        .eq('challenge_id', challengeId);
+
+      if (allParticipantsError) {
+        console.error('Error fetching all participants:', allParticipantsError);
+        throw allParticipantsError;
+      }
+
+      const totalParticipants = allParticipantsData?.length || 0;
+
       // Get all participants who completed 100%
       const { data: participants, error: participantsError } = await supabase
         .from('challenge_participants')
@@ -354,19 +367,19 @@ class ChallengePotService {
         throw participantsError;
       }
 
-      // Collect platform fee before distributing to winners
-      if (Number(pot.platform_fee_amount) > 0) {
-        try {
-          await walletService.addPlatformFee(Number(pot.platform_fee_amount), challengeId);
-          console.log('✅ Platform fee collected and added to platform wallet.');
-        } catch (error) {
-          console.error('❌ Error collecting platform fee:', error);
-          // Continue with distribution even if fee collection fails
-        }
-      }
-
       if (!participants || participants.length === 0) {
         console.log('⚠️ No winners to distribute pot to');
+        
+        // All funds go to platform as fees
+        const totalPot = Number(pot.total_pot);
+        if (totalPot > 0) {
+          try {
+            await walletService.addPlatformFee(totalPot, challengeId);
+            console.log('✅ All forfeited funds collected as platform fee:', totalPot);
+          } catch (error) {
+            console.error('❌ Error collecting forfeited funds:', error);
+          }
+        }
         
         // Update pot status
         await supabase
@@ -380,9 +393,41 @@ class ChallengePotService {
         return;
       }
 
-      // Calculate payout per winner
-      const winnersPot = Number(pot.winners_pot);
-      const payoutPerWinner = winnersPot / participants.length;
+      const winnerCount = participants.length;
+      const everyoneWon = winnerCount === totalParticipants;
+
+      let payoutPerWinner: number;
+      let platformFeeCollected = 0;
+
+      if (everyoneWon) {
+        // Everyone completed - refund investment to each user (no platform fee)
+        const { data: challenge } = await supabase
+          .from('challenges')
+          .select('entry_fee')
+          .eq('id', challengeId)
+          .single();
+        
+        payoutPerWinner = challenge?.entry_fee || 0;
+        console.log('🎉 Everyone completed! Refunding investments without platform fee.');
+      } else {
+        // Some users failed - distribute winners pot and collect platform fee from losers
+        const winnersPot = Number(pot.winners_pot);
+        const platformFee = Number(pot.platform_fee_amount);
+        
+        payoutPerWinner = winnersPot / winnerCount;
+        platformFeeCollected = platformFee;
+
+        // Collect platform fee from forfeited funds
+        if (platformFee > 0) {
+          try {
+            await walletService.addPlatformFee(platformFee, challengeId);
+            console.log('✅ Platform fee collected from forfeited funds:', platformFee);
+          } catch (error) {
+            console.error('❌ Error collecting platform fee:', error);
+            // Continue with distribution even if fee collection fails
+          }
+        }
+      }
 
       // Get all payment intent IDs for this challenge (for tracking)
       const { data: allParticipants } = await supabase
@@ -448,12 +493,61 @@ class ChallengePotService {
       console.log('✅ Pot distribution complete:', {
         challengeId,
         winnerCount: participants.length,
+        totalParticipants,
+        everyoneWon,
         payoutPerWinner,
-        totalDistributed: winnersPot,
+        platformFeeCollected,
+        totalDistributed: payoutPerWinner * participants.length,
       });
     } catch (error) {
       console.error('Error in distributePot:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Check and distribute completed challenges
+   * Call this periodically or on app load to process any completed challenges
+   */
+  async processCompletedChallenges(): Promise<void> {
+    try {
+      const now = new Date().toISOString();
+      
+      // Get all challenges that have ended but pot not yet distributed
+      const { data: completedChallenges, error } = await supabase
+        .from('challenges')
+        .select(`
+          id,
+          challenge_pots!inner(id, status, distributed_at)
+        `)
+        .lt('end_date', now)
+        .is('challenge_pots.distributed_at', null);
+
+      if (error) {
+        console.error('Error fetching completed challenges:', error);
+        return;
+      }
+
+      if (!completedChallenges || completedChallenges.length === 0) {
+        console.log('No completed challenges to process');
+        return;
+      }
+
+      console.log(`Processing ${completedChallenges.length} completed challenge(s)...`);
+
+      // Process each completed challenge
+      for (const challenge of completedChallenges) {
+        try {
+          await this.distributePot(challenge.id);
+        } catch (error) {
+          console.error(`Error processing challenge ${challenge.id}:`, error);
+          // Continue processing other challenges
+        }
+      }
+
+      console.log('✅ Completed challenges processed');
+    } catch (error) {
+      console.error('Error in processCompletedChallenges:', error);
     }
   }
 

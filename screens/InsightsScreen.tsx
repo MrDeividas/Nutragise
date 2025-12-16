@@ -43,6 +43,8 @@ import CacheService from '../lib/cacheService';
 import ConversationCacheService from '../lib/conversationCacheService';
 import { smartSuggestionEngine } from '../lib/smartSuggestionEngine';
 import TimePeriodUtils from '../lib/timePeriodUtils';
+import ScreenTimeGraph from '../components/ScreenTimeGraph';
+import MoodStatistic from '../components/MoodStatistic';
 
 interface Message {
   id: string;
@@ -74,6 +76,13 @@ export default function InsightsScreen({ route }: any) {
   const [lastMessageCount, setLastMessageCount] = useState(0);
   const [selectedPeriod, setSelectedPeriod] = useState<'past7' | 'currentWeek' | 'last30'>('past7');
   const [trendData, setTrendData] = useState<{ stress: any[], motivation: any[] }>({ stress: [], motivation: [] });
+  const [moodData, setMoodData] = useState<{
+    happy: number;
+    sad: number;
+    angry: number;
+    dominantMood: string;
+    dominantDays: number;
+  }>({ happy: 65, sad: 22, angry: 13, dominantMood: 'happy', dominantDays: 5 });
   
   useEffect(() => {
     const loadTrendData = async () => {
@@ -121,6 +130,51 @@ export default function InsightsScreen({ route }: any) {
           stress: days,
           motivation: motivationDays
         });
+        
+        // Calculate mood statistics
+        let happyCount = 0;
+        let sadCount = 0;
+        let angryCount = 0;
+        let totalDays = 0;
+        
+        habits.forEach(habit => {
+          if (habit.reflect_mood) {
+            totalDays++;
+            const mood = habit.reflect_mood;
+            
+            // Categorize moods: 1=angry, 2=sad, 3-5=happy
+            if (mood === 1) {
+              angryCount++;
+            } else if (mood === 2) {
+              sadCount++;
+            } else if (mood >= 3) {
+              happyCount++;
+            }
+          }
+        });
+        
+        if (totalDays > 0) {
+          // Determine dominant mood
+          const maxCount = Math.max(happyCount, sadCount, angryCount);
+          let dominantMood = 'happy';
+          let dominantDays = happyCount;
+          
+          if (sadCount === maxCount) {
+            dominantMood = 'sad';
+            dominantDays = sadCount;
+          } else if (angryCount === maxCount) {
+            dominantMood = 'angry';
+            dominantDays = angryCount;
+          }
+          
+          setMoodData({
+            happy: Math.round((happyCount / totalDays) * 100),
+            sad: Math.round((sadCount / totalDays) * 100),
+            angry: Math.round((angryCount / totalDays) * 100),
+            dominantMood,
+            dominantDays
+          });
+        }
       } catch (error) {
         console.error('Error loading trend data:', error);
       }
@@ -849,6 +903,12 @@ export default function InsightsScreen({ route }: any) {
             <View style={{ marginTop: 24, gap: 16 }}>
               <EmojiTrendChart title="Stress" data={trendData.stress} type="stress" />
               <EmojiTrendChart title="Motivation" data={trendData.motivation} type="motivation" />
+            </View>
+            
+            {/* Two Column Layout */}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4, alignItems: 'flex-start' }}>
+              <ScreenTimeGraph halfWidth={true} />
+              <MoodStatistic halfWidth={true} data={moodData} />
             </View>
           </ScrollView>
         </View>

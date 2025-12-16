@@ -1897,7 +1897,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
         <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={[styles.actionModal, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+              <View style={[styles.actionModal, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
                 <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>
                   What would you like to do?
                 </Text>
@@ -1923,7 +1923,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
                 </TouchableOpacity>
 
                 <TouchableOpacity 
-                  style={[styles.cancelButton, { borderColor: theme.borderSecondary }]}
+                  style={[styles.cancelButton, { borderColor: '#E5E7EB' }]}
                   onPress={() => setShowActionModal(false)}
                 >
                   <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
@@ -2851,6 +2851,8 @@ const styles = StyleSheet.create({
     right: 0,
     textAlign: 'center',
     zIndex: 0,
+    top: '50%',
+    transform: [{ translateY: -8 }],
   },
   headerLeftButtons: {
     flexDirection: 'row',

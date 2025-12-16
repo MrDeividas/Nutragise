@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -118,7 +118,7 @@ function FocusScreen({ navigation }: any) {
   };
   
   // Pause timer
-  const pauseTimer = () => {
+  const pauseTimer = useCallback(() => {
     if (!isRunning || isPaused || isCompleted) return;
     
     setIsPaused(true);
@@ -126,10 +126,10 @@ function FocusScreen({ navigation }: any) {
     pausedAtRef.current = Date.now();
     
     // Don't clear interval, just let it check the ref
-  };
+  }, [isRunning, isPaused, isCompleted]);
   
   // Resume timer
-  const resumeTimer = () => {
+  const resumeTimer = useCallback(() => {
     if (!isRunning || !isPaused || isCompleted) return;
     
     const pausedDuration = Date.now() - pausedAtRef.current;
@@ -140,7 +140,7 @@ function FocusScreen({ navigation }: any) {
     
     setIsPaused(false);
     isPausedRef.current = false;
-  };
+  }, [isRunning, isPaused, isCompleted]);
   
   // Complete focus session
   const completeFocus = async () => {
@@ -199,7 +199,7 @@ function FocusScreen({ navigation }: any) {
   };
   
   // Cancel focus session
-  const cancelFocus = () => {
+  const cancelFocus = useCallback(() => {
     Alert.alert(
       'Cancel Focus Session?',
       'Are you sure you want to cancel this focus session? This will mark it as incomplete.',
@@ -241,7 +241,7 @@ function FocusScreen({ navigation }: any) {
         },
       ]
     );
-  };
+  }, [navigation]);
   
   // Handle app state changes for background timer
   useEffect(() => {
@@ -275,7 +275,7 @@ function FocusScreen({ navigation }: any) {
     };
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [isRunning, isPaused, isCompleted]);
+  }, [isRunning, isPaused, isCompleted, pauseTimer, resumeTimer, cancelFocus]);
   
   // Prevent back navigation using official hook to avoid native-stack mismatch
   usePreventRemove(
@@ -533,7 +533,16 @@ function FocusScreen({ navigation }: any) {
                     color: theme.textPrimary,
                   }]}
                   value={notes}
-                  onChangeText={setNotes}
+                  onChangeText={(text) => {
+                    // Capitalize first letter if text exists
+                    if (text.length > 0) {
+                      const firstChar = text[0].toUpperCase();
+                      const rest = text.slice(1);
+                      setNotes(firstChar + rest);
+                    } else {
+                      setNotes(text);
+                    }
+                  }}
                   placeholder="What are you working on?"
                   placeholderTextColor={theme.textSecondary}
                   multiline

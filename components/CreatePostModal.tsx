@@ -429,7 +429,7 @@ export default function CreatePostModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.borderSecondary }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>

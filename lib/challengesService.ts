@@ -963,9 +963,19 @@ class ChallengesService {
       const progress = await this.getChallengeProgress(challengeId, userId);
       if (!progress) return;
 
+      // Prepare update data
+      const updateData: any = { 
+        completion_percentage: progress.completion_percentage 
+      };
+
+      // If 100% complete, also update status to 'completed'
+      if (progress.completion_percentage >= 100) {
+        updateData.status = 'completed';
+      }
+
       const { error } = await supabase
         .from('challenge_participants')
-        .update({ completion_percentage: progress.completion_percentage })
+        .update(updateData)
         .eq('challenge_id', challengeId)
         .eq('user_id', userId);
 

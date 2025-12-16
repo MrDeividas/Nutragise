@@ -136,6 +136,7 @@ class ProgressService {
         photo_url: photoUrl || 'no-photo', // Use placeholder since column is NOT NULL
         photo_type: 'progress', // Default photo type for check-ins
         check_in_date: checkInData.checkInDate ? checkInData.checkInDate.toISOString().slice(0, 10) : undefined,
+        note: checkInData.note || undefined,
       };
       
       const { data, error } = await supabase

@@ -73,6 +73,24 @@ const habitConfig = {
     fields: [
       { key: 'cold_shower_completed', label: 'Completed', format: (value: boolean) => value ? 'Yes' : 'No' }
     ]
+  },
+  focus: {
+    title: 'Focus Session Information',
+    icon: 'flash',
+    fields: [
+      { key: 'focus_duration', label: 'Duration', format: (value: number) => value ? `${value} minutes` : 'Not recorded' },
+      { key: 'focus_start_time', label: 'Start Time', format: (value: string) => {
+        if (!value) return 'Not recorded';
+        const date = new Date(value);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }},
+      { key: 'focus_end_time', label: 'End Time', format: (value: string) => {
+        if (!value) return 'Not recorded';
+        const date = new Date(value);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }},
+      { key: 'focus_notes', label: 'Focus Task', format: (value: string) => value || 'No task recorded' }
+    ]
   }
 };
 

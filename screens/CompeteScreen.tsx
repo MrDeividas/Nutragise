@@ -400,6 +400,8 @@ const styles = StyleSheet.create({
     right: 0,
     textAlign: 'center',
     zIndex: 0,
+    top: '50%',
+    transform: [{ translateY: -8 }],
   },
   headerSubtitle: {
     fontSize: 16,

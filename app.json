@@ -15,14 +15,25 @@
     "ios": {
       "supportsTablet": true,
       "statusBarStyle": "dark",
-      "statusBarBackgroundColor": "#ffffff"
+      "statusBarBackgroundColor": "#ffffff",
+      "bundleIdentifier": "com.anonymous.nutrapp",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "We need access to your health data to automatically track your sleep, steps, and exercise habits.",
+        "NSHealthUpdateUsageDescription": "We need permission to save your health data.",
+        "UIBackgroundModes": ["fetch"]
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "package": "com.anonymous.nutrapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
