@@ -2181,7 +2181,7 @@ function ExploreContent({
                     
                     {/* Today's Activity Section */}
                     <View style={styles.activitySection}>
-                      <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
+                      <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Activities</Text>
                       <View style={styles.activityIcons}>
                         <FontAwesome5 
                           name="brain" 
@@ -2343,7 +2343,7 @@ function ExploreContent({
                         
                         {/* Today's Activity Section */}
                         <View style={styles.activitySection}>
-                          <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
+                          <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Activities</Text>
                           <View style={styles.activityIcons}>
                             <FontAwesome5 
                               name="brain" 
@@ -2521,7 +2521,7 @@ function ExploreContent({
                         {/* Today's Activity Section - Only show completed habits */}
                         {habits.length > 0 && (
                           <View style={styles.activitySection}>
-                            <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Today's Activity</Text>
+                            <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Activities</Text>
                             <View style={styles.activityIcons}>
                               {habits.includes('microlearn') && (
                                 <FontAwesome5 name="brain" size={20} color="#FB7185" />

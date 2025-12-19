@@ -31,7 +31,6 @@ import { insightService } from '../lib/insightService';
 import { aiService } from '../lib/aiService';
 import { initializeAI } from '../lib/config';
 import { InsightCard } from '../types/insights';
-import ProgressChart from '../components/ProgressChart';
 import { 
   StreakInsight, 
   PatternInsight, 
@@ -257,10 +256,10 @@ export default function InsightsScreen({ route }: any) {
   // Auto-open graphs if flag is set in action store
   useEffect(() => {
     if (shouldOpenGraphs) {
-      setActiveModal('progress');
+      (navigation as any).navigate('ProgressCharts');
       setShouldOpenGraphs(false);
     }
-  }, [shouldOpenGraphs, setShouldOpenGraphs]);
+  }, [shouldOpenGraphs, setShouldOpenGraphs, navigation]);
 
   // Listen for keyboard show/hide events
   useEffect(() => {
@@ -700,7 +699,7 @@ export default function InsightsScreen({ route }: any) {
                 <View style={styles.dropdownHeader}>
                   <TouchableOpacity 
                     style={styles.dropdownHeaderButton}
-                    onPress={() => setActiveModal('progress')}
+                    onPress={() => (navigation as any).navigate('ProgressCharts')}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="analytics" size={20} color={primary} />
@@ -1016,7 +1015,7 @@ export default function InsightsScreen({ route }: any) {
                 <TouchableOpacity
                   key={index}
                   style={[styles.suggestionButton, { 
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    backgroundColor: '#F3F4F6',
                     borderColor: borderSecondary 
                   }]}
                   onPress={() => handleSuggestionClick(suggestion)}
@@ -1077,25 +1076,6 @@ export default function InsightsScreen({ route }: any) {
         
           </View>
         </Animated.View>
-
-      {/* Progress Chart Modal */}
-      <Modal visible={activeModal === 'progress'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
-        <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
-          <View style={[styles.modalContent, { 
-            backgroundColor: cardBackground, 
-            padding: 0,
-            width: '90%',
-            maxWidth: 400,
-            height: 600,
-            maxHeight: '80%',
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: borderSecondary
-          }]}> 
-            <ProgressChart onClose={() => setActiveModal(null)} />
-          </View>
-        </View>
-      </Modal>
 
       {/* Data Requirements Modal */}
       <Modal visible={activeModal === 'requirements'} animationType="fade" onRequestClose={() => setActiveModal(null)}>

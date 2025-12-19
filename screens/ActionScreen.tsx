@@ -3167,7 +3167,7 @@ function ActionScreen() {
   ];
 
   const sportOptions = [
-    'Football', 'Padel', 'Running', 'Swimming', 'Rugby', 'Tennis', 'Basketball', 'Cycling', 'Other'
+    'Football', 'Padel', 'Running', 'Swimming', 'Rugby', 'Tennis', 'Walk', 'Cycling', 'Other'
   ];
 
   // Helper function to get sleep quality label based on percentage
@@ -3600,10 +3600,6 @@ function ActionScreen() {
       const challenges = await challengesService.getUserChallenges(user.id);
       const now = new Date();
       
-      // Debug: Log all challenges fetched
-      challenges.forEach(c => {
-      });
-      
       // Helper function to normalize dates to start of day for comparison
       const normalizeDate = (date: Date) => {
         const normalized = new Date(date);
@@ -3633,10 +3629,6 @@ function ActionScreen() {
           const isActive = normalizedNow >= normalizedStart && normalizedNow <= normalizedEnd;
           const isUpcoming = normalizedNow < normalizedStart;
           
-          // Debug: Log smile challenges specifically
-          if (challenge.title?.toLowerCase().includes('smile')) {
-          }
-          
           return { challenge, startDate, endDate, isActive, isUpcoming };
         })
         .filter(entry => entry.isActive || entry.isUpcoming)
@@ -3647,9 +3639,6 @@ function ActionScreen() {
           return a.startDate.getTime() - b.startDate.getTime();
         })
         .map(entry => entry.challenge);
-
-      relevant.forEach(c => {
-      });
 
       setMyActiveChallenges(relevant);
     } catch (error) {
@@ -7441,7 +7430,7 @@ function ActionScreen() {
                         navigation.navigate('GoalDetail', { goal: goal });
                       }}
                     >
-                      <View style={[styles.goalSelectionIcon, { backgroundColor: goal.color || '#10B981' }]}>
+                      <View style={[styles.goalSelectionIcon, { backgroundColor: theme.primary + '20' }]}>
                         <Text style={styles.goalSelectionIconText}>
                           {goal.category ? getCategoryIcon(goal.category) : '🎯'}
                         </Text>

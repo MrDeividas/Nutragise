@@ -115,12 +115,9 @@ export default function MoodStatistic({
     ]}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.emoji]}>😊</Text>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>
-            Mood Statistic
-          </Text>
-        </View>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>
+          Mood Statistic
+        </Text>
       </View>
       
       {/* Circular Chart */}

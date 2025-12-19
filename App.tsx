@@ -44,6 +44,7 @@ const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const HomeScreen = lazy(() => import('./screens/HomeScreen'));
 const ActionScreen = lazy(() => import('./screens/ActionScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
+const ProgressChartsScreen = lazy(() => import('./screens/ProgressChartsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
 const FocusScreen = lazy(() => import('./screens/FocusScreen'));
@@ -365,6 +366,15 @@ function AppStack() {
       <Stack.Screen 
         name="Insights" 
         component={InsightsScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="ProgressCharts" 
+        component={ProgressChartsScreen}
         options={{
           animation: 'slide_from_right',
           gestureEnabled: true,

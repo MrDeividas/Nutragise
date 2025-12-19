@@ -20,26 +20,8 @@ export default function ProgressChart({ onClose }: Props) {
   const gridLineColor = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.15)';
   
   // Chart dimensions
-  const chartWidth = Dimensions.get('window').width - 80; // Account for padding
-  
-  // Helper function to generate sleep quality line path
-  const generateSleepQualityPath = () => {
-    if (sleepData.length === 0) return '';
-    
-    const points = sleepData
-      .map((day, index) => {
-        if (day.quality > 0) {
-          const x = (index * chartWidth) / (sleepData.length - 1);
-          const y = 200 - (day.quality * 40);
-          return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .join(' ');
-    
-    return points;
-  };
+  const chartWidth = 340; // Fixed width for modal
+  const chartHeight = 300; // Increased from 200 to use more vertical space
   
   // Helper function to calculate X position for data points
   const getXPosition = (index: number) => {
@@ -66,7 +48,7 @@ export default function ProgressChart({ onClose }: Props) {
           const scaledQuality = convertSleepQualityToScale(day.quality);
           return {
             x: getXPosition(index),
-                         y: 200 - (scaledQuality * 40), // 1-4 scale with 40px spacing for 0-4 axis
+                         y: chartHeight - (scaledQuality * 60), // 1-4 scale with 40px spacing for 0-4 axis
             hasData: true
           };
         }
@@ -88,7 +70,7 @@ export default function ProgressChart({ onClose }: Props) {
     const validPoints = sleepData
       .map((day, index) => ({
         x: getXPosition(index),
-        y: 200 - (day.hours * 16.67),
+        y: chartHeight - (day.hours * 25),
         hasData: day.hours >= 0
       }))
       .filter(point => point.hasData);
@@ -109,7 +91,7 @@ export default function ProgressChart({ onClose }: Props) {
         if (day.waterIntake >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.waterIntake * 44.44),
+            y: chartHeight - (day.waterIntake * 66.66),
             hasData: true
           };
         }
@@ -133,7 +115,7 @@ export default function ProgressChart({ onClose }: Props) {
         if (day.mood >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.mood * 40), // 1-5 scale with 40px spacing
+            y: chartHeight - (day.mood * 60), // 1-5 scale with 40px spacing
             hasData: true
           };
         }
@@ -157,7 +139,7 @@ export default function ProgressChart({ onClose }: Props) {
         if (day.motivation >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.motivation * 40), // 1-5 scale with 40px spacing
+            y: chartHeight - (day.motivation * 60), // 1-5 scale with 40px spacing
             hasData: true
           };
         }
@@ -181,7 +163,7 @@ export default function ProgressChart({ onClose }: Props) {
         if (day.stress >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.stress * 40), // 1-5 scale with 40px spacing
+            y: chartHeight - (day.stress * 60), // 1-5 scale with 40px spacing
             hasData: true
           };
         }
@@ -224,7 +206,7 @@ export default function ProgressChart({ onClose }: Props) {
         if (day.distance >= 0) {
           return {
             x: getXPosition(index),
-            y: 200 - (day.distance * config.pixelsPerKm), // Dynamic scaling based on chart config
+            y: chartHeight - (day.distance * config.pixelsPerKm), // Dynamic scaling based on chart config
             hasData: true
           };
         }
@@ -344,8 +326,9 @@ export default function ProgressChart({ onClose }: Props) {
     ]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Chart</Text>
-        <TouchableOpacity onPress={onClose}>
+        <View style={styles.headerSpacer} />
+        <Text style={[styles.title, { color: theme.textPrimary }]}>Progress Charts</Text>
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <Ionicons name="close" size={24} color={theme.textSecondary} />
         </TouchableOpacity>
       </View>
@@ -399,7 +382,7 @@ export default function ProgressChart({ onClose }: Props) {
                 {(() => {
                   const config = getDistanceChartConfig();
                   return config.gridLines.slice().reverse().map((value, index) => {
-                    const yPosition = (value / config.max) * 200; // Position based on actual value
+                    const yPosition = (value / config.max) * chartHeight; // Position based on actual value
                     return (
                       <Text 
                         key={value} 
@@ -408,7 +391,7 @@ export default function ProgressChart({ onClose }: Props) {
                           { 
                             color: theme.textSecondary,
                             position: 'absolute',
-                            top: 200 - yPosition - 6, // Center text on the line
+                            top: chartHeight - yPosition - 6, // Center text on the line
                             right: 12, // Increased margin for longer labels like "40km", "50km"
                             fontSize: 11, // Even smaller font to prevent wrapping
                             lineHeight: 13, // Tighter line height
@@ -429,7 +412,7 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {(() => {
                     const config = getDistanceChartConfig();
@@ -437,9 +420,9 @@ export default function ProgressChart({ onClose }: Props) {
                       <Line
                         key={value}
                         x1={0}
-                        y1={200 - (value * config.pixelsPerKm)}
+                        y1={chartHeight - (value * config.pixelsPerKm)}
                         x2={chartWidth - 60}
-                        y2={200 - (value * config.pixelsPerKm)}
+                        y2={chartHeight - (value * config.pixelsPerKm)}
                         stroke={gridLineColor}
                         strokeWidth={1}
                       />
@@ -460,7 +443,7 @@ export default function ProgressChart({ onClose }: Props) {
                     return sleepData.map((day, index) => {
                       if (day.distance >= 0) {
                         const x = getXPosition(index);
-                        const y = 200 - (day.distance * config.pixelsPerKm);
+                        const y = chartHeight - (day.distance * config.pixelsPerKm);
                         return (
                           <Circle
                             key={`distance-${day.date}`}
@@ -544,15 +527,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {[0, 2, 4, 6, 8, 10, 12].map((value) => (
                     <Line
                       key={value}
                       x1={0}
-                      y1={200 - (value * 16.67)}
+                      y1={chartHeight - (value * 25)}
                       x2={chartWidth - 60}
-                      y2={200 - (value * 16.67)}
+                      y2={chartHeight - (value * 25)}
                       stroke={gridLineColor}
                       strokeWidth={1}
                     />
@@ -570,7 +553,7 @@ export default function ProgressChart({ onClose }: Props) {
                   {sleepData.map((day, index) => {
                     if (day.hours >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.hours * 16.67);
+                      const y = chartHeight - (day.hours * 25);
                       return (
                         <Circle
                           key={day.date}
@@ -658,15 +641,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                                 {/* Horizontal grid lines */}
               {[0, 1, 2, 3, 4].map((value) => (
                 <Line
                   key={value}
                   x1={0}
-                  y1={200 - (value * 40)}
+                  y1={chartHeight - (value * 60)}
                   x2={chartWidth - 60}
-                  y2={200 - (value * 40)}
+                  y2={chartHeight - (value * 60)}
                   stroke={gridLineColor}
                   strokeWidth={1}
                 />
@@ -685,7 +668,7 @@ export default function ProgressChart({ onClose }: Props) {
                 if (day.quality >= 0) {
                   const x = getXPosition(index);
                   const scaledQuality = convertSleepQualityToScale(day.quality);
-                  const y = 200 - (scaledQuality * 40);
+                  const y = chartHeight - (scaledQuality * 60);
                   return (
                     <Circle
                       key={day.date}
@@ -745,7 +728,7 @@ export default function ProgressChart({ onClose }: Props) {
               {/* Y-axis labels */}
               <View style={styles.yAxisLabels}>
                 {[4, 3, 2, 1].map((value, index) => {
-                  const yPosition = 200 - (value * 44.44); // Align with actual grid lines: 4L=22.24, 3L=66.68, 2L=111.12, 1L=155.56
+                  const yPosition = chartHeight - (value * 66.66); // Align with actual grid lines: 4L=22.24, 3L=66.68, 2L=111.12, 1L=155.56
                   return (
                     <Text 
                       key={value} 
@@ -767,15 +750,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {[0, 1, 2, 3, 4].map((value) => (
                     <Line
                       key={value}
                       x1={0}
-                      y1={200 - (value * 44.44)}
+                      y1={chartHeight - (value * 66.66)}
                       x2={chartWidth - 60}
-                      y2={200 - (value * 44.44)}
+                      y2={chartHeight - (value * 66.66)}
                       stroke={gridLineColor}
                       strokeWidth={1}
                     />
@@ -793,7 +776,7 @@ export default function ProgressChart({ onClose }: Props) {
                   {sleepData.map((day, index) => {
                     if (day.waterIntake >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.waterIntake * 44.44); // Scale for 0-4.5 liters
+                      const y = chartHeight - (day.waterIntake * 66.66); // Scale for 0-4.5 liters
                       return (
                         <Circle
                           key={day.date}
@@ -853,7 +836,7 @@ export default function ProgressChart({ onClose }: Props) {
               {/* Y-axis labels */}
               <View style={styles.yAxisLabels}>
                 {[5, 4, 3, 2, 1].map((value, index) => {
-                  const yPosition = 200 - (value * 40); // 1-5 scale with 40px spacing
+                  const yPosition = chartHeight - (value * 60); // 1-5 scale with 40px spacing
                   return (
                     <Text 
                       key={value} 
@@ -875,15 +858,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {[0, 1, 2, 3, 4, 5].map((value) => (
                     <Line
                       key={value}
                       x1={0}
-                      y1={200 - (value * 40)}
+                      y1={chartHeight - (value * 60)}
                       x2={chartWidth - 60}
-                      y2={200 - (value * 40)}
+                      y2={chartHeight - (value * 60)}
                       stroke={gridLineColor}
                       strokeWidth={1}
                     />
@@ -901,7 +884,7 @@ export default function ProgressChart({ onClose }: Props) {
                   {sleepData.map((day, index) => {
                     if (day.mood >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.mood * 40);
+                      const y = chartHeight - (day.mood * 60);
                       return (
                         <Circle
                           key={`mood-${day.date}`}
@@ -961,7 +944,7 @@ export default function ProgressChart({ onClose }: Props) {
               {/* Y-axis labels */}
               <View style={styles.yAxisLabels}>
                 {[5, 4, 3, 2, 1].map((value, index) => {
-                  const yPosition = 200 - (value * 40); // 1-5 scale with 40px spacing
+                  const yPosition = chartHeight - (value * 60); // 1-5 scale with 40px spacing
                   return (
                     <Text 
                       key={value} 
@@ -983,15 +966,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {[0, 1, 2, 3, 4, 5].map((value) => (
                     <Line
                       key={value}
                       x1={0}
-                      y1={200 - (value * 40)}
+                      y1={chartHeight - (value * 60)}
                       x2={chartWidth - 60}
-                      y2={200 - (value * 40)}
+                      y2={chartHeight - (value * 60)}
                       stroke={gridLineColor}
                       strokeWidth={1}
                     />
@@ -1009,7 +992,7 @@ export default function ProgressChart({ onClose }: Props) {
                   {sleepData.map((day, index) => {
                     if (day.motivation >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.motivation * 40);
+                      const y = chartHeight - (day.motivation * 60);
                       return (
                         <Circle
                           key={`motivation-${day.date}`}
@@ -1069,7 +1052,7 @@ export default function ProgressChart({ onClose }: Props) {
               {/* Y-axis labels */}
               <View style={styles.yAxisLabels}>
                 {[5, 4, 3, 2, 1].map((value, index) => {
-                  const yPosition = 200 - (value * 40); // 1-5 scale with 40px spacing
+                  const yPosition = chartHeight - (value * 60); // 1-5 scale with 40px spacing
                   return (
                     <Text 
                       key={value} 
@@ -1091,15 +1074,15 @@ export default function ProgressChart({ onClose }: Props) {
               
               {/* Chart area */}
               <View style={styles.chartArea}>
-                <Svg width={chartWidth - 60} height={200}>
+                <Svg width={chartWidth - 60} height={chartHeight}>
                   {/* Horizontal grid lines */}
                   {[0, 1, 2, 3, 4, 5].map((value) => (
                     <Line
                       key={value}
                       x1={0}
-                      y1={200 - (value * 40)}
+                      y1={chartHeight - (value * 60)}
                       x2={chartWidth - 60}
-                      y2={200 - (value * 40)}
+                      y2={chartHeight - (value * 60)}
                       stroke={gridLineColor}
                       strokeWidth={1}
                     />
@@ -1117,7 +1100,7 @@ export default function ProgressChart({ onClose }: Props) {
                   {sleepData.map((day, index) => {
                     if (day.stress >= 0) {
                       const x = getXPosition(index);
-                      const y = 200 - (day.stress * 40);
+                      const y = chartHeight - (day.stress * 60);
                       return (
                         <Circle
                           key={`stress-${day.date}`}
@@ -1331,20 +1314,31 @@ export default function ProgressChart({ onClose }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 0,
     overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     padding: 16,
+    paddingTop: 20,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 16,
+    padding: 4,
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -1358,8 +1352,19 @@ const styles = StyleSheet.create({
   },
   periodSelector: {
     flexDirection: 'row',
-    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 12,
     gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   periodButton: {
     flex: 1,
@@ -1373,8 +1378,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chartContainer: {
-    marginBottom: 32,
-    paddingHorizontal: 16,
+    width: '100%',
+    marginBottom: 20,
+    marginHorizontal: 0,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   chartTitle: {
     fontSize: 18,
@@ -1452,7 +1468,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     paddingBottom: 0,
-    height: 200,
+    height: 300,
   },
   yAxisText: {
     fontSize: 12,
