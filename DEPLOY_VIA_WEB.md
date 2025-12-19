@@ -273,7 +273,7 @@ serve(async (req) => {
 
 ### Secret 1: STRIPE_SECRET_KEY
 - **Name**: `STRIPE_SECRET_KEY`
-- **Value**: `sk_test_YOUR_STRIPE_SECRET_KEY_HERE`
+- **Value**: `sk_test_YOUR_STRIPE_SECRET_KEY_HERE` (Get this from your Stripe Dashboard → Developers → API keys)
 - Click **Save**
 
 ### Secret 2: SUPABASE_URL
