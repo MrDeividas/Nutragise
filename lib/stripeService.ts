@@ -9,6 +9,7 @@
 
 import { config } from './config';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@env';
+import { supabase } from './supabase';
 
 // NOTE: For React Native, Stripe operations need to be handled through:
 // 1. Client-side: @stripe/stripe-react-native for payment UI
@@ -41,8 +42,41 @@ class StripeService {
   }
 
   /**
+   * Get Supabase URL and anon key (from env or supabase client)
+   */
+  private getSupabaseConfig(): { url: string; anonKey: string } {
+    // Get Supabase URL from env or extract from supabase client
+    let supabaseUrl = SUPABASE_URL;
+    if (!supabaseUrl) {
+      // Extract base URL from supabase client's rest URL
+      const restUrl = supabase.rest.url;
+      if (restUrl) {
+        supabaseUrl = restUrl.replace('/rest/v1', '');
+      }
+    }
+    
+    if (!supabaseUrl) {
+      throw new Error('Supabase URL not configured. Please set SUPABASE_URL in your .env file.');
+    }
+
+    // Get anon key from env or supabase client
+    let anonKey = SUPABASE_ANON_KEY;
+    if (!anonKey) {
+      // Try to get from supabase client (if available)
+      anonKey = (supabase as any).supabaseKey || '';
+    }
+    
+    if (!anonKey) {
+      throw new Error('Supabase anon key not configured. Please set SUPABASE_ANON_KEY in your .env file.');
+    }
+
+    return { url: supabaseUrl, anonKey };
+  }
+
+  /**
    * Create a payment intent for wallet deposit
    * Calls Supabase Edge Function to create Stripe payment intent
+   * Users pay the Stripe transaction fee (1.4% + £0.20)
    */
   async createPaymentIntent(
     amount: number, // Amount in pounds (£)
@@ -52,21 +86,20 @@ class StripeService {
     try {
       console.log('Creating payment intent:', { amount, userId });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/create-payment-intent`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-payment-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           amount,
           userId,
           currency: 'gbp',
+          includeStripeFee: true, // User pays Stripe fee
         }),
       });
 
@@ -79,6 +112,9 @@ class StripeService {
       return {
         clientSecret: data.clientSecret,
         paymentIntentId: data.paymentIntentId,
+        originalAmount: data.originalAmount,
+        stripeFee: data.stripeFee,
+        totalAmount: data.totalAmount,
       };
     } catch (error) {
       console.error('Error creating payment intent:', error);
@@ -120,16 +156,14 @@ class StripeService {
     try {
       console.log('Creating challenge payment intent:', { amount, userId, challengeId });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/create-challenge-payment`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-challenge-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           amount,
@@ -171,16 +205,14 @@ class StripeService {
     try {
       console.log('Transferring wallet to escrow:', { userId, challengeId, amount });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/transfer-wallet-to-escrow`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/transfer-wallet-to-escrow`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           userId,
@@ -219,17 +251,15 @@ class StripeService {
     try {
       console.log('Creating challenge payment intent (wallet):', { amount, userId, challengeId });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function with paidFromWallet flag
       // No Stripe fee for wallet payments
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/create-challenge-payment`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-challenge-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           amount,
@@ -270,16 +300,14 @@ class StripeService {
     try {
       console.log('Refunding challenge payment:', { paymentIntentId, amount });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/refund-challenge-payment`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/refund-challenge-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           paymentIntentId,
@@ -317,16 +345,14 @@ class StripeService {
     try {
       console.log('Transferring challenge winnings:', { userId, amount, challengeId });
 
-      if (!SUPABASE_URL) {
-        throw new Error('Supabase URL not configured');
-      }
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/transfer-challenge-winnings`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/transfer-challenge-winnings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${anonKey}`,
         },
         body: JSON.stringify({
           userId,
@@ -350,6 +376,50 @@ class StripeService {
     } catch (error) {
       console.error('Error transferring challenge winnings:', error);
       throw new Error('Failed to transfer challenge winnings');
+    }
+  }
+
+  /**
+   * Create platform fee payout to bank account
+   * Transfers platform fee from Stripe balance to connected bank account
+   */
+  async createPlatformFeePayout(
+    amount: number,
+    challengeId: string
+  ): Promise<{ payoutId: string; amount: number; status: string; arrivalDate: number }> {
+    try {
+      console.log('Creating platform fee payout:', { amount, challengeId });
+
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-platform-payout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          amount,
+          challengeId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create platform payout');
+      }
+
+      const data = await response.json();
+      return {
+        payoutId: data.payoutId,
+        amount: data.amount,
+        status: data.status,
+        arrivalDate: data.arrivalDate,
+      };
+    } catch (error) {
+      console.error('Error creating platform payout:', error);
+      throw new Error('Failed to create platform fee payout');
     }
   }
 
@@ -449,6 +519,131 @@ class StripeService {
    */
   isConfigured(): boolean {
     return !!this.publishableKey;
+  }
+
+  /**
+   * Create a subscription for Pro membership (£15/month)
+   * Returns checkout URL to complete subscription
+   */
+  async createSubscription(
+    userId: string,
+    userEmail: string,
+    userName?: string
+  ): Promise<{ sessionId: string; checkoutUrl: string; customerId: string }> {
+    try {
+      console.log('Creating Pro subscription:', { userId, userEmail });
+
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          userId,
+          userEmail,
+          userName,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create subscription');
+      }
+
+      const data = await response.json();
+      return {
+        sessionId: data.sessionId,
+        checkoutUrl: data.checkoutUrl,
+        customerId: data.customerId,
+      };
+    } catch (error: any) {
+      console.error('Error creating subscription:', error);
+      throw new Error(error.message || 'Failed to create subscription');
+    }
+  }
+
+  /**
+   * Create a subscription with Payment Sheet (in-app payment)
+   * Returns client secret for Payment Sheet
+   */
+  async createSubscriptionPaymentSheet(
+    userId: string,
+    userEmail: string,
+    userName?: string
+  ): Promise<{ subscriptionId: string; clientSecret: string; customerId: string }> {
+    try {
+      console.log('Creating Pro subscription with Payment Sheet:', { userId, userEmail });
+
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-subscription-payment-sheet`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          userId,
+          userEmail,
+          userName,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create subscription payment sheet');
+      }
+
+      const data = await response.json();
+      return {
+        subscriptionId: data.subscriptionId,
+        clientSecret: data.clientSecret,
+        customerId: data.customerId,
+      };
+    } catch (error: any) {
+      console.error('Error creating subscription payment sheet:', error);
+      throw new Error(error.message || 'Failed to create subscription payment sheet');
+    }
+  }
+
+  /**
+   * Get Stripe Customer Portal URL for subscription management
+   * Users can cancel, update payment method, view invoices, etc.
+   */
+  async getCustomerPortalUrl(userId: string): Promise<string> {
+    try {
+      console.log('Getting customer portal URL for:', userId);
+
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/get-customer-portal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
+          userId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get customer portal URL');
+      }
+
+      const data = await response.json();
+      return data.portalUrl;
+    } catch (error: any) {
+      console.error('Error getting customer portal URL:', error);
+      throw new Error(error.message || 'Failed to get customer portal URL');
+    }
   }
 }
 

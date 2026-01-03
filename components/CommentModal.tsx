@@ -319,7 +319,7 @@ export default function CommentModal({ visible, goalId, goalTitle, onClose }: Co
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView 
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -453,6 +453,7 @@ export default function CommentModal({ visible, goalId, goalTitle, onClose }: Co
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',

@@ -123,7 +123,7 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 ## 🧭 Screens / Navigation
 
 ### Main Tabs
-- **Home** - Feed of posts and updates
+- **Community** - Feed of posts and updates
 - **Action** - Daily habits, goals, and active challenges
 - **Compete** - Available challenges (Free & Invest sections)
 - **Insights** - Progress charts and reflections

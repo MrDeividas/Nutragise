@@ -48,6 +48,7 @@ function ProfileScreen({ navigation }: any) {
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
   const { theme, isDark } = useTheme();
   const { segmentChecked, getActiveSegmentCount, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
@@ -94,6 +95,10 @@ function ProfileScreen({ navigation }: any) {
     followings: '',
     completedCompetitions: '',
     wonAwards: ''
+  });
+  const [challengeStats, setChallengeStats] = useState({
+    wins: 0,
+    losses: 0
   });
   const [totalPoints, setTotalPoints] = useState(0);
   const [socialCounts, setSocialCounts] = useState({
@@ -149,6 +154,62 @@ function ProfileScreen({ navigation }: any) {
     }, [user, userGoals.length, getActiveSegmentCount])
   );
 
+  const loadChallengeStats = async () => {
+    if (!user?.id) return;
+    
+    try {
+      // Get all challenge participations for this user
+      const { data: participations, error } = await supabase
+        .from('challenge_participants')
+        .select('status, challenge_id')
+        .eq('user_id', user.id);
+      
+      if (error) {
+        return;
+      }
+      
+      if (!participations || participations.length === 0) {
+        setChallengeStats({ wins: 0, losses: 0 });
+        return;
+      }
+      
+      // Get challenge details to check if challenges have ended
+      const challengeIds = participations.map(p => p.challenge_id);
+      const { data: challenges } = await supabase
+        .from('challenges')
+        .select('id, end_date, status')
+        .in('id', challengeIds);
+      
+      const challengeMap = new Map(challenges?.map(c => [c.id, c]) || []);
+      const now = new Date();
+      
+      let wins = 0;
+      let losses = 0;
+      
+      participations.forEach(participation => {
+        const challenge = challengeMap.get(participation.challenge_id);
+        if (!challenge) return;
+        
+        const endDate = new Date(challenge.end_date);
+        endDate.setHours(23, 59, 59, 999);
+        const hasEnded = now > endDate;
+        
+        // Win: status is 'completed'
+        if (participation.status === 'completed') {
+          wins++;
+        }
+        // Loss: challenge has ended and status is not 'completed' (could be 'failed', 'active', or 'left')
+        else if (hasEnded && participation.status !== 'completed') {
+          losses++;
+        }
+      });
+      
+      setChallengeStats({ wins, losses });
+    } catch (error) {
+      // Error loading challenge stats
+    }
+  };
+
   const loadProfileData = async () => {
     try {
       const savedProfileData = await AsyncStorage.getItem('profileData');
@@ -156,19 +217,31 @@ function ProfileScreen({ navigation }: any) {
         setProfileData(JSON.parse(savedProfileData));
       }
       
-      // Load stats visibility preference from database first, then fall back to AsyncStorage
+      // Load stats visibility preference and pro status from database first, then fall back to AsyncStorage
       if (user) {
         try {
           const { data: profile, error: statsError } = await supabase
             .from('profiles')
-            .select('stats_visible')
+            .select('stats_visible, is_pro')
             .eq('id', user.id)
             .single();
           
-          if (!statsError && profile && profile.stats_visible !== undefined) {
+          if (!statsError && profile) {
+            // Store the full profile including is_pro
+            setUserProfile(profile);
+            
+            // Set stats visibility
+            if (profile.stats_visible !== undefined) {
             setStatsVisible(profile.stats_visible);
           } else {
             // Fall back to AsyncStorage
+              const savedStatsVisibility = await AsyncStorage.getItem('statsVisible');
+              if (savedStatsVisibility !== null) {
+                setStatsVisible(JSON.parse(savedStatsVisibility));
+              }
+            }
+          } else {
+            // Fall back to AsyncStorage for stats visibility
             const savedStatsVisibility = await AsyncStorage.getItem('statsVisible');
             if (savedStatsVisibility !== null) {
               setStatsVisible(JSON.parse(savedStatsVisibility));
@@ -182,6 +255,9 @@ function ProfileScreen({ navigation }: any) {
         const followers = await socialService.getFollowerCount(user.id);
         const following = await socialService.getFollowingCount(user.id);
         setSocialCounts({ followers, following });
+        
+        // Load challenge stats (wins and losses)
+        await loadChallengeStats();
         
         fetchRecentActivity();
       }
@@ -263,7 +339,8 @@ function ProfileScreen({ navigation }: any) {
         loadPillarProgress(),
         fetchRecentActivity(),
         fetchHighlights(),
-        user ? fetchGoals(user.id) : Promise.resolve()
+        user ? fetchGoals(user.id) : Promise.resolve(),
+        user ? loadChallengeStats() : Promise.resolve()
       ]);
     } catch (error) {
       // Error during refresh
@@ -768,7 +845,6 @@ function ProfileScreen({ navigation }: any) {
   };
 
 
-
   // Helper function to get the date for a specific day of the week
   const getDateForDayOfWeek = (dayOfWeek: number): Date => {
     const today = new Date();
@@ -973,9 +1049,17 @@ function ProfileScreen({ navigation }: any) {
               )}
             </View>
             <View style={styles.profileInfoSection}>
+              <View style={styles.profileDisplayNameRow}>
               <Text style={[styles.profileDisplayName, { color: theme.textPrimary }]}>
                 @{user?.username || 'user'}
               </Text>
+                {userProfile?.is_pro && (
+                  <View style={styles.proMicroBadge}>
+                    <Ionicons name="star" size={10} color="#FFFFFF" />
+                    <Text style={styles.proMicroBadgeText}>PRO</Text>
+                  </View>
+                )}
+              </View>
               <Text style={[styles.profileLocation, { color: theme.textSecondary }]}>
                 England, London
               </Text>
@@ -1008,31 +1092,28 @@ function ProfileScreen({ navigation }: any) {
           {isProfileCardExpanded && (
             <Animated.View 
               style={[
-                styles.expandedProfileInfo,
+                styles.expandedProfileWrapper,
                 { 
-                  backgroundColor: '#FFFFFF',
-                  borderTopWidth: 1,
-                  borderTopColor: '#E5E7EB',
                   opacity: profileCardAnimation,
                   maxHeight: profileCardAnimation.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0, 200],
                   }),
-                  overflow: 'hidden',
                 }
               ]}
             >
+              <View style={styles.expandedProfileInfo}>
                           <View style={styles.expandedProfileRow}>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Height</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Wins</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {profileData.height || 'Not set'}
+                  {challengeStats.wins}
                 </Text>
               </View>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Age</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Losses</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {profileData.age || 'Not set'}
+                  {challengeStats.losses}
                 </Text>
               </View>
               <TouchableOpacity 
@@ -1075,8 +1156,10 @@ function ProfileScreen({ navigation }: any) {
             </View>
             
 
+              </View>
             </Animated.View>
           )}
+
         </View>
 
 
@@ -2582,10 +2665,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  profileDisplayNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   profileDisplayName: {
     fontSize: 18,
     fontWeight: '700',
-    marginBottom: 4,
+  },
+  proMicroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  proMicroBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   profileLocation: {
     fontSize: 14,
@@ -2658,6 +2766,9 @@ const styles = StyleSheet.create({
     top: '50%',
     transform: [{ translateY: -10 }],
   },
+  expandedProfileWrapper: {
+    marginTop: -1,
+  },
   expandedProfileInfo: {
     marginTop: 0,
     borderTopLeftRadius: 0,
@@ -2666,6 +2777,17 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 16,
     padding: 20,
     paddingBottom: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   expandedProfileRow: {
     flexDirection: 'row',

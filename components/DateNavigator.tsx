@@ -297,7 +297,7 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
       {/* Scrollable Day/Month/Year Picker */}
       <Modal visible={pickerVisible} transparent animationType="fade" onRequestClose={() => setPickerVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}> 
+          <View style={[styles.modalContent, { borderColor: theme.borderSecondary }]}> 
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>Select Date</Text>
               <TouchableOpacity onPress={() => setPickerVisible(false)}>
@@ -426,6 +426,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalContent: {
+    backgroundColor: '#FFFFFF', // IMPORTANT: Always set white background for modals
     width: '100%',
     maxWidth: 420,
     borderRadius: 16,

@@ -323,7 +323,10 @@ export interface HabitAccountabilityPartner {
   invitee_id: string;
   habit_type: 'core' | 'custom';
   habit_key?: string;
-  custom_habit_id?: string;
+  custom_habit_id?: string; // Legacy field, kept for backwards compatibility
+  inviter_habit_id?: string; // Inviter's custom habit ID
+  invitee_habit_id?: string; // Invitee's custom habit ID
+  habit_snapshot?: any; // Stores habit details at invite time
   mode: 'supportive' | 'competitive';
   status: 'pending' | 'accepted' | 'declined' | 'cancelled';
   created_at: string;
@@ -344,6 +347,18 @@ export interface HabitPartnerProgress {
   date: string;
   completed: boolean;
   streak_count: number;
+  created_at: string;
+}
+
+export interface HabitNudge {
+  id: string;
+  partnership_id: string;
+  nudger_id: string;
+  nudged_user_id: string;
+  habit_type: 'core' | 'custom';
+  habit_key?: string;
+  custom_habit_id?: string;
+  nudged_at: string;
   created_at: string;
 }
 

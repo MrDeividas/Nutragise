@@ -44,6 +44,9 @@ import { smartSuggestionEngine } from '../lib/smartSuggestionEngine';
 import TimePeriodUtils from '../lib/timePeriodUtils';
 import ScreenTimeGraph from '../components/ScreenTimeGraph';
 import MoodStatistic from '../components/MoodStatistic';
+import UpgradeToProModal from '../components/UpgradeToProModal';
+import { supabase } from '../lib/supabase';
+import { socialService } from '../lib/socialService';
 
 interface Message {
   id: string;
@@ -82,6 +85,42 @@ export default function InsightsScreen({ route }: any) {
     dominantMood: string;
     dominantDays: number;
   }>({ happy: 65, sad: 22, angry: 13, dominantMood: 'happy', dominantDays: 5 });
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (user?.id) {
+        try {
+          const profile = await socialService.getProfile(user.id);
+          
+          if (!profile) {
+            // Try direct database query as fallback
+            const { data: directProfile, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .single();
+            
+            if (directProfile) {
+              setUserProfile(directProfile);
+            }
+          } else {
+            setUserProfile(profile);
+          }
+        } catch (error) {
+          // Error loading user profile
+        } finally {
+          setProfileLoading(false);
+        }
+      } else {
+        setProfileLoading(false);
+      }
+    };
+
+    loadUserProfile();
+  }, [user]);
   
   useEffect(() => {
     const loadTrendData = async () => {
@@ -446,6 +485,12 @@ export default function InsightsScreen({ route }: any) {
     const textToSend = messageText || inputText.trim();
     if (!textToSend || !user) return;
 
+    // Pro-only check for AI chat
+    if (!profileLoading && !userProfile?.is_pro) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const userMessage: Message = {
       id: generateMessageId(),
       text: textToSend,
@@ -511,8 +556,13 @@ export default function InsightsScreen({ route }: any) {
   };
 
   const handleSuggestionClick = useCallback((suggestion: string) => {
+    // Check if user is Pro before allowing AI chat
+    if (!profileLoading && !userProfile?.is_pro) {
+      setShowUpgradeModal(true);
+      return;
+    }
     sendMessage(suggestion);
-  }, []);
+  }, [profileLoading, userProfile]);
 
   // Initialize chat with simple greeting
   const initializeChat = useCallback(() => {
@@ -619,9 +669,33 @@ export default function InsightsScreen({ route }: any) {
     { color: isUser ? 'rgba(255,255,255,0.7)' : textSecondary }
   ], [textSecondary]);
 
+  // Check if user is pro (don't show overlay until we know for sure)
+  const isPro = userProfile?.is_pro || false;
+
   return (
     <CustomBackground>
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        {/* Pro Overlay - appears when user is not pro (only after loading) */}
+        {!profileLoading && !isPro && (
+          <View style={styles.proOverlay} pointerEvents="auto">
+            <View style={styles.proOverlayContent}>
+              <Ionicons name="lock-closed" size={48} color="#F59E0B" />
+              <Text style={styles.proOverlayTitle}>Pro Feature</Text>
+              <Text style={styles.proOverlayText}>
+                Upgrade to Pro to unlock advanced insights and analytics
+              </Text>
+              <TouchableOpacity
+                style={styles.proOverlayButton}
+                onPress={() => setShowUpgradeModal(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="star" size={20} color="white" style={{ marginRight: 8 }} />
+                <Text style={styles.proOverlayButtonText}>Upgrade to Pro</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Dimming Overlay - appears when chat box is open */}
         <Animated.View
           style={[
@@ -646,15 +720,26 @@ export default function InsightsScreen({ route }: any) {
             </View>
           </View>
 
-          {/* Middle: Chat Toggle */}
+          {/* Middle: Chat Toggle - Pro Only */}
            <TouchableOpacity 
              style={[styles.profileHeaderCard, { backgroundColor: '#e5e7eb' }]}
-             onPress={() => setIsHeaderExpanded(!isHeaderExpanded)}
+             onPress={() => {
+               // Check if user is Pro before allowing AI chat
+               if (!profileLoading && !userProfile?.is_pro) {
+                 setShowUpgradeModal(true);
+                 return;
+               }
+               setIsHeaderExpanded(!isHeaderExpanded);
+             }}
              activeOpacity={0.8}
            >
              <Text style={[styles.headerCenterText, { color: textPrimary }]}>
                Insights by Neutro AI Beta V.10
              </Text>
+             {/* Show lock icon for non-Pro users */}
+             {!profileLoading && !userProfile?.is_pro && (
+               <Ionicons name="lock-closed" size={14} color={textPrimary} style={{ marginLeft: 6 }} />
+             )}
            </TouchableOpacity>
 
           {/* Right: Notifications */}
@@ -674,6 +759,7 @@ export default function InsightsScreen({ route }: any) {
             style={[styles.content, { paddingTop: 8, paddingHorizontal: 24 }]}
             contentContainerStyle={{ paddingBottom: bottomNavPadding }}
             showsVerticalScrollIndicator={false}
+            scrollEnabled={profileLoading || isPro}
           >
             {/* Technicals Button */}
             <TouchableOpacity 
@@ -815,6 +901,7 @@ export default function InsightsScreen({ route }: any) {
                   contentContainerStyle={{ paddingBottom: 8 }}
                   showsVerticalScrollIndicator={false}
                   nestedScrollEnabled={true}
+                  scrollEnabled={profileLoading || isPro}
                 >
                   {insights.map((insight, index) => (
                   <TouchableOpacity
@@ -1170,6 +1257,11 @@ export default function InsightsScreen({ route }: any) {
         </View>
       </Modal>
 
+      {/* Upgrade to Pro Modal */}
+        <UpgradeToProModal
+          visible={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+        />
 
       </SafeAreaView>
     </CustomBackground>
@@ -1635,5 +1727,57 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  proOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    zIndex: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  proOverlayContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+  },
+  proOverlayTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  proOverlayText: {
+    fontSize: 15,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  proOverlayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    shadowColor: '#F59E0B',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  proOverlayButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'white',
   },
 }); 

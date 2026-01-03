@@ -36,7 +36,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { amount, userId, currency = "gbp" } = await req.json()
+    const { amount, userId, currency = "gbp", includeStripeFee = true } = await req.json()
 
     if (!amount || !userId) {
       return new Response(
@@ -51,8 +51,24 @@ serve(async (req: Request) => {
       )
     }
 
+    // Calculate Stripe fee if user is covering fees (default: true)
+    let finalAmount = amount;
+    let stripeFee = 0;
+    
+    if (includeStripeFee) {
+      // Calculate total amount including Stripe fee
+      // Formula: total = (amount + fixedFee) / (1 - percentageFee)
+      // UK cards: 1.4% + £0.20
+      const percentageFee = 0.014; // 1.4%
+      const fixedFee = 0.20; // £0.20
+      finalAmount = (amount + fixedFee) / (1 - percentageFee);
+      stripeFee = finalAmount - amount;
+      
+      console.log(`💰 Wallet deposit - Stripe fee calculated: £${stripeFee.toFixed(2)} (total: £${finalAmount.toFixed(2)})`);
+    }
+
     // Convert to pence (Stripe uses smallest currency unit)
-    const amountInPence = Math.round(amount * 100)
+    const amountInPence = Math.round(finalAmount * 100)
 
     if (amountInPence < 50) {
       return new Response(
@@ -74,13 +90,27 @@ serve(async (req: Request) => {
       metadata: {
         userId,
         purpose: "wallet_deposit",
+        originalAmount: (amount * 100).toString(), // Original amount in pence (before fee)
+        stripeFee: (stripeFee * 100).toString(), // Stripe fee in pence
+        includeStripeFee: includeStripeFee ? "true" : "false",
       },
+    })
+
+    console.log("✅ Created wallet deposit payment intent:", {
+      paymentIntentId: paymentIntent.id,
+      originalAmount: amount,
+      stripeFee: stripeFee,
+      totalAmount: finalAmount,
+      userId,
     })
 
     return new Response(
       JSON.stringify({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
+        originalAmount: amount, // Amount before fee
+        stripeFee: stripeFee, // Fee amount
+        totalAmount: finalAmount, // Total amount user pays
       }),
       {
         headers: { 

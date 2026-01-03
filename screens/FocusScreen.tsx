@@ -347,7 +347,7 @@ function FocusScreen({ navigation }: any) {
               
               {/* Preset Durations */}
               <View style={styles.presetsContainer}>
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Quick Select
                 </Text>
                 <View style={styles.presetButtonsGrid}>
@@ -417,7 +417,7 @@ function FocusScreen({ navigation }: any) {
                       { color: duration === '40' ? '#FFFFFF' : theme.textPrimary }
                     ]}>
                       40 min
-                    </Text>
+              </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -431,11 +431,11 @@ function FocusScreen({ navigation }: any) {
                   backgroundColor: theme.cardBackground,
                   borderColor: theme.borderSecondary,
                 }]}>
-                  <TextInput
-                    style={[styles.durationTextInput, { 
-                      color: theme.textPrimary,
-                    }]}
-                    value={duration}
+                <TextInput
+                  style={[styles.durationTextInput, { 
+                    color: theme.textPrimary, 
+                  }]}
+                  value={duration}
                     onChangeText={(text) => {
                       const numericValue = text.replace(/[^0-9]/g, '');
                       if (numericValue === '' || parseInt(numericValue) >= 10) {
@@ -443,12 +443,12 @@ function FocusScreen({ navigation }: any) {
                       }
                     }}
                     placeholder="30"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="numeric"
-                    maxLength={3}
-                  />
-                  <Text style={[styles.durationLabel, { color: theme.textSecondary }]}>
-                    minutes
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="numeric"
+                  maxLength={3}
+                />
+                <Text style={[styles.durationLabel, { color: theme.textSecondary }]}>
+                  minutes
                   </Text>
                 </View>
                 <Text style={[styles.helperText, { color: theme.textSecondary }]}>
@@ -475,43 +475,43 @@ function FocusScreen({ navigation }: any) {
               <View style={styles.timerContainer}>
                 <View style={styles.timerRingWrapper}>
                   <Svg width={320} height={320} style={styles.timerSvg}>
-                    {/* Background circle */}
-                    <Circle
+                  {/* Background circle */}
+                  <Circle
                       cx={160}
                       cy={160}
                       r={150}
-                      stroke={theme.borderSecondary}
+                    stroke={theme.borderSecondary}
                       strokeWidth={12}
-                      fill="none"
+                    fill="none"
                       opacity={0.2}
-                    />
+                  />
                     {/* Progress circle - fills up clockwise from top as time passes */}
-                    <AnimatedCircle
+                  <AnimatedCircle
                       cx={160}
                       cy={160}
-                      r={RING_RADIUS}
+                    r={RING_RADIUS}
                       stroke={isCompleted ? '#10B981' : '#10B981'}
                       strokeWidth={12}
-                      fill="none"
-                      strokeDasharray={RING_CIRCUMFERENCE}
-                      strokeDashoffset={progressAnimation.interpolate({
-                        inputRange: [0, 1],
+                    fill="none"
+                    strokeDasharray={RING_CIRCUMFERENCE}
+                    strokeDashoffset={progressAnimation.interpolate({
+                      inputRange: [0, 1],
                         outputRange: [RING_CIRCUMFERENCE, 0], // When elapsedFraction is 0 (no time), offset is full (no circle). When 1 (all time), offset is 0 (full circle)
-                      })}
-                      strokeLinecap="round"
+                    })}
+                    strokeLinecap="round"
                       transform="rotate(-90 160 160)" // Start from top (12 o'clock), clockwise
-                    />
-                  </Svg>
-                  
+                  />
+                </Svg>
+                
                   {/* Timer Display */}
                   <View style={styles.timerDisplay}>
-                    <View style={styles.timerTextContainer}>
-                      <Text style={[styles.timerText, { color: theme.textPrimary }]}>
-                        {formatTime(timeRemaining)}
-                      </Text>
-                      <Text style={[styles.timerLabel, { color: theme.textSecondary }]}>
+                <View style={styles.timerTextContainer}>
+                  <Text style={[styles.timerText, { color: theme.textPrimary }]}>
+                    {formatTime(timeRemaining)}
+                  </Text>
+                  <Text style={[styles.timerLabel, { color: theme.textSecondary }]}>
                         {isCompleted ? '🎉 Complete!' : isPaused ? '⏸ Paused' : 'remaining'}
-                      </Text>
+                  </Text>
                     </View>
                   </View>
                 </View>
@@ -524,13 +524,13 @@ function FocusScreen({ navigation }: any) {
               }]}>
                 <View style={styles.notesHeader}>
                   <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
-                  <Text style={[styles.notesLabel, { color: theme.textPrimary }]}>
+                <Text style={[styles.notesLabel, { color: theme.textPrimary }]}>
                     Focus Task
-                  </Text>
+                </Text>
                 </View>
                 <TextInput
                   style={[styles.notesInput, { 
-                    color: theme.textPrimary,
+                    color: theme.textPrimary, 
                   }]}
                   value={notes}
                   onChangeText={(text) => {

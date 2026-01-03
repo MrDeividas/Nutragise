@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../state/authStore';
+import { useActionStore } from '../state/actionStore';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../state/themeStore';
 import { notificationService, Notification } from '../lib/notificationService';
@@ -107,10 +108,14 @@ export default function NotificationsScreen() {
             message = 'started following you';
             break;
           case 'habit_invite':
-            message = 'invited you to track a habit together';
+            message = notification.habit_type 
+              ? `invited you to track ${notification.habit_type} together`
+              : 'invited you to track a habit together';
             break;
           case 'habit_invite_accepted':
-            message = 'accepted your habit invitation';
+            message = notification.habit_type
+              ? `accepted your ${notification.habit_type} habit invitation`
+              : 'accepted your habit invitation';
             break;
           default:
             message = 'interacted with your content';
@@ -134,8 +139,20 @@ export default function NotificationsScreen() {
         };
       });
 
+      // Deduplicate habit invites from the same inviter - keep only the most recent one
+      const seenInviters = new Set<string>();
+      const deduplicatedNotifications = transformedNotifications.filter(n => {
+        if (n.type === 'habit_invite' && n.from_user_id) {
+          if (seenInviters.has(n.from_user_id)) {
+            return false; // Skip duplicate
+          }
+          seenInviters.add(n.from_user_id);
+        }
+        return true;
+      });
+
       // Sort: Pending invites first, then by time
-      const sortedNotifications = transformedNotifications.sort((a, b) => {
+      const sortedNotifications = deduplicatedNotifications.sort((a, b) => {
           const aPending = a.type === 'habit_invite' && a.inviteStatus === 'pending';
           const bPending = b.type === 'habit_invite' && b.inviteStatus === 'pending';
           
@@ -202,11 +219,29 @@ export default function NotificationsScreen() {
         
       if (data) {
         await habitInviteService.acceptInvite(data.id, user.id);
-        Alert.alert('Success', 'You accepted the habit invite!');
-        // Update local state to reflect change immediately and re-sort
+        
+        // Add a delay to ensure database updates are complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Reload custom habits to show the newly created habit
+        const today = new Date().toISOString().split('T')[0];
+        await useActionStore.getState().loadCustomHabits(today);
+        
+        Alert.alert('Success', 'Habit added! Check your Action tab.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate to Action tab (MainTabs -> Action)
+              (navigation as any).navigate('MainTabs', { screen: 'Action' });
+            }
+          }
+        ]);
+        // Update local state - mark ALL invites from this inviter as accepted
         setNotifications(prev => {
             const updated = prev.map(n => 
-              n.id === notification.id ? { ...n, inviteStatus: 'accepted' } : n
+              (n.type === 'habit_invite' && n.from_user_id === notification.from_user_id) 
+                ? { ...n, inviteStatus: 'accepted' } 
+                : n
             );
             // Re-sort: Pending invites first, then by time
             return updated.sort((a, b) => {
@@ -244,10 +279,12 @@ export default function NotificationsScreen() {
       if (data) {
         await habitInviteService.declineInvite(data.id, user.id);
         Alert.alert('Declined', 'You declined the invitation.');
-        // Update local state to reflect change immediately and re-sort
+        // Update local state - mark ALL invites from this inviter as declined
         setNotifications(prev => {
             const updated = prev.map(n => 
-              n.id === notification.id ? { ...n, inviteStatus: 'declined' } : n
+              (n.type === 'habit_invite' && n.from_user_id === notification.from_user_id) 
+                ? { ...n, inviteStatus: 'declined' } 
+                : n
             );
             // Re-sort: Pending invites first, then by time
             return updated.sort((a, b) => {

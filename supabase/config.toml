@@ -1,0 +1,22 @@
+# Supabase Configuration File
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+# Edge Functions Configuration
+[functions.check-ended-challenges]
+# Run every hour to check for ended challenges
+# Cron format: minute hour day month day-of-week
+verify_jwt = false
+
+[edge_runtime]
+policy = "per_worker"
+

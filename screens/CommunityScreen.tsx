@@ -99,13 +99,13 @@ interface DailyPostWithUser extends DailyPost {
 
 const { width, height } = Dimensions.get('window');
 
-interface HomeScreenProps {
+interface CommunityScreenProps {
   navigation?: {
     navigate: (screen: string) => void;
   };
 }
 
-function HomeScreen({ navigation }: HomeScreenProps) {
+function CommunityScreen({ navigation }: CommunityScreenProps) {
   const [activeTab, setActiveTab] = useState<'explore' | 'following'>('following');
   const bottomNavPadding = useBottomNavPadding();
   const [searchQuery, setSearchQuery] = useState('');
@@ -1947,7 +1947,7 @@ function HomeScreen({ navigation }: HomeScreenProps) {
 }
 
 // Memoize the component to prevent unnecessary re-renders
-export default React.memo(HomeScreen);
+export default React.memo(CommunityScreen);
 
 // Explore Content Component
 
@@ -2414,10 +2414,10 @@ function ExploreContent({
                           </View>
                         </View>
                       </View>
-                      {/* Today's Uploads Section */}
-                      <View style={styles.uploadsSection}>
-                        <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
-                        {post.photos && post.photos.length > 0 ? (
+                      {/* Today's Uploads Section - Only show if photos exist */}
+                      {post.photos && post.photos.length > 0 && (
+                        <View style={styles.uploadsSection}>
+                          <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
                           <View style={styles.photoCarouselWrapper}>
                             <GesturePhotoCarousel
                               photos={post.photos}
@@ -2432,15 +2432,8 @@ function ExploreContent({
                               style={styles.photoContainer}
                             />
                           </View>
-                        ) : (
-                          <View style={[styles.noMediaContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                            <Ionicons name="camera-outline" size={32} color={theme.textSecondary} />
-                            <Text style={[styles.noMediaText, { color: theme.textSecondary }]}>
-                              No photos
-                            </Text>
-                          </View>
-                        )}
-                      </View>
+                        </View>
+                      )}
 
                       {/* Content Section */}
                       <View style={styles.contentSection}>

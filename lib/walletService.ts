@@ -437,10 +437,12 @@ class WalletService {
 
   /**
    * Add platform fee to platform wallet
+   * @param stripePayoutId - Optional Stripe payout ID if fee was sent to bank
    */
   async addPlatformFee(
     amount: number,
-    challengeId: string
+    challengeId: string,
+    stripePayoutId?: string
   ): Promise<{ wallet: UserWallet; transaction: WalletTransaction }> {
     try {
       const platformWallet = await this.getPlatformWallet();
@@ -459,7 +461,7 @@ class WalletService {
         throw updateError;
       }
 
-      // Create transaction
+      // Create transaction with Stripe payout tracking
       const { data: transaction, error: transactionError } = await supabase
         .from('wallet_transactions')
         .insert({
@@ -471,6 +473,8 @@ class WalletService {
           metadata: {
             fee_type: 'platform_fee',
             collected_date: new Date().toISOString(),
+            stripe_payout_id: stripePayoutId || null,
+            payout_status: stripePayoutId ? 'sent_to_bank' : 'in_database_wallet',
           },
         })
         .select()
@@ -481,7 +485,13 @@ class WalletService {
         throw transactionError;
       }
 
-      console.log('✅ Platform fee collected:', { amount, challengeId, newBalance });
+      const status = stripePayoutId ? 'sent to bank' : 'stored in database wallet';
+      console.log(`✅ Platform fee collected (${status}):`, { 
+        amount, 
+        challengeId, 
+        newBalance,
+        stripePayoutId: stripePayoutId || 'none'
+      });
 
       return {
         wallet: updatedWallet!,

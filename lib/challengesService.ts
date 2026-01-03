@@ -75,18 +75,73 @@ class ChallengesService {
         });
       }
 
-      // Map counts to challenges
+      // Map counts to challenges and include approval_status
       let challenges = (data || []).map((challenge) => ({
         ...challenge,
         participant_count: countMap.get(challenge.id) || 0,
+        approval_status: challenge.approval_status || undefined,
       }));
+
+      // Aggressive deduplication: Remove duplicates by title + date + entry_fee
+      // Keep only the most recent instance (by created_at or start_date)
+      // This handles cases where multiple instances are created for the same day
+      const challengeMap = new Map<string, Challenge>();
+      const duplicateCount = { found: 0, removed: 0 };
+      
+      challenges.forEach(challenge => {
+        // Normalize date to day level (ignore time)
+        const challengeDate = new Date(challenge.start_date);
+        challengeDate.setUTCHours(0, 0, 0, 0);
+        challengeDate.setUTCMinutes(0);
+        challengeDate.setUTCSeconds(0);
+        challengeDate.setUTCMilliseconds(0);
+        const dateKey = challengeDate.toISOString().split('T')[0];
+        
+        // Create deduplication key: title + date (day only) + entry_fee
+        const dedupKey = `${challenge.title}_${dateKey}_${challenge.entry_fee || 0}`;
+        
+        const existing = challengeMap.get(dedupKey);
+        if (!existing) {
+          challengeMap.set(dedupKey, challenge);
+        } else {
+          duplicateCount.found++;
+          // Keep the one with the later created_at or start_date
+          const existingDate = new Date(existing.created_at || existing.start_date);
+          const currentDate = new Date(challenge.created_at || challenge.start_date);
+          if (currentDate > existingDate) {
+            duplicateCount.removed++;
+            console.log(`🔄 [Deduplication] REMOVING duplicate: "${challenge.title}" (${dateKey}, £${challenge.entry_fee || 0})`);
+            console.log(`   ❌ Removing ID: ${existing.id} (created: ${existing.created_at})`);
+            console.log(`   ✅ Keeping ID: ${challenge.id} (created: ${challenge.created_at})`);
+            challengeMap.set(dedupKey, challenge);
+          } else {
+            duplicateCount.removed++;
+            console.log(`🔄 [Deduplication] REMOVING duplicate: "${challenge.title}" (${dateKey}, £${challenge.entry_fee || 0})`);
+            console.log(`   ❌ Removing ID: ${challenge.id} (created: ${challenge.created_at})`);
+            console.log(`   ✅ Keeping ID: ${existing.id} (created: ${existing.created_at})`);
+          }
+        }
+      });
+      challenges = Array.from(challengeMap.values());
+      
+      if (duplicateCount.found > 0) {
+        console.log(`⚠️ [Deduplication] Found ${duplicateCount.found} duplicate(s), removed ${duplicateCount.removed}`);
+      }
+      console.log(`✅ [Deduplication] Filtered ${data.length} challenges down to ${challenges.length} unique challenges`);
 
       // Filter recurring challenges to only show current period's instances
       const now = new Date();
       const filteredChallenges: Challenge[] = [];
       const recurringTitles = new Set<string>();
+      const seenChallengeIds = new Set<string>(); // Track by ID to prevent duplicates
 
       for (const challenge of challenges) {
+        // Skip if we've already seen this challenge ID (duplicate prevention)
+        if (seenChallengeIds.has(challenge.id)) {
+          // Duplicate challenge IDs are silently skipped (filtering is working correctly)
+          continue;
+        }
+        seenChallengeIds.add(challenge.id);
         
         if (challenge.is_recurring) {
           const schedule = challenge.recurring_schedule || 'weekly';
@@ -121,11 +176,13 @@ class ChallengesService {
               }
               
               // Only add if we haven't already added a challenge with this title for today
-              const key = `${challenge.title}_${challengeDay.toISOString().split('T')[0]}`;
+              // Use a more specific key: title + date + entry_fee to distinguish free vs paid
+              const key = `${challenge.title}_${challengeDay.toISOString().split('T')[0]}_${challenge.entry_fee || 0}`;
               if (!recurringTitles.has(key)) {
                 filteredChallenges.push(challenge);
                 recurringTitles.add(key);
               }
+              // Duplicate daily challenges are silently skipped (filtering is working correctly)
             }
           } else {
             // For weekly recurring challenges, show current week's instance
@@ -138,10 +195,13 @@ class ChallengesService {
             // Show if active, upcoming, or recently ended (to bridge gaps)
             if (isActive || isUpcoming || isRecentlyEnded) {
               // Only add if we haven't already added a challenge with this title
-              if (!recurringTitles.has(challenge.title)) {
+              // Use title + entry_fee to distinguish free vs paid versions
+              const key = `${challenge.title}_${challenge.entry_fee || 0}`;
+              if (!recurringTitles.has(key)) {
                 filteredChallenges.push(challenge);
-                recurringTitles.add(challenge.title);
+                recurringTitles.add(key);
               }
+              // Duplicate weekly challenges are silently skipped (filtering is working correctly)
             }
           }
         } else {
@@ -660,7 +720,7 @@ class ChallengesService {
   }
 
   /**
-   * Get user's active challenges
+   * Get user's active challenges (including completed ones that are still within challenge period)
    */
   async getUserChallenges(userId: string): Promise<Challenge[]> {
     try {
@@ -670,7 +730,7 @@ class ChallengesService {
           challenge:challenges!inner(*)
         `)
         .eq('user_id', userId)
-        .eq('status', 'active');
+        .in('status', ['active', 'completed']);
 
       if (error) {
         console.error('Error fetching user challenges:', error);
@@ -1026,14 +1086,14 @@ class ChallengesService {
           return false;
         }
 
-      // Only return true if participation exists AND status is 'active'
-      // Status can be 'active', 'completed', 'failed', or 'left' - we only want 'active'
-      const isParticipating = !!participation && participation.status === 'active';
+      // Return true if participation exists AND status is 'active' or 'completed'
+      // Status can be 'active', 'completed', 'failed', or 'left' - we want 'active' and 'completed'
+      const isParticipating = !!participation && (participation.status === 'active' || participation.status === 'completed');
       
       if (isParticipating) {
-        console.log(`✅ [isUserParticipating] User IS actively participating in "${challenge.title}" (ID: ${challengeId})`);
+        console.log(`✅ [isUserParticipating] User IS participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation.status}`);
       } else {
-        console.log(`❌ [isUserParticipating] User is NOT actively participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation?.status || 'not found'}`);
+        console.log(`❌ [isUserParticipating] User is NOT participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation?.status || 'not found'}`);
       }
 
       return isParticipating;
@@ -1152,44 +1212,57 @@ class ChallengesService {
       const startDate = new Date(challenge.start_date);
       
       // For daily challenges, create next day's instance if current has ended or is ending soon
-      // Daily challenges run 1pm-7pm UTC
+      // Daily challenges start at midnight and end at midnight the next day
       const today = new Date(now);
       today.setUTCHours(0, 0, 0, 0);
       
-      // Today's challenge should start at 1pm UTC
+      // Today's challenge starts at midnight UTC (00:00)
       const todayStart = new Date(today);
-      todayStart.setUTCHours(13, 0, 0, 0); // 1pm UTC
+      todayStart.setUTCHours(0, 0, 0, 0); // Midnight UTC
       
-      // Today's challenge ends at 7pm UTC
+      // Today's challenge ends at midnight UTC tomorrow (effectively end of day)
       const todayEnd = new Date(today);
-      todayEnd.setUTCHours(19, 0, 0, 0); // 7pm UTC
+      todayEnd.setUTCDate(today.getUTCDate() + 1);
+      todayEnd.setUTCHours(0, 0, 0, 0); // Midnight UTC next day
       
-      // Next day's challenge starts at 1pm UTC
+      // Next day's challenge starts at midnight UTC
       const nextDayStart = new Date(today);
       nextDayStart.setUTCDate(today.getUTCDate() + 1);
-      nextDayStart.setUTCHours(13, 0, 0, 0); // 1pm UTC
+      nextDayStart.setUTCHours(0, 0, 0, 0); // Midnight UTC next day
       
-      // Next day's challenge ends at 7pm UTC
-      const nextDayEnd = new Date(nextDayStart);
-      nextDayEnd.setUTCHours(19, 0, 0, 0); // 7pm UTC
+      // Next day's challenge ends at midnight UTC (day after)
+      const nextDayEnd = new Date(today);
+      nextDayEnd.setUTCDate(today.getUTCDate() + 2);
+      nextDayEnd.setUTCHours(0, 0, 0, 0); // Midnight UTC day after next
       
-      // Check if today's instance exists
+      // Check if today's instance exists (handle multiple results)
       const todayStartStr = todayStart.toISOString().split('T')[0]; // YYYY-MM-DD
-      const { data: todayChallenge } = await supabase
+      const { data: todayChallenges } = await supabase
         .from('challenges')
-        .select('id, status')
+        .select('id, status, entry_fee')
         .eq('title', challenge.title)
         .eq('is_recurring', true)
         .gte('start_date', todayStart.toISOString())
-        .lt('start_date', nextDayStart.toISOString())
-        .single();
+        .lt('start_date', nextDayStart.toISOString());
       
-      // If today's instance doesn't exist and it's before 7pm, create it
+      // Filter to match entry_fee as well (to distinguish free vs paid versions)
+      const matchingTodayChallenges = (todayChallenges || []).filter(
+        c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
+      );
+      
+      // If multiple exist, log and keep only the first one (we'll deduplicate in getChallenges)
+      if (matchingTodayChallenges.length > 1) {
+        console.warn(`⚠️ Multiple Daily Smile Challenge instances found for today: ${matchingTodayChallenges.length} instances`);
+      }
+      
+      const todayChallenge = matchingTodayChallenges[0];
+      
+      // If today's instance doesn't exist and we're still in today, create it
       if (!todayChallenge && now < todayEnd) {
         await this.createDailyRecurringInstance(challenge, todayStart, todayEnd);
       }
       
-      // Auto-activate today's challenge if start time has passed
+      // Auto-activate today's challenge if it exists (it starts at midnight, so it's immediately active)
       if (todayChallenge && todayChallenge.status === 'upcoming' && now >= todayStart) {
         await supabase
           .from('challenges')
@@ -1198,23 +1271,29 @@ class ChallengesService {
       }
       
       // Check if we need to create tomorrow's instance
-      // Create if current challenge has ended or if it's after 7pm UTC today
-      const shouldCreateNext = now >= endDate || (now.getUTCHours() >= 19);
+      // Create if current challenge has ended (past midnight tonight)
+      const shouldCreateNext = now >= endDate;
       
       if (shouldCreateNext) {
-        // Check if tomorrow's challenge already exists
-        const { data: existingChallenge } = await supabase
+        // Check if tomorrow's challenge already exists (handle multiple results)
+        const { data: existingChallenges } = await supabase
           .from('challenges')
-          .select('id')
+          .select('id, entry_fee')
           .eq('title', challenge.title)
           .eq('is_recurring', true)
           .gte('start_date', nextDayStart.toISOString())
-          .lt('start_date', new Date(nextDayStart.getTime() + 24 * 60 * 60 * 1000).toISOString())
-          .single();
+          .lt('start_date', new Date(nextDayStart.getTime() + 24 * 60 * 60 * 1000).toISOString());
 
-        // Only create if no challenge exists for tomorrow
-        if (!existingChallenge) {
+        // Filter to match entry_fee
+        const matchingExisting = (existingChallenges || []).filter(
+          c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
+        );
+
+        // Only create if no matching challenge exists for tomorrow
+        if (matchingExisting.length === 0) {
           await this.createDailyRecurringInstance(challenge, nextDayStart, nextDayEnd);
+        } else if (matchingExisting.length > 1) {
+          console.warn(`⚠️ Multiple Daily Smile Challenge instances found for tomorrow: ${matchingExisting.length} instances`);
         }
       }
     } catch (error) {
@@ -1248,19 +1327,30 @@ class ChallengesService {
       
       if (shouldCreate) {
         // Check if next week's challenge already exists
-        const { data: existingChallenge } = await supabase
+        // IMPORTANT: Filter by entry_fee to distinguish free vs paid versions
+        // Also check all statuses, not just active, to catch any existing instances
+        const { data: existingChallenges, error: checkError } = await supabase
           .from('challenges')
-          .select('id')
+          .select('id, entry_fee, status')
           .eq('title', challenge.title)
           .eq('is_recurring', true)
+          .eq('entry_fee', challenge.entry_fee || 0) // Match entry_fee to prevent duplicates
           .gte('start_date', nextWeekStart.toISOString())
-          .lte('end_date', nextWeekEnd.toISOString())
-          .single();
+          .lte('end_date', nextWeekEnd.toISOString());
 
-        // Only create if no challenge exists for next week
-        if (!existingChallenge) {
+        // Only create if no matching challenge exists for next week
+        // Handle the case where multiple might exist (shouldn't happen, but be safe)
+        const matchingChallenges = (existingChallenges || []).filter(
+          c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
+        );
+
+        if (matchingChallenges.length === 0) {
           await this.createRecurringInstance(challenge);
+        } else if (matchingChallenges.length > 1) {
+          // Multiple duplicates exist - log warning but don't create another
+          console.warn(`⚠️ Multiple weekly challenge instances found for "${challenge.title}" (entry_fee: ${challenge.entry_fee || 0}): ${matchingChallenges.length} instances`);
         }
+        // If exactly 1 exists, that's correct - do nothing
       }
     } catch (error) {
       console.error('Error handling weekly recurring challenge:', error);
@@ -1293,6 +1383,7 @@ class ChallengesService {
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: 'daily',
+          is_pro_only: originalChallenge.is_pro_only || false,
           next_recurrence: new Date(endDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -1366,6 +1457,7 @@ class ChallengesService {
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: originalChallenge.recurring_schedule,
+          is_pro_only: originalChallenge.is_pro_only || false,
           next_recurrence: new Date(nextWeekEnd.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -1442,6 +1534,7 @@ class ChallengesService {
           end_date: challengeData.end_date,
           max_participants: challengeData.max_participants,
           image_url: challengeData.image_url,
+          is_pro_only: challengeData.is_pro_only || false,
           status: 'upcoming',
         })
         .select()
@@ -1475,6 +1568,342 @@ class ChallengesService {
     } catch (error) {
       console.error('Error in createChallenge:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Generate unique join code for private challenges
+   */
+  private generateJoinCode(): string {
+    return Math.random().toString(36).substring(2, 10).toUpperCase();
+  }
+
+  /**
+   * Create user challenge (private or public request)
+   */
+  async createUserChallenge(
+    userId: string, 
+    challengeData: CreateChallengeData
+  ): Promise<{ challenge: Challenge; joinCode?: string }> {
+    try {
+      const joinCode = challengeData.visibility === 'private' 
+        ? this.generateJoinCode() 
+        : undefined;
+
+      const { data: challenge, error } = await supabase
+        .from('challenges')
+        .insert({
+          title: challengeData.title,
+          description: challengeData.description,
+          category: challengeData.category,
+          duration_weeks: challengeData.duration_weeks,
+          entry_fee: challengeData.entry_fee || 0,
+          verification_type: challengeData.verification_type || 'photo',
+          start_date: challengeData.start_date,
+          end_date: challengeData.end_date,
+          max_participants: challengeData.max_participants,
+          image_url: challengeData.image_url,
+          created_by: userId,
+          is_user_created: true,
+          join_code: joinCode,
+          visibility: challengeData.visibility || 'public',
+          status: 'active', // User challenges start immediately
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating user challenge:', error);
+        throw error;
+      }
+
+      // Insert requirements
+      if (challengeData.requirements.length > 0) {
+        const requirements = challengeData.requirements.map((req, index) => ({
+          challenge_id: challenge.id,
+          requirement_text: req.requirement_text,
+          frequency: req.frequency,
+          target_count: req.target_count,
+          requirement_order: index + 1,
+        }));
+
+        const { error: requirementsError } = await supabase
+          .from('challenge_requirements')
+          .insert(requirements);
+
+        if (requirementsError) {
+          console.error('Error creating requirements:', requirementsError);
+        }
+      }
+
+      return { challenge, joinCode };
+    } catch (error) {
+      console.error('Error in createUserChallenge:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Join challenge by code
+   */
+  /**
+   * Get challenge details by join code (without joining)
+   */
+  async getChallengeByCode(code: string): Promise<Challenge | null> {
+    try {
+      const { data: challenge, error: findError } = await supabase
+        .from('challenges')
+        .select('*')
+        .eq('join_code', code.toUpperCase())
+        .eq('visibility', 'private')
+        .single();
+
+      if (findError || !challenge) {
+        return null;
+      }
+
+      return challenge;
+    } catch (error) {
+      console.error('Error fetching challenge by code:', error);
+      return null;
+    }
+  }
+
+  async joinChallengeByCode(userId: string, code: string): Promise<Challenge> {
+    try {
+      // Find challenge by code
+      const { data: challenge, error: findError } = await supabase
+        .from('challenges')
+        .select('*')
+        .eq('join_code', code.toUpperCase())
+        .eq('visibility', 'private')
+        .single();
+
+      if (findError || !challenge) {
+        throw new Error('Invalid join code');
+      }
+
+      // Join the challenge (reuse existing joinChallenge logic)
+      await this.joinChallenge(challenge.id, userId);
+      
+      return challenge;
+    } catch (error) {
+      console.error('Error joining challenge by code:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get challenges created by user
+   */
+  async getUserCreatedChallenges(userId: string): Promise<Challenge[]> {
+    try {
+      const { data, error } = await supabase
+        .from('challenges')
+        .select('*, challenge_requirements(*)')
+        .eq('created_by', userId)
+        .eq('is_user_created', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error getting user created challenges:', error);
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        return [];
+      }
+
+      // Get participant counts for all challenges
+      const challengeIds = data.map(c => c.id);
+      const { data: participantCounts, error: countError } = await supabase
+        .from('challenge_participants')
+        .select('challenge_id')
+        .in('challenge_id', challengeIds);
+
+      if (countError) {
+        console.error('Error getting participant counts:', countError);
+      }
+
+      // Create a map of challenge_id -> count
+      const countMap = new Map<string, number>();
+      if (participantCounts) {
+        participantCounts.forEach((p: any) => {
+          const current = countMap.get(p.challenge_id) || 0;
+          countMap.set(p.challenge_id, current + 1);
+        });
+      }
+
+      // Add participant_count to each challenge
+      return data.map(challenge => ({
+        ...challenge,
+        participant_count: countMap.get(challenge.id) || 0,
+      }));
+    } catch (error) {
+      console.error('Error in getUserCreatedChallenges:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update user challenge
+   */
+  async updateUserChallenge(
+    challengeId: string,
+    userId: string,
+    updates: Partial<CreateChallengeData>
+  ): Promise<Challenge> {
+    try {
+      const { data, error } = await supabase
+        .from('challenges')
+        .update(updates)
+        .eq('id', challengeId)
+        .eq('created_by', userId)
+        .eq('is_user_created', true)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating user challenge:', error);
+        throw error;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error in updateUserChallenge:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete user challenge
+   */
+  async deleteUserChallenge(challengeId: string, userId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('challenges')
+        .delete()
+        .eq('id', challengeId)
+        .eq('created_by', userId)
+        .eq('is_user_created', true);
+
+      if (error) {
+        console.error('Error deleting user challenge:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error in deleteUserChallenge:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if challenge has non-PRO participants
+   */
+  async hasNonProParticipants(challengeId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('challenge_participants')
+        .select('user_id, profiles!inner(is_pro)')
+        .eq('challenge_id', challengeId);
+
+      if (error) {
+        console.error('Error checking non-pro participants:', error);
+        return false;
+      }
+
+      return data?.some((p: any) => !p.profiles?.is_pro) || false;
+    } catch (error) {
+      console.error('Error in hasNonProParticipants:', error);
+      return false;
+    }
+  }
+
+  // Track if check is in progress to prevent concurrent executions
+  private isCheckingEndedChallenges = false;
+
+  /**
+   * Mark challenge as pending review when it ends
+   */
+  async markChallengeAsPendingReview(challengeId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('challenges')
+        .update({
+          approval_status: 'pending',
+          status: 'completed',
+        })
+        .eq('id', challengeId);
+
+      if (error) {
+        console.error('Error marking challenge as pending review:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error in markChallengeAsPendingReview:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check and update ended challenges to pending review status
+   * Only processes challenges that end from now onwards (not historical challenges)
+   */
+  async checkAndUpdateEndedChallenges(): Promise<void> {
+    // Prevent concurrent executions
+    if (this.isCheckingEndedChallenges) {
+      return;
+    }
+
+    this.isCheckingEndedChallenges = true;
+
+    try {
+      const now = new Date();
+      // Add 1 hour grace period - only mark challenges for review if they ended more than 1 hour ago
+      // This prevents daily challenges from being marked immediately at midnight
+      const gracePeriod = new Date(now.getTime() - (1 * 60 * 60 * 1000)); // 1 hour ago
+      const gracePeriodISO = gracePeriod.toISOString();
+
+      // Find challenges that have ended but don't have approval_status set
+      // Check all ended challenges regardless of when they ended (removed date restriction)
+      // Include 'upcoming', 'active', and 'completed' statuses to catch all scenarios
+      const { data: endedChallenges, error } = await supabase
+        .from('challenges')
+        .select('id, title, end_date, status')
+        .lt('end_date', gracePeriodISO) // Has ended more than 1 hour ago
+        .is('approval_status', null) // Not yet processed
+        .in('status', ['upcoming', 'active', 'completed']); // Include all possible statuses
+
+      if (error) {
+        console.error('Error fetching ended challenges:', error);
+        return;
+      }
+
+      if (!endedChallenges || endedChallenges.length === 0) {
+        return;
+      }
+
+      console.log(`🔍 Found ${endedChallenges.length} challenge(s) that need review`);
+
+      let successCount = 0;
+      // Update each challenge to pending review
+      for (const challenge of endedChallenges) {
+        try {
+          await this.markChallengeAsPendingReview(challenge.id);
+          successCount++;
+        } catch (error) {
+          console.error(`Error updating challenge ${challenge.id} (${challenge.title}):`, error);
+          // Continue with other challenges
+        }
+      }
+
+      if (successCount > 0) {
+        console.log(`✅ Updated ${successCount} challenge(s) to pending review`);
+      }
+    } catch (error) {
+      console.error('Error in checkAndUpdateEndedChallenges:', error);
+    } finally {
+      this.isCheckingEndedChallenges = false;
     }
   }
 }

@@ -199,7 +199,7 @@ export default function MicrolearningScreen({ navigation }: any) {
         key={info.id}
         style={[
           styles.bookContainer,
-          {
+          { 
             marginRight: index === totalBooks - 1 ? 0 : BOOK_GAP,
           }
         ]}
@@ -209,11 +209,11 @@ export default function MicrolearningScreen({ navigation }: any) {
             styles.book,
             {
               width: bookWidth,
-            }
-          ]}
-          onPress={() => {
-            navigation.navigate('InformationDetail', { information: info });
-          }}
+          }
+        ]}
+              onPress={() => {
+        navigation.navigate('InformationDetail', { information: info });
+      }}
           activeOpacity={0.85}
         >
           {bookCoverImage ? (
@@ -232,25 +232,25 @@ export default function MicrolearningScreen({ navigation }: any) {
               >
                 {info.title}
               </Text>
-            </View>
-          )}
+              </View>
+            )}
         </TouchableOpacity>
 
         {/* Duration and completion indicator below book */}
         <View style={styles.bookMeta}>
           <Text style={[styles.durationText, { color: theme.textSecondary }]}>
             {info.duration_minutes} min
-          </Text>
-          {isCompleted && (
+            </Text>
+            {isCompleted && (
             <Ionicons 
               name={isPassed ? "checkmark-circle" : "close-circle"} 
               size={20} 
               color={isPassed ? '#22C55E' : '#EF4444'} 
               style={styles.completionIcon}
             />
-          )}
+            )}
+          </View>
         </View>
-      </View>
     );
   };
 
@@ -268,9 +268,9 @@ export default function MicrolearningScreen({ navigation }: any) {
               <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
             <View style={styles.titleContainer}>
-              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-                Microlearning
-              </Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+              Microlearning
+            </Text>
             </View>
             <View style={{ width: 40 }} />
           </View>
@@ -378,7 +378,7 @@ export default function MicrolearningScreen({ navigation }: any) {
                   decelerationRate="fast"
                   contentContainerStyle={styles.booksCarousel}
                 >
-                  {information
+                {information
                     .filter(info => (info.category !== 'Books' && !info.is_book) && !userProgress[info.id]?.completed)
                     .map((info, index) => renderBookCard(info, index))}
                 </ScrollView>
@@ -399,11 +399,11 @@ export default function MicrolearningScreen({ navigation }: any) {
                   decelerationRate="fast"
                   contentContainerStyle={styles.booksCarousel}
                 >
-                  {information
+                {information
                     .filter(info => (info.category !== 'Books' && !info.is_book) && userProgress[info.id]?.completed)
                     .map((info, index) => renderBookCard(info, index))}
                 </ScrollView>
-              </View>
+          </View>
             )}
           </>
         )}

@@ -17,6 +17,7 @@
       "statusBarStyle": "dark",
       "statusBarBackgroundColor": "#ffffff",
       "bundleIdentifier": "com.anonymous.nutrapp",
+      "merchantIdentifier": "merchant.com.anonymous.nutrapp",
       "infoPlist": {
         "NSHealthShareUsageDescription": "We need access to your health data to automatically track your sleep, steps, and exercise habits.",
         "NSHealthUpdateUsageDescription": "We need permission to save your health data.",

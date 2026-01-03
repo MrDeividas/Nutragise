@@ -11,6 +11,7 @@ import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
 import { supabase } from './lib/supabase';
 import { stripeService } from './lib/stripeService';
+import { challengesService } from './lib/challengesService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
 
@@ -41,7 +42,7 @@ const ProfileSettingsScreen = lazy(() => import('./screens/ProfileSettingsScreen
 const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
-const HomeScreen = lazy(() => import('./screens/HomeScreen'));
+const CommunityScreen = lazy(() => import('./screens/CommunityScreen'));
 const ActionScreen = lazy(() => import('./screens/ActionScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const ProgressChartsScreen = lazy(() => import('./screens/ProgressChartsScreen'));
@@ -51,6 +52,7 @@ const FocusScreen = lazy(() => import('./screens/FocusScreen'));
 const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
 const DMScreen = lazy(() => import('./screens/DMScreen'));
 const ChatWindowScreen = lazy(() => import('./screens/ChatWindowScreen'));
+const AdminReviewScreen = lazy(() => import('./screens/AdminReviewScreen'));
 
 import { GoalsStackParamList } from './screens/GoalDetailScreen';
 
@@ -148,6 +150,15 @@ function ProfileStack() {
         <Stack.Screen 
           name="ProfileSettings" 
           component={ProfileSettingsScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal'
+          }}
+        />
+        <Stack.Screen 
+          name="AdminReview" 
+          component={AdminReviewScreen as any}
           options={{
             animation: 'slide_from_right',
             gestureEnabled: true,
@@ -274,11 +285,11 @@ function MainTabs() {
         )}
       </Tab.Screen>
       <Tab.Screen 
-        name="Home" 
+        name="Community" 
         options={{ tabBarLabel: 'Community' }}>
         {({ navigation }) => (
           <Suspense fallback={<LoadingScreen />}>
-            <HomeScreen navigation={navigation} />
+            <CommunityScreen navigation={navigation} />
           </Suspense>
         )}
       </Tab.Screen>
@@ -501,6 +512,10 @@ export default function App() {
 
   useEffect(() => {
     initialize();
+    // Check and update ended challenges to pending review status
+    challengesService.checkAndUpdateEndedChallenges().catch(error => {
+      console.error('Error checking ended challenges:', error);
+    });
   }, []);
 
   useEffect(() => {

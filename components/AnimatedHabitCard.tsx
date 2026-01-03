@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,13 +21,17 @@ interface AnimatedHabitCardProps {
   handleHabitLongPress: (habitId: string) => void;
   cardAnimations: any;
   partnership: any;
+  pendingInvite: any;
   partnerStatus: any;
   onInvite: () => void;
   onRemovePartner: () => void;
+  onCancelInvite: () => void;
+  onNudge: () => Promise<Date | null>;
+  lastNudgeTime: Date | null;
   styles: any;
 }
 
-const AnimatedHabitCard = React.memo(({
+const AnimatedHabitCard = ({
   card,
   index,
   totalCards,
@@ -44,12 +48,52 @@ const AnimatedHabitCard = React.memo(({
   handleHabitLongPress,
   cardAnimations,
   partnership,
+  pendingInvite,
   partnerStatus,
   onInvite,
   onRemovePartner,
+  onCancelInvite,
+  onNudge,
+  lastNudgeTime,
   styles
 }: AnimatedHabitCardProps) => {
   const anim = cardAnimations[card.key];
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [canNudge, setCanNudge] = useState(true);
+  
+  useEffect(() => {
+    console.log('[AnimatedHabitCard] lastNudgeTime changed:', lastNudgeTime);
+    if (!lastNudgeTime) {
+      setCanNudge(true);
+      setTimeRemaining('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = new Date();
+      const nudgeTime = new Date(lastNudgeTime);
+      const threeHoursLater = new Date(nudgeTime.getTime() + 3 * 60 * 60 * 1000);
+      const diffMs = threeHoursLater.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setCanNudge(true);
+        setTimeRemaining('');
+        console.log('[AnimatedHabitCard] Timer expired, showing nudge button');
+      } else {
+        setCanNudge(false);
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const remaining = `${hours}h ${minutes}m`;
+        setTimeRemaining(remaining);
+        console.log('[AnimatedHabitCard] Timer active, remaining:', remaining);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [lastNudgeTime]);
   
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -71,7 +115,7 @@ const AnimatedHabitCard = React.memo(({
           styles.highlightCard,
           {
             width: spotlightCardWidth,
-            marginRight: index === totalCards - 1 ? 0 : 12,
+            marginRight: index === totalCards - 1 ? 0 : 10,
             backgroundColor: cardBackgroundColor,
             shadowColor: cardState?.completed ? '#065f46' : isDark ? '#000000' : '#94a3b8',
           },
@@ -123,9 +167,55 @@ const AnimatedHabitCard = React.memo(({
                 style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' }}
               />
             </TouchableOpacity>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-              {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
+            {partnerStatus?.completed ? (
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+                Completed today ✓
+              </Text>
+            ) : canNudge ? (
+              <TouchableOpacity 
+                onPress={async (e) => { e.stopPropagation(); await onNudge(); }}
+                style={{ 
+                  paddingHorizontal: 10, 
+                  paddingVertical: 4, 
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)', 
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.3)'
+                }}
+              >
+                <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600' }}>
+                  Nudge
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>
+                Next nudge {timeRemaining}
+              </Text>
+            )}
+          </View>
+        ) : pendingInvite ? (
+          <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Pending Invite', `Waiting for ${pendingInvite.partner?.username || 'Friend'} to accept`); }}>
+              <Image 
+                source={{ uri: pendingInvite.partner?.avatar_url || 'https://via.placeholder.com/24' }} 
+                style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', opacity: 0.6 }}
+              />
+            </TouchableOpacity>
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontStyle: 'italic' }}>
+              Pending...
             </Text>
+            <TouchableOpacity 
+              onPress={(e) => { e.stopPropagation(); onCancelInvite(); }}
+              style={{ 
+                paddingHorizontal: 8, 
+                paddingVertical: 3, 
+                backgroundColor: 'rgba(248, 113, 113, 0.2)',
+                borderRadius: 8,
+                marginLeft: 4
+              }}
+            >
+              <Text style={{ color: '#F87171', fontSize: 10, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -145,7 +235,7 @@ const AnimatedHabitCard = React.memo(({
       </TouchableOpacity>
     </Reanimated.View>
   );
-});
+};
 
 export default AnimatedHabitCard;
 

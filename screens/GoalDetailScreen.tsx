@@ -246,7 +246,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
               <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
             <View style={styles.headerTitleContainer}>
-              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Goal Details</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Goal Details</Text>
             </View>
             <View style={styles.headerSpacer} />
           </View>
@@ -482,10 +482,10 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
                     </View>
                     {photo.photo_url && photo.photo_url !== 'no-photo' && (
                       <View style={styles.updateImageContainer}>
-                        <Image 
-                          source={{ uri: photo.photo_url }} 
+                      <Image 
+                        source={{ uri: photo.photo_url }} 
                           style={styles.updateImage}
-                        />
+                      />
                         <TouchableOpacity
                           style={styles.updateDeleteButton}
                           onPress={() => handleDeleteCheckIn(photo)}
@@ -495,12 +495,12 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
                       </View>
                     )}
                     {(!photo.photo_url || photo.photo_url === 'no-photo') && (
-                      <TouchableOpacity
+                    <TouchableOpacity
                         style={styles.updateDeleteButtonText}
-                        onPress={() => handleDeleteCheckIn(photo)}
-                      >
+                      onPress={() => handleDeleteCheckIn(photo)}
+                    >
                         <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
-                      </TouchableOpacity>
+                    </TouchableOpacity>
                     )}
                   </View>
                 </View>

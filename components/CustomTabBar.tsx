@@ -77,7 +77,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
             // Get icon name based on route name
             let iconName: any = 'home-outline';
-            if (route.name === 'Home') iconName = isFocused ? 'people' : 'people-outline'; // Community icon
+            if (route.name === 'Community') iconName = isFocused ? 'people' : 'people-outline'; // Community icon
             else if (route.name === 'Action') iconName = isFocused ? 'flash' : 'flash-outline';
             else if (route.name === 'Goals') iconName = isFocused ? 'trending-up' : 'trending-up-outline';
             else if (route.name === 'Discover') iconName = isFocused ? 'podium' : 'podium-outline';

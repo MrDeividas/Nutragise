@@ -75,6 +75,7 @@ class ChallengePotService {
 
   /**
    * Add investment to pot (when user joins challenge)
+   * Note: Platform fee and winners pot are calculated during distribution, not here
    */
   async addInvestment(
     challengeId: string,
@@ -85,17 +86,13 @@ class ChallengePotService {
       // Get or create pot
       let pot = await this.createPot(challengeId);
 
-      // Update pot total
+      // Just update total amount - we'll calculate splits during distribution
       const newTotal = Number(pot.total_amount) + amount;
-      const platformFee = newTotal * (Number(pot.platform_fee_percentage) / 100);
-      const winnersPot = newTotal - platformFee;
 
       const { data: updatedPot, error: potError } = await supabase
         .from('challenge_pots')
         .update({
           total_amount: newTotal,
-          platform_fee_amount: platformFee,
-          winners_pot: winnersPot,
         })
         .eq('id', pot.id)
         .select()
@@ -122,6 +119,7 @@ class ChallengePotService {
 
   /**
    * Remove investment from pot (when user leaves challenge before it starts)
+   * Note: Platform fee and winners pot are calculated during distribution, not here
    */
   async removeInvestment(
     challengeId: string,
@@ -141,17 +139,13 @@ class ChallengePotService {
         throw new Error('Pot not found');
       }
 
-      // Calculate new totals (subtract the amount)
+      // Just update total amount - we'll calculate splits during distribution
       const newTotal = Math.max(0, Number(pot.total_amount) - amount);
-      const platformFee = newTotal * (Number(pot.platform_fee_percentage) / 100);
-      const winnersPot = newTotal - platformFee;
 
       const { data: updatedPot, error: updateError } = await supabase
         .from('challenge_pots')
         .update({
           total_amount: newTotal,
-          platform_fee_amount: platformFee,
-          winners_pot: winnersPot,
         })
         .eq('id', pot.id)
         .select()
@@ -321,9 +315,27 @@ class ChallengePotService {
 
   /**
    * Distribute pot to winners at challenge end
+   * @param skipApprovalCheck - Skip approval status check (used when called during approval process)
    */
-  async distributePot(challengeId: string): Promise<void> {
+  async distributePot(challengeId: string, skipApprovalCheck: boolean = false): Promise<void> {
     try {
+      // Get challenge to check approval status and entry fee
+      const { data: challenge, error: challengeError } = await supabase
+        .from('challenges')
+        .select('approval_status, entry_fee')
+        .eq('id', challengeId)
+        .single();
+
+      if (challengeError) {
+        console.error('Error fetching challenge:', challengeError);
+        throw challengeError;
+      }
+
+      // Only distribute if challenge is approved (unless we're in the approval process)
+      if (!skipApprovalCheck && challenge.approval_status !== 'approved') {
+        throw new Error('Challenge must be approved before distributing pot');
+      }
+
       // Get pot
       const { data: pot, error: potError } = await supabase
         .from('challenge_pots')
@@ -341,7 +353,7 @@ class ChallengePotService {
         return;
       }
 
-      // Get all participants
+      // Get all participants (including invalid ones for counting)
       const { data: allParticipantsData, error: allParticipantsError } = await supabase
         .from('challenge_participants')
         .select('*')
@@ -354,13 +366,14 @@ class ChallengePotService {
 
       const totalParticipants = allParticipantsData?.length || 0;
 
-      // Get all participants who completed 100%
+      // Get all participants who completed 100% AND are NOT invalid
       const { data: participants, error: participantsError } = await supabase
         .from('challenge_participants')
         .select('*')
         .eq('challenge_id', challengeId)
         .eq('status', 'completed')
-        .eq('completion_percentage', 100);
+        .eq('completion_percentage', 100)
+        .eq('is_invalid', false);
 
       if (participantsError) {
         console.error('Error fetching participants:', participantsError);
@@ -370,21 +383,36 @@ class ChallengePotService {
       if (!participants || participants.length === 0) {
         console.log('⚠️ No winners to distribute pot to');
         
-        // All funds go to platform as fees
-        const totalPot = Number(pot.total_pot);
+        // All funds go to platform as fees - send to bank via Stripe Payout
+        // When everyone forfeits, platform gets 100% (no winners to distribute to)
+        const totalPot = Number(pot.total_amount);
         if (totalPot > 0) {
           try {
-            await walletService.addPlatformFee(totalPot, challengeId);
-            console.log('✅ All forfeited funds collected as platform fee:', totalPot);
+            const { stripeService } = await import('./stripeService');
+            const payout = await stripeService.createPlatformFeePayout(
+              totalPot,
+              challengeId
+            );
+            console.log('✅ All forfeited funds sent to bank via Stripe Payout:', {
+              amount: totalPot,
+              payoutId: payout.payoutId,
+              status: payout.status,
+              arrivalDate: payout.arrivalDate,
+            });
           } catch (error) {
-            console.error('❌ Error collecting forfeited funds:', error);
+            console.error('❌ Error creating platform payout (continuing):', error);
+            console.warn('⚠️ Platform fee of £' + totalPot + ' was not collected - manual payout may be needed');
+            // Note: The pot distribution continues even if fee collection fails
+            // Platform fee can be collected manually if needed
           }
         }
         
-        // Update pot status
+        // Update pot with final values
         await supabase
           .from('challenge_pots')
           .update({
+            platform_fee_amount: totalPot,
+            winners_pot: 0,
             status: 'completed',
             distributed_at: new Date().toISOString(),
           })
@@ -393,38 +421,81 @@ class ChallengePotService {
         return;
       }
 
+      // Get entry fee from challenge (already fetched above)
+      const entryFee = challenge.entry_fee || 0;
       const winnerCount = participants.length;
-      const everyoneWon = winnerCount === totalParticipants;
+      // Exclude invalid participants from loser count
+      const validParticipants = allParticipantsData?.filter(p => !p.is_invalid).length || 0;
+      const loserCount = validParticipants - winnerCount;
+      const everyoneWon = winnerCount === validParticipants;
 
       let payoutPerWinner: number;
       let platformFeeCollected = 0;
 
       if (everyoneWon) {
         // Everyone completed - refund investment to each user (no platform fee)
-        const { data: challenge } = await supabase
-          .from('challenges')
-          .select('entry_fee')
-          .eq('id', challengeId)
-          .single();
-        
-        payoutPerWinner = challenge?.entry_fee || 0;
+        payoutPerWinner = entryFee;
         console.log('🎉 Everyone completed! Refunding investments without platform fee.');
       } else {
-        // Some users failed - distribute winners pot and collect platform fee from losers
-        const winnersPot = Number(pot.winners_pot);
-        const platformFee = Number(pot.platform_fee_amount);
+        // Some users failed - calculate platform fee from ONLY losers' stakes
+        // Platform gets 30% of losers' stakes
+        // Winners split the remaining 70% of losers' stakes PLUS their own stakes back
+        // Note: Invalid users' stakes are excluded from calculations (they lose their entry fee)
+        
+        const totalPot = validParticipants * entryFee;
+        const losersStakes = loserCount * entryFee;
+        
+        // Platform fee is 30% of ONLY the losers' stakes (the profit pool)
+        const platformFee = losersStakes * (Number(pot.platform_fee_percentage) / 100);
+        
+        // Winners pool = total pot - platform fee
+        const winnersPot = totalPot - platformFee;
         
         payoutPerWinner = winnersPot / winnerCount;
         platformFeeCollected = platformFee;
 
-        // Collect platform fee from forfeited funds
+        console.log('💰 Distribution calculation:', {
+          totalParticipants,
+          winnerCount,
+          loserCount,
+          entryFee,
+          totalPot,
+          losersStakes,
+          platformFeePercentage: pot.platform_fee_percentage,
+          platformFee,
+          winnersPot,
+          payoutPerWinner,
+        });
+
+        // Update pot with calculated values
+        await supabase
+          .from('challenge_pots')
+          .update({
+            platform_fee_amount: platformFee,
+            winners_pot: winnersPot,
+          })
+          .eq('id', pot.id);
+
+        // Send platform fee to bank account via Stripe Payout
         if (platformFee > 0) {
           try {
-            await walletService.addPlatformFee(platformFee, challengeId);
-            console.log('✅ Platform fee collected from forfeited funds:', platformFee);
+            const { stripeService } = await import('./stripeService');
+            const payout = await stripeService.createPlatformFeePayout(
+              platformFee,
+              challengeId
+            );
+            console.log('✅ Platform fee (30% of losers\' stakes) sent to bank via Stripe Payout:', {
+              amount: platformFee,
+              payoutId: payout.payoutId,
+              status: payout.status,
+              arrivalDate: payout.arrivalDate,
+            });
           } catch (error) {
-            console.error('❌ Error collecting platform fee:', error);
-            // Continue with distribution even if fee collection fails
+            console.error('❌ Error creating platform payout (continuing with distribution):', error);
+            console.warn('⚠️ Platform fee of £' + platformFee + ' was not collected - manual payout may be needed');
+            // Note: Challenge distribution continues even if fee collection fails
+            // The pot status is updated and winners get paid
+            // Platform fee can be collected manually if needed
           }
         }
       }
@@ -481,19 +552,34 @@ class ChallengePotService {
         }
       }
 
-      // Update pot status
-      await supabase
-        .from('challenge_pots')
-        .update({
-          status: 'completed',
-          distributed_at: new Date().toISOString(),
-        })
-        .eq('id', pot.id);
+      // Update pot status (only if not already updated in the else branch)
+      if (everyoneWon) {
+        await supabase
+          .from('challenge_pots')
+          .update({
+            platform_fee_amount: 0,
+            winners_pot: validParticipants * entryFee,
+            status: 'completed',
+            distributed_at: new Date().toISOString(),
+          })
+          .eq('id', pot.id);
+      } else {
+        // Already updated in the else branch above, just mark as completed
+        await supabase
+          .from('challenge_pots')
+          .update({
+            status: 'completed',
+            distributed_at: new Date().toISOString(),
+          })
+          .eq('id', pot.id);
+      }
 
       console.log('✅ Pot distribution complete:', {
         challengeId,
         winnerCount: participants.length,
         totalParticipants,
+        validParticipants,
+        invalidParticipants: totalParticipants - validParticipants,
         everyoneWon,
         payoutPerWinner,
         platformFeeCollected,
@@ -513,7 +599,7 @@ class ChallengePotService {
     try {
       const now = new Date().toISOString();
       
-      // Get all challenges that have ended but pot not yet distributed
+      // Get all challenges that have ended, are approved, but pot not yet distributed
       const { data: completedChallenges, error } = await supabase
         .from('challenges')
         .select(`
@@ -521,6 +607,7 @@ class ChallengePotService {
           challenge_pots!inner(id, status, distributed_at)
         `)
         .lt('end_date', now)
+        .eq('approval_status', 'approved')
         .is('challenge_pots.distributed_at', null);
 
       if (error) {

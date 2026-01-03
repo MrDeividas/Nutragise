@@ -396,9 +396,17 @@ export default function UserProfileScreen({ navigation, route }: Props) {
               )}
             </View>
             <View style={styles.profileInfoSection}>
+              <View style={styles.profileDisplayNameRow}>
               <Text style={[styles.profileDisplayName, { color: theme.textPrimary }]}>
                 @{profile.username}
               </Text>
+                {profile.is_pro && (
+                  <View style={styles.proMicroBadge}>
+                    <Ionicons name="star" size={10} color="#FFFFFF" />
+                    <Text style={styles.proMicroBadgeText}>PRO</Text>
+                  </View>
+                )}
+              </View>
               <Text style={[styles.profileLocation, { color: theme.textSecondary }]}>
                 England, London
               </Text>
@@ -875,11 +883,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  profileDisplayNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   profileDisplayName: {
     fontSize: 18,
     fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 4,
+  },
+  proMicroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  proMicroBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   profileLocation: {
     fontSize: 14,

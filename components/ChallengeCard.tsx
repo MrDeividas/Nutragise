@@ -12,10 +12,10 @@ import { useTheme } from '../state/themeStore';
 
 const { width } = Dimensions.get('window');
 const horizontalPadding = 24 * 2;
-const gap = 12;
+const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
 
-export default function ChallengeCard({ challenge, onPress, isJoined }: ChallengeCardProps) {
+export default function ChallengeCard({ challenge, onPress, isJoined, isCompleted }: ChallengeCardProps) {
   const { theme } = useTheme();
 
   const getCategoryColor = (category: string) => {
@@ -132,6 +132,9 @@ export default function ChallengeCard({ challenge, onPress, isJoined }: Challeng
 
   const categoryColor = getCategoryColor(challenge.category);
   const categoryIcon = getCategoryIcon(challenge.category);
+  
+  // Use dark purple for private challenges, otherwise use category color
+  const sectionColor = challenge.visibility === 'private' ? '#4B0082' : categoryColor;
 
   return (
     <TouchableOpacity
@@ -140,7 +143,7 @@ export default function ChallengeCard({ challenge, onPress, isJoined }: Challeng
       activeOpacity={0.8}
     >
       {/* Blue Section */}
-      <View style={[styles.blueSection, { backgroundColor: categoryColor }]} />
+      <View style={[styles.blueSection, { backgroundColor: sectionColor }]} />
       
       {/* Content */}
       <View style={styles.content}>
@@ -149,30 +152,47 @@ export default function ChallengeCard({ challenge, onPress, isJoined }: Challeng
           <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
             {challenge.title}
           </Text>
-          {isJoined && (
+          <View style={styles.topBadgesRow}>
+            {challenge.approval_status === 'pending' ? (
+              <View style={styles.pendingBadge}>
+                <Ionicons name="time-outline" size={14} color="#F59E0B" />
+                <Text style={styles.pendingText}>Pending Review</Text>
+              </View>
+            ) : challenge.approval_status === 'rejected' ? (
+              <View style={styles.rejectedBadge}>
+                <Ionicons name="close-circle" size={14} color="#EF4444" />
+                <Text style={styles.rejectedText}>Rejected</Text>
+              </View>
+            ) : isCompleted ? (
+            <View style={styles.doneBadge}>
+              <Ionicons name="checkmark-done-circle" size={14} color="#F59E0B" />
+              <Text style={styles.doneText}>Done</Text>
+            </View>
+          ) : isJoined ? (
             <View style={styles.joinedBadge}>
               <Ionicons name="checkmark-circle" size={14} color="#10B981" />
               <Text style={styles.joinedText}>Joined</Text>
             </View>
-          )}
+          ) : null}
           <View style={styles.participantsContainerAction}>
             <Ionicons name="people" size={14} color={theme.textSecondary} />
             <Text style={[styles.participantsTextAction, { color: theme.textSecondary }]}>
               <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
             </Text>
+            </View>
           </View>
         </View>
 
         {/* Bottom Section */}
         <View style={styles.bottomSection}>
           <View style={styles.tagsContainer}>
-            <View style={[styles.tag, { backgroundColor: categoryColor }]}>
-              <Ionicons name={categoryIcon} size={12} color="#FFFFFF" />
-              <Text style={styles.tagText}>{challenge.category}</Text>
+            <View style={[styles.tag, { backgroundColor: sectionColor }]}>
+              <Ionicons name={challenge.visibility === 'private' ? 'lock-closed-outline' : categoryIcon} size={12} color="#FFFFFF" />
+              <Text style={styles.tagText}>{challenge.visibility === 'private' ? 'Private' : challenge.category}</Text>
             </View>
-            <View style={[styles.tag, { backgroundColor: '#FFFFFF' }]}>
-              <Text style={[styles.tagText, { color: categoryColor }]}>
-                {formatEntryFee(challenge.entry_fee)}
+            <View style={[styles.durationBadge, { backgroundColor: sectionColor }]}>
+              <Text style={styles.durationBadgeText}>
+                {formatDuration(challenge.duration_weeks)}
               </Text>
             </View>
           </View>
@@ -180,18 +200,23 @@ export default function ChallengeCard({ challenge, onPress, isJoined }: Challeng
           <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
             {getTimeRemaining()}
           </Text>
-          <Text style={[styles.duration, { color: 'rgba(255,255,255,0.9)' }]}>
-            {formatDuration(challenge.duration_weeks)}
-          </Text>
 
           <View style={styles.feeContainer}>
             <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
-              {formatEntryFee(challenge.entry_fee)} investment
+              {formatEntryFee(challenge.entry_fee)} challenge
             </Text>
             <Text style={[styles.potText, { color: 'rgba(255,255,255,0.9)' }]}>
               £{(challenge.participant_count || 0) * challenge.entry_fee} shared pot
             </Text>
           </View>
+
+          {/* Pro Badge (Bottom Right) */}
+          {challenge.is_pro_only && (
+            <View style={styles.proBadge}>
+              <Ionicons name="star" size={10} color="#FFFFFF" />
+              <Text style={styles.proBadgeText}>PRO</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -201,10 +226,10 @@ export default function ChallengeCard({ challenge, onPress, isJoined }: Challeng
 const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
-    height: 280,
+    height: 220,
     borderRadius: 20,
     borderWidth: 1,
-    marginRight: 16,
+    marginRight: 10, // Match habit card spacing
     overflow: 'hidden',
     position: 'relative',
     flexDirection: 'column',
@@ -220,7 +245,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '65%',
+    height: '60%',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     borderTopLeftRadius: 12,
@@ -232,27 +257,33 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   topSection: {
-    height: '35%',
+    height: '40%',
     justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   bottomSection: {
-    height: '65%',
+    height: '60%',
     justifyContent: 'space-between',
-    paddingTop: 16,
+    paddingTop: 12,
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 16,
+    position: 'relative',
   },
   tagsContainer: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
+    marginLeft: 0,
+    paddingLeft: 0,
+    alignItems: 'flex-start',
+    alignSelf: 'flex-start',
   },
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingLeft: 0,
+    paddingRight: 8,
     paddingVertical: 4,
     borderRadius: 12,
     gap: 4,
@@ -263,29 +294,38 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   timeRemaining: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
   },
-  duration: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     lineHeight: 20,
     marginBottom: 8,
-    flex: 1,
+  },
+  durationBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  durationBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  topBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   participantsContainerAction: {
-    position: 'absolute',
-    bottom: 8,
-    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginLeft: 'auto',
   },
   participantsTextAction: {
     fontSize: 12,
@@ -299,24 +339,88 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    alignSelf: 'flex-start',
-    marginTop: 6,
   },
   joinedText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#10B981',
+  },
+  doneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  doneText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#F59E0B',
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pendingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#F59E0B',
+  },
+  rejectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  rejectedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EF4444',
   },
   feeContainer: {
     alignItems: 'flex-start',
   },
   feeText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     marginBottom: 2,
   },
   potText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  proBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  proBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 });

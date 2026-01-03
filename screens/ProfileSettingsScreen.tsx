@@ -1,20 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import CustomBackground from '../components/CustomBackground';
+import { useBottomNavPadding } from '../components/CustomTabBar';
 
 import { supabase } from '../lib/supabase';
+import { stripeService } from '../lib/stripeService';
+import { adminService } from '../lib/adminService';
 
 export default function ProfileSettingsScreen() {
   const navigation = useNavigation();
   const { theme, isDark, toggleTheme } = useTheme();
   const { user, updateProfile, signOut, resendVerificationEmail, checkEmailVerification } = useAuthStore();
+  const bottomNavPadding = useBottomNavPadding();
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Check email verification status
   const checkEmailStatus = async () => {
@@ -22,14 +28,53 @@ export default function ProfileSettingsScreen() {
     setEmailVerified(verified);
   };
 
+  // Load user profile to check is_pro status
+  const loadUserProfile = async () => {
+    if (!user) return;
+    
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('is_pro')
+        .eq('id', user.id)
+        .single();
+      
+      if (!error && profile) {
+        setUserProfile(profile);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
+
+  // Check admin status
+  const checkAdminStatus = async () => {
+    if (!user?.id) return;
+    try {
+      const admin = await adminService.isAdmin(user.id);
+      setIsAdmin(admin);
+      // Debug: Log admin status (remove in production)
+      if (__DEV__) {
+        console.log('Admin status check:', { userId: user.id, isAdmin: admin });
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      setIsAdmin(false);
+    }
+  };
+
   // Check on mount and when screen comes into focus
   useEffect(() => {
     checkEmailStatus();
+    loadUserProfile();
+    checkAdminStatus();
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       checkEmailStatus();
+      loadUserProfile();
+      checkAdminStatus();
     }, [])
   );
 
@@ -70,6 +115,30 @@ export default function ProfileSettingsScreen() {
     );
   };
 
+  // Handle subscription management
+  const handleManageSubscription = async () => {
+    if (!user) return;
+
+    try {
+      // Get customer portal URL from Stripe
+      const portalUrl = await stripeService.getCustomerPortalUrl(user.id);
+      
+      // Open Customer Portal in browser
+      const supported = await Linking.canOpenURL(portalUrl);
+      if (supported) {
+        await Linking.openURL(portalUrl);
+      } else {
+        Alert.alert('Error', 'Cannot open subscription management page');
+      }
+    } catch (error: any) {
+      console.error('Error opening customer portal:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to open subscription management. Please try again.'
+      );
+    }
+  };
+
   let joinDateText = 'Joined';
   if (user?.created_at) {
     const date = new Date(user.created_at);
@@ -91,7 +160,10 @@ export default function ProfileSettingsScreen() {
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
         <View style={styles.headerSpacer} />
       </View>
-      <ScrollView contentContainerStyle={styles.optionsContainer}>
+      <ScrollView 
+        contentContainerStyle={[styles.optionsContainer, { paddingBottom: 24 + bottomNavPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Email Verification Reminder */}
         {emailVerified === false && (
           <View style={[styles.emailVerificationContainer, { backgroundColor: 'rgba(255, 193, 7, 0.1)', borderColor: '#FFC107' }]}>
@@ -162,6 +234,37 @@ export default function ProfileSettingsScreen() {
         <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           <Text style={[styles.optionText, { color: theme.primary }]}>Delete Account</Text>
         </TouchableOpacity>
+        
+        {/* Admin Review - Admin Users Only */}
+        {isAdmin && (
+          <TouchableOpacity
+            style={[styles.option, styles.optionRow, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+            onPress={() => navigation.navigate('AdminReview' as never)}
+          >
+            <View style={styles.optionLeft}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={theme.primary} style={styles.optionIcon} />
+              <Text style={[styles.optionText, { color: theme.primary }]}>Admin Review</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+          </TouchableOpacity>
+        )}
+        
+        {/* Manage Subscription Button - Pro Users Only */}
+        {userProfile?.is_pro && (
+          <TouchableOpacity
+            style={[styles.manageSubscriptionButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+            onPress={handleManageSubscription}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.manageSubscriptionIconContainer, { backgroundColor: `${theme.primary}20` }]}>
+              <Ionicons name="card-outline" size={18} color={theme.primary} />
+            </View>
+            <Text style={[styles.manageSubscriptionText, { color: theme.textPrimary }]}>
+              Manage Subscription
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+          </TouchableOpacity>
+        )}
         
         {/* Log Out Button */}
         <TouchableOpacity 
@@ -291,6 +394,27 @@ const styles = StyleSheet.create({
   },
   resendButtonText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  manageSubscriptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  manageSubscriptionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  manageSubscriptionText: {
+    flex: 1,
+    fontSize: 16,
     fontWeight: '600',
   },
 }); 

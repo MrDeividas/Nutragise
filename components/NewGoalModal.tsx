@@ -342,7 +342,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={() => {}}>
-        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+        <View style={styles.modalContainer}>
           <KeyboardAvoidingView 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
@@ -668,6 +668,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   keyboardView: {
     flex: 1,

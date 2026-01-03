@@ -19,9 +19,9 @@
 ### 1.1 Public Read Access to `daily_habits` and `user_points_daily`
 
 **Current Usage:**
-- ✅ **Feed Feature** (`screens/HomeScreen.tsx:938-952`): Fetches habits/points for multiple users to display in the social feed
+- ✅ **Feed Feature** (`screens/CommunityScreen.tsx:938-952`): Fetches habits/points for multiple users to display in the social feed
 - ✅ **User Profile Viewing** (`screens/UserProfileScreen.tsx:167`): Views other users' habits when viewing their profile
-- ✅ **Feed Display** (`screens/HomeScreen.tsx:2473`): Shows habit completion data in daily posts
+- ✅ **Feed Display** (`screens/CommunityScreen.tsx:2473`): Shows habit completion data in daily posts
 
 **Impact if Fixed:**
 - 🔴 **WILL BREAK** - Feed will fail to load other users' habit data

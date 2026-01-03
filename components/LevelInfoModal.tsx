@@ -183,7 +183,7 @@ export default function LevelInfoModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
@@ -224,6 +224,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',

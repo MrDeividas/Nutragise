@@ -37,12 +37,13 @@ import StreakModal from '../components/StreakModal';
 import CreatePostModal from '../components/CreatePostModal';
 import NewGoalModal from '../components/NewGoalModal';
 import LevelInfoModal from '../components/LevelInfoModal';
+import ChallengeCard from '../components/ChallengeCard';
+import { Challenge } from '../types/challenges';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
 import { challengesService } from '../lib/challengesService';
 import { pointsService } from '../lib/pointsService';
-import { Challenge } from '../types/challenges';
 import { supabase } from '../lib/supabase';
 import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, HabitAccountabilityPartner } from '../types/database';
 import InviteFriendModal from '../components/InviteFriendModal';
@@ -345,7 +346,7 @@ const isGoalDueToday = (goal: any, checkedInGoals: Set<string>): boolean => {
   return goal.frequency[todayDayOfWeek] && !checkedInGoals.has(goal.id);
 };
 
-const AnimatedHabitCard = React.memo(({
+const AnimatedHabitCard = ({
   card,
   index,
   totalCards,
@@ -365,9 +366,43 @@ const AnimatedHabitCard = React.memo(({
   partnerStatus,
   onInvite,
   onRemovePartner,
+  onNudge,
+  lastNudgeTime,
   styles
 }: any) => {
   const anim = cardAnimations[card.key];
+  const [timeRemaining, setTimeRemaining] = React.useState<string>('');
+  const [canNudge, setCanNudge] = React.useState(true);
+  
+  React.useEffect(() => {
+    if (!lastNudgeTime) {
+      setCanNudge(true);
+      setTimeRemaining('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = new Date();
+      const nudgeTime = new Date(lastNudgeTime);
+      const threeHoursLater = new Date(nudgeTime.getTime() + 3 * 60 * 60 * 1000);
+      const diffMs = threeHoursLater.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setCanNudge(true);
+        setTimeRemaining('');
+      } else {
+        setCanNudge(false);
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeRemaining(`${hours}h ${minutes}m`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [lastNudgeTime]);
   
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -389,7 +424,7 @@ const AnimatedHabitCard = React.memo(({
           styles.highlightCard,
           {
             width: spotlightCardWidth,
-            marginRight: index === totalCards - 1 ? 0 : 12,
+            marginRight: index === totalCards - 1 ? 0 : 10,
             backgroundColor: cardBackgroundColor,
             shadowColor: cardState?.completed ? '#065f46' : isDark ? '#000000' : '#94a3b8',
           },
@@ -441,9 +476,31 @@ const AnimatedHabitCard = React.memo(({
                 style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)' }}
               />
             </TouchableOpacity>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-              {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
-            </Text>
+            {partnerStatus?.completed ? (
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+                Completed today ✓
+              </Text>
+            ) : canNudge ? (
+              <TouchableOpacity 
+                onPress={async (e) => { e.stopPropagation(); await onNudge(); }}
+                style={{ 
+                  paddingHorizontal: 10, 
+                  paddingVertical: 4, 
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)', 
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.3)'
+                }}
+              >
+                <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600' }}>
+                  Nudge
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>
+                Next nudge {timeRemaining}
+              </Text>
+            )}
           </View>
         ) : (
           <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -463,15 +520,15 @@ const AnimatedHabitCard = React.memo(({
       </TouchableOpacity>
     </Reanimated.View>
   );
-});
+};
 
-const WhiteHabitCard = React.memo(({ 
-  card, 
-  index, 
+const WhiteHabitCard = ({
+  card,
+  index,
   totalCards,
-  spotlightCardWidth, 
-  whiteCardShadowColor, 
-  customHabitsLoading, 
+  spotlightCardWidth,
+  whiteCardShadowColor,
+  customHabitsLoading,
   theme,
   customHabitsDate,
   todayDate,
@@ -480,60 +537,57 @@ const WhiteHabitCard = React.memo(({
   loadHabitForEditing,
   setShowCustomHabitModal,
   partnership,
+  pendingInvite,
   partnerStatus,
   onInvite,
   onRemovePartner,
-  styles
+  onCancelInvite,
+  onInfo,
+  onNudge,
+  lastNudgeTime,
+  styles,
 }: any) => {
   const isCreateCard = card.key === 'create_new_habit';
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [timeRemaining, setTimeRemaining] = React.useState<string>('');
+  const [canNudge, setCanNudge] = React.useState(true);
   const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
-  const [expandAnimation] = useState(new Animated.Value(0));
-  const [monthCompletions, setMonthCompletions] = useState<{ [date: string]: 'completed' | 'skipped' | 'missed' }>({});
-  
+
+  React.useEffect(() => {
+    if (!lastNudgeTime) {
+      setCanNudge(true);
+      setTimeRemaining('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const nudgeTime = new Date(lastNudgeTime).getTime();
+      const diffMs = nudgeTime + 3 * 60 * 60 * 1000 - now;
+
+      if (diffMs <= 0) {
+        setCanNudge(true);
+        setTimeRemaining('');
+      } else {
+        setCanNudge(false);
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeRemaining(`${hours}h ${minutes}m`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 30000);
+    return () => clearInterval(interval);
+  }, [lastNudgeTime]);
+
   useEffect(() => {
     Animated.timing(progressAnimated, {
       toValue: card.progress ?? 0,
-      duration: 450,
+      duration: 350,
       easing: Easing.out(Easing.quad),
       useNativeDriver: false,
     }).start();
   }, [card.progress, progressAnimated]);
-
-  useEffect(() => {
-    Animated.timing(expandAnimation, {
-      toValue: isExpanded ? 1 : 0,
-      duration: 300,
-      easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-      useNativeDriver: false,
-    }).start();
-  }, [isExpanded, expandAnimation]);
-
-  const { user } = useAuthStore();
-
-  // Fetch completions for current month when expanded
-  useEffect(() => {
-    if (isExpanded && !isCreateCard && card.habit && user) {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
-
-      habitsService.fetchCompletionsForMonth(user.id, card.habit.id, year, month)
-        .then(completions => {
-          const completionMap: { [date: string]: 'completed' | 'skipped' | 'missed' } = {};
-          completions.forEach(completion => {
-            const date = new Date(completion.occur_date).getDate();
-            completionMap[date] = completion.status;
-          });
-          setMonthCompletions(completionMap);
-        })
-        .catch(error => {
-          console.error('Error fetching month completions:', error);
-        });
-    } else {
-      setMonthCompletions({});
-    }
-  }, [isExpanded, isCreateCard, card.habit, user]);
 
   const animatedWidth = progressAnimated.interpolate({
     inputRange: [0, 1],
@@ -541,17 +595,8 @@ const WhiteHabitCard = React.memo(({
   });
 
   const handleCardPress = useCallback(() => {
-    if (isCreateCard) {
-      setShowCustomHabitModal(true);
-    }
+    if (isCreateCard) setShowCustomHabitModal(true);
   }, [isCreateCard, setShowCustomHabitModal]);
-
-  const handleHeaderPress = useCallback((e: any) => {
-    if (!isCreateCard && card.habit) {
-      e.stopPropagation();
-      setIsExpanded(!isExpanded);
-    }
-  }, [isCreateCard, card.habit, isExpanded]);
 
   const handleCardLongPress = useCallback(() => {
     if (isCreateCard || !card.habit) return;
@@ -559,7 +604,7 @@ const WhiteHabitCard = React.memo(({
     toggleHabitCompletion(card.habit.id, customHabitsDate || todayDate);
   }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
 
-  const isCompleted = !isCreateCard && (card.progress >= 1);
+  const isCompleted = !isCreateCard && card.progress >= 1;
   const cardBackgroundColor = isCompleted ? '#10B981' : '#FFFFFF';
   const titleColor = isCompleted ? '#FFFFFF' : theme.textPrimary;
   const subtitleColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
@@ -567,11 +612,6 @@ const WhiteHabitCard = React.memo(({
   const progressTrackColor = isCompleted ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.1)';
   const progressFillColor = card.accent;
 
-  const animatedBackgroundColor = expandAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [cardBackgroundColor, isCreateCard ? '#9CA3AF' : card.accent],
-  });
-  
   return (
     <Animated.View
       style={[
@@ -581,177 +621,502 @@ const WhiteHabitCard = React.memo(({
           marginRight: index === totalCards - 1 ? 0 : 12,
           marginVertical: 8,
           shadowColor: whiteCardShadowColor,
-          backgroundColor: animatedBackgroundColor,
+          backgroundColor: isCreateCard ? '#9CA3AF' : cardBackgroundColor,
           borderColor: isCompleted ? 'transparent' : '#E5E7EB',
         },
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
       ]}
     >
-      <TouchableOpacity 
+      <TouchableOpacity
         activeOpacity={0.85}
-        onPress={isCreateCard ? handleCardPress : handleHeaderPress}
+        onPress={isCreateCard ? handleCardPress : undefined}
         onLongPress={handleCardLongPress}
         delayLongPress={250}
         disabled={!isCreateCard && customHabitsLoading}
-        style={{ flex: 1 }}
+        style={{ flex: 1, paddingBottom: 6 }}
       >
-      <View style={[styles.whiteHabitCardHeader, { 
-        backgroundColor: isCreateCard ? '#9CA3AF' : card.accent, 
-        borderRadius: 20,
-        marginBottom: isExpanded ? 4 : 16,
-        alignItems: isExpanded ? 'center' : 'flex-start'
-      }]}>
-        <View style={{ alignItems: isExpanded ? 'center' : 'flex-start' }}>
-          <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? '#FFFFFF' : '#FFFFFF' }]}>
-            {isExpanded ? new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase() : card.title}
-          </Text>
-          {!isExpanded && (
-            <Text style={[styles.whiteHabitCardSubtitle, { color: isCreateCard ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
-          )}
-          </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          {!isCreateCard && card.habit && (
-      <TouchableOpacity 
-            onPress={(e) => {
-              e.stopPropagation();
-              if (partnership) {
-                // Show options for Edit and Remove Partner
-                Alert.alert(
-                  card.title,
-                  'Choose an option',
-                  [
-                    {
-                      text: 'Edit Habit',
-                      onPress: () => loadHabitForEditing(card.habit)
-                    },
-                    {
-                      text: 'Remove Partner',
-                      style: 'destructive',
-                      onPress: () => onRemovePartner()
-                    },
-                    {
-                      text: 'Cancel',
-                      style: 'cancel'
-                    }
-                  ]
-                );
-              } else {
-                // No partnership, just edit
-                if (card.habit) {
-                  loadHabitForEditing(card.habit);
-                }
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="ellipsis-vertical" size={16} color="#FFFFFF" />
-      </TouchableOpacity>
-        )}
-        {isCreateCard && (
-          <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.8)" />
-        )}
-      </View>
-    </View>
-
-      {!isExpanded && (
-      <View style={[styles.whiteHabitCardProgress, { backgroundColor: progressTrackColor }]}>
-        <Animated.View
+        <View
           style={[
-            styles.whiteHabitCardProgressFill,
+            styles.whiteHabitCardHeader,
             {
-              width: animatedWidth,
-              backgroundColor: progressFillColor,
+              backgroundColor: isCreateCard ? '#9CA3AF' : card.accent,
+              borderRadius: 20,
+              marginBottom: 16,
+              alignItems: 'flex-start',
             },
           ]}
-        />
-      </View>
-      )}
-
-      {!isExpanded && !isCreateCard && (
-        <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {partnership ? (
-            <>
-           <TouchableOpacity onPress={(e) => { e.stopPropagation(); Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`); }}>
-             <Image 
-               source={{ uri: partnership.partner?.avatar_url || 'https://via.placeholder.com/24' }} 
-               style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: iconColor }}
-             />
-           </TouchableOpacity>
-          <Text style={{ color: subtitleColor, fontSize: 11 }}>
-            {partnerStatus?.completed ? 'Completed today ✓' : 'Not completed'}
-          </Text>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onInvite(); }}>
-                <Ionicons name="person-add-outline" size={20} color={iconColor} />
+        >
+          <View style={{ alignItems: 'flex-start' }}>
+            <Text style={[styles.whiteHabitCardTitle, { color: '#FFFFFF' }]}>{card.title}</Text>
+            <Text style={[styles.whiteHabitCardSubtitle, { color: 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {!isCreateCard && card.habit && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  const options: any[] = [
+                    { text: 'Info', onPress: () => onInfo?.() },
+                    { text: 'Edit Habit', onPress: () => loadHabitForEditing(card.habit) },
+                  ];
+                  if (partnership) {
+                    options.push({ text: 'Remove Partner', style: 'destructive', onPress: () => onRemovePartner() });
+                  }
+                  options.push({ text: 'Cancel', style: 'cancel' });
+                  Alert.alert(card.title, 'Choose an option', options);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="ellipsis-vertical" size={16} color="#FFFFFF" />
               </TouchableOpacity>
-              <Text style={{ color: subtitleColor, fontSize: 11 }}>
-                Invite friend
-              </Text>
-            </>
-          )}
-        </View>
-      )}
-
-      {!isExpanded && (
-      <View style={styles.whiteHabitCardMetricRow}>
-        <Text style={[styles.whiteHabitCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
-        <Text style={[styles.whiteHabitCardMetricValue, { color: titleColor }]}>{card.metricValue}</Text>
-      </View>
-      )}
-
-      {isExpanded && !isCreateCard && (
-        <View style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0, marginTop: -12 }}>
-          {/* Calendar Grid */}
-          <View>
-            <View style={{ flexDirection: 'row', marginBottom: 1 }}>
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '600' }}>{day}</Text>
-                </View>
-              ))}
-            </View>
-            
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {Array.from({ length: 31 }, (_, i) => {
-                const day = i + 1;
-                const today = new Date().getDate();
-                const isPast = day < today;
-                const isToday = day === today;
-                const isFuture = day > today;
-                
-                // Get real completion status from database
-                const completionStatus = monthCompletions[day];
-                const isCompleted = completionStatus === 'completed';
-                const isMissed = isPast && (completionStatus === 'missed' || (!completionStatus && isPast));
-                
-                return (
-                  <View key={i} style={{ width: '14.28%', alignItems: 'center', justifyContent: 'center', paddingVertical: 1 }}>
-                    {isFuture ? (
-                      <View style={{ width: 15, height: 15, borderRadius: 7.5, backgroundColor: 'rgba(255,255,255,0.15)' }} />
-                    ) : isCompleted ? (
-                      <View style={{ width: 15, height: 15, borderRadius: 7.5, alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-                      </View>
-                    ) : isMissed ? (
-                      <View style={{ width: 15, height: 15, borderRadius: 7.5, alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="close" size={11} color="#FFFFFF" />
-                      </View>
-                    ) : (
-                      <View style={{ width: 15, height: 15, borderRadius: 7.5, backgroundColor: 'rgba(255,255,255,0.3)', borderWidth: 1.5, borderColor: '#FFFFFF' }} />
-                    )}
-                  </View>
-                );
-              })}
-            </View>
+            )}
+            {isCreateCard && <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.8)" />}
           </View>
         </View>
-      )}
-    </TouchableOpacity>
+
+        <View style={[styles.whiteHabitCardProgress, { backgroundColor: progressTrackColor }]}>
+          <Animated.View
+            style={[
+              styles.whiteHabitCardProgressFill,
+              {
+                width: animatedWidth,
+                backgroundColor: progressFillColor,
+              },
+            ]}
+          />
+        </View>
+
+        {!isCreateCard && (
+          <View style={{ marginBottom: 8, marginTop: -8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {partnership ? (
+              <>
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    Alert.alert('Partner', `Tracking with ${partnership.partner?.username || 'Friend'}`);
+                  }}
+                >
+                  <Image
+                    source={{ uri: partnership.partner?.avatar_url || 'https://via.placeholder.com/24' }}
+                    style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: iconColor }}
+                  />
+                </TouchableOpacity>
+
+                {partnerStatus?.completed ? (
+                  <Text style={{ color: subtitleColor, fontSize: 11 }}>Completed today ✓</Text>
+                ) : canNudge ? (
+                  <TouchableOpacity
+                    onPress={async (e) => {
+                      e.stopPropagation();
+                      await onNudge();
+                    }}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      backgroundColor: isCompleted ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.08)',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: isCompleted ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.12)',
+                    }}
+                  >
+                    <Text style={{ color: isCompleted ? '#FFFFFF' : '#1e293b', fontSize: 11, fontWeight: '600' }}>Nudge</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={{ color: isCompleted ? 'rgba(255,255,255,0.8)' : 'rgba(0, 0, 0, 0.4)', fontSize: 11 }}>
+                    Next nudge {timeRemaining}
+                  </Text>
+                )}
+              </>
+            ) : pendingInvite ? (
+              <>
+                <Image
+                  source={{ uri: pendingInvite.partner?.avatar_url || 'https://via.placeholder.com/24' }}
+                  style={{ width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: iconColor, opacity: 0.6 }}
+                />
+                <Text style={{ color: 'rgba(0,0,0,0.45)', fontSize: 11, fontStyle: 'italic' }}>Pending...</Text>
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onCancelInvite?.();
+                  }}
+                  style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(248, 113, 113, 0.15)', borderRadius: 10 }}
+                >
+                  <Text style={{ color: '#F87171', fontSize: 10, fontWeight: '700' }}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onInvite();
+                  }}
+                >
+                  <Ionicons name="person-add-outline" size={20} color={iconColor} />
+                </TouchableOpacity>
+                <Text style={{ color: subtitleColor, fontSize: 11 }}>Invite friend</Text>
+              </>
+            )}
+          </View>
+        )}
+
+        <View style={styles.whiteHabitCardMetricRow}>
+          <Text style={[styles.whiteHabitCardMetricLabel, { color: subtitleColor }]}>{card.metricLabel}</Text>
+          <Text style={[styles.whiteHabitCardMetricValue, { color: titleColor }]}>{card.metricValue}</Text>
+        </View>
+      </TouchableOpacity>
     </Animated.View>
   );
-});
+};
+
+const CustomHabitStatsModal = ({
+  visible,
+  onClose,
+  habit,
+  userId,
+  theme,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  habit: any | null;
+  userId: string | null | undefined;
+  theme: any;
+}) => {
+  const [monthCompletions, setMonthCompletions] = useState<Record<number, 'completed' | 'skipped' | 'missed'>>({});
+  const [last30Completions, setLast30Completions] = useState<Record<string, 'completed' | 'skipped' | 'missed'>>({});
+  const [mounted, setMounted] = useState(false);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(480)).current;
+
+  const closeWithAnim = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetTranslateY, {
+        toValue: 480,
+        duration: 220,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.quad),
+      }),
+    ]).start(() => {
+      setMounted(false);
+      onClose();
+    });
+  }, [onClose, overlayOpacity, sheetTranslateY]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!visible || !habit?.id || !userId) return;
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      try {
+        const completions = await habitsService.fetchCompletionsForMonth(userId, habit.id, year, month);
+        const map: Record<number, 'completed' | 'skipped' | 'missed'> = {};
+        completions.forEach((c: any) => {
+          const day = new Date(c.occur_date).getDate();
+          map[day] = c.status;
+        });
+        setMonthCompletions(map);
+
+        // Last 30 days range
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 29);
+        const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+        const rangeCompletions = await habitsService.fetchCompletionsForRange(
+          userId,
+          habit.id,
+          toISODate(start),
+          toISODate(end)
+        );
+        const rangeMap: Record<string, 'completed' | 'skipped' | 'missed'> = {};
+        rangeCompletions.forEach((c: any) => {
+          rangeMap[c.occur_date] = c.status;
+        });
+        setLast30Completions(rangeMap);
+      } catch (e) {
+        setMonthCompletions({});
+        setLast30Completions({});
+      }
+    };
+    run();
+  }, [visible, habit?.id, userId]);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      overlayOpacity.setValue(0);
+      sheetTranslateY.setValue(480);
+      Animated.parallel([
+        Animated.timing(overlayOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheetTranslateY, {
+          toValue: 0,
+          duration: 260,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+      ]).start();
+    } else if (mounted) {
+      Animated.parallel([
+        Animated.timing(overlayOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheetTranslateY, {
+          toValue: 480,
+          duration: 220,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+      ]).start(() => setMounted(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  // IMPORTANT: keep hook order stable (no early returns before hooks)
+  const { longestStreak, lastStreak, last7, last30 } = useMemo(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 29);
+    const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+
+    const days: { date: string; completed: boolean }[] = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const ds = toISODate(d);
+      const status = last30Completions[ds];
+      days.push({ date: ds, completed: status === 'completed' });
+    }
+
+    const last7Days = days.slice(-7);
+    const last7Count = last7Days.filter((d) => d.completed).length;
+    const last30Count = days.filter((d) => d.completed).length;
+
+    // Longest streak in last 30 days
+    let cur = 0;
+    let max = 0;
+    for (const d of days) {
+      if (d.completed) {
+        cur += 1;
+        max = Math.max(max, cur);
+      } else {
+        cur = 0;
+      }
+    }
+
+    // Last streak (consecutive completed ending today)
+    let tail = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i].completed) tail += 1;
+      else break;
+    }
+
+    return {
+      longestStreak: max,
+      lastStreak: tail,
+      last7: `${last7Count}/7`,
+      last30: `${last30Count}/30`,
+    };
+  }, [last30Completions]);
+
+  if (!mounted) return null;
+
+  const title = habit?.title || 'Habit Info';
+  const accent = habit?.accent_color || habit?.accent || '#10B981';
+  const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const completedCount = Object.values(monthCompletions).filter((s) => s === 'completed').length;
+  const missedCount = Object.values(monthCompletions).filter((s) => s === 'missed').length;
+
+  return (
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={closeWithAnim}>
+      <TouchableWithoutFeedback onPress={closeWithAnim}>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Animated.View
+            style={{
+              ...StyleSheet.absoluteFillObject,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              opacity: overlayOpacity,
+            }}
+          />
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <Animated.View
+              style={{
+                transform: [{ translateY: sheetTranslateY }],
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderTopLeftRadius: 22,
+                  borderTopRightRadius: 22,
+                  overflow: 'hidden',
+                }}
+              >
+              {/* Header (matches habit card color) */}
+              <View
+                style={{
+                  backgroundColor: accent,
+                  paddingHorizontal: 18,
+                  paddingTop: 18,
+                  paddingBottom: 14,
+                  alignItems: 'center',
+                  borderTopLeftRadius: 22,
+                  borderTopRightRadius: 22,
+                }}
+              >
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF' }} numberOfLines={1}>
+                  {title}
+                </Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }} numberOfLines={1}>
+                  {monthLabel}
+                </Text>
+              </View>
+
+              <View style={{ padding: 18 }}>
+
+              {/* Summary tiles */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                <View style={{ flex: 1, backgroundColor: '#F8FAFC', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                      <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '800' }}>Completed</Text>
+                    </View>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#0F172A' }}>{completedCount}</Text>
+                  </View>
+                </View>
+                <View style={{ flex: 1, backgroundColor: '#F8FAFC', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="close-circle" size={14} color="#EF4444" />
+                      <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '800' }}>Missed</Text>
+                    </View>
+                    <Text style={{ fontSize: 16, fontWeight: '900', color: '#0F172A' }}>{missedCount}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 6 }}>
+                <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                    <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#9CA3AF' }}>{d}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                  {Array.from({ length: 31 }, (_, i) => {
+                    const day = i + 1;
+                    const status = monthCompletions[day];
+                    const bg =
+                      status === 'completed'
+                        ? '#10B981'
+                        : status === 'missed'
+                          ? '#EF4444'
+                          : '#E5E7EB';
+                    return (
+                      <View key={day} style={{ width: '14.28%', paddingVertical: 6, alignItems: 'center' }}>
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: '800', color: status ? '#FFFFFF' : '#6B7280' }}>{day}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Stats tiles */}
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: '#0F172A', fontSize: 13, fontWeight: '900', marginBottom: 10 }}>
+                  Stats
+                </Text>
+                <View style={{ gap: 10 }}>
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="trophy" size={14} color="#F59E0B" />
+                        <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>Longest streak</Text>
+                      </View>
+                      <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>
+                        {longestStreak}d
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="flame" size={14} color="#F97316" />
+                        <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>Last streak</Text>
+                      </View>
+                      <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>
+                        {lastStreak}d
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="calendar" size={14} color="#6366F1" />
+                        <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>Last 7 days</Text>
+                      </View>
+                      <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>
+                        {last7}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="calendar-number" size={14} color="#0EA5E9" />
+                        <Text style={{ color: '#64748B', fontSize: 12, fontWeight: '800' }}>Last 30 days</Text>
+                      </View>
+                      <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>
+                        {last30}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Bottom close button */}
+              <View style={{ marginTop: 16 }}>
+                <TouchableOpacity
+                  onPress={closeWithAnim}
+                  activeOpacity={0.85}
+                  style={{
+                    backgroundColor: '#111827',
+                    borderRadius: 14,
+                    paddingVertical: 14,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '900' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+
+              </View>
+              </View>
+            </Animated.View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
 
 // Motivational quotes array
 const MOTIVATIONAL_QUOTES = [
@@ -867,8 +1232,12 @@ function ActionScreen() {
   
   // Accountability Partner State
   const [activePartnerships, setActivePartnerships] = useState<Record<string, HabitAccountabilityPartner>>({});
+  const [pendingInvites, setPendingInvites] = useState<Record<string, HabitAccountabilityPartner>>({});
   const [partnerCompletionStatus, setPartnerCompletionStatus] = useState<Record<string, { completed: boolean; streak: number }>>({});
+  const [lastNudgeTimes, setLastNudgeTimes] = useState<Record<string, Date>>({});
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showCustomHabitStats, setShowCustomHabitStats] = useState(false);
+  const [statsHabit, setStatsHabit] = useState<any | null>(null);
   const [inviteHabitData, setInviteHabitData] = useState<{
     type: 'core' | 'custom';
     identifier: string;
@@ -978,6 +1347,7 @@ function ActionScreen() {
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
+  const [completedChallengeIds, setCompletedChallengeIds] = useState<Set<string>>(new Set());
   const [loadingChallenges, setLoadingChallenges] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const headerGreetingOpacity = useRef(new Animated.Value(0)).current;
@@ -1065,12 +1435,21 @@ function ActionScreen() {
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const customHabitContainerSlide = useRef(new Animated.Value(screenHeight)).current;
-  const customHabitContainerOpacity = useRef(new Animated.Value(0)).current;
+  const customHabitOverlayOpacity = useRef(new Animated.Value(0)).current;
   const spotlightCardWidth = useMemo(() => {
     const horizontalPadding = 24 * 2;
     const gap = 12;
     return Math.max(160, (screenWidth - horizontalPadding - gap) / 2);
   }, [screenWidth]);
+
+  // Challenge card dimensions (matching habit cards)
+  const challengeCardWidth = useMemo(() => {
+    const horizontalPadding = 24 * 2;
+    const gap = 12; // Match habit card width calculation
+    return Math.max(160, (screenWidth - horizontalPadding - gap) / 2);
+  }, [screenWidth]);
+  const challengeCardMargin = 10; // Match habit card spacing
+  const challengeSnapInterval = challengeCardWidth + challengeCardMargin;
 
   const whiteHabitCards = useMemo(() => {
     const createCard = {
@@ -1152,17 +1531,16 @@ function ActionScreen() {
     });
   }, []);
   const customHabitColors = useMemo(() => {
-    const progressGreen = '#10B981';
     return {
-      background: progressGreen,
-      card: mixColor(progressGreen, -0.08),
-      button: mixColor(progressGreen, -0.16),
-      buttonActive: mixColor(progressGreen, -0.04),
-      iconBackground: mixColor(progressGreen, -0.22),
-      text: '#FFFFFF',
-      hint: '#C3F6E4',
-      placeholder: '#B2ECD7',
-      border: mixColor(progressGreen, -0.12),
+      background: '#FFFFFF',
+      card: '#F8FAFC',
+      button: '#E5E7EB',
+      buttonActive: '#CBD5E1',
+      iconBackground: '#F1F5F9',
+      text: '#0F172A',
+      hint: '#64748B',
+      placeholder: '#94A3B8',
+      border: '#E5E7EB',
     };
   }, []);
   const customHabitRecommendations = useMemo(() => positivePresets.slice(0, 3), [positivePresets]);
@@ -1192,46 +1570,53 @@ function ActionScreen() {
     }
   }, [showCustomHabitModal, customHabitSlide]);
 
-  // Animate container slide up/down when modal opens/closes
+  // Close custom habit modal with animation
+  const closeCustomHabitModal = useCallback(() => {
+    Animated.parallel([
+      // Sheet slides down
+      Animated.timing(customHabitContainerSlide, {
+        toValue: screenHeight,
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      // Background overlay fades out
+      Animated.timing(customHabitOverlayOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowCustomHabitModal(false);
+    });
+  }, [customHabitContainerSlide, customHabitOverlayOpacity, screenHeight]);
+
+  // Animate container slide up when modal opens
   useEffect(() => {
     if (showCustomHabitModal) {
-      // Reset to off-screen and invisible before animating
+      // Reset to off-screen before animating
       customHabitContainerSlide.setValue(screenHeight);
-      customHabitContainerOpacity.setValue(0);
+      customHabitOverlayOpacity.setValue(0);
       // Small delay to ensure it's off-screen, then animate
       setTimeout(() => {
         Animated.parallel([
+          // Sheet slides up
           Animated.timing(customHabitContainerSlide, {
             toValue: 0,
             duration: 300,
             easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }),
-          Animated.timing(customHabitContainerOpacity, {
+          // Background overlay fades in
+          Animated.timing(customHabitOverlayOpacity, {
             toValue: 1,
-            duration: 300,
-            easing: Easing.out(Easing.cubic),
+            duration: 180,
             useNativeDriver: true,
           }),
         ]).start();
       }, 10);
-    } else {
-      Animated.parallel([
-        Animated.timing(customHabitContainerSlide, {
-          toValue: screenHeight,
-          duration: 250,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(customHabitContainerOpacity, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
     }
-  }, [showCustomHabitModal, customHabitContainerSlide, customHabitContainerOpacity, screenHeight]);
+  }, [showCustomHabitModal, customHabitContainerSlide, customHabitOverlayOpacity, screenHeight]);
 
   useEffect(() => {
     // Reset scroll to top when category changes
@@ -1888,7 +2273,7 @@ function ActionScreen() {
     
     // Calculate distance to slide (to end of carousel)
     const cardsToSlide = currentCards.length - 1 - currentIndex;
-    const slideDistance = cardsToSlide * (spotlightCardWidth + 12);
+    const slideDistance = cardsToSlide * (spotlightCardWidth + 10);
     
     const anim = cardAnimations[card.key];
     
@@ -2224,6 +2609,13 @@ function ActionScreen() {
   useEffect(() => {
     useActionStore.getState().loadCustomHabits(todayDate);
   }, [todayDate]);
+
+  // Hide/show navigation bar based on loading state
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: isInitialLoad ? { display: 'none' } : undefined,
+    });
+  }, [isInitialLoad, navigation]);
 
   // Check if initial loading is complete
   useEffect(() => {
@@ -2891,7 +3283,7 @@ function ActionScreen() {
       
       if (success) {
         await loadCustomHabits(customHabitsDate || todayDate);
-        setShowCustomHabitModal(false);
+        closeCustomHabitModal();
       } else {
         Alert.alert('Error', `Failed to ${editingHabitId ? 'update' : 'save'} habit. Please try again.`);
       }
@@ -2914,20 +3306,39 @@ function ActionScreen() {
   const handleDeleteHabit = useCallback(async () => {
     if (!editingHabitId) return;
 
+    // Check for active partnerships first
+    const partnerships = await useActionStore.getState().checkHabitPartnerships(editingHabitId);
+    
+    let message = 'Are you sure you want to delete this task? This action cannot be undone.';
+    let hasPartnerships = partnerships && partnerships.length > 0;
+    
+    if (hasPartnerships) {
+      const partnerNames = partnerships.map((p: any) => {
+        const partnerProfile = p.inviter_id === user?.id ? p.partner2 : p.partner;
+        return partnerProfile?.display_name || partnerProfile?.username || 'Partner';
+      }).join(', ');
+      
+      message = `This habit has active partnerships with: ${partnerNames}.\n\nDeleting this habit will cancel all partnerships and notify your partners.\n\nAre you sure you want to continue?`;
+    }
+
     Alert.alert(
       'Delete Task',
-      'Are you sure you want to delete this task? This action cannot be undone.',
+      message,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: hasPartnerships ? 'Cancel Partnerships & Delete' : 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
               const success = await deleteCustomHabit(editingHabitId);
               if (success) {
                 await loadCustomHabits(customHabitsDate || todayDate);
-                setShowCustomHabitModal(false);
+                closeCustomHabitModal();
+                
+                if (hasPartnerships) {
+                  Alert.alert('Deleted', `Habit deleted and ${partnerships.length} partnership(s) cancelled.`);
+                }
               } else {
                 Alert.alert('Error', 'Failed to delete habit. Please try again.');
               }
@@ -2938,7 +3349,7 @@ function ActionScreen() {
         },
       ]
     );
-  }, [editingHabitId, deleteCustomHabit, loadCustomHabits, customHabitsDate, todayDate]);
+  }, [editingHabitId, deleteCustomHabit, loadCustomHabits, customHabitsDate, todayDate, user]);
 
   const openHabitForm = useCallback((habitId: string) => {
     const { dailyHabits } = useActionStore.getState();
@@ -3614,7 +4025,7 @@ function ActionScreen() {
         return endOfDay;
       };
       
-      // Show challenges that are active or upcoming
+      // Show challenges that are active or upcoming (not ended)
       const relevant = challenges
         .map(challenge => {
           const startDate = new Date(challenge.start_date);
@@ -3641,6 +4052,26 @@ function ActionScreen() {
         .map(entry => entry.challenge);
 
       setMyActiveChallenges(relevant);
+
+      // Check completion status for each challenge
+      const completedIds = new Set<string>();
+      if (user?.id && relevant.length > 0) {
+        const challengeIds = relevant.map(c => c.id);
+        const { data: participations } = await supabase
+          .from('challenge_participants')
+          .select('challenge_id, status')
+          .eq('user_id', user.id)
+          .in('challenge_id', challengeIds);
+
+        if (participations) {
+          participations.forEach(p => {
+            if (p.status === 'completed') {
+              completedIds.add(p.challenge_id);
+            }
+          });
+        }
+      }
+      setCompletedChallengeIds(completedIds);
     } catch (error) {
       console.error('Error loading active challenges:', error);
       setMyActiveChallenges([]);
@@ -3664,6 +4095,39 @@ function ActionScreen() {
     }
   }, [user]);
 
+  const loadPendingInvites = useCallback(async () => {
+    if (!user) return;
+    try {
+      const invites = await habitInviteService.getPendingInvites(user.id);
+      const invitesMap: Record<string, HabitAccountabilityPartner> = {};
+      
+      for (const invite of invites) {
+        // For custom habits, use inviter_habit_id
+        const habitId = invite.habit_type === 'custom' 
+          ? (invite.inviter_habit_id || invite.custom_habit_id)
+          : invite.habit_key;
+        
+        const key = invite.habit_type === 'core' ? `core_${invite.habit_key}` : `custom_${habitId}`;
+        invitesMap[key] = invite;
+        
+        console.log('[loadPendingInvites] Mapped invite:', {
+          habit_type: invite.habit_type,
+          inviter_habit_id: invite.inviter_habit_id,
+          custom_habit_id: invite.custom_habit_id,
+          habitId,
+          key,
+          invitee: invite.partner?.username
+        });
+      }
+      
+      setPendingInvites(invitesMap);
+      console.log('[ActionScreen] Loaded pending invites keys:', Object.keys(invitesMap));
+      console.log('[ActionScreen] Total pending invites:', invites.length);
+    } catch (error) {
+      console.error('Error loading pending invites:', error);
+    }
+  }, [user]);
+
   const loadActivePartnerships = useCallback(async () => {
     if (!user) return;
     try {
@@ -3671,13 +4135,79 @@ function ActionScreen() {
       const partnershipMap: Record<string, HabitAccountabilityPartner> = {};
       const completionMap: Record<string, { completed: boolean; streak: number }> = {};
       
+      // Get partnership IDs for fetching nudge times
+      const partnershipIds = partnerships.map(p => p.id);
+      
       for (const p of partnerships) {
-        const key = p.habit_type === 'core' ? `core_${p.habit_key}` : `custom_${p.custom_habit_id}`;
+        // For custom habits, determine which habit ID to use based on whether user is inviter or invitee
+        let habitId = p.custom_habit_id;
+        if (p.habit_type === 'custom') {
+          const isInviter = user.id === p.inviter_id;
+          habitId = isInviter ? p.inviter_habit_id : p.invitee_habit_id;
+          // Fallback to custom_habit_id for backwards compatibility
+          if (!habitId) habitId = p.custom_habit_id;
+          
+          console.log(`[Partnership] Custom habit partnership:`, {
+            partnershipId: p.id,
+            isInviter,
+            inviter_habit_id: p.inviter_habit_id,
+            invitee_habit_id: p.invitee_habit_id,
+            custom_habit_id: p.custom_habit_id,
+            finalHabitId: habitId,
+            hasSnapshot: !!p.habit_snapshot
+          });
+          
+          // Auto-recreate habit from snapshot if it doesn't exist
+          if (habitId && p.habit_snapshot) {
+            // Check if habit exists in customHabits
+            const { customHabits } = useActionStore.getState();
+            const habitExists = customHabits.some(h => h.id === habitId);
+            
+            if (!habitExists) {
+              console.log(`[Partnership] Habit ${habitId} missing, recreating from snapshot...`);
+              try {
+                const { habitsService } = await import('../lib/habitsService');
+                const newHabit = await habitsService.createHabit(user.id, p.habit_snapshot);
+                console.log(`[Partnership] Recreated habit from snapshot: ${newHabit.title} (${newHabit.id})`);
+                
+                // Update the partnership with the new habit ID
+                const updateField = isInviter ? 'inviter_habit_id' : 'invitee_habit_id';
+                await supabase
+                  .from('habit_accountability_partners')
+                  .update({ [updateField]: newHabit.id })
+                  .eq('id', p.id);
+                
+                habitId = newHabit.id;
+                
+                // Reload custom habits to show the recreated habit
+                await useActionStore.getState().loadCustomHabits(getTodayDateString());
+              } catch (error) {
+                console.error('[Partnership] Error recreating habit from snapshot:', error);
+                continue; // Skip this partnership if recreation fails
+              }
+            }
+          }
+          
+          // Skip this partnership if the habit doesn't exist (was deleted)
+          if (!habitId) {
+            console.log(`[Partnership] Skipping partnership ${p.id} - no habit ID found`);
+            continue;
+          }
+        }
+        
+        const key = p.habit_type === 'core' ? `core_${p.habit_key}` : `custom_${habitId}`;
         partnershipMap[key] = p;
         
         // Check partner completion for today
         if (p.partner) {
-          const identifier = p.habit_type === 'core' ? p.habit_key! : p.custom_habit_id!;
+          // Use partner's habit ID for checking their completion
+          let partnerHabitId = habitId;
+          if (p.habit_type === 'custom') {
+            partnerHabitId = user.id === p.inviter_id ? p.invitee_habit_id : p.inviter_habit_id;
+            if (!partnerHabitId) partnerHabitId = p.custom_habit_id; // Fallback
+          }
+          
+          const identifier = p.habit_type === 'core' ? p.habit_key! : partnerHabitId!;
           const status = await habitInviteService.checkPartnerCompletion(
             p.id,
             p.partner.id,
@@ -3689,8 +4219,18 @@ function ActionScreen() {
         }
       }
       
+      // Fetch last nudge times for all partnerships
+      const nudgeTimes = await habitInviteService.getLastNudgeTimes(partnershipIds);
+      console.log('[ActionScreen] Loaded partnerships:', {
+        count: partnerships.length,
+        partnershipMap: Object.keys(partnershipMap),
+        completionMap: Object.keys(completionMap),
+        nudgeTimes
+      });
+      
       setActivePartnerships(partnershipMap);
       setPartnerCompletionStatus(completionMap);
+      setLastNudgeTimes(nudgeTimes);
     } catch (error) {
       console.error('Error loading partnerships:', error);
     }
@@ -3777,16 +4317,55 @@ function ActionScreen() {
   // Refresh challenges and wallet balance whenever Action screen regains focus
   useFocusEffect(
     useCallback(() => {
-      loadMyActiveChallenges();
-      loadActivePartnerships();
-      loadWalletBalance();
-    }, [loadMyActiveChallenges, loadActivePartnerships, loadWalletBalance])
+      const today = new Date().toISOString().split('T')[0];
+      // Load in parallel
+      Promise.all([
+        loadMyActiveChallenges(),
+        loadActivePartnerships(),
+        loadPendingInvites(),
+        loadWalletBalance(),
+        useActionStore.getState().loadCustomHabits(today)
+      ]);
+    }, [loadMyActiveChallenges, loadActivePartnerships, loadPendingInvites, loadWalletBalance])
   );
 
   const handleInvitePress = useCallback((type: 'core' | 'custom', identifier: string, title: string) => {
     setInviteHabitData({ type, identifier, title });
     setShowInviteModal(true);
   }, []);
+
+  const handleCancelInvite = useCallback((partnershipId: string, partnerName: string, habitTitle: string) => {
+    Alert.alert(
+      'Cancel Invite',
+      `Cancel invite to ${partnerName} for ${habitTitle}?`,
+      [
+        {
+          text: 'No',
+          style: 'cancel'
+        },
+        {
+          text: 'Cancel Invite',
+          style: 'destructive',
+          onPress: async () => {
+            if (!user) return;
+            try {
+              const success = await habitInviteService.cancelInvite(partnershipId, user.id);
+              if (success) {
+                // Reload pending invites to update UI
+                await loadPendingInvites();
+                Alert.alert('Success', 'Invite cancelled');
+              } else {
+                Alert.alert('Error', 'Failed to cancel invite. Please try again.');
+              }
+            } catch (error) {
+              console.error('Error cancelling invite:', error);
+              Alert.alert('Error', 'Failed to cancel invite. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  }, [user, loadPendingInvites]);
 
   const handleRemovePartner = useCallback((partnershipId: string, partnerName: string, habitTitle: string) => {
     Alert.alert(
@@ -3816,6 +4395,37 @@ function ActionScreen() {
       ]
     );
   }, [user, loadActivePartnerships]);
+
+  const handleNudge = useCallback(async (partnershipId: string, partnerId: string, partnerName: string, habitTitle: string): Promise<Date | null> => {
+    if (!user) return null;
+
+    console.log('[Nudge] Sending nudge for partnership:', partnershipId);
+    const result = await habitInviteService.sendNudge(partnershipId, user.id, partnerId, habitTitle);
+    
+    if (result.success) {
+      const nudgeTime = new Date();
+      console.log('[Nudge] Nudge successful, setting time:', nudgeTime);
+      setLastNudgeTimes(prev => {
+        const updated = { ...prev, [partnershipId]: nudgeTime };
+        console.log('[Nudge] Updated lastNudgeTimes:', updated);
+        return updated;
+      });
+      Alert.alert('Success', `You nudged ${partnerName} to complete ${habitTitle}!`);
+      return nudgeTime;
+    } else {
+      console.log('[Nudge] Nudge failed:', result.message);
+      
+      // If nudge failed due to cooldown, fetch and display the last nudge time
+      const lastNudgeTime = await habitInviteService.getLastNudgeTime(partnershipId);
+      if (lastNudgeTime) {
+        console.log('[Nudge] Fetched existing nudge time:', lastNudgeTime);
+        setLastNudgeTimes(prev => ({ ...prev, [partnershipId]: lastNudgeTime }));
+      }
+      
+      Alert.alert('Nudge Limit', result.message);
+      return lastNudgeTime;
+    }
+  }, [user]);
 
   // Handle pull-to-refresh
   const onRefresh = useCallback(async () => {
@@ -4000,12 +4610,51 @@ function ActionScreen() {
             {/* Title centered placeholder */}
           </View>
           
-          <TouchableOpacity 
-            onPress={() => (navigation as any).navigate('Notifications')}
-            style={{ zIndex: 1 }}
-          >
-            <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 1 }}>
+            <TouchableOpacity 
+              onPress={() => {
+                (navigation as any).navigate('Messages');
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chatbubble-outline" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => (navigation as any).navigate('Notifications')}
+              style={{ position: 'relative' }}
+            >
+              <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
+              {unreadNotificationCount > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: '#EF4444',
+                    borderRadius: 10,
+                    minWidth: 20,
+                    height: 20,
+                    paddingHorizontal: 6,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: theme.background,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 11,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Level Progress Bar */}
@@ -4134,7 +4783,7 @@ function ActionScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            snapToInterval={spotlightCardWidth + 12}
+            snapToInterval={spotlightCardWidth + 10}
             snapToAlignment="start"
             decelerationRate="fast"
             contentContainerStyle={styles.highlightCarouselContent}
@@ -4178,6 +4827,7 @@ function ActionScreen() {
                   handleHabitLongPress={handleHabitLongPress}
                   cardAnimations={cardAnimations}
                   partnership={activePartnerships[`core_${card.key}`]}
+                  pendingInvite={pendingInvites[`core_${card.key}`]}
                   partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
                   onInvite={() => handleInvitePress('core', card.key, card.title)}
                   onRemovePartner={() => {
@@ -4186,6 +4836,23 @@ function ActionScreen() {
                       handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
                     }
                   }}
+                  onCancelInvite={() => {
+                    const invite = pendingInvites[`core_${card.key}`];
+                    if (invite) {
+                      handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                    }
+                  }}
+                  onNudge={async () => {
+                    const partnership = activePartnerships[`core_${card.key}`];
+                    if (partnership) {
+                      return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                    }
+                    return null;
+                  }}
+                  lastNudgeTime={(() => {
+                    const partnership = activePartnerships[`core_${card.key}`];
+                    return partnership ? lastNudgeTimes[partnership.id] || null : null;
+                  })()}
                   styles={styles}
                 />
               );
@@ -4194,19 +4861,24 @@ function ActionScreen() {
         </View>
 
         {/* White Habit Cards */}
-        <View style={styles.highlightCarouselContainer}>
+        <View style={[styles.highlightCarouselContainer, { marginTop: 10 }]}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={{ overflow: 'visible' }}
-            snapToInterval={spotlightCardWidth + 12}
+            snapToInterval={spotlightCardWidth + 10}
             snapToAlignment="start"
             decelerationRate="fast"
             contentContainerStyle={styles.highlightCarouselContent}
           >
-            {whiteHabitCards.map((card, index) => (
+            {whiteHabitCards.map((card, index) => {
+              const lookupKey = `custom_${card.habit?.id}`;
+              const partnershipId = activePartnerships[lookupKey]?.id;
+              const pendingId = pendingInvites[lookupKey]?.id;
+              
+              return (
               <WhiteHabitCard
-                key={card.key}
+                key={`${card.key}-${partnershipId || 'no-partner'}-${pendingId || 'no-invite'}`}
                 card={card}
                 index={index}
                 totalCards={whiteHabitCards.length}
@@ -4216,22 +4888,45 @@ function ActionScreen() {
                 theme={theme}
                 customHabitsDate={customHabitsDate}
                 todayDate={todayDate}
-                partnership={activePartnerships[`custom_${card.habit?.id}`]}
+                partnership={activePartnerships[lookupKey]}
+                pendingInvite={pendingInvites[lookupKey]}
                 partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
                 onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
+                onInfo={() => {
+                  setStatsHabit(card.habit || null);
+                  setShowCustomHabitStats(true);
+                }}
                 onRemovePartner={() => {
                   const partnership = activePartnerships[`custom_${card.habit?.id}`];
                   if (partnership) {
                     handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
                   }
                 }}
+                onCancelInvite={() => {
+                  const invite = pendingInvites[`custom_${card.habit?.id}`];
+                  if (invite) {
+                    handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                  }
+                }}
+                onNudge={async () => {
+                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                  if (partnership) {
+                    return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                  }
+                  return null;
+                }}
+                lastNudgeTime={(() => {
+                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                  return partnership ? lastNudgeTimes[partnership.id] || null : null;
+                })()}
                 toggleHabitCompletion={handleCustomHabitToggle}
                 playCompletionSound={playCompletionSound}
                 loadHabitForEditing={loadHabitForEditing}
                 setShowCustomHabitModal={setShowCustomHabitModal}
                 styles={styles}
               />
-            ))}
+            );
+            })}
           </ScrollView>
         </View>
 
@@ -4246,82 +4941,32 @@ function ActionScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ overflow: 'visible' }}
-              contentContainerStyle={[styles.challengesContainer, { paddingHorizontal: 4 }]}
-              snapToInterval={spotlightCardWidth + 8}
+              style={{ overflow: 'visible', marginTop: 10 }}
+              contentContainerStyle={styles.challengesScrollContent}
+              snapToInterval={challengeSnapInterval}
               snapToAlignment="start"
               decelerationRate="fast"
             >
-              {myActiveChallenges.map((challenge, index) => {
+              {myActiveChallenges.map((challenge) => {
                 const startDate = new Date(challenge.start_date);
                 const endDate = new Date(challenge.end_date);
-                
-                // Set end date to end of day to include the full last day
                 endDate.setHours(23, 59, 59, 999);
                 
                 const now = new Date();
                 const isActiveChallenge = now >= startDate && now <= endDate;
-                const dateRangeText = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                const isCompleted = completedChallengeIds.has(challenge.id);
+                
+                // Show "Active" if challenge is active and user hasn't completed it (hasn't uploaded proof)
+                const showActive = isActiveChallenge && !isCompleted;
 
                 return (
-                <TouchableOpacity
+                  <ChallengeCard
                   key={challenge.id}
-                  style={[
-                    styles.challengeCard,
-                    {
-                      width: spotlightCardWidth,
-                      marginRight: index === myActiveChallenges.length - 1 ? 0 : 8,
-                      backgroundColor: '#FFFFFF',
-                      borderColor: '#E5E7EB',
-                    },
-                  ]}
+                    challenge={challenge}
                   onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
-                >
-                  <View style={[styles.challengeCardBlueSection, isActiveChallenge && { backgroundColor: '#F97316' }]} />
-                  <View style={styles.challengeCardContent}>
-                    <View style={[styles.challengeCardTopSection, { zIndex: 1 }]}>
-                    <View style={styles.challengeHeader}>
-                        <Text style={[styles.challengeTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                        {challenge.title}
-                      </Text>
-                      </View>
-                      <View style={{ position: 'absolute', bottom: 8, right: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Ionicons name="people" size={14} color={theme.textSecondary} />
-                        <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '500' }}>
-                          <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
-                      </Text>
-                    </View>
-                    </View>
-                    <View style={[styles.challengeCardBottomSection, { zIndex: 1 }]}>
-                      <View>
-                        <Text style={[styles.challengeTime, { color: 'rgba(255,255,255,0.9)' }]}>
-                          {dateRangeText}
-                        </Text>
-                        <View style={{ marginTop: 4, gap: 4 }}>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£{challenge.entry_fee || 0}</Text> investment</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500' }}><Text style={{ fontWeight: '700' }}>£{Math.round((challenge.participant_count || 0) * (challenge.entry_fee || 0))}</Text> shared pot</Text>
-                        </View>
-                  </View>
-                      
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                          <View
-                            style={[
-                              styles.challengeStatusBadge,
-                              { backgroundColor: 'rgba(255,255,255,0.2)', marginBottom: 0 },
-                            ]}
-                          >
-                            <Text style={[styles.challengeStatusText, { color: '#FFFFFF' }]}>
-                              {isActiveChallenge ? 'Active' : 'Upcoming'}
-                            </Text>
-                          </View>
-                        
-                        <Text style={[styles.challengeCategory, { color: 'rgba(255,255,255,0.9)', textAlign: 'right' }]} numberOfLines={1}>
-                      {challenge.category}
-                    </Text>
-                  </View>
-            </View>
-                  </View>
-                </TouchableOpacity>
+                    isJoined={true}
+                    isCompleted={isCompleted}
+                  />
               );
             })}
             </ScrollView>
@@ -4437,21 +5082,29 @@ function ActionScreen() {
       <Modal
         visible={showCustomHabitModal}
         transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowCustomHabitModal(false)}
+        animationType="none"
+        onRequestClose={closeCustomHabitModal}
       >
-        <View style={styles.customHabitOverlay}>
-          <Animated.View 
-            style={[
-              styles.customHabitContainer, 
-              { 
-                backgroundColor: customHabitColors.background, 
-                width: screenWidth,
-                transform: [{ translateY: customHabitContainerSlide }],
-                opacity: customHabitContainerOpacity,
-              }
-            ]}
-          >
+        <TouchableWithoutFeedback onPress={closeCustomHabitModal}>
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            <Animated.View
+              style={{
+                ...StyleSheet.absoluteFillObject,
+                backgroundColor: 'rgba(0,0,0,0.4)',
+                opacity: customHabitOverlayOpacity,
+              }}
+            />
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <Animated.View 
+                style={[
+                  styles.customHabitContainer, 
+                  { 
+                    backgroundColor: customHabitColors.background, 
+                    width: screenWidth,
+                    transform: [{ translateY: customHabitContainerSlide }],
+                  }
+                ]}
+              >
             <Animated.View
               style={[
                 styles.customHabitPager,
@@ -4466,12 +5119,12 @@ function ActionScreen() {
                 <View style={styles.customHabitHeader}>
           <TouchableOpacity 
                     style={[styles.customHabitCloseButton, { backgroundColor: customHabitColors.iconBackground }]}
-                    onPress={() => setShowCustomHabitModal(false)}
+                    onPress={closeCustomHabitModal}
                   >
                     <Ionicons name="close" size={24} color={customHabitColors.text} />
                   </TouchableOpacity>
                   <Text style={[styles.customHabitTitle, { color: customHabitColors.text }]}>
-                    {editingHabitId ? 'Edit Habit' : 'Add Habit'}
+                    {editingHabitId ? 'Edit Habit' : 'Create Habit'}
                   </Text>
                   <TouchableOpacity
                     style={[styles.customHabitSearchButton, { backgroundColor: customHabitColors.iconBackground }]}
@@ -4497,7 +5150,7 @@ function ActionScreen() {
                         <Ionicons
                           name={category.icon as any}
                           size={20}
-                          color={isSelected ? '#FFFFFF' : customHabitColors.text}
+                          color={customHabitColors.text}
                         />
                       </TouchableOpacity>
                     );
@@ -4565,7 +5218,7 @@ function ActionScreen() {
                           disabled={!customHabitTitle.trim()}
                           onPress={() => handleCustomTaskConfirm(customHabitTitle)}
                         >
-                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                          <Ionicons name="arrow-forward" size={18} color={customHabitColors.text} />
                         </TouchableOpacity>
             </View>
                       <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
@@ -4598,7 +5251,7 @@ function ActionScreen() {
                           disabled={!breakHabitTitle.trim()}
                           onPress={() => handleCustomTaskConfirm(breakHabitTitle)}
                         >
-                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                          <Ionicons name="arrow-forward" size={18} color={customHabitColors.text} />
           </TouchableOpacity>
         </View>
                       <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
@@ -4631,7 +5284,7 @@ function ActionScreen() {
                           disabled={!timedTaskTitle.trim()}
                           onPress={() => handleCustomTaskConfirm(timedTaskTitle)}
                         >
-                          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                          <Ionicons name="arrow-forward" size={18} color={customHabitColors.text} />
                         </TouchableOpacity>
                       </View>
                       <Text style={[styles.customHabitCharCount, { color: customHabitColors.placeholder }]}>
@@ -4719,7 +5372,7 @@ function ActionScreen() {
                   {editingHabitId ? (
                     <TouchableOpacity
                       style={[styles.confirmTaskBackButton, { backgroundColor: customHabitColors.iconBackground }]}
-                      onPress={() => setShowCustomHabitModal(false)}
+                      onPress={closeCustomHabitModal}
                     >
                       <Ionicons name="close" size={24} color={customHabitColors.text} />
                     </TouchableOpacity>
@@ -4815,9 +5468,9 @@ function ActionScreen() {
                   <Text style={[styles.confirmTaskRowSubtext, { color: customHabitColors.placeholder }]}>{taskDays}</Text>
                   <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
                     <Ionicons name="calendar" size={18} color={customHabitColors.text} />
-              </View>
-            </View>
-          </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
 
               {/* Goal (only for timed tasks) */}
               {isTimedTask && (
@@ -5489,7 +6142,9 @@ function ActionScreen() {
               </View>
             </Animated.View>
           </Animated.View>
-        </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
 
@@ -6289,7 +6944,7 @@ function ActionScreen() {
                 }}
               >
                 <Text style={styles.submitButtonText}>Complete Screen Time Log</Text>
-              </TouchableOpacity>
+            </TouchableOpacity>
             </Animated.View>
           </View>
         </TouchableWithoutFeedback>
@@ -7458,11 +8113,20 @@ function ActionScreen() {
         <InviteFriendModal
           visible={showInviteModal}
           onClose={() => setShowInviteModal(false)}
+          onInviteSuccess={loadPendingInvites}
           habitType={inviteHabitData.type}
           habitIdentifier={inviteHabitData.identifier}
           habitTitle={inviteHabitData.title}
         />
       )}
+
+      <CustomHabitStatsModal
+        visible={showCustomHabitStats}
+        onClose={() => setShowCustomHabitStats(false)}
+        habit={statsHabit}
+        userId={user?.id}
+        theme={theme}
+      />
 
       </SafeAreaView>
     </CustomBackground>
@@ -7560,8 +8224,8 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   highlightCarouselContainer: {
-    marginTop: 12,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 0,
   },
   highlightCarouselContent: {
     paddingHorizontal: 24,
@@ -8137,17 +8801,21 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 0,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 0,
+    paddingBottom: 0,
   },
   challengesContainer: {
-    paddingVertical: 8,
+    paddingBottom: 8,
+  },
+  challengesScrollContent: {
+    paddingRight: 24,
   },
   challengeCard: {
     borderRadius: 20,
@@ -8770,12 +9438,13 @@ const styles = StyleSheet.create({
   greetingSection: {
     paddingHorizontal: 24,
     paddingVertical: 10,
+    paddingBottom: 0,
     marginTop: 4,
   },
   greetingText: {
     fontSize: 20,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 0,
   },
   // New styles for the info icon container
   infoIconContainer: {

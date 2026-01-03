@@ -213,7 +213,7 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
         presentationStyle="pageSheet"
         onRequestClose={onClose}
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <SafeAreaView style={styles.container}>
           <View style={styles.loadingContainer}>
             <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading habits...</Text>
           </View>
@@ -229,7 +229,7 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color={theme.textPrimary} />
@@ -401,6 +401,7 @@ const EditHabitsModal: React.FC<EditHabitsModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',

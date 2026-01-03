@@ -18,10 +18,20 @@ export interface Challenge {
   is_recurring?: boolean;
   recurring_schedule?: 'weekly' | 'monthly' | 'daily';
   next_recurrence?: string;
+  is_pro_only?: boolean;
+  visibility?: 'public' | 'private';
+  join_code?: string;
+  is_user_created?: boolean;
   // Computed fields
   participant_count?: number;
   is_joined?: boolean;
   progress_percentage?: number;
+  // Admin review fields
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  admin_notes?: string;
 }
 
 export interface ChallengeParticipant {
@@ -32,6 +42,11 @@ export interface ChallengeParticipant {
   status: 'active' | 'completed' | 'failed' | 'left';
   payment_status: 'pending' | 'paid' | 'refunded' | 'failed';
   completion_percentage: number;
+  // Admin review fields
+  is_invalid?: boolean;
+  invalidated_by?: string;
+  invalidated_at?: string;
+  invalidation_reason?: string;
   // Joined user data
   user?: {
     id: string;
@@ -96,11 +111,24 @@ export interface CreateChallengeData {
   end_date: string;
   max_participants?: number;
   image_url?: string;
+  is_pro_only?: boolean;
+  visibility?: 'public' | 'private';
   requirements: {
     requirement_text: string;
     frequency: 'daily' | 'weekly';
     target_count: number;
   }[];
+}
+
+export interface PublicChallengeRequest {
+  title: string;
+  description: string;
+  category: string;
+  duration_weeks: number;
+  entry_fee?: number;
+  requirements: string;
+  creator_email: string;
+  creator_username: string;
 }
 
 export interface JoinChallengeData {
@@ -121,6 +149,7 @@ export interface ChallengeCardProps {
   challenge: Challenge;
   onPress: (challenge: Challenge) => void;
   isJoined?: boolean;
+  isCompleted?: boolean;
 }
 
 export interface ChallengeDetailScreenProps {
@@ -240,3 +269,30 @@ export const getCurrentRecurringPeriod = (challenge: Challenge): { start: Date; 
     end: currentWeekEnd
   };
 };
+
+// Admin review types
+export interface ParticipantWithSubmissions {
+  participant: ChallengeParticipant;
+  user: {
+    id: string;
+    username: string;
+    avatar_url?: string;
+    display_name?: string;
+  };
+  submissions: ChallengeSubmission[];
+  completionPercentage: number;
+  isInvalid: boolean;
+}
+
+export interface ChallengeReviewData {
+  challenge: Challenge;
+  participants: ParticipantWithSubmissions[];
+  completionStats: {
+    totalParticipants: number;
+    validParticipants: number;
+    invalidParticipants: number;
+    completedCount: number;
+    failedCount: number;
+    averageCompletion: number;
+  };
+}

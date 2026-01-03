@@ -22,6 +22,7 @@ import { useAuthStore } from '../state/authStore';
 import { raffleService, Raffle } from '../lib/raffleService';
 import { storeService } from '../lib/storeService';
 import CustomBackground from '../components/CustomBackground';
+import UpgradeToProModal from '../components/UpgradeToProModal';
 
 export default function RaffleScreen() {
   const navigation = useNavigation() as any;
@@ -38,6 +39,7 @@ export default function RaffleScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [entering, setEntering] = useState(false);
   const [isPro, setIsPro] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const loadRaffleData = useCallback(async () => {
     if (!user) return;
@@ -124,11 +126,7 @@ export default function RaffleScreen() {
 
     // Check Pro status
     if (!isPro) {
-      Alert.alert(
-        'Pro Members Only',
-        'This raffle is exclusive to Pro members. Upgrade to Pro to enter!',
-        [{ text: 'OK' }]
-      );
+      setShowUpgradeModal(true);
       return;
     }
 
@@ -348,6 +346,12 @@ export default function RaffleScreen() {
             </View>
           )}
         </ScrollView>
+
+        {/* Upgrade to Pro Modal */}
+        <UpgradeToProModal
+          visible={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+        />
       </SafeAreaView>
     </CustomBackground>
   );

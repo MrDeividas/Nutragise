@@ -1,14 +1,10 @@
 // @ts-nocheck - Deno runtime (Supabase Edge Functions)
 // Transfers funds from user wallet to Stripe escrow (Platform account)
-// Deducts from wallet DB and creates a confirmed Stripe Payment Intent
+// Deducts from wallet DB and tracks the transfer
+// Note: Funds are already in Stripe platform account from original wallet deposit,
+// so we only need to track the transfer in our database, not create a Payment Intent
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-  apiVersion: "2023-10-16",
-  httpClient: Stripe.createFetchHttpClient(),
-})
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
@@ -24,15 +20,6 @@ serve(async (req: Request) => {
         "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
       },
     })
-  }
-
-  const stripeKey = Deno.env.get("STRIPE_SECRET_KEY")
-  if (!stripeKey) {
-    console.error("STRIPE_SECRET_KEY is not set")
-    return new Response(
-      JSON.stringify({ error: "Stripe secret key not configured" }),
-      { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, status: 500 }
-    )
   }
 
   try {
@@ -90,6 +77,7 @@ serve(async (req: Request) => {
         metadata: {
           timestamp: new Date().toISOString(),
           destination: "stripe_escrow",
+          source: "user_wallet_transfer",
         },
       })
 
@@ -98,38 +86,29 @@ serve(async (req: Request) => {
       // Ideally rollback wallet deduction here, but keeping simple for now
     }
 
-    // 4. Create and Confirm Stripe Payment Intent (Simulating Platform Transfer)
-    const amountInPence = Math.round(amount * 100)
-    
-    // In Production: This should ideally be a Stripe Transfer to a Connect account
-    // or just tracked if funds stay in Platform.
-    // For Test Mode/Plan Compliance: We create a confirmed PI using a test token.
-    
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountInPence,
-      currency: currency.toLowerCase(),
-      confirm: true,
-      payment_method: "pm_card_visa", // Test card token
-      return_url: "https://example.com/return", // Required for confirm: true
-      metadata: {
-        userId,
-        challengeId,
-        purpose: "challenge_investment",
-        source: "user_wallet_transfer",
-      },
-    })
+    // 4. Generate tracking ID for wallet transfer
+    // Funds are already in Stripe platform account from original wallet deposit,
+    // so we don't need to create a Payment Intent. We just track the transfer.
+    const transferId = `wallet_transfer_${Date.now()}_${userId.substring(0, 8)}`
+    const timestamp = new Date().toISOString()
 
     console.log("✅ Transferred wallet funds to Stripe escrow:", {
       userId,
       amount,
-      paymentIntentId: paymentIntent.id,
+      challengeId,
+      transferId,
+      newBalance,
+      note: "Funds already in Stripe platform account from original wallet deposit",
     })
 
     return new Response(
       JSON.stringify({
         success: true,
-        paymentIntentId: paymentIntent.id,
+        paymentIntentId: transferId, // Tracking ID for compatibility with existing code
+        transferId: transferId, // Explicit tracking ID
+        paidFromWallet: true, // Flag to indicate wallet payment
         newBalance,
+        timestamp,
       }),
       {
         headers: { 

@@ -649,7 +649,7 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         </View>
       </View>
     </ScrollView>
-    );
+  );
   };
 
   const renderQuiz = () => (

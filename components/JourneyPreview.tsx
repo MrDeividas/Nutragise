@@ -46,7 +46,6 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
         .single();
       
       if (error) {
-        console.error('Error fetching account creation date:', error);
         return;
       }
       
@@ -54,7 +53,6 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
         setAccountCreatedAt(data.created_at);
       }
     } catch (error) {
-      console.error('Error loading account creation date:', error);
       // Don't block loading if this fails
     }
   };
@@ -62,20 +60,10 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
   const loadRecentJourney = async () => {
     try {
       setLoading(true);
-      console.log('📸 Loading recent journey for user:', userId);
       // Load last 10 days - service handles errors internally
       const days = await dailyPostsService.getRecentJourney(userId, 10);
-      console.log('📸 Received days from service:', days?.length || 0);
-      if (days && days.length > 0) {
-        console.log('📸 First day sample:', {
-          id: days[0].id,
-          date: days[0].date,
-          photos: days[0].photos
-        });
-      }
       setRecentDays(days || []);
     } catch (error) {
-      console.error('❌ Error loading recent journey:', error);
       // Set empty array on error to show empty state
       setRecentDays([]);
     } finally {

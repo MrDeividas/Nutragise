@@ -51,6 +51,7 @@ interface ActionState {
 	createCustomHabit: (payload: CreateCustomHabitInput) => Promise<CustomHabit | null>;
 	updateCustomHabit: (habitId: string, payload: Partial<CreateCustomHabitInput>) => Promise<CustomHabit | null>;
 	deleteCustomHabit: (habitId: string) => Promise<boolean>;
+	checkHabitPartnerships: (habitId: string) => Promise<any[]>;
 	toggleHabitCompletion: (habitId: string, occurDate: string) => Promise<void>;
 }
 
@@ -353,6 +354,19 @@ export const useActionStore = create<ActionState>((set, get) => ({
 				customHabitsError: error.message ?? 'Failed to delete habit',
 			});
 			return false;
+		}
+	},
+	
+	// Check if habit has partnerships before deletion
+	checkHabitPartnerships: async (habitId: string) => {
+		try {
+			const { user } = useAuthStore.getState();
+			if (!user) return [];
+			
+			return await habitsService.getActivePartnerships(user.id, habitId);
+		} catch (error) {
+			console.error('Error checking partnerships:', error);
+			return [];
 		}
 	},
 

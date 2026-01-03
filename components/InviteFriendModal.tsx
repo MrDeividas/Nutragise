@@ -22,6 +22,7 @@ import { Profile } from '../lib/socialService';
 interface InviteFriendModalProps {
   visible: boolean;
   onClose: () => void;
+  onInviteSuccess?: () => void;
   habitType: 'core' | 'custom';
   habitIdentifier: string; // habit_key or custom_habit_id
   habitTitle: string;
@@ -30,6 +31,7 @@ interface InviteFriendModalProps {
 export default function InviteFriendModal({
   visible,
   onClose,
+  onInviteSuccess,
   habitType,
   habitIdentifier,
   habitTitle
@@ -109,10 +111,18 @@ export default function InviteFriendModal({
         mode
       );
       
+      // Trigger success callback to refresh pending invites and WAIT for it to complete
+      if (onInviteSuccess) {
+        await onInviteSuccess();
+      }
+      
+      // Close modal immediately
+      onClose();
+      
+      // Show success alert after modal is closed
       Alert.alert(
         'Invite Sent!',
-        `Invitation to join ${habitTitle} has been sent.`,
-        [{ text: 'OK', onPress: onClose }]
+        `Invitation to join ${habitTitle} has been sent.`
       );
     } catch (error) {
       console.error('Error sending invite:', error);

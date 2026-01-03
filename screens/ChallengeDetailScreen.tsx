@@ -19,10 +19,13 @@ import { useAuthStore } from '../state/authStore';
 import { challengesService } from '../lib/challengesService';
 import { walletService } from '../lib/walletService';
 import { challengePotService } from '../lib/challengePotService';
+import { socialService } from '../lib/socialService';
+import { supabase } from '../lib/supabase';
 import { ChallengeWithDetails, ChallengeProgress } from '../types/challenges';
 import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
+import UpgradeToProModal from '../components/UpgradeToProModal';
 
 const { width } = Dimensions.get('window');
 
@@ -44,10 +47,38 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [activeTab, setActiveTab] = useState('about');
   const [potStatus, setPotStatus] = useState<PotStatus | null>(null);
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   useEffect(() => {
     loadChallengeDetails();
+    loadUserProfile();
   }, [challengeId]);
+
+  const loadUserProfile = async () => {
+    if (user?.id) {
+      try {
+        const profile = await socialService.getProfile(user.id);
+        
+        if (!profile) {
+          // Try direct database query as fallback
+          const { data: directProfile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          
+          if (directProfile) {
+            setUserProfile(directProfile);
+          }
+        } else {
+          setUserProfile(profile);
+        }
+      } catch (error) {
+        // Error loading user profile
+      }
+    }
+  };
 
   const loadChallengeDetails = async () => {
     try {
@@ -84,6 +115,12 @@ export default function ChallengeDetailScreen({ route }: any) {
 
   const handleJoinChallenge = async () => {
     if (!user || !challenge) return;
+    
+    // Check if challenge is pro-only and user is not pro
+    if (challenge.is_pro_only && !userProfile?.is_pro) {
+      setShowUpgradeModal(true);
+      return;
+    }
     
     const entryFee = challenge.entry_fee || 0;
 
@@ -507,6 +544,70 @@ export default function ChallengeDetailScreen({ route }: any) {
             <Text style={[styles.statLabel, { color: '#6B7280' }]}>players</Text>
           </View>
         </View>
+
+        {/* Approval Status Banner */}
+        {challenge.approval_status && (
+          <View style={[
+            styles.approvalBanner,
+            {
+              backgroundColor: challenge.approval_status === 'pending' 
+                ? 'rgba(245, 158, 11, 0.1)' 
+                : challenge.approval_status === 'approved'
+                ? 'rgba(16, 185, 129, 0.1)'
+                : 'rgba(239, 68, 68, 0.1)',
+              borderColor: challenge.approval_status === 'pending'
+                ? '#F59E0B'
+                : challenge.approval_status === 'approved'
+                ? '#10B981'
+                : '#EF4444',
+            }
+          ]}>
+            <Ionicons
+              name={
+                challenge.approval_status === 'pending'
+                  ? 'time-outline'
+                  : challenge.approval_status === 'approved'
+                  ? 'checkmark-circle'
+                  : 'close-circle'
+              }
+              size={20}
+              color={
+                challenge.approval_status === 'pending'
+                  ? '#F59E0B'
+                  : challenge.approval_status === 'approved'
+                  ? '#10B981'
+                  : '#EF4444'
+              }
+            />
+            <View style={styles.approvalTextContainer}>
+              <Text style={[
+                styles.approvalTitle,
+                {
+                  color: challenge.approval_status === 'pending'
+                    ? '#F59E0B'
+                    : challenge.approval_status === 'approved'
+                    ? '#10B981'
+                    : '#EF4444',
+                }
+              ]}>
+                {challenge.approval_status === 'pending'
+                  ? 'Pending Review'
+                  : challenge.approval_status === 'approved'
+                  ? 'Approved'
+                  : 'Rejected'}
+              </Text>
+              <Text style={[styles.approvalMessage, { color: theme.textSecondary }]}>
+                {challenge.approval_status === 'pending'
+                  ? 'This challenge is under review. Winners will be determined after approval.'
+                  : challenge.approval_status === 'approved'
+                  ? challenge.reviewed_at
+                    ? `Approved on ${new Date(challenge.reviewed_at).toLocaleDateString()}. Money has been distributed to winners.`
+                    : 'This challenge has been approved and money distributed.'
+                  : challenge.rejection_reason || 'This challenge has been rejected.'}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Wallet Balance (if not participating and has entry fee) */}
         {challenge.entry_fee && challenge.entry_fee > 0 && !isParticipating && (
@@ -1323,6 +1424,28 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  approvalBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 16,
+    gap: 12,
+  },
+  approvalTextContainer: {
+    flex: 1,
+  },
+  approvalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  approvalMessage: {
+    fontSize: 14,
+    lineHeight: 20,
   },
   balanceCard: {
     padding: 16,

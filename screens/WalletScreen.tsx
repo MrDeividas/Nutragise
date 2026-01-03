@@ -91,26 +91,40 @@ export default function WalletScreen() {
     loadWalletData();
   };
 
+  // Calculate Stripe fee for display
+  const calculateStripeFee = (amount: number) => {
+    const percentageFee = 0.014; // 1.4%
+    const fixedFee = 0.20; // £0.20
+    const totalAmount = (amount + fixedFee) / (1 - percentageFee);
+    const stripeFee = totalAmount - amount;
+    return { totalAmount, stripeFee };
+  };
+
   // Handle add funds (integrate with Stripe)
   const handleAddFunds = async () => {
     if (!user) return;
 
     try {
-      // Show alert with preset amounts
+      // Calculate fees for each option
+      const fee10 = calculateStripeFee(10);
+      const fee20 = calculateStripeFee(20);
+      const fee50 = calculateStripeFee(50);
+
+      // Show alert with preset amounts and fees
       Alert.alert(
         'Add Funds',
-        'Select amount to add to your wallet',
+        'Select amount to add to your wallet\n(Card payment includes Stripe processing fee)',
         [
           {
-            text: '£10',
+            text: `£10 (pay £${fee10.totalAmount.toFixed(2)})`,
             onPress: () => processDeposit(10),
           },
           {
-            text: '£20',
+            text: `£20 (pay £${fee20.totalAmount.toFixed(2)})`,
             onPress: () => processDeposit(20),
           },
           {
-            text: '£50',
+            text: `£50 (pay £${fee50.totalAmount.toFixed(2)})`,
             onPress: () => processDeposit(50),
           },
           {
@@ -134,9 +148,9 @@ export default function WalletScreen() {
     try {
       console.log('💰 Starting deposit process:', { amount, userId: user.id });
       
-      // 1. Create Payment Intent
+      // 1. Create Payment Intent (includes Stripe fee calculation)
       // Note: ensure backend function 'create-payment-intent' is deployed and reachable
-      const { clientSecret, paymentIntentId } = await stripeService.createPaymentIntent(
+      const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } = await stripeService.createPaymentIntent(
         amount,
         user.id,
         {
@@ -149,9 +163,15 @@ export default function WalletScreen() {
         throw new Error('Failed to create payment intent');
       }
 
+      console.log('💰 Payment breakdown:', {
+        depositAmount: originalAmount || amount,
+        stripeFee: stripeFee || 0,
+        totalCharged: totalAmount || amount,
+      });
+
       // 2. Initialize Payment Sheet
       const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'NutrApp',
+        merchantDisplayName: 'Nutragise',
         paymentIntentClientSecret: clientSecret,
         defaultBillingDetails: {
           name: user.email?.split('@')[0] || 'User',
@@ -193,7 +213,12 @@ export default function WalletScreen() {
       
       console.log('✅ Wallet data reloaded');
       
-      Alert.alert('Success!', `£${amount} added to your wallet!`);
+      // Show success with breakdown
+      const feeInfo = stripeFee && stripeFee > 0 
+        ? `\n\nPaid: £${(totalAmount || amount).toFixed(2)} (includes £${stripeFee.toFixed(2)} processing fee)`
+        : '';
+      
+      Alert.alert('Success!', `£${amount.toFixed(2)} added to your wallet!${feeInfo}`);
     } catch (error: any) {
       console.error('❌ Error processing deposit:', error);
       console.error('❌ Error details:', error.message);
