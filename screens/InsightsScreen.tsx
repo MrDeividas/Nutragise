@@ -1261,6 +1261,25 @@ export default function InsightsScreen({ route }: any) {
         <UpgradeToProModal
           visible={showUpgradeModal}
           onClose={() => setShowUpgradeModal(false)}
+          onUpgrade={async () => {
+            // Refresh profile data
+            if (user?.id) {
+              try {
+                const { supabase } = await import('../lib/supabase');
+                const { data: freshProfile, error } = await supabase
+                  .from('profiles')
+                  .select('is_pro')
+                  .eq('id', user.id)
+                  .single();
+                
+                if (!error && freshProfile) {
+                  setUserProfile(freshProfile);
+                }
+              } catch (error) {
+                console.error('Error refreshing profile:', error);
+              }
+            }
+          }}
         />
 
       </SafeAreaView>

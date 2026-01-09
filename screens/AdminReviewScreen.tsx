@@ -171,9 +171,15 @@ export default function AdminReviewScreen() {
           onPress: async () => {
             setIsProcessing(true);
             try {
-              await adminService.verifyAllParticipants(selectedChallenge.challenge.id, user.id);
+              const challengeId = selectedChallenge.challenge.id;
+              await adminService.verifyAllParticipants(challengeId, user.id);
+              
+              // Small delay to ensure database update propagates
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
               Alert.alert('Success', 'Challenge approved and money distributed.');
               setViewMode('list');
+              setSelectedChallenge(null);
               await loadPendingChallenges();
             } catch (error) {
               console.error('Error verifying all:', error);

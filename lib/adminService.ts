@@ -51,11 +51,18 @@ class AdminService {
    */
   async getPendingChallenges(filters?: { limit?: number; offset?: number }): Promise<Challenge[]> {
     try {
+      // Only show challenges that have actually ended (end_date is in the past)
+      // Add 1 hour grace period to prevent marking challenges that just ended
+      const now = new Date();
+      const gracePeriod = new Date(now.getTime() - (1 * 60 * 60 * 1000)); // 1 hour ago
+      const gracePeriodISO = gracePeriod.toISOString();
+
       let query = supabase
         .from('challenges')
         .select('*')
         .eq('approval_status', 'pending')
         .eq('status', 'completed')
+        .lt('end_date', gracePeriodISO) // Only challenges that ended more than 1 hour ago
         .order('end_date', { ascending: false });
 
       if (filters?.limit) {
@@ -73,7 +80,17 @@ class AdminService {
         throw error;
       }
 
-      console.log(`📋 Found ${data?.length || 0} pending challenges for review`);
+      console.log(`📋 [getPendingChallenges] Found ${data?.length || 0} pending challenges for review (ended before ${gracePeriodISO})`);
+      if (data && data.length > 0) {
+        // Log first few challenge IDs and their approval_status for debugging
+        const sample = data.slice(0, 5).map(c => ({ 
+          id: c.id.substring(0, 8) + '...', 
+          approval_status: c.approval_status, 
+          status: c.status,
+          end_date: c.end_date
+        }));
+        console.log(`📋 [getPendingChallenges] Sample pending challenges:`, sample);
+      }
 
       // Get participant counts for all challenges
       if (data && data.length > 0) {
@@ -136,6 +153,11 @@ class AdminService {
         throw participantsError;
       }
 
+      console.log(`[getChallengeReviewData] Found ${participants?.length || 0} participants for challenge ${challengeId}`);
+      if (participants && participants.length > 0) {
+        console.log('[getChallengeReviewData] Participant IDs:', participants.map(p => ({ id: p.id, user_id: p.user_id, status: p.status })));
+      }
+
       // Get all submissions
       const { data: submissions, error: submissionsError } = await supabase
         .from('challenge_submissions')
@@ -175,9 +197,17 @@ class AdminService {
       });
 
       // Build participants with submissions
+      // A participant is considered invalid if:
+      // 1. They have been explicitly marked as invalid (is_invalid = true), OR
+      // 2. They have 0% completion (no submissions/effort)
       const participantsWithSubmissions: ParticipantWithSubmissions[] = (participants || []).map(participant => {
         const user = profilesMap.get(participant.user_id);
         const userSubmissions = submissionsByUser.get(participant.user_id) || [];
+        const completionPercentage = participant.completion_percentage || 0;
+        const isExplicitlyInvalid = participant.is_invalid || false;
+        const hasZeroCompletion = completionPercentage === 0;
+        // Consider invalid if explicitly marked OR has 0% completion
+        const isInvalid = isExplicitlyInvalid || hasZeroCompletion;
         
         return {
           participant,
@@ -186,15 +216,26 @@ class AdminService {
             username: 'Unknown',
           },
           submissions: userSubmissions,
-          completionPercentage: participant.completion_percentage || 0,
-          isInvalid: participant.is_invalid || false,
+          completionPercentage,
+          isInvalid,
         };
       });
 
       // Calculate completion stats
+      // A participant is considered invalid if:
+      // 1. They have been explicitly marked as invalid (is_invalid = true), OR
+      // 2. They have 0% completion (no submissions/effort)
       const totalParticipants = participants?.length || 0;
-      const validParticipants = participants?.filter(p => !p.is_invalid).length || 0;
-      const invalidParticipants = participants?.filter(p => p.is_invalid).length || 0;
+      const validParticipants = participants?.filter(p => {
+        const isExplicitlyInvalid = p.is_invalid || false;
+        const hasZeroCompletion = (p.completion_percentage || 0) === 0;
+        return !isExplicitlyInvalid && !hasZeroCompletion;
+      }).length || 0;
+      const invalidParticipants = participants?.filter(p => {
+        const isExplicitlyInvalid = p.is_invalid || false;
+        const hasZeroCompletion = (p.completion_percentage || 0) === 0;
+        return isExplicitlyInvalid || hasZeroCompletion;
+      }).length || 0;
       const completedCount = participants?.filter(p => p.status === 'completed').length || 0;
       const failedCount = participants?.filter(p => p.status === 'failed').length || 0;
       const averageCompletion = participants && participants.length > 0
@@ -243,7 +284,8 @@ class AdminService {
       }
 
       // Update challenge approval status
-      const { error: updateError } = await supabase
+      console.log(`🔄 [verifyAllParticipants] Updating challenge ${challengeId} approval_status to 'approved'`);
+      const { data: updatedChallenge, error: updateError } = await supabase
         .from('challenges')
         .update({
           approval_status: 'approved',
@@ -251,11 +293,22 @@ class AdminService {
           reviewed_at: new Date().toISOString(),
           admin_notes: notes || null,
         })
-        .eq('id', challengeId);
+        .eq('id', challengeId)
+        .select()
+        .single();
 
       if (updateError) {
-        console.error('Error approving challenge:', updateError);
+        console.error('❌ [verifyAllParticipants] Error approving challenge:', updateError);
+        console.error('   Error details:', JSON.stringify(updateError, null, 2));
         throw updateError;
+      }
+
+      if (updatedChallenge) {
+        console.log(`✅ [verifyAllParticipants] Challenge ${challengeId} updated successfully`);
+        console.log(`   - approval_status: ${updatedChallenge.approval_status}`);
+        console.log(`   - status: ${updatedChallenge.status}`);
+      } else {
+        console.warn(`⚠️ [verifyAllParticipants] Challenge ${challengeId} update returned no data`);
       }
 
       // Only distribute pot if challenge has an entry fee

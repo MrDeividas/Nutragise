@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { Animated, Easing, LayoutAnimation, Platform, UIManager } from 'react-native';
 import Reanimated, { 
   useSharedValue, 
@@ -16,7 +16,7 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, CommonActions } from '@react-navigation/native';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
@@ -198,7 +198,7 @@ const formatHabitScheduleDescription = (habit: CustomHabit): string => {
           .filter(Boolean)
           .join(', ');
       }
-      return 'Specific days of the week';
+      return 'Specific days only';
     case 'specific_days_month':
       if (habit.days_of_month?.length) {
         return `Days ${habit.days_of_month.sort((a, b) => a - b).join(', ')}`;
@@ -434,6 +434,14 @@ const AnimatedHabitCard = ({
           <View>
             <View style={styles.highlightCardTitleRow}>
               <Text style={[styles.highlightCardTitle, { color: '#ffffff' }]}>{card.title}</Text>
+              {cardState?.completed && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color="#10B981"
+                  style={{ marginLeft: 6 }}
+                />
+              )}
               {showPendingIndicator && (
                 <Ionicons
                   name="alert-circle"
@@ -605,11 +613,11 @@ const WhiteHabitCard = ({
   }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
 
   const isCompleted = !isCreateCard && card.progress >= 1;
-  const cardBackgroundColor = isCompleted ? '#10B981' : '#FFFFFF';
-  const titleColor = isCompleted ? '#FFFFFF' : theme.textPrimary;
-  const subtitleColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
-  const iconColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
-  const progressTrackColor = isCompleted ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+  const cardBackgroundColor = '#FFFFFF';
+  const titleColor = theme.textPrimary;
+  const subtitleColor = theme.textSecondary;
+  const iconColor = theme.textSecondary;
+  const progressTrackColor = 'rgba(0, 0, 0, 0.1)';
   const progressFillColor = card.accent;
 
   return (
@@ -622,7 +630,7 @@ const WhiteHabitCard = ({
           marginVertical: 8,
           shadowColor: whiteCardShadowColor,
           backgroundColor: isCreateCard ? '#9CA3AF' : cardBackgroundColor,
-          borderColor: isCompleted ? 'transparent' : '#E5E7EB',
+          borderColor: '#E5E7EB',
         },
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
       ]}
@@ -646,8 +654,24 @@ const WhiteHabitCard = ({
             },
           ]}
         >
-          <View style={{ alignItems: 'flex-start' }}>
-            <Text style={[styles.whiteHabitCardTitle, { color: '#FFFFFF' }]}>{card.title}</Text>
+          <View style={{ alignItems: 'flex-start', flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <Text 
+                style={[styles.whiteHabitCardTitle, { color: '#FFFFFF', flex: 1 }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {card.title}
+              </Text>
+              {isCompleted && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color="#10B981"
+                  style={{ marginLeft: 6, flexShrink: 0 }}
+                />
+              )}
+            </View>
             <Text style={[styles.whiteHabitCardSubtitle, { color: 'rgba(255, 255, 255, 0.8)' }]}>{card.subtitle}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -1794,8 +1818,8 @@ function ActionScreen() {
       key: 'update_goal',
       title: 'Update Goal',
       subtitle: 'Weekly',
-      metricLabel: 'Status',
-      metricValue: 'On Track',
+      metricLabel: 'Goals',
+      metricValue: String(userGoals.length || 0),
       progress: 0.85,
       accent: '#A78BFA',
     },
@@ -1859,7 +1883,7 @@ function ActionScreen() {
       progress: 0.4,
       accent: '#FCD34D',
     },
-  ]), []);
+  ]), [userGoals.length]);
 
   const [habitCardState, setHabitCardState] = useState<Record<string, HabitCardVisualState>>({});
   const [habitSpotlightCards, setHabitSpotlightCards] = useState(habitSpotlightCardsBase);
@@ -2515,15 +2539,19 @@ function ActionScreen() {
     if (showReorderHabitsModal) {
       (async () => {
         try {
+          // Filter habitSpotlightCardsBase to only include selected habits
+          const selectedHabitIdsSet = new Set(selectedHabits);
+          const filteredBase = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
+          
           // Load saved order from AsyncStorage
           const storedOrder = await loadCardOrder();
           
-          let orderedCards = habitSpotlightCardsBase;
+          let orderedCards = filteredBase;
           
-          // If we have a stored order, restore it
-          if (storedOrder && storedOrder.length === habitSpotlightCardsBase.length) {
+          // If we have a stored order, restore it (but only for selected habits)
+          if (storedOrder && storedOrder.length > 0) {
             const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
-            orderedCards = [...habitSpotlightCardsBase].sort((a, b) => {
+            orderedCards = [...filteredBase].sort((a, b) => {
               const aIndex = orderMap.get(a.habitId) ?? Infinity;
               const bIndex = orderMap.get(b.habitId) ?? Infinity;
               return aIndex - bIndex;
@@ -2544,12 +2572,14 @@ function ActionScreen() {
           setReorderableCustomHabits(sortedCustomHabits);
         } catch (error) {
           console.warn('Failed to load saved order for reorder modal:', error);
-          // Fallback to current carousel order if loading fails
-          setReorderableHabits([...habitSpotlightCards]);
+          // Fallback: filter current cards to only selected habits
+          const selectedHabitIdsSet = new Set(selectedHabits);
+          const filteredCards = habitSpotlightCards.filter(card => selectedHabitIdsSet.has(card.habitId));
+          setReorderableHabits(filteredCards);
         }
       })();
     }
-  }, [showReorderHabitsModal, loadCardOrder, customHabits, customHabitOrder]);
+  }, [showReorderHabitsModal, loadCardOrder, customHabits, customHabitOrder, selectedHabits, habitSpotlightCardsBase, habitSpotlightCards]);
 
   // Reorder functions
   const moveHabitUp = useCallback((index: number) => {
@@ -2588,6 +2618,105 @@ function ActionScreen() {
     });
   }, []);
 
+  const handleAddHabit = useCallback(async (habitId: string) => {
+    if (!user) return;
+    
+    try {
+      // Find the habit card from base
+      const habitCard = habitSpotlightCardsBase.find(h => h.habitId === habitId);
+      if (!habitCard) return;
+
+      // Add to reorderable habits
+      setReorderableHabits(prev => [...prev, habitCard]);
+
+      // Update selected habits in state
+      const newSelectedHabits = [...selectedHabits, habitId];
+      setSelectedHabits(newSelectedHabits);
+
+      // Save to database
+      await dailyHabitsService.updateSelectedHabits(user.id, newSelectedHabits);
+
+      // Set default schedule (all 7 days) for the new habit
+      const defaultSchedule = [true, true, true, true, true, true, true];
+      await dailyHabitsService.updateHabitSchedule(user.id, habitId, defaultSchedule);
+      
+      // Update habit schedules state
+      setHabitSchedules(prev => ({
+        ...prev,
+        [habitId]: defaultSchedule
+      }));
+
+      // Refresh the habit cards
+      if (user) {
+        const [habits, schedules] = await Promise.all([
+          dailyHabitsService.getSelectedHabits(user.id),
+          dailyHabitsService.getHabitSchedules(user.id)
+        ]);
+        setSelectedHabits(habits);
+        setHabitSchedules(schedules);
+      }
+    } catch (error) {
+      console.error('Error adding habit:', error);
+      Alert.alert('Error', 'Failed to add habit. Please try again.');
+    }
+  }, [user, selectedHabits, habitSpotlightCardsBase, habitSchedules]);
+
+  const handleRemoveHabit = useCallback(async (habitId: string) => {
+    if (!user) return;
+
+    // Check minimum requirement (at least 6 habits)
+    if (reorderableHabits.length <= 6) {
+      Alert.alert(
+        'Minimum Required',
+        'You must have at least 6 habits selected. Please add more habits before removing this one.'
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Remove Habit',
+      `Are you sure you want to remove ${habitSpotlightCardsBase.find(h => h.habitId === habitId)?.title || 'this habit'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Remove from reorderable habits
+              setReorderableHabits(prev => prev.filter(h => h.habitId !== habitId));
+
+              // Update selected habits in state
+              const newSelectedHabits = selectedHabits.filter(id => id !== habitId);
+              setSelectedHabits(newSelectedHabits);
+
+              // Save to database
+              await dailyHabitsService.updateSelectedHabits(user.id, newSelectedHabits);
+
+              // Remove schedule
+              const updatedSchedules = { ...habitSchedules };
+              delete updatedSchedules[habitId];
+              setHabitSchedules(updatedSchedules);
+
+              // Refresh the habit cards
+              if (user) {
+                const [habits, schedules] = await Promise.all([
+                  dailyHabitsService.getSelectedHabits(user.id),
+                  dailyHabitsService.getHabitSchedules(user.id)
+                ]);
+                setSelectedHabits(habits);
+                setHabitSchedules(schedules);
+              }
+            } catch (error) {
+              console.error('Error removing habit:', error);
+              Alert.alert('Error', 'Failed to remove habit. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  }, [user, reorderableHabits.length, selectedHabits, habitSchedules, habitSpotlightCardsBase]);
+
   const handleSaveHabitOrder = useCallback(() => {
     if (reorderTab === 'core') {
       setHabitSpotlightCards(reorderableHabits);
@@ -2611,10 +2740,40 @@ function ActionScreen() {
   }, [todayDate]);
 
   // Hide/show navigation bar based on loading state
-  useEffect(() => {
-    navigation.setOptions({
-      tabBarStyle: isInitialLoad ? { display: 'none' } : undefined,
-    });
+  useLayoutEffect(() => {
+    // Try to get the tab navigator (might need to go up multiple levels)
+    let tabNavigator = navigation.getParent();
+    // If first parent isn't the tab navigator, try going up one more level
+    if (tabNavigator) {
+      const grandParent = tabNavigator.getParent?.();
+      if (grandParent) {
+        tabNavigator = grandParent;
+      }
+    }
+    
+    const tabBarStyle = isInitialLoad 
+      ? { 
+          display: 'none',
+          height: 0,
+          overflow: 'hidden',
+        } 
+      : {
+          position: 'absolute',
+          backgroundColor: 'transparent',
+          elevation: 0,
+          borderTopWidth: 0,
+        };
+    
+    if (tabNavigator) {
+      tabNavigator.setOptions({
+        tabBarStyle,
+      });
+    } else {
+      // Fallback: try setting on navigation directly
+      navigation.setOptions({
+        tabBarStyle,
+      });
+    }
   }, [isInitialLoad, navigation]);
 
   // Check if initial loading is complete
@@ -3062,7 +3221,7 @@ function ActionScreen() {
             .join(', ');
           formattedTaskDays = selectedDays;
         } else {
-          formattedTaskDays = 'Specific days of the week';
+          formattedTaskDays = 'Specific days only';
         }
         break;
       case 'specific-days-month':
@@ -4219,8 +4378,8 @@ function ActionScreen() {
         }
       }
       
-      // Fetch last nudge times for all partnerships
-      const nudgeTimes = await habitInviteService.getLastNudgeTimes(partnershipIds);
+      // Fetch last nudge times for all partnerships (only nudges sent by current user)
+      const nudgeTimes = await habitInviteService.getLastNudgeTimes(partnershipIds, user.id);
       console.log('[ActionScreen] Loaded partnerships:', {
         count: partnerships.length,
         partnershipMap: Object.keys(partnershipMap),
@@ -4410,13 +4569,13 @@ function ActionScreen() {
         console.log('[Nudge] Updated lastNudgeTimes:', updated);
         return updated;
       });
-      Alert.alert('Success', `You nudged ${partnerName} to complete ${habitTitle}!`);
+      // No alert - user can see the countdown timer update
       return nudgeTime;
     } else {
       console.log('[Nudge] Nudge failed:', result.message);
       
-      // If nudge failed due to cooldown, fetch and display the last nudge time
-      const lastNudgeTime = await habitInviteService.getLastNudgeTime(partnershipId);
+      // If nudge failed due to cooldown, fetch and display the last nudge time (sent by this user)
+      const lastNudgeTime = await habitInviteService.getLastNudgeTime(partnershipId, user.id);
       if (lastNudgeTime) {
         console.log('[Nudge] Fetched existing nudge time:', lastNudgeTime);
         setLastNudgeTimes(prev => ({ ...prev, [partnershipId]: lastNudgeTime }));
@@ -4613,7 +4772,8 @@ function ActionScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, zIndex: 1 }}>
             <TouchableOpacity 
               onPress={() => {
-                (navigation as any).navigate('Messages');
+                // DM is in AppStack (same as Notifications)
+                (navigation as any).navigate('DM');
               }}
               activeOpacity={0.7}
             >
@@ -4621,7 +4781,14 @@ function ActionScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity 
-              onPress={() => (navigation as any).navigate('Notifications')}
+              onPress={async () => {
+                // Mark all notifications as read when clicking the bell
+                if (user && unreadNotificationCount > 0) {
+                  await notificationService.markAllAsRead(user.id);
+                  setUnreadNotificationCount(0);
+                }
+                (navigation as any).navigate('Notifications');
+              }}
               style={{ position: 'relative' }}
             >
               <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
@@ -4629,24 +4796,24 @@ function ActionScreen() {
                 <View
                   style={{
                     position: 'absolute',
-                    top: -4,
-                    right: -4,
+                    top: -2,
+                    right: -2,
                     backgroundColor: '#EF4444',
-                    borderRadius: 10,
-                    minWidth: 20,
-                    height: 20,
-                    paddingHorizontal: 6,
+                    borderRadius: 8,
+                    minWidth: 14,
+                    height: 14,
+                    paddingHorizontal: 4,
                     justifyContent: 'center',
                     alignItems: 'center',
-                    borderWidth: 2,
+                    borderWidth: 1.5,
                     borderColor: theme.background,
                   }}
                 >
                   <Text
                     style={{
                       color: '#FFFFFF',
-                      fontSize: 11,
-                      fontWeight: '800',
+                      fontSize: 9,
+                      fontWeight: '700',
                     }}
                   >
                     {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
@@ -4800,11 +4967,11 @@ function ActionScreen() {
                 inputRange: [0, 1],
                 outputRange: ['0%', '100%'],
               });
-              const cardBackgroundColor = isCompletedCard ? '#10B981' : (isDark ? '#1f1f1f' : '#111827');
-              const progressTrackColor = isCompletedCard ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)';
+              const cardBackgroundColor = isDark ? '#1f1f1f' : '#111827';
+              const progressTrackColor = 'rgba(255, 255, 255, 0.15)';
               // Keep original accent color even when completed
               const progressFillColor = card.accent;
-              const subtitleColor = isCompletedCard ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.65)';
+              const subtitleColor = 'rgba(255, 255, 255, 0.65)';
 
               const showPendingIndicator = pendingDataHabits.has(card.habitId);
                   
@@ -5769,13 +5936,13 @@ function ActionScreen() {
                 </View>
 
                 <ScrollView contentContainerStyle={styles.confirmTaskContent} showsVerticalScrollIndicator={false}>
-                  {/* Specific days of the week */}
+                  {/* Specific days only */}
                   <TouchableOpacity
                     style={[styles.confirmTaskRow, { backgroundColor: customHabitColors.card }]}
                     activeOpacity={0.7}
                     onPress={() => setSelectedTaskDaysOption('specific-days-week')}
                   >
-                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Specific days of the week</Text>
+                    <Text style={[styles.confirmTaskRowText, { color: customHabitColors.text }]}>Specific days only</Text>
                     <View style={styles.confirmTaskRowRight}>
                       <View style={[styles.confirmTaskRowIcon, { backgroundColor: customHabitColors.iconBackground }]}>
                         <Ionicons
@@ -7791,61 +7958,146 @@ function ActionScreen() {
               showsVerticalScrollIndicator={true}
             >
               {reorderTab === 'core' ? (
-                reorderableHabits.map((habit, index) => (
-                  <View
-                    key={habit.key}
-                    style={[
-                      styles.reorderHabitItem,
-                      { 
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.03)', 
-                        borderColor: theme.border 
-                      },
-                    ]}
-                  >
-                    <View style={styles.reorderHabitItemContent}>
-                      <View style={[styles.reorderHabitIcon, { backgroundColor: habit.accent }]}>
-                        <Text style={styles.reorderHabitIconText}>
-                          {habit.title.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text style={[styles.reorderHabitTitle, { color: theme.textPrimary }]}>
-                        {habit.title}
+                <>
+                  {/* Selected Habits Section */}
+                  {reorderableHabits.length > 0 && (
+                    <>
+                      <Text style={[styles.reorderSectionTitle, { color: theme.textSecondary, marginBottom: 12, marginTop: 8 }]}>
+                        Selected Habits
                       </Text>
-                    </View>
-                    <View style={styles.reorderHabitControls}>
-                      <TouchableOpacity
-                        onPress={() => moveHabitUp(index)}
-                        disabled={index === 0}
-                        style={[
-                          styles.reorderButton,
-                          { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' },
-                          index === 0 && styles.reorderButtonDisabled,
-                        ]}
-                      >
-                        <Ionicons
-                          name="chevron-up"
-                          size={18}
-                          color={index === 0 ? theme.textSecondary : theme.textPrimary}
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => moveHabitDown(index)}
-                        disabled={index === reorderableHabits.length - 1}
-                        style={[
-                          styles.reorderButton,
-                          { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' },
-                          index === reorderableHabits.length - 1 && styles.reorderButtonDisabled,
-                        ]}
-                      >
-                        <Ionicons
-                          name="chevron-down"
-                          size={18}
-                          color={index === reorderableHabits.length - 1 ? theme.textSecondary : theme.textPrimary}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
+                      {reorderableHabits.map((habit, index) => (
+                        <View
+                          key={habit.key}
+                          style={[
+                            styles.reorderHabitItem,
+                            { 
+                              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.03)', 
+                              borderColor: theme.border 
+                            },
+                          ]}
+                        >
+                          <View style={styles.reorderHabitItemContent}>
+                            <View style={[styles.reorderHabitIcon, { backgroundColor: habit.accent }]}>
+                              <Text style={styles.reorderHabitIconText}>
+                                {habit.title.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={[styles.reorderHabitTitle, { color: theme.textPrimary }]}>
+                              {habit.title}
+                            </Text>
+                          </View>
+                          <View style={styles.reorderHabitControls}>
+                            <TouchableOpacity
+                              onPress={() => moveHabitUp(index)}
+                              disabled={index === 0}
+                              style={[
+                                styles.reorderButton,
+                                { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' },
+                                index === 0 && styles.reorderButtonDisabled,
+                              ]}
+                            >
+                              <Ionicons
+                                name="chevron-up"
+                                size={18}
+                                color={index === 0 ? theme.textSecondary : theme.textPrimary}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => moveHabitDown(index)}
+                              disabled={index === reorderableHabits.length - 1}
+                              style={[
+                                styles.reorderButton,
+                                { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)' },
+                                index === reorderableHabits.length - 1 && styles.reorderButtonDisabled,
+                              ]}
+                            >
+                              <Ionicons
+                                name="chevron-down"
+                                size={18}
+                                color={index === reorderableHabits.length - 1 ? theme.textSecondary : theme.textPrimary}
+                              />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleRemoveHabit(habit.habitId)}
+                              disabled={reorderableHabits.length <= 6}
+                              style={[
+                                styles.removeButton,
+                                { 
+                                  backgroundColor: reorderableHabits.length <= 6 
+                                    ? (isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)')
+                                    : '#EF4444',
+                                  opacity: reorderableHabits.length <= 6 ? 0.4 : 1,
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={18}
+                                color={reorderableHabits.length <= 6 ? theme.textSecondary : '#FFFFFF'}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Available Habits Section */}
+                  {(() => {
+                    const selectedHabitIds = new Set(reorderableHabits.map(h => h.habitId));
+                    const availableHabits = habitSpotlightCardsBase.filter(h => !selectedHabitIds.has(h.habitId));
+                    
+                    if (availableHabits.length > 0) {
+                      return (
+                        <>
+                          <Text style={[styles.reorderSectionTitle, { color: theme.textSecondary, marginTop: 24, marginBottom: 12 }]}>
+                            Available Habits
+                          </Text>
+                          {availableHabits.map((habit) => (
+                            <View
+                              key={habit.key}
+                              style={[
+                                styles.reorderHabitItem,
+                                { 
+                                  backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.03)', 
+                                  borderColor: theme.border 
+                                },
+                              ]}
+                            >
+                              <View style={styles.reorderHabitItemContent}>
+                                <View style={[styles.reorderHabitIcon, { backgroundColor: habit.accent }]}>
+                                  <Text style={styles.reorderHabitIconText}>
+                                    {habit.title.charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                                <Text style={[styles.reorderHabitTitle, { color: theme.textPrimary }]}>
+                                  {habit.title}
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => handleAddHabit(habit.habitId)}
+                                style={[
+                                  styles.addButton,
+                                  { backgroundColor: theme.primary }
+                                ]}
+                              >
+                                <Ionicons
+                                  name="add-circle"
+                                  size={18}
+                                  color="#FFFFFF"
+                                />
+                                <Text style={[styles.addButtonText, { color: '#FFFFFF' }]}>
+                                  Add
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                        </>
+                      );
+                    }
+                    return null;
+                  })()}
+                </>
               ) : (
                 reorderableCustomHabits.map((habit, index) => {
                   const habitColor = (habit.metadata as any)?.color ?? habit.accent_color ?? HABIT_ACCENTS[habit.category] ?? '#10B981';
@@ -8294,6 +8546,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 20,
+    backgroundColor: '#F8FAFC',
+    marginHorizontal: -24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 20,
+    marginTop: -24,
   },
   customHabitCloseButton: {
     width: 44,
@@ -8460,7 +8718,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    paddingTop: 24,
     paddingBottom: 16,
+    backgroundColor: '#F8FAFC',
+    marginHorizontal: -24,
+    marginTop: -24,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
@@ -9677,6 +9939,7 @@ const styles = StyleSheet.create({
   reorderHabitControls: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
   reorderButton: {
     width: 36,
@@ -9697,6 +9960,32 @@ const styles = StyleSheet.create({
   reorderSaveButtonText: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  reorderSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  removeButton: {
+    width: 40,
+    height: 36,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
   },
   modalContent: {
     backgroundColor: '#ffffff',

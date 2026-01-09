@@ -116,7 +116,6 @@ export default function CompeteScreen({ navigation }: any) {
     // Clear cache to force fresh data
     const { apiCache } = await import('../lib/apiCache');
     apiCache.clear();
-    console.log('🔄 [CompeteScreen] Cache cleared, loading fresh challenges...');
     await Promise.all([
       loadChallenges(),
       loadPrivateChallenges(),
@@ -135,21 +134,12 @@ export default function CompeteScreen({ navigation }: any) {
       apiCache.delete(apiCache.generateKey('challenges', 'all'));
       apiCache.delete(apiCache.generateKey('challenges', 'active'));
       apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
-      console.log('🔄 [CompeteScreen] Cache cleared before loading challenges');
       
       // Handle recurring challenges first
       await challengesService.handleRecurringChallenges();
       
       const allChallenges = await challengesService.getChallenges();
       const now = new Date();
-      
-      // Debug: Log all challenges
-      console.log('🔍 [CompeteScreen] All challenges from service:', allChallenges.length);
-      const smileChallenges = allChallenges.filter(c => c.title?.includes('Smile'));
-      console.log('🔍 [CompeteScreen] Smile challenges found:', smileChallenges.length);
-      smileChallenges.forEach(c => {
-        console.log('  -', c.title, 'entry_fee:', c.entry_fee, 'start:', c.start_date, 'end:', c.end_date, 'is_recurring:', c.is_recurring);
-      });
       
       // Show only upcoming challenges (not active, not ended)
       // Filter out private challenges from public lists
@@ -162,16 +152,6 @@ export default function CompeteScreen({ navigation }: any) {
         const isPublic = challenge.visibility !== 'private'; // Only show public challenges
         const shouldShow = isNotEnded && isUpcoming && isPublic;
         
-        if (challenge.title?.includes('Smile')) {
-          console.log('🔍 [CompeteScreen] Smile challenge filter:', {
-            title: challenge.title,
-            now: now.toISOString(),
-            endDate: endDate.toISOString(),
-            isPublic,
-            isNotEnded,
-            shouldShow
-          });
-        }
         return shouldShow;
       });
       
@@ -202,8 +182,6 @@ export default function CompeteScreen({ navigation }: any) {
         );
         setJoinedChallengeIds(joinedIds);
         setCompletedChallengeIds(completedIds);
-        console.log('🔍 [CompeteScreen] User has joined', joinedIds.size, 'challenges');
-        console.log('🔍 [CompeteScreen] User has completed', completedIds.size, 'challenges');
       }
       
       // Deduplicate by ID (final safety check)
@@ -280,14 +258,7 @@ export default function CompeteScreen({ navigation }: any) {
             }
             
             if (shouldReplace) {
-              console.log(`🔄 [CompeteScreen] Replacing recurring challenge: "${challenge.title}" (${challenge.entry_fee || 0})`);
-              console.log(`   ❌ Removing: ${existing.start_date} (ID: ${existing.id})`);
-              console.log(`   ✅ Keeping: ${challenge.start_date} (ID: ${challenge.id})`);
               recurringChallengeMap.set(dedupKey, challenge);
-            } else {
-              console.log(`🔄 [CompeteScreen] Skipping recurring challenge: "${challenge.title}" (${challenge.entry_fee || 0})`);
-              console.log(`   ✅ Keeping: ${existing.start_date} (ID: ${existing.id})`);
-              console.log(`   ❌ Skipping: ${challenge.start_date} (ID: ${challenge.id})`);
             }
           }
         } else {
@@ -304,11 +275,6 @@ export default function CompeteScreen({ navigation }: any) {
       // Separate free and investment challenges
       const free = deduplicatedChallenges.filter(challenge => !challenge.entry_fee || challenge.entry_fee === 0);
       const invest = deduplicatedChallenges.filter(challenge => challenge.entry_fee && challenge.entry_fee > 0);
-      
-      console.log('🔍 [CompeteScreen] Final counts - available:', deduplicatedChallenges.length, 'free:', free.length, 'invest:', invest.length);
-      invest.forEach(c => {
-        console.log('  - Invest challenge:', c.title, 'entry_fee:', c.entry_fee);
-      });
       
       setChallenges(deduplicatedChallenges);
       setFreeChallenges(free);
@@ -793,6 +759,18 @@ export default function CompeteScreen({ navigation }: any) {
       <UpgradeToProModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
+        onUpgrade={async () => {
+          // Refresh profile data and reload challenges
+          await loadUserProfile();
+          if (user) {
+            // Clear cache and reload challenges
+            const { apiCache } = await import('../lib/apiCache');
+            apiCache.clear();
+            await loadChallenges();
+            await loadPrivateChallenges();
+            await loadUserChallenges();
+          }
+        }}
       />
 
       {/* Create Challenge Modal */}

@@ -12,9 +12,25 @@ import { UserWallet, WalletTransaction, WalletBalance } from '../types/wallet';
 
 class WalletService {
   /**
+   * Validate that userId matches the authenticated user
+   * This adds an extra security layer on top of RLS
+   */
+  private async validateUserId(userId: string): Promise<void> {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      throw new Error('User not authenticated');
+    }
+    if (user.id !== userId) {
+      throw new Error('Unauthorized: User ID mismatch');
+    }
+  }
+
+  /**
    * Get or create a wallet for a user
    */
   async getWallet(userId: string): Promise<UserWallet> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       // First, try to get existing wallet
       const { data: existingWallet, error: fetchError } = await supabase
@@ -85,6 +101,8 @@ class WalletService {
     amount: number,
     paymentIntentId: string
   ): Promise<{ wallet: UserWallet; transaction: WalletTransaction }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
       const newBalance = Number(wallet.balance) + amount;
@@ -123,7 +141,9 @@ class WalletService {
         throw transactionError;
       }
 
-      console.log('✅ Deposit successful:', { userId, amount, newBalance });
+      if (__DEV__) {
+        console.log('Deposit successful');
+      }
 
       return {
         wallet: updatedWallet!,
@@ -144,6 +164,8 @@ class WalletService {
     reason: 'challenge_payment' | 'fee',
     challengeId?: string
   ): Promise<{ wallet: UserWallet; transaction: WalletTransaction }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
       const currentBalance = Number(wallet.balance);
@@ -190,7 +212,9 @@ class WalletService {
         throw transactionError;
       }
 
-      console.log('✅ Withdrawal successful:', { userId, amount, newBalance });
+      if (__DEV__) {
+        console.log('Withdrawal successful');
+      }
 
       return {
         wallet: updatedWallet!,
@@ -210,6 +234,8 @@ class WalletService {
     amount: number,
     challengeId: string
   ): Promise<{ wallet: UserWallet; transaction: WalletTransaction }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
       const newBalance = Number(wallet.balance) + amount;
@@ -249,7 +275,9 @@ class WalletService {
         throw transactionError;
       }
 
-      console.log('✅ Payout successful:', { userId, amount, newBalance, challengeId });
+      if (__DEV__) {
+        console.log('Payout successful');
+      }
 
       return {
         wallet: updatedWallet!,
@@ -269,6 +297,8 @@ class WalletService {
     amount: number,
     challengeId: string
   ): Promise<{ wallet: UserWallet; transaction: WalletTransaction }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
       const newBalance = Number(wallet.balance) + amount;
@@ -309,7 +339,9 @@ class WalletService {
         throw transactionError;
       }
 
-      console.log('✅ Challenge payment refunded:', { userId, amount, newBalance, challengeId });
+      if (__DEV__) {
+        console.log('Challenge payment refunded');
+      }
 
       return {
         wallet: updatedWallet!,
@@ -329,6 +361,8 @@ class WalletService {
     userId: string,
     amount: number
   ): Promise<{ success: boolean; newBalance: number; refundId: string; message: string }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       console.log('💸 Initiating withdrawal to card:', { userId, amount });
       
@@ -353,7 +387,9 @@ class WalletService {
         throw new Error(data.error || 'Failed to process withdrawal');
       }
 
-      console.log('✅ Withdrawal processed successfully:', data);
+      if (__DEV__) {
+        console.log('Withdrawal processed successfully');
+      }
       return {
         success: true,
         newBalance: data.newBalance,
@@ -373,6 +409,8 @@ class WalletService {
     userId: string,
     limit: number = 50
   ): Promise<WalletTransaction[]> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
 
@@ -399,6 +437,8 @@ class WalletService {
    * Get wallet balance with wallet ID
    */
   async getWalletBalance(userId: string): Promise<WalletBalance> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const wallet = await this.getWallet(userId);
       return {
@@ -418,6 +458,8 @@ class WalletService {
    * Check if user has sufficient balance for challenge investment
    */
   async hasSufficientBalance(userId: string, requiredAmount: number): Promise<boolean> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const balance = await this.getBalance(userId);
       return balance >= requiredAmount;
@@ -486,12 +528,9 @@ class WalletService {
       }
 
       const status = stripePayoutId ? 'sent to bank' : 'stored in database wallet';
-      console.log(`✅ Platform fee collected (${status}):`, { 
-        amount, 
-        challengeId, 
-        newBalance,
-        stripePayoutId: stripePayoutId || 'none'
-      });
+      if (__DEV__) {
+        console.log(`Platform fee collected (${status})`);
+      }
 
       return {
         wallet: updatedWallet!,

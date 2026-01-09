@@ -289,8 +289,8 @@ export default function ChatWindowScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header - Fixed position on Android */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ width: 40 }}>
+            <Ionicons name="arrow-back" size={24} color="#0F172A" />
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.headerUser}
@@ -309,6 +309,7 @@ export default function ChatWindowScreen() {
               )}
             </View>
           </TouchableOpacity>
+          <View style={{ width: 40 }} />
         </View>
 
         {/* Connection Status */}
@@ -321,8 +322,8 @@ export default function ChatWindowScreen() {
         {/* Chat Content - Wraps Messages + Input for Android */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior="padding"
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 50 : 10}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
           {/* Messages */}
           <FlatList
@@ -351,13 +352,18 @@ export default function ChatWindowScreen() {
             }
           ]}>
             <TextInput
-              style={[styles.input, { color: theme.textPrimary }]}
+              style={[styles.input, { color: '#1f2937' }]}
               placeholder="Message..."
-              placeholderTextColor={theme.textSecondary}
+              placeholderTextColor="#9ca3af"
               value={inputText}
               onChangeText={handleTyping}
               multiline
               maxLength={500}
+              autoCapitalize="sentences"
+              autoCorrect={true}
+              autoComplete="off"
+              textContentType="none"
+              keyboardType="default"
             />
             <TouchableOpacity
               onPress={sendMessage}
@@ -387,25 +393,26 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    gap: 16,
   },
   headerUser: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    justifyContent: 'center',
   },
   headerAvatar: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 8,
   },
   headerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#0F172A',
   },
   typingText: {
     fontSize: 12,
@@ -415,6 +422,7 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingBottom: 4,
   },
   messageContainer: {
     flexDirection: 'row',
@@ -430,7 +438,7 @@ const styles = StyleSheet.create({
   messageAvatar: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 8,
     marginRight: 8,
   },
   avatarPlaceholder: {
@@ -448,18 +456,19 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   otherMessageBubble: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F3F4F6',
     borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 15,
     lineHeight: 20,
+    textAlign: 'left',
   },
   ownMessageText: {
     color: '#ffffff',
   },
   otherMessageText: {
-    color: '#ffffff',
+    color: '#0F172A',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -471,28 +480,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   ownMessageTime: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.8)',
   },
   otherMessageTime: {
-    color: 'rgba(255,255,255,0.5)',
+    color: '#64748B',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 8,
     borderTopWidth: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: '#FFFFFF',
+    borderTopColor: '#E5E7EB',
+    minHeight: 56,
   },
   input: {
     flex: 1,
     fontSize: 16,
     maxHeight: 100,
+    minHeight: 40,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    marginRight: 12,
+    paddingTop: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 24,
+    marginRight: 8,
   },
   sendButton: {
     width: 40,

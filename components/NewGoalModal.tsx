@@ -10,7 +10,6 @@ import {
   Platform,
   StyleSheet,
   Modal,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useGoalsStore } from '../state/goalsStore';
@@ -110,6 +109,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
   const { createGoal, loading, error } = useGoalsStore();
 
   const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   // Validation for UI state (no alerts)
   const isFormValidForUI = () => {
@@ -120,8 +120,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       startDate.trim().length > 0 &&
       endDate.trim().length > 0 &&
       frequency.some(Boolean) &&
-      sharingOption.trim().length > 0 &&
-      successCriteria.trim().length > 0
+      sharingOption.trim().length > 0
     );
   };
 
@@ -134,6 +133,11 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       return false;
     }
     
+    if (description.trim().length === 0) {
+      Alert.alert('Description Required', 'Please describe your goal and why it matters to you.');
+      return false;
+    }
+    
     return (
       title.trim().length > 0 &&
       category.trim().length > 0 &&
@@ -141,8 +145,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       startDate.trim().length > 0 &&
       endDate.trim().length > 0 &&
       hasFrequencyDays &&
-      sharingOption.trim().length > 0 &&
-      successCriteria.trim().length > 0
+      sharingOption.trim().length > 0
     );
   };
 
@@ -341,43 +344,30 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       animationType="slide"
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={() => {}}>
-        <View style={styles.modalContainer}>
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.keyboardView}
-          >
-            {/* Header */}
-            <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+      <View style={styles.modalContainer}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          {/* Header */}
+          <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 60 : 16 }]}>
+            <View style={styles.headerLeft}>
               <TouchableOpacity onPress={onClose}>
                 <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
-              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>New Goal</Text>
-              <TouchableOpacity
-                style={[
-                  styles.createButton,
-                  { backgroundColor: isFormValidForUI() ? '#ffffff' : 'rgba(128, 128, 128, 0.15)' },
-                  (loading || !isFormValidForUI()) && styles.createButtonDisabled
-                ]}
-                onPress={handleCreateGoal}
-                disabled={loading || !isFormValidForUI()}
-                activeOpacity={0.8}
-              >
-                <Text style={[
-                  styles.createButtonText,
-                  { color: isFormValidForUI() ? '#000000' : '#ffffff' },
-                  (loading || !isFormValidForUI()) && styles.createButtonTextDisabled
-                ]}>
-                  {loading ? 'Creating...' : 'Create Goal'}
-                </Text>
-              </TouchableOpacity>
             </View>
+            <View style={styles.headerCenter}>
+              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>New Goal</Text>
+            </View>
+            <View style={styles.headerRight} />
+          </View>
 
-            <ScrollView 
-              style={styles.scrollView} 
-              showsVerticalScrollIndicator={true}
-              contentContainerStyle={styles.scrollContent}
-            >
+          <ScrollView 
+            style={styles.scrollView} 
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.scrollContent}
+            nestedScrollEnabled={true}
+          >
               {/* Goal Title */}
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Goal Title *</Text>
@@ -410,7 +400,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
 
               {/* Description */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Description / Why this matters</Text>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Description / Why this matters *</Text>
                 <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Powerful for motivation</Text>
                 <TextInput
                   value={description}
@@ -425,38 +415,32 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                 <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{description.length}/500 characters</Text>
               </View>
 
-              {/* Frequency */}
+              {/* Frequency Schedule */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Frequency</Text>
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Frequency Schedule *</Text>
                 <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>Select days to work on this goal</Text>
                 <View style={[styles.frequencyContainer, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
-                  {days.map((day, index) => (
-                    <View key={index} style={styles.dayContainer}>
-                      <Text style={[styles.dayLabel, { color: theme.textSecondary }]}>{day}</Text>
-                      <TouchableOpacity
-                        onPress={() => toggleFrequencyDay(index)}
-                        style={[
-                          styles.checkbox,
-                          { borderColor: theme.borderSecondary },
-                          frequency[index] && [styles.checkboxSelected, { backgroundColor: theme.primary, borderColor: theme.primary }]
-                        ]}
-                      >
-                        {frequency[index] && (
-                          <Ionicons name="checkmark" size={16} color="#ffffff" />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Check-in Schedule Info */}
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Check-in Schedule</Text>
-                <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                  Your goal will appear on the calendar on the selected days above
-                </Text>
-                <View style={[styles.checkinInfoContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)', borderColor: theme.borderSecondary }]}>
+                  <View style={styles.frequencyDaysRow}>
+                    {days.map((day, index) => (
+                      <View key={index} style={styles.dayContainer}>
+                        <Text style={[styles.dayLabel, { color: theme.textSecondary }]}>{day}</Text>
+                        <TouchableOpacity
+                          onPress={() => toggleFrequencyDay(index)}
+                          style={[
+                            styles.checkbox,
+                            frequency[index] && [styles.checkboxSelected, { backgroundColor: theme.primary, borderColor: theme.primary }]
+                          ]}
+                        >
+                          {frequency[index] && (
+                            <Ionicons name="checkmark" size={16} color="#ffffff" />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                  
+                  <View style={styles.checkinInfoDivider} />
+                  
                   <View style={styles.checkinInfoRow}>
                     <Ionicons name="calendar-outline" size={20} color={theme.primary} />
                     <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
@@ -471,13 +455,13 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                       <View style={styles.checkinInfoRow}>
                         <Ionicons name="checkmark-circle-outline" size={20} color={theme.primary} />
                         <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
-                          Selected days: {days.filter((_, index) => frequency[index]).join(', ')}
+                          Selected days: {dayNames.filter((_, index) => frequency[index]).join(', ')}
                         </Text>
                       </View>
                       <View style={styles.checkinInfoRow}>
                         <Ionicons name="information-circle-outline" size={20} color={theme.primary} />
                         <Text style={[styles.checkinInfoText, { color: theme.textSecondary }]}>
-                          Check-ins will appear on these days in your weekly calendar
+                          Check-ins will appear on these days in your reminders section
                         </Text>
                       </View>
                     </>
@@ -513,7 +497,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                       }}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.datePickerText, { color: startDate ? theme.textPrimary : theme.textTertiary }]}>
+                      <Text style={[styles.datePickerText, { color: startDate ? '#0F172A' : '#64748B' }]}>
                         {startDate ? formatDate(startDate) : 'Select start date'}
                       </Text>
                       <Ionicons name="calendar-outline" size={20} color={theme.textSecondary} />
@@ -534,7 +518,7 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                       }}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.datePickerText, { color: endDate ? theme.textPrimary : theme.textTertiary }]}>
+                      <Text style={[styles.datePickerText, { color: endDate ? '#0F172A' : '#64748B' }]}>
                         {endDate ? formatDate(endDate) : 'Select end date'}
                       </Text>
                       <Ionicons name="calendar-outline" size={20} color={theme.textSecondary} />
@@ -567,9 +551,9 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                 </View>
               )}
 
-              {/* Buddy or Public Sharing */}
+              {/* Public Sharing */}
               <DropdownSection
-                title="Buddy or Public Sharing?"
+                title="Public Sharing?"
                 value={sharingOption}
                 placeholder="Choose sharing level"
                 options={SHARING_OPTIONS}
@@ -658,9 +642,30 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                 </View>
               )}
             </ScrollView>
+            
+            {/* Create Button at Bottom */}
+            <View style={styles.bottomButtonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.createButtonBottom,
+                  { backgroundColor: isFormValidForUI() ? theme.primary : 'rgba(128, 128, 128, 0.3)' },
+                  (loading || !isFormValidForUI()) && styles.createButtonDisabled
+                ]}
+                onPress={handleCreateGoal}
+                disabled={loading || !isFormValidForUI()}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  styles.createButtonTextBottom,
+                  { color: isFormValidForUI() ? '#ffffff' : 'rgba(0, 0, 0, 0.3)' },
+                  (loading || !isFormValidForUI()) && styles.createButtonTextDisabled
+                ]}>
+                  {loading ? 'Creating...' : 'Create'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </KeyboardAvoidingView>
         </View>
-      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -676,9 +681,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingVertical: 16,
+  },
+  headerLeft: {
+    width: 40,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerRight: {
+    width: 40,
   },
   headerTitle: {
     fontSize: 18,
@@ -697,17 +711,38 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
     fontSize: 16,
+    flexShrink: 0,
   },
   createButtonTextDisabled: {
     color: 'rgba(0, 0, 0, 0.3)',
   },
   scrollView: {
     flex: 1,
+    width: '100%',
   },
   scrollContent: {
     paddingHorizontal: 24,
     paddingTop: 20,
     paddingBottom: 100,
+  },
+  bottomButtonContainer: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  createButtonBottom: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createButtonTextBottom: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   section: {
     marginBottom: 24,
@@ -785,16 +820,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   frequencyContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
+  frequencyDaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
   dayContainer: {
     alignItems: 'center',
     gap: 8,
+  },
+  checkinInfoDivider: {
+    height: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    marginVertical: 16,
   },
   dayLabel: {
     fontSize: 14,
@@ -808,6 +851,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    borderColor: '#1f2937',
+    backgroundColor: 'transparent',
   },
   checkboxSelected: {
     backgroundColor: '#129490',
@@ -898,6 +943,7 @@ const styles = StyleSheet.create({
   datePickerText: {
     fontSize: 16,
     flex: 1,
+    color: '#1f2937',
   },
   datePickerContainer: {
     marginTop: 16,
@@ -925,7 +971,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    marginTop: 12,
   },
   checkinInfoRow: {
     flexDirection: 'row',

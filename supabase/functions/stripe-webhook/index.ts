@@ -118,15 +118,75 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   // Pro access if status is: active, trialing, or past_due (give grace period)
   const isPro = ["active", "trialing", "past_due"].includes(status)
 
-  // Find user by Stripe customer ID
-  const { data: profile, error: findError } = await supabase
+  // Try to find user by Stripe customer ID first
+  let { data: profile, error: findError } = await supabase
     .from("profiles")
-    .select("id, username")
+    .select("id, username, stripe_customer_id")
     .eq("stripe_customer_id", customerId)
     .single()
 
+  // Fallback 1: If not found by customer ID, try to get customer from Stripe and find by email
   if (findError || !profile) {
+    console.log("⚠️ User not found by customer ID, trying fallback methods...")
+    
+    try {
+      // Get customer details from Stripe to find user by email
+      const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer
+      
+      if (customer.email) {
+        // Try to find user by email
+        const { data: emailProfile, error: emailError } = await supabase
+          .from("profiles")
+          .select("id, username, stripe_customer_id, email")
+          .eq("email", customer.email)
+          .single()
+        
+        if (!emailError && emailProfile) {
+          profile = emailProfile
+          console.log("✅ Found user by email:", customer.email)
+          
+          // Update stripe_customer_id if it's missing
+          if (!profile.stripe_customer_id) {
+            await supabase
+              .from("profiles")
+              .update({ stripe_customer_id: customerId })
+              .eq("id", profile.id)
+            console.log("✅ Updated stripe_customer_id for user")
+          }
+        }
+      }
+      
+      // Fallback 2: Check subscription metadata for userId
+      if ((!profile || findError) && subscription.metadata?.userId) {
+        const { data: metadataProfile, error: metadataError } = await supabase
+          .from("profiles")
+          .select("id, username, stripe_customer_id")
+          .eq("id", subscription.metadata.userId)
+          .single()
+        
+        if (!metadataError && metadataProfile) {
+          profile = metadataProfile
+          console.log("✅ Found user by subscription metadata userId")
+          
+          // Update stripe_customer_id if it's missing
+          if (!profile.stripe_customer_id) {
+            await supabase
+              .from("profiles")
+              .update({ stripe_customer_id: customerId })
+              .eq("id", profile.id)
+            console.log("✅ Updated stripe_customer_id from metadata")
+          }
+        }
+      }
+    } catch (stripeError: any) {
+      console.error("❌ Error retrieving customer from Stripe:", stripeError)
+    }
+  }
+
+  // If still not found, log error and return
+  if (!profile) {
     console.error("❌ Could not find user with customer ID:", customerId)
+    console.error("   Subscription metadata:", subscription.metadata)
     return
   }
 
@@ -134,6 +194,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
   const { error: updateError } = await supabase
     .from("profiles")
     .update({
+      stripe_customer_id: customerId, // Ensure customer ID is set
       stripe_subscription_id: subscriptionId,
       subscription_status: status,
       subscription_current_period_end: currentPeriodEnd.toISOString(),
@@ -165,14 +226,37 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   // User keeps Pro until end of billing period
   const isPro = currentPeriodEnd > now
 
-  // Find user by Stripe customer ID
-  const { data: profile, error: findError } = await supabase
+  // Try to find user by Stripe customer ID first
+  let { data: profile, error: findError } = await supabase
     .from("profiles")
-    .select("id, username")
+    .select("id, username, stripe_customer_id")
     .eq("stripe_customer_id", customerId)
     .single()
 
-  if (findError || !profile) {
+  // Fallback: Check subscription metadata for userId
+  if ((findError || !profile) && subscription.metadata?.userId) {
+    const { data: metadataProfile, error: metadataError } = await supabase
+      .from("profiles")
+      .select("id, username, stripe_customer_id")
+      .eq("id", subscription.metadata.userId)
+      .single()
+    
+    if (!metadataError && metadataProfile) {
+      profile = metadataProfile
+      console.log("✅ Found user by subscription metadata userId")
+      
+      // Update stripe_customer_id if it's missing
+      if (!profile.stripe_customer_id) {
+        await supabase
+          .from("profiles")
+          .update({ stripe_customer_id: customerId })
+          .eq("id", profile.id)
+        console.log("✅ Updated stripe_customer_id from metadata")
+      }
+    }
+  }
+
+  if (!profile) {
     console.error("❌ Could not find user with customer ID:", customerId)
     return
   }

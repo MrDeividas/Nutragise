@@ -150,8 +150,6 @@ export default function CreatePostModal({
   const [photoCaptions, setPhotoCaptions] = useState<string[]>([]);
   const [selectedHabits, setSelectedHabits] = useState<string[]>([]);
   const [selectedGoal, setSelectedGoal] = useState<string>('');
-  const [moodRating, setMoodRating] = useState<number>(3);
-  const [energyLevel, setEnergyLevel] = useState<number>(3);
   const [isCreating, setIsCreating] = useState(false);
   const [existingDailyPost, setExistingDailyPost] = useState<DailyPost | null>(null);
   const [checkingExistingPost, setCheckingExistingPost] = useState(false);
@@ -327,8 +325,6 @@ export default function CreatePostModal({
     setPhotoCaptions([]);
     setSelectedHabits([]);
     setSelectedGoal('');
-    setMoodRating(3);
-    setEnergyLevel(3);
   };
 
   const createPost = async () => {
@@ -431,11 +427,11 @@ export default function CreatePostModal({
     >
       <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.borderSecondary }]}>
+        <View style={[styles.header, { borderBottomColor: '#E5E7EB' }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color={theme.textPrimary} />
+            <Ionicons name="close" size={24} color="#1f2937" />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+          <Text style={[styles.headerTitle, { color: '#1f2937' }]}>
             {targetCheckInDate ? `${getPostDateString()} Post` : 'Create Post'}
           </Text>
           <TouchableOpacity 
@@ -451,18 +447,18 @@ export default function CreatePostModal({
 
         {/* Existing Daily Post Preview */}
         {existingDailyPost && (
-          <View style={[styles.existingPostPreview, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+          <View style={[styles.existingPostPreview, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: '#E5E7EB' }]}>
             <View style={styles.existingPostHeader}>
               <Ionicons name="today" size={20} color={theme.primary} />
-              <Text style={[styles.existingPostTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.existingPostTitle, { color: '#1f2937' }]}>
                 {targetCheckInDate ? `${getPostDateString()}'s Post` : "Today's Post"}
               </Text>
             </View>
-            <Text style={[styles.existingPostInfo, { color: theme.textSecondary }]}>
+            <Text style={[styles.existingPostInfo, { color: '#64748B' }]}>
               {existingDailyPost.total_photos} photos • {existingDailyPost.total_habits} habits • {existingDailyPost.post_count} posts
             </Text>
             {existingDailyPost.captions.length > 0 && (
-              <Text style={[styles.existingPostCaption, { color: theme.textSecondary }]} numberOfLines={2}>
+              <Text style={[styles.existingPostCaption, { color: '#64748B' }]} numberOfLines={2}>
                 "{existingDailyPost.captions[existingDailyPost.captions.length - 1]}"
               </Text>
             )}
@@ -472,7 +468,7 @@ export default function CreatePostModal({
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                     {/* Photo Upload */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            <Text style={[styles.sectionTitle, { color: '#1f2937' }]}>
               Photos ({selectedPhotos.length}/5)
             </Text>
             
@@ -480,19 +476,19 @@ export default function CreatePostModal({
             {selectedPhotos.length < 5 && (
               <View style={styles.photoUploadButtons}>
                 <TouchableOpacity 
-                  style={[styles.uploadButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+                  style={[styles.uploadButton, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: '#E5E7EB' }]}
                   onPress={takePhoto}
                 >
-                  <Ionicons name="camera" size={24} color={theme.textSecondary} />
-                  <Text style={[styles.uploadButtonText, { color: theme.textSecondary }]}>Take Photo</Text>
+                  <Ionicons name="camera" size={24} color="#64748B" />
+                  <Text style={[styles.uploadButtonText, { color: '#1f2937' }]}>Take Photo</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={[styles.uploadButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+                  style={[styles.uploadButton, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: '#E5E7EB' }]}
                   onPress={selectFromGallery}
                 >
-                  <Ionicons name="images" size={24} color={theme.textSecondary} />
-                  <Text style={[styles.uploadButtonText, { color: theme.textSecondary }]}>Gallery</Text>
+                  <Ionicons name="images" size={24} color="#64748B" />
+                  <Text style={[styles.uploadButtonText, { color: '#1f2937' }]}>Gallery</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -516,11 +512,11 @@ export default function CreatePostModal({
                       onPress={() => openCaptionModal(index)}
                     >
                       {photoCaptions[index] ? (
-                        <Text style={[styles.captionText, { color: theme.textPrimary }]} numberOfLines={1} ellipsizeMode="tail">
+                        <Text style={[styles.captionText, { color: '#1f2937' }]} numberOfLines={1} ellipsizeMode="tail">
                           {photoCaptions[index]}
                         </Text>
                       ) : (
-                        <Text style={[styles.captionPlaceholder, { color: theme.textSecondary }]}>
+                        <Text style={[styles.captionPlaceholder, { color: '#9ca3af' }]}>
                           Add caption...
                         </Text>
                       )}
@@ -535,7 +531,7 @@ export default function CreatePostModal({
 
           {/* Habit Selection */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            <Text style={[styles.sectionTitle, { color: '#1f2937' }]}>
               Habits Completed ({selectedHabits.length})
             </Text>
             <View style={styles.habitsGrid}>
@@ -547,8 +543,8 @@ export default function CreatePostModal({
                     { 
                       backgroundColor: selectedHabits.includes(habit.key) 
                         ? theme.primary 
-                        : theme.cardBackground,
-                      borderColor: theme.borderSecondary
+                        : 'rgba(128, 128, 128, 0.15)',
+                      borderColor: '#E5E7EB'
                     }
                   ]}
                   onPress={() => toggleHabit(habit.key)}
@@ -556,11 +552,11 @@ export default function CreatePostModal({
                   <Ionicons 
                     name={habit.icon as any} 
                     size={20} 
-                    color={selectedHabits.includes(habit.key) ? '#ffffff' : theme.textSecondary} 
+                    color={selectedHabits.includes(habit.key) ? '#ffffff' : '#64748B'} 
                   />
                   <Text style={[
                     styles.habitButtonText,
-                    { color: selectedHabits.includes(habit.key) ? '#ffffff' : theme.textSecondary }
+                    { color: selectedHabits.includes(habit.key) ? '#ffffff' : '#1f2937' }
                   ]}>
                     {habit.label}
                   </Text>
@@ -572,22 +568,22 @@ export default function CreatePostModal({
           {/* Goal Selection */}
           {userGoals && userGoals.length > 0 && (
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Link to Goal (optional)</Text>
+              <Text style={[styles.sectionTitle, { color: '#1f2937' }]}>Link to Goal (optional)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.goalsContainer}>
                   <TouchableOpacity
                     style={[
                       styles.goalButton,
                       { 
-                        backgroundColor: selectedGoal === '' ? theme.primary : theme.cardBackground,
-                        borderColor: theme.borderSecondary
+                        backgroundColor: selectedGoal === '' ? theme.primary : 'rgba(128, 128, 128, 0.15)',
+                        borderColor: '#E5E7EB'
                       }
                     ]}
                     onPress={() => setSelectedGoal('')}
                   >
                     <Text style={[
                       styles.goalButtonText,
-                      { color: selectedGoal === '' ? '#ffffff' : theme.textSecondary }
+                      { color: selectedGoal === '' ? '#ffffff' : '#1f2937' }
                     ]}>
                       No Goal
                     </Text>
@@ -599,15 +595,15 @@ export default function CreatePostModal({
                       style={[
                         styles.goalButton,
                         { 
-                          backgroundColor: selectedGoal === goal.id ? theme.primary : theme.cardBackground,
-                          borderColor: theme.borderSecondary
+                          backgroundColor: selectedGoal === goal.id ? theme.primary : 'rgba(128, 128, 128, 0.15)',
+                          borderColor: '#E5E7EB'
                         }
                       ]}
                       onPress={() => setSelectedGoal(goal.id)}
                     >
                       <Text style={[
                         styles.goalButtonText,
-                        { color: selectedGoal === goal.id ? '#ffffff' : theme.textSecondary }
+                        { color: selectedGoal === goal.id ? '#ffffff' : '#1f2937' }
                       ]}>
                         {goal.title}
                       </Text>
@@ -618,64 +614,6 @@ export default function CreatePostModal({
             </View>
           )}
 
-          {/* Mood & Energy */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>How are you feeling?</Text>
-            
-            <View style={styles.moodEnergyContainer}>
-              <View style={styles.moodEnergyItem}>
-                <Text style={[styles.moodEnergyLabel, { color: theme.textSecondary }]}>Mood</Text>
-                <View style={styles.ratingContainer}>
-                  {[1, 2, 3, 4, 5].map(rating => (
-                    <TouchableOpacity
-                      key={rating}
-                      style={[
-                        styles.ratingButton,
-                        { 
-                          backgroundColor: moodRating >= rating ? theme.primary : theme.cardBackground,
-                          borderColor: theme.borderSecondary
-                        }
-                      ]}
-                      onPress={() => setMoodRating(rating)}
-                    >
-                      <Text style={[
-                        styles.ratingText,
-                        { color: moodRating >= rating ? '#ffffff' : theme.textSecondary }
-                      ]}>
-                        {rating}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.moodEnergyItem}>
-                <Text style={[styles.moodEnergyLabel, { color: theme.textSecondary }]}>Energy</Text>
-                <View style={styles.ratingContainer}>
-                  {[1, 2, 3, 4, 5].map(rating => (
-                    <TouchableOpacity
-                      key={rating}
-                      style={[
-                        styles.ratingButton,
-                        { 
-                          backgroundColor: energyLevel >= rating ? theme.primary : theme.cardBackground,
-                          borderColor: theme.borderSecondary
-                        }
-                      ]}
-                      onPress={() => setEnergyLevel(rating)}
-                    >
-                      <Text style={[
-                        styles.ratingText,
-                        { color: energyLevel >= rating ? '#ffffff' : theme.textSecondary }
-                      ]}>
-                        {rating}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          </View>
         </ScrollView>
       </View>
 

@@ -1366,7 +1366,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
             style={{ marginRight: 12 }}
           >
             <Ionicons 
-              name={activeTab === 'explore' ? "globe-outline" : "chatbubbles-outline"} 
+              name={activeTab === 'explore' ? "globe-outline" : "people-outline"} 
               size={24} 
               color={theme.textPrimary} 
             />
@@ -1393,7 +1393,12 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
           </TouchableOpacity>
           
           <TouchableOpacity 
-            onPress={() => {
+            onPress={async () => {
+              // Mark all notifications as read when clicking the bell
+              if (user && unreadNotificationCount > 0) {
+                await notificationService.markAllAsRead(user.id);
+                setUnreadNotificationCount(0);
+              }
               if (navigation && navigation.navigate) {
                 navigation.navigate('Notifications');
               } else {
@@ -1406,22 +1411,24 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
               {unreadNotificationCount > 0 && (
                 <View style={{
                   position: 'absolute',
-                  top: -6,
-                  right: -8,
-                  backgroundColor: '#ff5a5f',
-                  borderRadius: 10,
-                  minWidth: 18,
-                  height: 18,
+                  top: -2,
+                  right: -2,
+                  backgroundColor: '#EF4444',
+                  borderRadius: 8,
+                  minWidth: 14,
+                  height: 14,
                   justifyContent: 'center',
                   alignItems: 'center',
                   paddingHorizontal: 4,
+                  borderWidth: 1.5,
+                  borderColor: theme.background,
                 }}>
                   <Text style={{
-                    color: '#fff',
-                    fontSize: 12,
+                    color: '#FFFFFF',
+                    fontSize: 9,
                     fontWeight: '700',
                   }}>
-                    {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
                   </Text>
                 </View>
               )}

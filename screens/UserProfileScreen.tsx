@@ -29,6 +29,9 @@ import { supabase } from '../lib/supabase';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import JourneyPreview from '../components/JourneyPreview';
 import FullJourneyModal from '../components/FullJourneyModal';
+import LevelInfoModal from '../components/LevelInfoModal';
+import AchievementModal from '../components/AchievementModal';
+import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 type UserProfileStackParamList = {
@@ -39,7 +42,7 @@ type Props = NativeStackScreenProps<UserProfileStackParamList, 'UserProfile'>;
 
 export default function UserProfileScreen({ navigation, route }: Props) {
   const { userId, username } = route.params;
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { followUser, unfollowUser, isLoading } = useSocialStore();
   const { goals: userGoals, fetchGoals, loading: goalsLoading } = useGoalsStore();
@@ -69,11 +72,35 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const [viewedUserDailyHabits, setViewedUserDailyHabits] = useState<boolean[]>([false, false, false, false, false, false, false, false]);
   const [statsVisible, setStatsVisible] = useState(true); // Whether the user has made their stats visible
   
+  // New state for Activity, Highlights, Pillar Progress, and Modals
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<any[]>([]);
+  const [pillarProgress, setPillarProgress] = useState({
+    strength_fitness: 35,
+    growth_wisdom: 35,
+    discipline: 35,
+    team_spirit: 35,
+    overall: 35
+  });
+  const [challengeStats, setChallengeStats] = useState({
+    wins: 0,
+    losses: 0
+  });
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  
   const profileCardAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadProfile();
     loadUserData();
+    loadPillarProgress();
+    fetchRecentActivity();
+    fetchHighlights();
+    loadChallengeStats();
   }, [userId]);
 
   const loadProfile = async () => {
@@ -132,6 +159,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       // Get level progress
       const progress = pointsService.getLevelProgress(total);
       setLevelProgress(progress);
+      setCurrentLevel(progress.currentLevel);
       
       // Load core habits status for the viewed user
       await loadViewedUserCoreHabits();
@@ -141,6 +169,215 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       
     } catch (error) {
       console.error('Error loading user data:', error);
+    }
+  };
+
+  const loadPillarProgress = async () => {
+    try {
+      const { pillarProgressService } = await import('../lib/pillarProgressService');
+      const progress = await pillarProgressService.getPillarProgress(userId);
+      setPillarProgress(progress);
+    } catch (error) {
+      console.error('Error loading pillar progress:', error);
+      // Set default values if there's an error (e.g., permission issues)
+      setPillarProgress({
+        strength_fitness: 35,
+        growth_wisdom: 35,
+        discipline: 35,
+        team_spirit: 35,
+        overall: 35
+      });
+    }
+  };
+
+  const loadChallengeStats = async () => {
+    try {
+      const { data: participations, error } = await supabase
+        .from('challenge_participants')
+        .select('status, challenge_id')
+        .eq('user_id', userId);
+      
+      if (error) {
+        return;
+      }
+      
+      if (!participations || participations.length === 0) {
+        setChallengeStats({ wins: 0, losses: 0 });
+        return;
+      }
+      
+      const challengeIds = participations.map(p => p.challenge_id);
+      const { data: challenges } = await supabase
+        .from('challenges')
+        .select('id, end_date, status')
+        .in('id', challengeIds);
+      
+      const challengeMap = new Map(challenges?.map(c => [c.id, c]) || []);
+      const now = new Date();
+      
+      let wins = 0;
+      let losses = 0;
+      
+      participations.forEach(participation => {
+        const challenge = challengeMap.get(participation.challenge_id);
+        if (!challenge) return;
+        
+        const endDate = new Date(challenge.end_date);
+        endDate.setHours(23, 59, 59, 999);
+        const hasEnded = now > endDate;
+        
+        if (participation.status === 'completed') {
+          wins++;
+        } else if (hasEnded && participation.status !== 'completed') {
+          losses++;
+        }
+      });
+      
+      setChallengeStats({ wins, losses });
+    } catch (error) {
+      console.error('Error loading challenge stats:', error);
+    }
+  };
+
+  const fetchRecentActivity = async () => {
+    try {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      
+      const startOfDay = new Date(year, today.getMonth(), today.getDate()).toISOString();
+      const endOfDay = new Date(year, today.getMonth(), today.getDate() + 1).toISOString();
+
+      const activityItems: any[] = [];
+
+      // Fetch Daily Habits
+      const { data: habits } = await supabase
+        .from('daily_habits')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date', dateStr)
+        .single();
+
+      const { data: userPoints } = await supabase
+        .from('user_points_daily')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date', dateStr)
+        .single();
+
+      if (habits || userPoints) {
+        const habitsTimestamp = habits?.updated_at || habits?.created_at;
+        const pointsTimestamp = userPoints?.updated_at || userPoints?.created_at;
+        const hTime = habitsTimestamp || new Date().toISOString();
+        const pTime = pointsTimestamp || new Date().toISOString();
+        
+        if (habits?.sleep_hours > 0) {
+          activityItems.push({ type: 'habit', label: 'Sleep', icon: 'bed', iconType: 'fa5', color: '#34D399', timestamp: hTime });
+        }
+        if (habits?.cold_shower_completed) {
+          activityItems.push({ type: 'habit', label: 'Cold Shower', icon: 'shower', iconType: 'fa5', color: '#7DD3FC', timestamp: hTime });
+        }
+        if ((habits?.meditation_minutes && habits.meditation_minutes > 0) || userPoints?.meditation_completed) {
+          activityItems.push({ type: 'habit', label: 'Meditate', icon: 'spa', iconType: 'fa5', color: '#2DD4BF', timestamp: pointsTimestamp || hTime });
+        }
+        if (userPoints?.microlearn_completed) {
+          activityItems.push({ type: 'habit', label: 'Microlearn', icon: 'book-reader', iconType: 'fa5', color: '#FB7185', timestamp: pTime });
+        }
+        if (habits?.water_intake > 0) {
+          activityItems.push({ type: 'habit', label: 'Water', icon: 'water', color: '#60A5FA', timestamp: hTime });
+        }
+        if (habits?.run_day_type === 'active') {
+          activityItems.push({ type: 'habit', label: 'Run', icon: 'running', iconType: 'fa5', color: '#FFEB3B', timestamp: hTime });
+        }
+        if (habits?.gym_day_type === 'active') {
+          activityItems.push({ type: 'habit', label: 'Gym', icon: 'dumbbell', iconType: 'fa5', color: '#EF4444', timestamp: hTime });
+        }
+        if (habits?.reflect_mood) {
+          activityItems.push({ type: 'habit', label: 'Reflect', icon: 'journal-whills', iconType: 'fa5', color: '#F59E0B', timestamp: hTime });
+        }
+      }
+
+      // Fetch Goal Check-ins
+      const { data: checkIns } = await supabase
+        .from('progress_photos')
+        .select('goal_id, check_in_date, created_at')
+        .eq('user_id', userId)
+        .gte('check_in_date', startOfDay.split('T')[0])
+        .order('created_at', { ascending: false });
+
+      if (checkIns && checkIns.length > 0) {
+        checkIns.forEach((checkIn: any) => {
+          const goal = viewedUserGoals.find(g => g.id === checkIn.goal_id);
+          if (goal) {
+            activityItems.push({ 
+              type: 'goal', 
+              label: goal.title, 
+              icon: 'flag', 
+              color: '#EF4444',
+              timestamp: checkIn.created_at || (checkIn.check_in_date ? new Date(checkIn.check_in_date).toISOString() : new Date().toISOString())
+            });
+          }
+        });
+      }
+
+      // Fetch Challenge Submissions
+      const { data: submissions } = await supabase
+        .from('challenge_submissions')
+        .select(`
+          id,
+          created_at,
+          challenge:challenges (title)
+        `)
+        .eq('user_id', userId)
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay)
+        .order('created_at', { ascending: false });
+
+      if (submissions && submissions.length > 0) {
+        submissions.forEach((sub: any) => {
+          const title = (sub.challenge as any)?.title || 'Challenge';
+          activityItems.push({
+            type: 'challenge',
+            label: title,
+            icon: 'trophy',
+            color: '#F97316',
+            timestamp: sub.created_at || new Date().toISOString()
+          });
+        });
+      }
+
+      activityItems.sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        if (isNaN(timeA) && isNaN(timeB)) return 0;
+        if (isNaN(timeA)) return 1;
+        if (isNaN(timeB)) return -1;
+        return timeB - timeA;
+      });
+
+      setRecentActivity(activityItems);
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+    }
+  };
+
+  const fetchHighlights = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_achievements')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return;
+      }
+
+      setHighlights(data || []);
+    } catch (error) {
+      console.error('Error fetching highlights:', error);
     }
   };
 
@@ -202,6 +439,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (viewedUserGoals.length > 0) {
       fetchGoalProgress();
+      fetchRecentActivity(); // Refresh activity when goals are loaded
     }
   }, [viewedUserGoals]);
 
@@ -318,8 +556,12 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const activeGoals = viewedUserGoals.filter(goal => !goal.completed).slice(0, 3);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
+      <ScrollView 
+        style={[styles.scrollView, { backgroundColor: theme.background }]}
+        contentContainerStyle={{ paddingBottom: 0 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -373,7 +615,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
             style={[
               styles.profilePictureCard, 
               { 
-                backgroundColor: 'rgba(128, 128, 128, 0.15)',
+                backgroundColor: '#FFFFFF',
                 borderBottomLeftRadius: isProfileCardExpanded ? 0 : 16,
                 borderBottomRightRadius: isProfileCardExpanded ? 0 : 16,
               }
@@ -433,29 +675,28 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           {isProfileCardExpanded && (
             <Animated.View 
               style={[
-                styles.expandedProfileInfo,
+                styles.expandedProfileWrapper,
                 { 
-                  backgroundColor: 'rgba(128, 128, 128, 0.15)',
                   opacity: profileCardAnimation,
                   maxHeight: profileCardAnimation.interpolate({
                     inputRange: [0, 1],
                     outputRange: [0, 200],
                   }),
-                  overflow: 'hidden',
                 }
               ]}
             >
+              <View style={styles.expandedProfileInfo}>
               <View style={styles.expandedProfileRow}>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Height</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Wins</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    Not set
+                    {challengeStats.wins}
                   </Text>
                 </View>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Age</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Losses</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    Not set
+                    {challengeStats.losses}
                   </Text>
                 </View>
                 <TouchableOpacity 
@@ -478,7 +719,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                 <View style={styles.expandedProfileItem}>
                   <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Competitions</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    0
+                    {challengeStats.wins + challengeStats.losses}
                   </Text>
                 </View>
                 <View style={styles.expandedProfileItem}>
@@ -494,126 +735,174 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
               </View>
+              </View>
             </Animated.View>
           )}
         </View>
 
-        {/* Progress Bar - Only show if stats are visible */}
-        {statsVisible && (
-        <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-          {/* Main Progress Bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-            <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
-              <View style={styles.leftBarBackground}>
-                {[...Array(20)].map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      {
-                        width: '4.3%',
-                        height: '100%',
-                        backgroundColor: 'white',
-                        marginRight: i === 19 ? 0 : '0.7%',
-                        borderRadius: 2,
-                        transform: [{ skewX: '-18deg' }],
-                      },
-                      (i > 0 && i < 19) && { borderRadius: 0 },
-                      i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                      i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                      (i >= levelProgress.segmentsFilled) && { backgroundColor: theme.background, borderWidth: 1, borderColor: 'white' },
-                    ]}
-                  />
-                ))}
+        {/* Activity and Highlights Section */}
+        <View style={styles.keepTrackSection}>
+          <View style={styles.activityAchievementsRow}>
+            <View style={{ flex: 1 }}>
+              <View style={[
+                styles.activityBox,
+                recentActivity.length > 0 ? {
+                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
+                } : {
+                  height: 88,
+                }
+              ]}>
+                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
+                <ScrollView 
+                  style={{ flex: 1, width: '100%' }}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map((item, index) => (
+                      <View key={index} style={styles.activityItem}>
+                        <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
+                          {item.iconType === 'fa5' ? (
+                            <FontAwesome5 name={item.icon} size={14} color={item.color} />
+                          ) : (
+                            <Ionicons name={item.icon as any} size={16} color={item.color} />
+                          )}
+                        </View>
+                        <Text 
+                          style={[styles.activityText, { color: theme.textSecondary }]} 
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
+                    </View>
+                  )}
+                </ScrollView>
               </View>
             </View>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
-          </View>
-        
-          {/* Green Progress Bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
-                {[...Array(8)].map((_, i) => {
-                  const activeSegmentCount = viewedUserDailyHabits.filter(checked => checked).length;
-                  const shouldBeActive = i < activeSegmentCount;
-                  
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
-                          height: 2.59,
-                          flex: 1,
-                          marginRight: i === 7 ? 0 : 2,
-                          shadowColor: '#10B981',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: shouldBeActive ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: shouldBeActive ? 3 : 0,
-                        },
-                        (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        (!shouldBeActive) && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#10B981',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-          
-          {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
-            <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={styles.leftBarBackground}>
-                {[...Array(5)].map((_, i) => {
-                  const isCompleted = viewedUserCoreHabits[i];
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
-                          height: 2.59,
-                          shadowColor: '#E91E63',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: isCompleted ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: isCompleted ? 3 : 0,
-                        },
-                        i === 4 && { marginRight: 0 },
-                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        !isCompleted && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#E91E63',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
+            <View style={{ flex: 2, marginLeft: 16 }}>
+              <View style={[
+                styles.achievementsBox,
+                highlights.length > 0 && {
+                  height: 72 + (Math.min(highlights.length, 4) * 32),
+                }
+              ]}>
+                <View style={styles.achievementsHeader}>
+                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
+                </View>
+                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                  {highlights.length > 0 ? (
+                    highlights.slice(0, 4).map((highlight, index) => (
+                      <View key={highlight.id} style={styles.achievementItem}>
+                        <Text style={styles.bulletPoint}>•</Text>
+                        <Text
+                          style={[styles.achievementText, { color: theme.textSecondary }]}
+                          numberOfLines={2}
+                        >
+                          {highlight.text}
+                        </Text>
+                        {highlight.photo_url && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedPhotoUrl(highlight.photo_url);
+                              setShowPhotoModal(true);
+                            }}
+                            style={styles.photoIconButton}
+                          >
+                            <Ionicons name="image" size={22} color={theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                      <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
+                        No highlights yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
           </View>
         </View>
-        )}
+
+        {/* Goals Section */}
+        <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
+          <View style={styles.goalsSectionHeader}>
+            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
+          </View>
+          {activeGoals.length === 0 ? (
+            <View style={styles.noGoalsContainer}>
+              <Text style={[styles.noGoalsText, { color: theme.textSecondary }]}>No active goals</Text>
+            </View>
+          ) : (
+            <View style={styles.circularGoalsContainer}>
+              {activeGoals.map((goal, index) => {
+                const checkInCount = goalProgress[goal.id] || 0;
+                const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
+                  id: `mock-${index}`,
+                  goal_id: goal.id,
+                  user_id: userId,
+                  completed_date: new Date().toISOString(),
+                  created_at: new Date().toISOString(),
+                }));
+                const completionPercent = calculateCompletionPercentage(goal, mockProgressEntries);
+                
+                const gradientColors = ['#10B981', '#10B981', '#10B981']; // Green gradient matching level bar
+                
+                return (
+                  <View key={goal.id} style={styles.circularGoalItem}>
+                    <View style={styles.circularProgressContainer}>
+                      <Svg width={110} height={110}>
+                        <Defs>
+                          <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                            <Stop offset="0%" stopColor={gradientColors[0]} />
+                            <Stop offset="50%" stopColor={gradientColors[1]} />
+                            <Stop offset="100%" stopColor={gradientColors[2]} />
+                          </LinearGradient>
+                        </Defs>
+                        <Circle
+                          cx={55}
+                          cy={55}
+                          r={42}
+                          stroke="rgba(128, 128, 128, 0.3)"
+                          strokeWidth={8}
+                          fill="transparent"
+                        />
+                        <Circle
+                          cx={55}
+                          cy={55}
+                          r={42}
+                          stroke={`url(#gradient-${goal.id})`}
+                          strokeWidth={8}
+                          fill="transparent"
+                          strokeDasharray={`${2 * Math.PI * 42}`}
+                          strokeDashoffset={`${2 * Math.PI * 42 * (1 - Math.round(completionPercent) / 100)}`}
+                          strokeLinecap="round"
+                          transform="rotate(-90 55 55)"
+                        />
+                      </Svg>
+                      <View style={styles.circularProgressText}>
+                        <Text style={[styles.circularProgressValue, { color: theme.textPrimary }]}>
+                          {Math.round(completionPercent)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
+                      {goal.title}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
 
         {/* Journey Section */}
         <JourneyPreview 
@@ -621,139 +910,230 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           onViewAll={() => setShowFullJourney(true)}
         />
 
-        {/* Goals Section */}
-        <View style={[styles.keepTrackSection, { marginTop: 20 }]}>
-          <View style={styles.goalsSectionHeader}>
-            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
-          </View>
-          <View style={[styles.weeklyTrackerCard, { backgroundColor: theme.cardBackground }]}>
-            <View style={styles.goalsContainer}>
-              {activeGoals.length === 0 ? (
-                <View style={styles.noGoalsContainer}>
-                  <Text style={[styles.noGoalsText, { color: theme.textSecondary }]}>No active goals</Text>
-                </View>
-              ) : (
-                <View style={styles.circularGoalsContainer}>
-                  {activeGoals.map((goal, index) => {
-                    const checkInCount = goalProgress[goal.id] || 0;
-                    const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
-                      id: `mock-${index}`,
-                      goal_id: goal.id,
-                      user_id: userId,
-                      completed_date: new Date().toISOString(),
-                      created_at: new Date().toISOString(),
-                    }));
-                    const completionPercent = calculateCompletionPercentage(goal, mockProgressEntries);
-                    
-                    const gradientColors = ['#10B981', '#10B981', '#10B981']; // Green gradient matching level bar
-                    
-                    return (
-                      <View key={goal.id} style={styles.circularGoalItem}>
-                        <View style={styles.circularProgressContainer}>
-                          <Svg width={110} height={110}>
-                            <Defs>
-                              <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                                <Stop offset="0%" stopColor={gradientColors[0]} />
-                                <Stop offset="50%" stopColor={gradientColors[1]} />
-                                <Stop offset="100%" stopColor={gradientColors[2]} />
-                              </LinearGradient>
-                            </Defs>
-                            <Circle
-                              cx={55}
-                              cy={55}
-                              r={42}
-                              stroke="rgba(128, 128, 128, 0.3)"
-                              strokeWidth={8}
-                              fill="transparent"
-                            />
-                            <Circle
-                              cx={55}
-                              cy={55}
-                              r={42}
-                              stroke={`url(#gradient-${goal.id})`}
-                              strokeWidth={8}
-                              fill="transparent"
-                              strokeDasharray={`${2 * Math.PI * 42}`}
-                              strokeDashoffset={`${2 * Math.PI * 42 * (1 - Math.round(completionPercent) / 100)}`}
-                              strokeLinecap="round"
-                              transform="rotate(-90 55 55)"
-                            />
-                          </Svg>
-                          <View style={styles.circularProgressText}>
-                            <Text style={[styles.circularProgressValue, { color: theme.textPrimary }]}>
-                              {Math.round(completionPercent)}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
-                          {goal.title}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-
         {/* Progress Bars Section - Only show if stats are visible */}
         {statsVisible && (
         <View style={styles.keepTrackSection}>
-          <View style={styles.keepTrackHeader}>
-            <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Progression</Text>
-          </View>
-          <View style={[styles.progressBarsContainer, { marginTop: 20 }]}>
-            {[
-              { index: 1, progress: 35, color: '#ffffff' },
-              { index: 2, progress: 35, color: '#ffffff' },
-              { index: 3, progress: 35, color: '#ffffff' },
-              { index: 4, progress: 35, color: '#ffffff' },
-              { index: 5, progress: 35, color: '#ffffff' }
-            ].map((bar) => (
-              <View key={bar.index} style={styles.progressBarColumn}>
-                <View style={styles.progressBarContainer}>
-                  <View style={[styles.progressBarBackground, { backgroundColor: bar.color, opacity: 0.2 }]} />
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        backgroundColor: bar.color,
-                        height: `${bar.progress}%`,
-                        opacity: 0.7
-                      }
-                    ]}
-                  />
-                  <View style={[styles.progressBarAvatar, { overflow: 'hidden' }]}>
-                    <View style={{
-                      position: 'absolute',
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      zIndex: 1
-                    }} />
-                    {bar.index === 1 ? (
-                      <FontAwesome5 name="dumbbell" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 2 ? (
-                      <FontAwesome5 name="brain" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 3 ? (
-                      <FontAwesome5 name="lock" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    ) : bar.index === 4 ? (
-                      <FontAwesome5 name="star" size={20} color="rgba(0,0,0,0.5)" solid style={{ zIndex: 2 }} />
-                    ) : (
-                      <FontAwesome5 name="fire" size={20} color="rgba(0,0,0,0.5)" style={{ zIndex: 2 }} />
-                    )}
-                  </View>
-                  <View style={styles.progressBarLabel}>
-                    <Text style={[styles.progressBarNumber, { color: '#ffffff' }]}>
-                      {bar.progress}
-                    </Text>
-                  </View>
+          <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border, marginTop: 20 }]}>
+            <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
+                <View style={{
+                  backgroundColor: isDark ? '#1f1f1f' : '#111827',
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                  borderRadius: 8,
+                }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '600' }}>
+                    {Math.floor(pillarProgress.overall)}
+                  </Text>
                 </View>
               </View>
-            ))}
+            </View>
+            <View style={[styles.progressBarsContainer, { 
+              height: Math.max(100, Math.max(...[
+                pillarProgress.strength_fitness,
+                pillarProgress.growth_wisdom,
+                pillarProgress.discipline,
+                pillarProgress.team_spirit,
+                pillarProgress.overall
+              ].map(p => Math.max(45, p * 1.8))) + 30)
+            }]}>
+              {[
+                { index: 1, progress: pillarProgress.strength_fitness, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Strength & Fitness', key: 'strength_fitness' },
+                { index: 2, progress: pillarProgress.growth_wisdom, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
+                { index: 3, progress: pillarProgress.discipline, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Discipline', key: 'discipline' },
+                { index: 4, progress: pillarProgress.team_spirit, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Team Spirit', key: 'team_spirit' },
+                { index: 5, progress: pillarProgress.overall, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Overall', key: 'overall' }
+              ].map((bar) => {
+              const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
+              const displayProgress = Math.floor(exactProgress);
+              
+              const barColor = bar.color;
+              const iconColor = '#FFFFFF';
+              
+              const barHeight = Math.max(45, exactProgress * 1.8);
+              
+              return (
+                <View key={bar.index} style={styles.progressBarColumn}>
+                  <View style={[styles.progressBarContainer, { height: barHeight }]}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          backgroundColor: barColor,
+                          height: '100%',
+                          zIndex: 5,
+                        }
+                      ]}
+                    />
+                    <View style={styles.progressBarAvatar}>
+                      <View style={{
+                        position: 'absolute',
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        zIndex: 1
+                      }} />
+                      {bar.index === 1 ? (
+                        <FontAwesome5 name="dumbbell" size={20} color={iconColor} style={{ zIndex: 2 }} />
+                      ) : bar.index === 2 ? (
+                        <FontAwesome5 name="brain" size={20} color={iconColor} style={{ zIndex: 2 }} />
+                      ) : bar.index === 3 ? (
+                        <FontAwesome5 name="lock" size={20} color={iconColor} style={{ zIndex: 2 }} />
+                      ) : bar.index === 4 ? (
+                        <FontAwesome5 name="star" size={20} color={iconColor} solid style={{ zIndex: 2 }} />
+                      ) : (
+                        <FontAwesome5 name="fire" size={20} color={iconColor} style={{ zIndex: 2 }} />
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.progressBarLabelBelow}>
+                    <TouchableOpacity 
+                      style={styles.progressBarNumberContainer}
+                      onPress={() => {
+                        Alert.alert(
+                          bar.pillar,
+                          `${exactProgress.toFixed(1)}%`,
+                          [{ text: 'OK' }]
+                        );
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.progressBarNumber, { color: theme.textPrimary }]}>
+                        {displayProgress}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+              })}
+            </View>
           </View>
         </View>
+        )}
+
+        {/* Progress Bar - Moved to bottom */}
+        {statsVisible && (
+        <TouchableOpacity 
+          onPress={() => {
+            setShowLevelModal(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
+            {/* Main Progress Bar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
+              <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
+                <View style={styles.leftBarBackground}>
+                  {[...Array(20)].map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        {
+                          width: '4.3%',
+                          height: '100%',
+                          backgroundColor: 'white',
+                          marginRight: i === 19 ? 0 : '0.7%',
+                          borderRadius: 2,
+                          transform: [{ skewX: '-18deg' }],
+                        },
+                        (i > 0 && i < 19) && { borderRadius: 0 },
+                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                        i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                        (i >= levelProgress.segmentsFilled) && { backgroundColor: theme.background, borderWidth: 1, borderColor: 'white' },
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
+            </View>
+          
+            {/* Green Progress Bar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+              <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
+                <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
+                  {[...Array(8)].map((_, i) => {
+                    const activeSegmentCount = viewedUserDailyHabits.filter(checked => checked).length;
+                    const shouldBeActive = i < activeSegmentCount;
+                    
+                    return (
+                      <View
+                        key={i}
+                        style={[
+                          styles.leftBarSegment,
+                          { 
+                            backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
+                            height: 2.59,
+                            flex: 1,
+                            marginRight: i === 7 ? 0 : 2,
+                            shadowColor: '#10B981',
+                            shadowOffset: { width: 0, height: 0 },
+                            shadowOpacity: shouldBeActive ? 0.6 : 0,
+                            shadowRadius: 3,
+                            elevation: shouldBeActive ? 3 : 0,
+                          },
+                          (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
+                          i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                          i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                          (!shouldBeActive) && { 
+                            backgroundColor: theme.background, 
+                            borderWidth: 0.5, 
+                            borderColor: '#10B981',
+                            shadowColor: 'transparent',
+                            shadowOpacity: 0,
+                            elevation: 0,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+            
+            {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
+              <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
+                <View style={styles.leftBarBackground}>
+                  {[...Array(5)].map((_, i) => {
+                    const isCompleted = viewedUserCoreHabits[i];
+                    return (
+                      <View
+                        key={i}
+                        style={[
+                          styles.leftBarSegment,
+                          { 
+                            backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
+                            height: 2.59,
+                            shadowColor: '#E91E63',
+                            shadowOffset: { width: 0, height: 0 },
+                            shadowOpacity: isCompleted ? 0.6 : 0,
+                            shadowRadius: 3,
+                            elevation: isCompleted ? 3 : 0,
+                          },
+                          i === 4 && { marginRight: 0 },
+                          (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
+                          i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
+                          i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
+                          !isCompleted && { 
+                            backgroundColor: theme.background, 
+                            borderWidth: 0.5, 
+                            borderColor: '#E91E63',
+                            shadowColor: 'transparent',
+                            shadowOpacity: 0,
+                            elevation: 0,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity>
         )}
 
         {/* Tasks Section */}
@@ -761,23 +1141,43 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           <View style={styles.bigTasksRowBoxes}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.leaderboardLabel, { color: theme.textSecondary }]}>Leaderboard</Text>
-              <View style={[styles.weeklyTrackerCard, styles.bigTaskBox, { minWidth: 0, backgroundColor: 'rgba(128, 128, 128, 0.15)' }]} />
+              <View style={styles.leaderboardCompetitionBox} />
             </View>
             <View style={{ flex: 1, marginLeft: 16 }}>
               <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Competitions</Text>
-              <View style={[styles.weeklyTrackerCard, styles.bigTaskBox, { minWidth: 0, backgroundColor: 'rgba(128, 128, 128, 0.15)' }]} />
+              <View style={styles.leaderboardCompetitionBox} />
             </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Full Journey Modal - Read-only for public profiles */}
+      {/* Full Journey Modal */}
       <FullJourneyModal
         visible={showFullJourney}
         userId={userId}
         onClose={() => setShowFullJourney(false)}
-        readOnly={true}
       />
+
+      {/* Level Info Modal */}
+      <LevelInfoModal
+        visible={showLevelModal}
+        onClose={() => setShowLevelModal(false)}
+        currentLevel={currentLevel}
+        totalPoints={totalPoints}
+      />
+
+      {/* Full Screen Photo Modal */}
+      {selectedPhotoUrl && (
+        <FullScreenPhotoModal
+          visible={showPhotoModal}
+          photos={[selectedPhotoUrl]}
+          initialIndex={0}
+          onClose={() => {
+            setShowPhotoModal(false);
+            setSelectedPhotoUrl(null);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -857,6 +1257,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     paddingVertical: 0,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   profilePictureSection: {
     marginRight: 0,
@@ -938,13 +1345,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
     textAlign: 'center',
   },
+  expandedProfileWrapper: {
+    marginTop: -1,
+  },
   expandedProfileInfo: {
     marginTop: 0,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
-    borderRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
     padding: 20,
     paddingBottom: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   expandedProfileRow: {
     flexDirection: 'row',
@@ -1164,5 +1586,126 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 8,
     textAlign: 'center',
+  },
+  leaderboardCompetitionBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    minHeight: 120,
+  },
+  // Activity and Highlights Styles
+  activityAchievementsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activityLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  achievementsLabel: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  achievementsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  achievementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+    gap: 8,
+  },
+  bulletPoint: {
+    fontSize: 18,
+    color: '#6B7280',
+  },
+  achievementText: {
+    fontSize: 15,
+    fontWeight: '500',
+    flex: 1,
+    lineHeight: 20,
+  },
+  photoIconButton: {
+    padding: 0,
+    marginLeft: 4,
+  },
+  activityBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    width: '100%',
+  },
+  activityIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  activityText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  achievementsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  // Pillar Progress Bars Styles
+  progressBarsBox: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 0,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  progressBarLabelBelow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    width: 40,
+  },
+  progressBarNumberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
 }); 

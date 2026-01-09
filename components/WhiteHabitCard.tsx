@@ -118,11 +118,11 @@ const WhiteHabitCard = ({
   }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
 
   const isCompleted = !isCreateCard && (card.progress >= 1);
-  const cardBackgroundColor = isCompleted ? '#10B981' : '#FFFFFF';
-  const titleColor = isCompleted ? '#FFFFFF' : theme.textPrimary;
-  const subtitleColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
-  const iconColor = isCompleted ? 'rgba(255, 255, 255, 0.8)' : theme.textSecondary;
-  const progressTrackColor = isCompleted ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+  const cardBackgroundColor = '#FFFFFF';
+  const titleColor = theme.textPrimary;
+  const subtitleColor = theme.textSecondary;
+  const iconColor = theme.textSecondary;
+  const progressTrackColor = 'rgba(0, 0, 0, 0.1)';
   const progressFillColor = card.accent;
 
   return (
@@ -134,10 +134,11 @@ const WhiteHabitCard = ({
           marginRight: index === totalCards - 1 ? 0 : 10,
           marginVertical: 8,
           shadowColor: whiteCardShadowColor,
-          backgroundColor: isCreateCard ? '#9CA3AF' : (isCompleted ? '#10B981' : '#FFFFFF'),
+          backgroundColor: '#FFFFFF',
           borderColor: isCompleted ? 'transparent' : '#E5E7EB',
-          paddingBottom: 16, // Ensure enough space at bottom
-          overflow: 'visible' // Allow content to show if slightly outside
+          paddingTop: 16,
+          paddingBottom: 16,
+          overflow: 'visible' // Allow header to extend with negative margins
         },
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
       ]}
@@ -148,28 +149,47 @@ const WhiteHabitCard = ({
         onLongPress={handleCardLongPress}
         delayLongPress={250}
         disabled={!isCreateCard && customHabitsLoading}
-        style={{ flex: 1, paddingBottom: 10 }}
+        style={{ flex: 1 }}
       >
-      <View style={[styles.whiteHabitCardHeader, { 
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        borderBottomLeftRadius: 20,
-        borderBottomRightRadius: 20,
-        marginTop: -16,
-        marginLeft: -16,
-        marginRight: -16,
-        paddingTop: 16,
-        paddingLeft: 16,
-        paddingRight: 16,
-        marginBottom: 16,
-        alignItems: 'flex-start'
-      }]}>
-        <View style={{ alignItems: 'flex-start' }}>
-          <Text style={[styles.whiteHabitCardTitle, { color: isCreateCard ? '#FFFFFF' : '#FFFFFF' }]}>
-            {card.title}
-          </Text>
-          <Text style={[styles.whiteHabitCardSubtitle, { color: 'rgba(255, 255, 255, 0.85)' }]}>{card.subtitle}</Text>
+      <View style={[
+        styles.whiteHabitCardHeader,
+        { 
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          borderBottomLeftRadius: isCreateCard ? 0 : 20,
+          borderBottomRightRadius: isCreateCard ? 0 : 20,
+          marginTop: -16,
+          marginLeft: -16,
+          marginRight: -16,
+          paddingTop: 16,
+          paddingLeft: 16,
+          paddingRight: 16,
+          marginBottom: 16,
+          alignItems: 'flex-start',
+        },
+        // Ensure backgroundColor is applied last to override any style defaults
+        isCreateCard ? { backgroundColor: '#111827' } : { backgroundColor: card.accent || 'transparent' }
+      ]}>
+        <View style={{ alignItems: 'flex-start', flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <Text 
+              style={[styles.whiteHabitCardTitle, { color: isCreateCard ? '#FFFFFF' : '#FFFFFF', flex: 1 }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {card.title}
+            </Text>
+            {isCompleted && (
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color="#10B981"
+                style={{ marginLeft: 6, flexShrink: 0 }}
+              />
+            )}
           </View>
+          <Text style={[styles.whiteHabitCardSubtitle, { color: 'rgba(255, 255, 255, 0.85)' }]}>{card.subtitle}</Text>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {!isCreateCard && card.habit && (
       <TouchableOpacity 
@@ -228,8 +248,8 @@ const WhiteHabitCard = ({
 
       {!isCreateCard && (
         <View style={{ 
-          marginBottom: 12, 
-          marginTop: 8, 
+          marginBottom: 8, 
+          marginTop: -8, 
           flexDirection: 'row', 
           alignItems: 'center', 
           gap: 10,

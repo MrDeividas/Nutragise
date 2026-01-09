@@ -98,9 +98,82 @@ serve(async (req: Request) => {
   try {
     const { amount, currency = "gbp", includeStripeFee = true } = await req.json()
 
-    if (!amount) {
+    // Input validation
+    if (amount === undefined || amount === null) {
       return new Response(
         JSON.stringify({ error: "Missing required field: amount" }),
+        {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate amount is a number
+    if (typeof amount !== 'number' || isNaN(amount)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid amount: must be a number" }),
+        {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate amount is positive and within reasonable limits
+    if (amount <= 0) {
+      return new Response(
+        JSON.stringify({ error: "Amount must be greater than 0" }),
+        {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          status: 400,
+        }
+      )
+    }
+
+    // Maximum amount limit (e.g., £10,000)
+    const MAX_AMOUNT = 10000
+    if (amount > MAX_AMOUNT) {
+      return new Response(
+        JSON.stringify({ error: `Amount cannot exceed £${MAX_AMOUNT.toLocaleString()}` }),
+        {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate currency
+    const validCurrencies = ['gbp', 'usd', 'eur']
+    if (typeof currency !== 'string' || !validCurrencies.includes(currency.toLowerCase())) {
+      return new Response(
+        JSON.stringify({ error: `Invalid currency. Supported currencies: ${validCurrencies.join(', ')}` }),
+        {
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate includeStripeFee is boolean
+    if (typeof includeStripeFee !== 'boolean') {
+      return new Response(
+        JSON.stringify({ error: "includeStripeFee must be a boolean" }),
         {
           headers: { 
             "Content-Type": "application/json",

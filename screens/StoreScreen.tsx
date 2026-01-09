@@ -269,13 +269,13 @@ export default function StoreScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          {/* Ticket Count - Left */}
-          <View style={[styles.tokenBadge, { backgroundColor: theme.primary + '20' }]}>
-            <Ionicons name="ticket" size={16} color={theme.primary} />
-            <Text style={[styles.tokenText, { color: theme.textPrimary }]}>
-              {ticketCount}
-            </Text>
-          </View>
+          {/* Back Button - Left */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
           
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Store</Text>
 

@@ -49,12 +49,9 @@ export default function DMScreen() {
     if (!user) return;
     
     try {
-      console.log('🔄 Loading chats for user:', user.id);
       setLoading(true);
       
       const userChats = await dmService.getUserChats(user.id);
-      
-      console.log('✅ Chats loaded:', userChats?.length || 0);
       setChats(userChats || []);
       applyFilter(userChats || [], filterRef.current);
       chatsLoadedRef.current = true;
@@ -76,7 +73,6 @@ export default function DMScreen() {
       const userChats = await dmService.getUserChats(user.id);
       setChats(userChats || []);
       applyFilter(userChats || [], filterRef.current);
-      console.log('✅ Chats refreshed:', userChats?.length || 0);
     } catch (error) {
       console.error('❌ Error refreshing chats:', error);
     }
@@ -181,7 +177,6 @@ export default function DMScreen() {
       if (!chatsLoadedRef.current) return;
       
       // Silent refresh when returning to screen
-      console.log('🔄 Screen focused, refreshing chats...');
       refreshChats();
     }, [refreshChats])
   );
@@ -274,20 +269,20 @@ export default function DMScreen() {
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={24} color="#ffffff" />
-            </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ width: 40 }}>
+            <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Messages</Text>
           </View>
-          <TouchableOpacity onPress={() => setShowSearch(!showSearch)}>
-            <Ionicons name="add" size={28} color="#ffffff" />
+          <TouchableOpacity onPress={() => setShowSearch(!showSearch)} style={{ width: 40, alignItems: 'flex-end' }}>
+            <Ionicons name="add" size={28} color="#0F172A" />
           </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
         {showSearch && (
-          <View style={[styles.searchContainer, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+          <View style={[styles.searchContainer, { backgroundColor: '#F3F4F6' }]}>
             <Ionicons name="search" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.searchInput, { color: theme.textPrimary }]}
@@ -348,9 +343,11 @@ export default function DMScreen() {
             renderItem={renderSearchResult}
             keyExtractor={(item) => item.id}
             ListEmptyComponent={
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No users found
-              </Text>
+              <View style={styles.emptyContainer}>
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  No users found
+                </Text>
+              </View>
             }
           />
         ) : (
@@ -394,15 +391,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  headerLeft: {
-    flexDirection: 'row',
+  headerCenter: {
+    flex: 1,
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#ffffff',
+    color: '#0F172A',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -428,17 +425,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#F3F4F6',
   },
   activeFilter: {
     backgroundColor: '#14b8a6',
   },
   filterText: {
     fontSize: 14,
-    color: '#ffffff',
+    color: '#0F172A',
   },
   activeFilterText: {
     fontWeight: '600',
+    color: '#FFFFFF',
   },
   chatItem: {
     flexDirection: 'row',
@@ -448,7 +446,7 @@ const styles = StyleSheet.create({
   avatar: {
     width: 50,
     height: 50,
-    borderRadius: 25,
+    borderRadius: 8,
     marginRight: 12,
   },
   chatInfo: {
@@ -507,6 +505,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
+    paddingHorizontal: 20,
   },
   emptyText: {
     fontSize: 18,

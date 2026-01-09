@@ -994,19 +994,21 @@ function ProfileScreen({ navigation }: any) {
                 {notificationCount > 0 && (
                   <View style={{
                     position: 'absolute',
-                    top: -6,
-                    right: -8,
-                    backgroundColor: '#ff5a5f',
-                    borderRadius: 10,
-                    minWidth: 18,
-                    height: 18,
+                    top: -2,
+                    right: -2,
+                    backgroundColor: '#EF4444',
+                    borderRadius: 8,
+                    minWidth: 14,
+                    height: 14,
                     justifyContent: 'center',
                     alignItems: 'center',
                     paddingHorizontal: 4,
+                    borderWidth: 1.5,
+                    borderColor: '#1f1f1f',
                   }}>
                     <Text style={{
-                      color: '#fff',
-                      fontSize: 12,
+                      color: '#FFFFFF',
+                      fontSize: 9,
                       fontWeight: '700',
                     }}>
                       {notificationCount > 99 ? '99+' : notificationCount}

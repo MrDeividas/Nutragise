@@ -71,7 +71,6 @@ export default function RaffleScreen() {
           const quantity = ticketItem?.quantity || 0;
           setHasTicket(quantity > 0);
           setTicketCount(quantity);
-          console.log('🎫 Ticket count fetched:', { ticketItemId: raffle.ticket_item_id, quantity, ticketItem });
         } else {
           setHasTicket(false);
           setTicketCount(0);
@@ -232,13 +231,13 @@ export default function RaffleScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          {/* Ticket Count - Left */}
-          <View style={[styles.tokenBadge, { backgroundColor: theme.primary + '20' }]}>
-            <Ionicons name="ticket" size={16} color={theme.primary} />
-            <Text style={[styles.tokenText, { color: theme.textPrimary }]}>
-              {ticketCount}
-            </Text>
-          </View>
+          {/* Back Button - Left */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
 
           {/* Title - Center */}
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Raffles</Text>
@@ -351,6 +350,10 @@ export default function RaffleScreen() {
         <UpgradeToProModal
           visible={showUpgradeModal}
           onClose={() => setShowUpgradeModal(false)}
+          onUpgrade={async () => {
+            // Refresh profile data and reload raffle data
+            await loadRaffleData();
+          }}
         />
       </SafeAreaView>
     </CustomBackground>
@@ -382,18 +385,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     zIndex: 0,
   },
-  tokenBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    gap: 4,
+  backButton: {
+    padding: 8,
     zIndex: 1,
-  },
-  tokenText: {
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   headerIcons: {
     flexDirection: 'row',

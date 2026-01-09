@@ -146,8 +146,6 @@ export default function WalletScreen() {
     }
 
     try {
-      console.log('💰 Starting deposit process:', { amount, userId: user.id });
-      
       // 1. Create Payment Intent (includes Stripe fee calculation)
       // Note: ensure backend function 'create-payment-intent' is deployed and reachable
       const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } = await stripeService.createPaymentIntent(
@@ -162,12 +160,6 @@ export default function WalletScreen() {
       if (!clientSecret) {
         throw new Error('Failed to create payment intent');
       }
-
-      console.log('💰 Payment breakdown:', {
-        depositAmount: originalAmount || amount,
-        stripeFee: stripeFee || 0,
-        totalCharged: totalAmount || amount,
-      });
 
       // 2. Initialize Payment Sheet
       const { error: initError } = await initPaymentSheet({
@@ -188,13 +180,10 @@ export default function WalletScreen() {
 
       if (presentError) {
         if (presentError.code === 'Canceled') {
-          console.log('Payment canceled by user');
           return;
         }
         throw new Error(presentError.message);
       }
-
-      console.log('✅ Payment successful, updating wallet...');
       
       // 4. Update Wallet
       // In a production environment, this should be handled by webhooks.
@@ -202,16 +191,11 @@ export default function WalletScreen() {
       // We pass the real paymentIntentId so the transaction record is accurate.
       const result = await walletService.depositToWallet(user.id, amount, paymentIntentId);
       
-      console.log('✅ Deposit result:', result);
-      console.log('✅ New balance should be:', result.wallet.balance);
-      
       // Update local state immediately
       setBalance(Number(result.wallet.balance));
       
       // Reload wallet data to show new balance and transaction
       await loadWalletData();
-      
-      console.log('✅ Wallet data reloaded');
       
       // Show success with breakdown
       const feeInfo = stripeFee && stripeFee > 0 

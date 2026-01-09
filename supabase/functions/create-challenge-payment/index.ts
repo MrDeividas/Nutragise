@@ -86,9 +86,89 @@ serve(async (req: Request) => {
   try {
     const { amount, challengeId, currency = "gbp", includeStripeFee = true } = await req.json()
 
-    if (!amount || !challengeId) {
+    // Input validation
+    if (amount === undefined || amount === null) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: amount and challengeId" }),
+        JSON.stringify({ error: "Missing required field: amount" }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    if (!challengeId) {
+      return new Response(
+        JSON.stringify({ error: "Missing required field: challengeId" }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate amount is a number
+    if (typeof amount !== 'number' || isNaN(amount)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid amount: must be a number" }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate amount is positive and within reasonable limits
+    if (amount <= 0) {
+      return new Response(
+        JSON.stringify({ error: "Amount must be greater than 0" }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Maximum amount limit (e.g., £10,000)
+    const MAX_AMOUNT = 10000
+    if (amount > MAX_AMOUNT) {
+      return new Response(
+        JSON.stringify({ error: `Amount cannot exceed £${MAX_AMOUNT.toLocaleString()}` }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate challengeId format (UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (typeof challengeId !== 'string' || !uuidRegex.test(challengeId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid challengeId format" }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate currency
+    const validCurrencies = ['gbp', 'usd', 'eur']
+    if (typeof currency !== 'string' || !validCurrencies.includes(currency.toLowerCase())) {
+      return new Response(
+        JSON.stringify({ error: `Invalid currency. Supported currencies: ${validCurrencies.join(', ')}` }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 400,
+        }
+      )
+    }
+
+    // Validate includeStripeFee is boolean
+    if (typeof includeStripeFee !== 'boolean') {
+      return new Response(
+        JSON.stringify({ error: "includeStripeFee must be a boolean" }),
         {
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           status: 400,

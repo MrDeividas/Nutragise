@@ -23,6 +23,19 @@ import {
 
 class ChallengesService {
   /**
+   * Validate that userId matches the authenticated user
+   * This adds an extra security layer on top of RLS
+   */
+  private async validateUserId(userId: string): Promise<void> {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      throw new Error('User not authenticated');
+    }
+    if (user.id !== userId) {
+      throw new Error('Unauthorized: User ID mismatch');
+    }
+  }
+  /**
    * Get all challenges with optional status filter
    */
   async getChallenges(status?: 'active' | 'upcoming' | 'completed'): Promise<Challenge[]> {
@@ -110,24 +123,13 @@ class ChallengesService {
           const currentDate = new Date(challenge.created_at || challenge.start_date);
           if (currentDate > existingDate) {
             duplicateCount.removed++;
-            console.log(`🔄 [Deduplication] REMOVING duplicate: "${challenge.title}" (${dateKey}, £${challenge.entry_fee || 0})`);
-            console.log(`   ❌ Removing ID: ${existing.id} (created: ${existing.created_at})`);
-            console.log(`   ✅ Keeping ID: ${challenge.id} (created: ${challenge.created_at})`);
             challengeMap.set(dedupKey, challenge);
           } else {
             duplicateCount.removed++;
-            console.log(`🔄 [Deduplication] REMOVING duplicate: "${challenge.title}" (${dateKey}, £${challenge.entry_fee || 0})`);
-            console.log(`   ❌ Removing ID: ${challenge.id} (created: ${challenge.created_at})`);
-            console.log(`   ✅ Keeping ID: ${existing.id} (created: ${existing.created_at})`);
           }
         }
       });
       challenges = Array.from(challengeMap.values());
-      
-      if (duplicateCount.found > 0) {
-        console.log(`⚠️ [Deduplication] Found ${duplicateCount.found} duplicate(s), removed ${duplicateCount.removed}`);
-      }
-      console.log(`✅ [Deduplication] Filtered ${data.length} challenges down to ${challenges.length} unique challenges`);
 
       // Filter recurring challenges to only show current period's instances
       const now = new Date();
@@ -311,8 +313,6 @@ class ChallengesService {
     clientSecret: string;
   }> {
     try {
-      console.log(`🔍 [initiateChallengeJoinWithWallet] Using wallet balance for challenge ${challengeId}, user ${userId}, amount: £${entryFee}`);
-      
       // Transfer from wallet to Stripe escrow
       // This handles both wallet deduction and Stripe Payment Intent creation/confirmation
       // Funds are moved from user wallet DB to Stripe Platform account (conceptually escrow)
@@ -321,8 +321,6 @@ class ChallengesService {
         challengeId,
         entryFee
       );
-      
-      console.log(`✅ [initiateChallengeJoinWithWallet] Funds transferred to escrow: ${paymentIntentId}`);
       
       return {
         paymentIntentId,
@@ -346,9 +344,9 @@ class ChallengesService {
     stripeFee: number; // Stripe processing fee
     totalAmount: number; // Total amount user pays (entryFee + stripeFee)
   }> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
-      console.log(`🔍 [initiateChallengeJoin] Initiating join for challenge ${challengeId}, user ${userId}`);
-      
       // Get challenge details
       const { data: challenge } = await supabase
         .from('challenges')
@@ -387,9 +385,6 @@ class ChallengesService {
             challengeId
           );
 
-        console.log(`✅ [initiateChallengeJoin] Payment intent created: ${paymentIntentId}`);
-        console.log(`💰 [initiateChallengeJoin] Fee breakdown: Entry £${entryFee.toFixed(2)} + Fee £${(stripeFee || 0).toFixed(2)} = Total £${(totalAmount || entryFee).toFixed(2)}`);
-
         return {
           paymentIntentId,
           clientSecret,
@@ -422,9 +417,9 @@ class ChallengesService {
     userId: string,
     paymentIntentId: string | null
   ): Promise<boolean> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
-      console.log(`🔍 [completeChallengeJoin] Completing join for challenge ${challengeId}, user ${userId}, payment: ${paymentIntentId}`);
-      
       // Get challenge details
       const { data: challenge } = await supabase
         .from('challenges')
@@ -483,9 +478,11 @@ class ChallengesService {
       if (entryFee > 0) {
         try {
           await challengePotService.addInvestment(challengeId, userId, entryFee);
-          console.log(`✅ [completeChallengeJoin] Investment tracked in pot (funds in Stripe escrow)`);
         } catch (potError) {
-          console.error(`❌ [completeChallengeJoin] Error updating pot (non-critical):`, potError);
+          // Non-critical error, log but don't fail
+          if (__DEV__) {
+            console.error('Error updating pot (non-critical):', potError);
+          }
         }
       }
 
@@ -494,7 +491,6 @@ class ChallengesService {
       apiCache.delete(apiCache.generateKey('challenges', 'active'));
       apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
 
-      console.log(`✅ [completeChallengeJoin] Challenge join completed`);
       return true;
     } catch (error) {
       console.error('Error completing challenge join:', error);
@@ -508,7 +504,6 @@ class ChallengesService {
    */
   async joinChallenge(challengeId: string, userId: string): Promise<boolean> {
     try {
-      console.log(`🔍 [joinChallenge] Attempting to join challenge ${challengeId} for user ${userId}`);
       
       // Get challenge details first
       const { data: challenge } = await supabase
@@ -518,11 +513,8 @@ class ChallengesService {
         .single();
 
       if (!challenge) {
-        console.error(`❌ [joinChallenge] Challenge not found: ${challengeId}`);
         throw new Error('Challenge not found');
       }
-
-      console.log(`🔍 [joinChallenge] Challenge found: "${challenge.title}" (status: ${challenge.status}, entry_fee: ${challenge.entry_fee})`);
 
       // Check if user is already participating in THIS SPECIFIC challenge instance
       // For both recurring and non-recurring challenges, we check the specific instance
@@ -536,7 +528,6 @@ class ChallengesService {
       if (existing) {
         // User is already in this specific challenge instance
         if (existing.status === 'active') {
-          console.log('⚠️ User already joined this challenge instance');
           return false; // Already joined this instance
         }
         // If status is not 'active' (e.g., 'left', 'failed'), allow them to rejoin
@@ -565,14 +556,8 @@ class ChallengesService {
       // This function just creates the participant record - payment happens in the UI
       let stripePaymentIntentId: string | null = null;
 
-      if (entryFee > 0) {
-        console.log(`💰 [joinChallenge] Challenge requires payment: £${entryFee}`);
-        console.log(`💡 [joinChallenge] Payment will be processed via Stripe Connect escrow`);
-        // Note: Payment Intent creation and payment happens in the UI (ChallengeDetailScreen)
-        // This function is called after payment succeeds
-      }
-
-      console.log(`📝 [joinChallenge] Creating participant record...`);
+      // Note: Payment Intent creation and payment happens in the UI (ChallengeDetailScreen)
+      // This function is called after payment succeeds
       const { data: participant, error } = await supabase
         .from('challenge_participants')
         .insert({
@@ -587,7 +572,6 @@ class ChallengesService {
         .single();
 
       if (error) {
-        console.error('❌ [joinChallenge] Error creating participant record:', error);
         throw error;
       }
 
@@ -595,14 +579,13 @@ class ChallengesService {
       if (entryFee > 0) {
         try {
           await challengePotService.addInvestment(challengeId, userId, entryFee);
-          console.log(`✅ [joinChallenge] Investment tracked in challenge pot (funds in Stripe escrow)`);
         } catch (potError) {
-          console.error(`❌ [joinChallenge] Error updating pot (non-critical):`, potError);
           // Non-critical error, continue
+          if (__DEV__) {
+            console.error('Error updating pot (non-critical):', potError);
+          }
         }
       }
-
-      console.log(`✅ [joinChallenge] Successfully joined challenge ${challengeId}`);
 
       // Invalidate challenge cache
       apiCache.delete(apiCache.generateKey('challenges', 'all'));
@@ -671,7 +654,6 @@ class ChallengesService {
           // Refund to wallet logic:
           // Regardless of original payment method (wallet or card), we refund to the user's App Wallet.
           // The funds remain in our Stripe Platform Account (escrow), but the user gets credit in our DB.
-          console.log(`💰 [leaveChallenge] Refunding to wallet: £${entryFee}`);
           
           // 1. Credit the user's wallet in DB
           await walletService.refundChallengePayment(userId, entryFee, challengeId);
@@ -679,18 +661,18 @@ class ChallengesService {
           // 2. Remove the investment from the challenge pot
           await challengePotService.removeInvestment(challengeId, userId, entryFee);
           
-          console.log('✅ Refunded challenge payment to wallet:', { 
-            userId, 
-            challengeId, 
-            entryFee
-          });
+          if (__DEV__) {
+            console.log('Refunded challenge payment to wallet');
+          }
           
           // Note: We do NOT call stripeService.refundChallengePayment() anymore.
           // That would trigger a refund to the card. We want to keep funds in the system (wallet).
           
         } catch (refundError) {
-          console.error('❌ Error refunding challenge payment:', refundError);
-          // Continue with leaving even if refund fails (log the error)
+          // Continue with leaving even if refund fails
+          if (__DEV__) {
+            console.error('Error refunding challenge payment:', refundError);
+          }
         }
       }
 
@@ -702,7 +684,6 @@ class ChallengesService {
         .eq('user_id', userId);
 
       if (error) {
-        console.error('Error leaving challenge:', error);
         throw error;
       }
 
@@ -711,7 +692,6 @@ class ChallengesService {
       apiCache.delete(apiCache.generateKey('challenges', 'active'));
       apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
 
-      console.log('✅ User left challenge:', { userId, challengeId, refunded: entryFee > 0 });
       return true;
     } catch (error) {
       console.error('Error in leaveChallenge:', error);
@@ -723,6 +703,8 @@ class ChallengesService {
    * Get user's active challenges (including completed ones that are still within challenge period)
    */
   async getUserChallenges(userId: string): Promise<Challenge[]> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const { data, error } = await supabase
         .from('challenge_participants')
@@ -1061,11 +1043,8 @@ class ChallengesService {
         .single();
 
       if (!challenge) {
-        console.log(`🔍 [isUserParticipating] Challenge not found: ${challengeId}`);
         return false;
       }
-
-      console.log(`🔍 [isUserParticipating] Checking participation for "${challenge.title}" (ID: ${challengeId}, is_recurring: ${challenge.is_recurring})`);
 
       // Always check THIS SPECIFIC challenge instance, not other instances
       // This ensures that if a user leaves a challenge, they're no longer shown as "joined"
@@ -1079,26 +1058,23 @@ class ChallengesService {
       if (error) {
         // If no record found, user is not participating (they may have left or never joined)
         if (error.code === 'PGRST116') {
-          console.log(`❌ [isUserParticipating] User is NOT participating in challenge "${challenge.title}" (ID: ${challengeId}) - no record found`);
           return false;
         }
-        console.error('❌ [isUserParticipating] Error checking participation:', error);
-          return false;
+        if (__DEV__) {
+          console.error('Error checking participation:', error);
         }
+        return false;
+      }
 
       // Return true if participation exists AND status is 'active' or 'completed'
       // Status can be 'active', 'completed', 'failed', or 'left' - we want 'active' and 'completed'
       const isParticipating = !!participation && (participation.status === 'active' || participation.status === 'completed');
-      
-      if (isParticipating) {
-        console.log(`✅ [isUserParticipating] User IS participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation.status}`);
-      } else {
-        console.log(`❌ [isUserParticipating] User is NOT participating in "${challenge.title}" (ID: ${challengeId}) - status: ${participation?.status || 'not found'}`);
-      }
 
       return isParticipating;
     } catch (error) {
-      console.error('❌ [isUserParticipating] Error:', error);
+      if (__DEV__) {
+        console.error('Error in isUserParticipating:', error);
+      }
       return false;
     }
   }
@@ -1418,7 +1394,6 @@ class ChallengesService {
         }
       }
 
-      console.log(`✅ Created daily recurring challenge instance: ${newChallenge.title} for ${startDate.toISOString()}`);
     } catch (error) {
       console.error('Error in createDailyRecurringInstance:', error);
     }
@@ -1508,7 +1483,6 @@ class ChallengesService {
     try {
       console.log('Redistributing pot for challenge:', challengeId);
       await challengePotService.distributePot(challengeId);
-      console.log('✅ Pot redistribution complete for challenge:', challengeId);
     } catch (error) {
       console.error('Error redistributing pot:', error);
       throw error;
@@ -1697,6 +1671,8 @@ class ChallengesService {
    * Get challenges created by user
    */
   async getUserCreatedChallenges(userId: string): Promise<Challenge[]> {
+    // Validate user ID matches authenticated user
+    await this.validateUserId(userId);
     try {
       const { data, error } = await supabase
         .from('challenges')
@@ -1883,7 +1859,6 @@ class ChallengesService {
         return;
       }
 
-      console.log(`🔍 Found ${endedChallenges.length} challenge(s) that need review`);
 
       let successCount = 0;
       // Update each challenge to pending review
@@ -1898,7 +1873,6 @@ class ChallengesService {
       }
 
       if (successCount > 0) {
-        console.log(`✅ Updated ${successCount} challenge(s) to pending review`);
       }
     } catch (error) {
       console.error('Error in checkAndUpdateEndedChallenges:', error);

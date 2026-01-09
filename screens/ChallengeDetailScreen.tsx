@@ -129,14 +129,11 @@ export default function ChallengeDetailScreen({ route }: any) {
 
       // For challenges with entry fee, check wallet balance first
       if (entryFee > 0) {
-        console.log(`💰 [ChallengeDetailScreen] Checking wallet balance for challenge payment: £${entryFee}`);
-        
         // Check if user has sufficient wallet balance
         const hasSufficientBalance = walletBalance >= entryFee;
         
         if (hasSufficientBalance) {
           // User has enough in wallet - use wallet funds
-          console.log(`✅ [ChallengeDetailScreen] Sufficient wallet balance, using wallet funds`);
           
           // Step 1: Initiate join with wallet (Transfers from wallet to Stripe Escrow)
           // The service handles the wallet deduction and Stripe Payment Intent creation
@@ -181,9 +178,6 @@ export default function ChallengeDetailScreen({ route }: any) {
                     const { paymentIntentId, clientSecret, entryFee: fee, stripeFee, totalAmount } = 
                       await challengesService.initiateChallengeJoin(challenge.id, user.id);
                     
-                    console.log(`✅ [ChallengeDetailScreen] Payment Intent created: ${paymentIntentId}`);
-                    console.log(`💰 [ChallengeDetailScreen] Total amount: £${totalAmount.toFixed(2)} (Entry: £${fee.toFixed(2)} + Fee: £${stripeFee.toFixed(2)})`);
-                    
                     // Step 2: Initialize Stripe Payment Sheet
                     const { error: initError } = await initPaymentSheet({
                       merchantDisplayName: 'NutrApp',
@@ -196,7 +190,6 @@ export default function ChallengeDetailScreen({ route }: any) {
                     });
 
                     if (initError) {
-                      console.error('❌ [ChallengeDetailScreen] Error initializing payment sheet:', initError);
                       throw new Error(initError.message);
                     }
 
@@ -205,15 +198,12 @@ export default function ChallengeDetailScreen({ route }: any) {
 
                     if (presentError) {
                       if (presentError.code === 'Canceled') {
-                        console.log('ℹ️ [ChallengeDetailScreen] Payment canceled by user');
-      return;
-    }
-                      console.error('❌ [ChallengeDetailScreen] Error presenting payment sheet:', presentError);
+                        return;
+                      }
                       throw new Error(presentError.message);
                     }
 
                     // Step 4: Payment succeeded - complete the join
-                    console.log(`✅ [ChallengeDetailScreen] Payment succeeded, completing join...`);
                     await challengesService.completeChallengeJoin(
                       challenge.id,
                       user.id,
@@ -718,7 +708,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                 <View style={styles.metaItem}>
                   <Ionicons name="people-outline" size={16} color={theme.textSecondary} />
                   <Text style={[styles.metaText, { color: theme.textSecondary }]}>
-                    {challenge.participant_count} participants
+                    {challenge.participant_count || 0} participants
                   </Text>
                 </View>
               </View>
@@ -805,7 +795,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                     </TouchableOpacity>
                   );
                 }
-                return null;
+                return <View />;
               })()}
             </View>
           </View>
@@ -940,7 +930,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                         {participant.user?.display_name || participant.user?.username || 'Anonymous'}
                       </Text>
                       <Text style={[styles.participantStatus, { color: theme.textSecondary }]}>
-                        {participant.completion_percentage}% complete
+                        {participant.completion_percentage || 0}% complete
                       </Text>
                     </View>
                     {participant.status === 'completed' && (

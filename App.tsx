@@ -216,24 +216,6 @@ function ProfileStack() {
             gestureDirection: 'horizontal'
           }}
         />
-        <Stack.Screen 
-          name="DM" 
-          component={DMScreen as any}
-          options={{
-            animation: 'slide_from_right',
-            gestureEnabled: true,
-            gestureDirection: 'horizontal'
-          }}
-        />
-        <Stack.Screen 
-          name="ChatWindow" 
-          component={ChatWindowScreen as any}
-          options={{
-            animation: 'slide_from_right',
-            gestureEnabled: true,
-            gestureDirection: 'horizontal'
-          }}
-        />
         {/* <Stack.Screen name="Test" component={TestScreen as any} /> */}
         <Stack.Screen 
           name="GoalDetail" 
@@ -368,6 +350,24 @@ function AppStack() {
       <Stack.Screen 
         name="Notifications" 
         component={NotificationsScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="DM" 
+        component={DMScreen as any}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen 
+        name="ChatWindow" 
+        component={ChatWindowScreen as any}
         options={{
           animation: 'slide_from_right',
           gestureEnabled: true,

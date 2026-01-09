@@ -660,12 +660,13 @@ class HabitInviteService {
   /**
    * Get the last nudge time for a partnership
    */
-  async getLastNudgeTime(partnershipId: string): Promise<Date | null> {
+  async getLastNudgeTime(partnershipId: string, userId: string): Promise<Date | null> {
     try {
       const { data, error } = await supabase
         .from('habit_nudges')
         .select('nudged_at')
         .eq('partnership_id', partnershipId)
+        .eq('nudger_id', userId) // Only get nudges sent by this user
         .order('nudged_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -683,9 +684,9 @@ class HabitInviteService {
   }
 
   /**
-   * Get last nudge times for multiple partnerships
+   * Get last nudge times for multiple partnerships (only nudges sent by the current user)
    */
-  async getLastNudgeTimes(partnershipIds: string[]): Promise<Record<string, Date>> {
+  async getLastNudgeTimes(partnershipIds: string[], userId: string): Promise<Record<string, Date>> {
     try {
       if (partnershipIds.length === 0) return {};
 
@@ -693,6 +694,7 @@ class HabitInviteService {
         .from('habit_nudges')
         .select('partnership_id, nudged_at')
         .in('partnership_id', partnershipIds)
+        .eq('nudger_id', userId) // Only get nudges sent by this user
         .order('nudged_at', { ascending: false });
 
       if (error) {
@@ -700,7 +702,7 @@ class HabitInviteService {
         return {};
       }
 
-      // Get the most recent nudge for each partnership
+      // Get the most recent nudge for each partnership (sent by this user)
       const nudgeTimes: Record<string, Date> = {};
       data?.forEach((nudge) => {
         if (!nudgeTimes[nudge.partnership_id]) {
@@ -716,9 +718,9 @@ class HabitInviteService {
   }
 
   /**
-   * Check if a nudge can be sent (3-hour cooldown)
+   * Check if a nudge can be sent (3-hour cooldown per user)
    */
-  async canSendNudge(partnershipId: string): Promise<boolean> {
+  async canSendNudge(partnershipId: string, userId: string): Promise<boolean> {
     try {
       const threeHoursAgo = new Date();
       threeHoursAgo.setHours(threeHoursAgo.getHours() - 3);
@@ -727,6 +729,7 @@ class HabitInviteService {
         .from('habit_nudges')
         .select('nudged_at')
         .eq('partnership_id', partnershipId)
+        .eq('nudger_id', userId) // Only check nudges sent by this user
         .gte('nudged_at', threeHoursAgo.toISOString())
         .order('nudged_at', { ascending: false })
         .limit(1)
@@ -737,7 +740,7 @@ class HabitInviteService {
         return true; // Allow nudge if there's an error checking
       }
 
-      // If there's a recent nudge, can't send another
+      // If this user has sent a recent nudge, can't send another
       return !data;
     } catch (error) {
       console.error('Error checking nudge cooldown:', error);
@@ -755,8 +758,8 @@ class HabitInviteService {
     habitTitle: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Check if nudge is allowed (3-hour cooldown)
-      const canNudge = await this.canSendNudge(partnershipId);
+      // Check if nudge is allowed (3-hour cooldown per user)
+      const canNudge = await this.canSendNudge(partnershipId, nudgerId);
       if (!canNudge) {
         return {
           success: false,

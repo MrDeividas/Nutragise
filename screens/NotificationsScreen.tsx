@@ -69,7 +69,34 @@ export default function NotificationsScreen() {
       }
       
       // Transform other notifications into the expected format
-      const transformedNotifications = otherNotifications.map((notification: Notification) => {
+      // Filter out notifications where the user profile doesn't exist (deleted users)
+      // Also filter out notifications that have no from_user_id (orphaned notifications)
+      const transformedNotifications = otherNotifications
+        .filter((notification: Notification) => {
+          // Only keep notifications that have a from_user_id AND a valid user profile
+          // Filter out orphaned notifications (no from_user_id) and deleted users (from_user_id but no profile)
+          if (!notification.from_user_id) {
+            // Log for debugging
+            console.log('Filtering out notification with no from_user_id:', {
+              id: notification.id,
+              type: notification.notification_type,
+              created_at: notification.created_at
+            });
+            return false;
+          }
+          if (!notification.from_user) {
+            // Log for debugging
+            console.log('Filtering out notification with missing user profile:', {
+              id: notification.id,
+              type: notification.notification_type,
+              from_user_id: notification.from_user_id,
+              created_at: notification.created_at
+            });
+            return false;
+          }
+          return true;
+        })
+        .map((notification: Notification) => {
         let message = '';
         let type = notification.notification_type;
         let inviteStatus = null;
@@ -124,7 +151,7 @@ export default function NotificationsScreen() {
         return {
           id: notification.id,
           type: type,
-          name: notification.from_user?.display_name || notification.from_user?.username || 'Unknown User',
+          name: notification.from_user?.display_name || notification.from_user?.username || 'Unknown',
           avatar: notification.from_user?.avatar_url || null,
           message: message,
           time: getTimeAgo(notification.created_at),

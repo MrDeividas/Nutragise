@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TouchableWithoutFeedback, Alert, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../state/authStore';
 import { stripeService } from '../lib/stripeService';
+import { supabase } from '../lib/supabase';
 
 interface Props {
   visible: boolean;
@@ -35,6 +37,7 @@ const proFeatures = [
 export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props) {
   const { user } = useAuthStore();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
 
   const handleUpgrade = async () => {
@@ -99,13 +102,85 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
       // 4. Payment successful!
       console.log('✅ Subscription payment successful:', subscriptionId);
       
-      // Close modal and show success
-      onClose();
-      Alert.alert(
-        'Welcome to Pro! 🎉',
-        'Your subscription is being activated. You\'ll have Pro access shortly!',
-        [{ text: 'OK' }]
-      );
+      // 5. Sync subscription status from Stripe (fallback if webhook hasn't fired yet)
+      try {
+        console.log('🔄 Syncing subscription status...');
+        const syncResult = await stripeService.syncSubscriptionStatus(user.id);
+        console.log('✅ Subscription sync result:', syncResult);
+        
+        if (syncResult.isPro) {
+          // Pro status confirmed - refresh profile immediately
+          console.log('🔄 Refreshing profile data after Pro upgrade...');
+          
+          // Clear caches to force fresh data
+          try {
+            const { apiCache } = await import('../lib/apiCache');
+            apiCache.clear();
+            console.log('✅ Cache cleared');
+          } catch (cacheError) {
+            console.error('⚠️ Error clearing cache:', cacheError);
+          }
+          
+          // Verify database was updated
+          if (user?.id) {
+            try {
+              const { data: verifyProfile, error: verifyError } = await supabase
+                .from('profiles')
+                .select('is_pro')
+                .eq('id', user.id)
+                .single();
+              
+              if (!verifyError && verifyProfile) {
+                console.log('✅ Verified database update, is_pro:', verifyProfile.is_pro);
+              }
+            } catch (verifyErr) {
+              console.error('⚠️ Error verifying profile:', verifyErr);
+            }
+          }
+          
+          // Call onUpgrade callback immediately to refresh screens
+          if (onUpgrade) {
+            console.log('🔄 Calling onUpgrade callback...');
+            await onUpgrade();
+          }
+          
+          // Close modal and show success
+          onClose();
+          
+          // Small delay to ensure state updates propagate
+          setTimeout(() => {
+            Alert.alert(
+              'Welcome to Pro! 🎉',
+              'Your Pro subscription is now active!',
+              [{ 
+                text: 'OK',
+                onPress: () => {
+                  // Force navigation refresh if possible
+                  if (navigation) {
+                    // Try to refresh current screen
+                    (navigation as any).dispatch((navigation as any).getState());
+                  }
+                }
+              }]
+            );
+          }, 100);
+        } else {
+          // Payment succeeded but subscription not active yet (webhook pending)
+          Alert.alert(
+            'Payment Successful! ⏳',
+            'Your payment was processed. Pro access will be activated shortly. If it doesn\'t appear in a few minutes, please refresh the app.',
+            [{ text: 'OK', onPress: onClose }]
+          );
+        }
+      } catch (syncError: any) {
+        console.error('⚠️ Error syncing subscription (non-critical):', syncError);
+        // Non-critical - webhook will handle it
+        Alert.alert(
+          'Payment Successful! ⏳',
+          'Your payment was processed. Pro access will be activated shortly. If it doesn\'t appear in a few minutes, please refresh the app.',
+          [{ text: 'OK', onPress: onClose }]
+        );
+      }
     } catch (error: any) {
       console.error('Error creating subscription:', error);
       Alert.alert(
