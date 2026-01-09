@@ -1,11 +1,15 @@
 // @ts-nocheck - Deno runtime (Supabase Edge Functions)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
   apiVersion: "2023-10-16",
   httpClient: Stripe.createFetchHttpClient(),
 })
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
+const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || ""
 
 serve(async (req: Request) => {
   // Handle CORS
@@ -35,12 +39,68 @@ serve(async (req: Request) => {
     )
   }
 
-  try {
-    const { amount, userId, currency = "gbp", includeStripeFee = true } = await req.json()
+  // Validate JWT authentication
+  const authHeader = req.headers.get("Authorization")
+  if (!authHeader) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Missing authorization header" }),
+      {
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        status: 401,
+      }
+    )
+  }
 
-    if (!amount || !userId) {
+  // Extract token from "Bearer <token>"
+  const token = authHeader.replace("Bearer ", "")
+  if (!token) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Invalid authorization header" }),
+      {
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        status: 401,
+      }
+    )
+  }
+
+  // Validate token and get authenticated user
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: { Authorization: authHeader },
+    },
+  })
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+  if (authError || !user) {
+    console.error("Authentication error:", authError)
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Invalid or expired token" }),
+      {
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        status: 401,
+      }
+    )
+  }
+
+  // Use authenticated user ID (don't trust userId from request body)
+  const authenticatedUserId = user.id
+
+  try {
+    const { amount, currency = "gbp", includeStripeFee = true } = await req.json()
+
+    if (!amount) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: amount and userId" }),
+        JSON.stringify({ error: "Missing required field: amount" }),
         {
           headers: { 
             "Content-Type": "application/json",
@@ -88,7 +148,7 @@ serve(async (req: Request) => {
       amount: amountInPence,
       currency: currency.toLowerCase(),
       metadata: {
-        userId,
+        userId: authenticatedUserId, // Use authenticated user ID, not from request
         purpose: "wallet_deposit",
         originalAmount: (amount * 100).toString(), // Original amount in pence (before fee)
         stripeFee: (stripeFee * 100).toString(), // Stripe fee in pence
@@ -101,7 +161,7 @@ serve(async (req: Request) => {
       originalAmount: amount,
       stripeFee: stripeFee,
       totalAmount: finalAmount,
-      userId,
+      userId: authenticatedUserId,
     })
 
     return new Response(
@@ -123,10 +183,10 @@ serve(async (req: Request) => {
   } catch (error: any) {
     console.error("Error creating payment intent:", error)
     const errorMessage = error.message || error.toString() || "Failed to create payment intent"
+    // Don't expose stack traces in production
     return new Response(
       JSON.stringify({ 
-        error: errorMessage,
-        details: error.stack || "No additional details"
+        error: errorMessage
       }),
       {
         headers: { 

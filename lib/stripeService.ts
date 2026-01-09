@@ -86,18 +86,24 @@ class StripeService {
     try {
       console.log('Creating payment intent:', { amount, userId });
 
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+      // Get user's JWT token for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
 
-      // Call Supabase Edge Function
+      const { url: supabaseUrl } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function with user's JWT token
       const response = await fetch(`${supabaseUrl}/functions/v1/create-payment-intent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`, // Use user's JWT token, not anon key
         },
         body: JSON.stringify({
           amount,
-          userId,
+          // userId removed - edge function will get it from JWT token
           currency: 'gbp',
           includeStripeFee: true, // User pays Stripe fee
         }),
@@ -118,7 +124,7 @@ class StripeService {
       };
     } catch (error) {
       console.error('Error creating payment intent:', error);
-      throw new Error('Failed to create payment intent');
+      throw error instanceof Error ? error : new Error('Failed to create payment intent');
     }
   }
 
@@ -156,18 +162,24 @@ class StripeService {
     try {
       console.log('Creating challenge payment intent:', { amount, userId, challengeId });
 
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+      // Get user's JWT token for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
 
-      // Call Supabase Edge Function
+      const { url: supabaseUrl } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function with user's JWT token
       const response = await fetch(`${supabaseUrl}/functions/v1/create-challenge-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`, // Use user's JWT token, not anon key
         },
         body: JSON.stringify({
           amount,
-          userId,
+          // userId removed - edge function will get it from JWT token
           challengeId,
           currency: 'gbp',
           paidFromWallet: false,
@@ -189,7 +201,7 @@ class StripeService {
       };
     } catch (error) {
       console.error('Error creating challenge payment intent:', error);
-      throw new Error('Failed to create challenge payment intent');
+      throw error instanceof Error ? error : new Error('Failed to create challenge payment intent');
     }
   }
 
@@ -251,7 +263,13 @@ class StripeService {
     try {
       console.log('Creating challenge payment intent (wallet):', { amount, userId, challengeId });
 
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+      // Get user's JWT token for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
+
+      const { url: supabaseUrl } = this.getSupabaseConfig();
 
       // Call Supabase Edge Function with paidFromWallet flag
       // No Stripe fee for wallet payments
@@ -259,11 +277,11 @@ class StripeService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`, // Use user's JWT token, not anon key
         },
         body: JSON.stringify({
           amount,
-          userId,
+          // userId removed - edge function will get it from JWT token
           challengeId,
           currency: 'gbp',
           paidFromWallet: true,
@@ -578,17 +596,23 @@ class StripeService {
     try {
       console.log('Creating Pro subscription with Payment Sheet:', { userId, userEmail });
 
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+      // Get user's JWT token for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
 
-      // Call Supabase Edge Function
+      const { url: supabaseUrl } = this.getSupabaseConfig();
+
+      // Call Supabase Edge Function with user's JWT token
       const response = await fetch(`${supabaseUrl}/functions/v1/create-subscription-payment-sheet`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`, // Use user's JWT token, not anon key
         },
         body: JSON.stringify({
-          userId,
+          // userId removed - edge function will get it from JWT token
           userEmail,
           userName,
         }),
@@ -608,6 +632,42 @@ class StripeService {
     } catch (error: any) {
       console.error('Error creating subscription payment sheet:', error);
       throw new Error(error.message || 'Failed to create subscription payment sheet');
+    }
+  }
+
+  /**
+   * Sync subscription status from Stripe to database
+   * Useful when webhook fails or payment succeeds but status isn't updated
+   */
+  async syncSubscriptionStatus(userId: string): Promise<{
+    hasSubscription: boolean;
+    isPro: boolean;
+    status?: string;
+    subscriptionId?: string;
+    periodEnd?: string;
+    synced: boolean;
+  }> {
+    try {
+      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/sync-subscription-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to sync subscription status');
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      console.error('Error syncing subscription status:', error);
+      throw new Error(error.message || 'Failed to sync subscription status');
     }
   }
 

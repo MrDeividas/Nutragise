@@ -11,6 +11,7 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || ""
 const proPriceId = Deno.env.get("STRIPE_PRO_PRICE_ID") || ""
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -48,12 +49,59 @@ serve(async (req: Request) => {
     )
   }
 
-  try {
-    const { userId, userEmail, userName } = await req.json()
+  // Validate JWT authentication
+  const authHeader = req.headers.get("Authorization")
+  if (!authHeader) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Missing authorization header" }),
+      {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        status: 401,
+      }
+    )
+  }
 
-    if (!userId || !userEmail) {
+  // Extract token from "Bearer <token>"
+  const token = authHeader.replace("Bearer ", "")
+  if (!token) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Invalid authorization header" }),
+      {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        status: 401,
+      }
+    )
+  }
+
+  // Validate token and get authenticated user
+  const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: { Authorization: authHeader },
+    },
+  })
+
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
+
+  if (authError || !user) {
+    console.error("Authentication error:", authError)
+    return new Response(
+      JSON.stringify({ error: "Unauthorized: Invalid or expired token" }),
+      {
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        status: 401,
+      }
+    )
+  }
+
+  // Use authenticated user ID (don't trust userId from request body)
+  const authenticatedUserId = user.id
+
+  try {
+    const { userEmail, userName } = await req.json()
+
+    if (!userEmail) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: userId and userEmail" }),
+        JSON.stringify({ error: "Missing required field: userEmail" }),
         {
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           status: 400,
@@ -65,7 +113,7 @@ serve(async (req: Request) => {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("stripe_customer_id, stripe_subscription_id, subscription_status")
-      .eq("id", userId)
+      .eq("id", authenticatedUserId)
       .single()
 
     if (profileError) {
@@ -91,28 +139,39 @@ serve(async (req: Request) => {
 
     // Create Stripe customer if doesn't exist
     if (!customerId) {
-      console.log("Creating new Stripe customer for user:", userId)
+      console.log("Creating new Stripe customer for user:", authenticatedUserId)
       const customer = await stripe.customers.create({
         email: userEmail,
         name: userName || userEmail.split("@")[0],
         metadata: {
-          userId: userId,
+          userId: authenticatedUserId,
         },
       })
       customerId = customer.id
 
-      // Save customer ID to database
+      // Save customer ID to database - CRITICAL for webhook to work
       const { error: updateError } = await supabase
         .from("profiles")
         .update({ stripe_customer_id: customerId })
-        .eq("id", userId)
+        .eq("id", authenticatedUserId)
 
       if (updateError) {
-        console.error("Error updating profile with customer ID:", updateError)
-        // Continue anyway - we can fix this later
+        console.error("❌ CRITICAL: Error updating profile with customer ID:", updateError)
+        // Retry once more
+        const { error: retryError } = await supabase
+          .from("profiles")
+          .update({ stripe_customer_id: customerId })
+          .eq("id", authenticatedUserId)
+        
+        if (retryError) {
+          console.error("❌ CRITICAL: Retry also failed:", retryError)
+          // Still continue - webhook can use metadata fallback
+        } else {
+          console.log("✅ Customer ID saved on retry")
+        }
+      } else {
+        console.log("✅ Created Stripe customer and saved customer ID:", customerId)
       }
-
-      console.log("✅ Created Stripe customer:", customerId)
     }
 
     // Verify the price exists
@@ -148,7 +207,7 @@ serve(async (req: Request) => {
       },
       expand: ["latest_invoice.payment_intent"],
       metadata: {
-        userId: userId,
+        userId: authenticatedUserId,
       },
     })
 
