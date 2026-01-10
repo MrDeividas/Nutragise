@@ -31,7 +31,7 @@ import CheckInList from '../components/CheckInList';
 import DateNavigator from '../components/DateNavigator';
 import { DEFAULT_HABITS, AVAILABLE_HABITS } from '../components/DailyHabitsSummary';
 import EditHabitsModal from '../components/EditHabitsModal';
-
+import HabitListItem from '../components/HabitListItem';
 import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
 import CreatePostModal from '../components/CreatePostModal';
@@ -527,6 +527,68 @@ const AnimatedHabitCard = ({
         </View>
       </TouchableOpacity>
     </Reanimated.View>
+  );
+};
+
+// Wrapper component for custom habit list items to handle progress animation
+const CustomHabitListItemWrapper = ({
+  card,
+  isCompleted,
+  partnership,
+  pendingInvite,
+  partnerStatus,
+  onPress,
+  onLongPress,
+  onInvite,
+  onNudge,
+  onRemovePartner,
+  onCancelInvite,
+  lastNudgeTime,
+  progressFillColor,
+  progressTrackColor,
+  theme,
+  styles
+}: any) => {
+  const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
+
+  useEffect(() => {
+    Animated.timing(progressAnimated, {
+      toValue: card.progress ?? 0,
+      duration: 450,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [card.progress, progressAnimated]);
+
+  const progressWidth = progressAnimated.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <HabitListItem
+      card={card}
+      cardState={null}
+      isCompleted={isCompleted}
+      partnership={partnership}
+      pendingInvite={pendingInvite}
+      partnerStatus={partnerStatus}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onInvite={onInvite}
+      onRemovePartner={onRemovePartner}
+      onCancelInvite={onCancelInvite}
+      onNudge={onNudge}
+      lastNudgeTime={lastNudgeTime}
+      showPendingIndicator={false}
+      progressWidth={progressWidth}
+      progressFillColor={progressFillColor}
+      progressTrackColor={progressTrackColor}
+      theme={theme}
+      styles={styles}
+      backgroundColor="#FFFFFF"
+      isDark={false}
+    />
   );
 };
 
@@ -1201,6 +1263,7 @@ function ActionScreen() {
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [reorderTab, setReorderTab] = useState<'core' | 'custom'>('core');
+  const [habitViewMode, setHabitViewMode] = useState<'carousel' | 'list'>('carousel');
   const [reorderableCustomHabits, setReorderableCustomHabits] = useState<CustomHabit[]>([]);
   const [customHabitOrder, setCustomHabitOrder] = useState<string[]>([]);
   const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
@@ -4942,25 +5005,107 @@ function ActionScreen() {
             <TouchableOpacity onPress={() => setShowReorderHabitsModal(true)} accessibilityRole="button">
               <Ionicons name="swap-vertical" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => setHabitViewMode(prev => prev === 'carousel' ? 'list' : 'carousel')} 
+              accessibilityRole="button"
+            >
+              <Ionicons 
+                name={habitViewMode === 'carousel' ? 'list-outline' : 'grid-outline'} 
+                size={20} 
+                color={theme.textPrimary} 
+              />
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* Habit Spotlight Cards */}
-        <View style={styles.highlightCarouselContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={spotlightCardWidth + 10}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            contentContainerStyle={styles.highlightCarouselContent}
-          >
+        {habitViewMode === 'carousel' ? (
+          <View style={styles.highlightCarouselContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={spotlightCardWidth + 10}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              contentContainerStyle={styles.highlightCarouselContent}
+            >
+              {habitSpotlightCards.map((card, index) => {
+                const cardState = habitCardState[card.key];
+                // Check both cardState and completedHabits to determine if card is completed
+                const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
+                const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
+                // Show 5% if not completed (so user can see the color), otherwise use baseProgress
+                const displayProgress = isCompletedCard ? baseProgress : 0.05;
+                const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(displayProgress);
+                const progressWidth = progressAnimatedValue.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0%', '100%'],
+                });
+                const cardBackgroundColor = isDark ? '#1f1f1f' : '#111827';
+                const progressTrackColor = 'rgba(255, 255, 255, 0.15)';
+                // Keep original accent color even when completed
+                const progressFillColor = card.accent;
+                const subtitleColor = 'rgba(255, 255, 255, 0.65)';
+
+                const showPendingIndicator = pendingDataHabits.has(card.habitId);
+                    
+                    return (
+                  <AnimatedHabitCard
+                    key={card.key}
+                    card={card}
+                    index={index}
+                    totalCards={habitSpotlightCards.length}
+                    spotlightCardWidth={spotlightCardWidth}
+                    cardState={cardState}
+                    isDark={isDark}
+                    cardBackgroundColor={cardBackgroundColor}
+                    progressTrackColor={progressTrackColor}
+                    progressFillColor={progressFillColor}
+                    subtitleColor={subtitleColor}
+                    showPendingIndicator={showPendingIndicator}
+                    progressWidth={progressWidth}
+                    handleHabitPress={handleHabitPress}
+                    handleHabitLongPress={handleHabitLongPress}
+                    cardAnimations={cardAnimations}
+                    partnership={activePartnerships[`core_${card.key}`]}
+                    pendingInvite={pendingInvites[`core_${card.key}`]}
+                    partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
+                    onInvite={() => handleInvitePress('core', card.key, card.title)}
+                    onRemovePartner={() => {
+                      const partnership = activePartnerships[`core_${card.key}`];
+                      if (partnership) {
+                        handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                      }
+                    }}
+                    onCancelInvite={() => {
+                      const invite = pendingInvites[`core_${card.key}`];
+                      if (invite) {
+                        handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                      }
+                    }}
+                    onNudge={async () => {
+                      const partnership = activePartnerships[`core_${card.key}`];
+                      if (partnership) {
+                        return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                      }
+                      return null;
+                    }}
+                    lastNudgeTime={(() => {
+                      const partnership = activePartnerships[`core_${card.key}`];
+                      return partnership ? lastNudgeTimes[partnership.id] || null : null;
+                    })()}
+                    styles={styles}
+                  />
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : (
+          <View style={styles.habitListContainer}>
             {habitSpotlightCards.map((card, index) => {
               const cardState = habitCardState[card.key];
-              // Check both cardState and completedHabits to determine if card is completed
               const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
               const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
-              // Show 5% if not completed (so user can see the color), otherwise use baseProgress
               const displayProgress = isCompletedCard ? baseProgress : 0.05;
               const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(displayProgress);
               const progressWidth = progressAnimatedValue.interpolate({
@@ -4969,33 +5114,20 @@ function ActionScreen() {
               });
               const cardBackgroundColor = isDark ? '#1f1f1f' : '#111827';
               const progressTrackColor = 'rgba(255, 255, 255, 0.15)';
-              // Keep original accent color even when completed
               const progressFillColor = card.accent;
-              const subtitleColor = 'rgba(255, 255, 255, 0.65)';
-
               const showPendingIndicator = pendingDataHabits.has(card.habitId);
-                  
-                  return (
-                <AnimatedHabitCard
+
+              return (
+                <HabitListItem
                   key={card.key}
                   card={card}
-                  index={index}
-                  totalCards={habitSpotlightCards.length}
-                  spotlightCardWidth={spotlightCardWidth}
                   cardState={cardState}
-                  isDark={isDark}
-                  cardBackgroundColor={cardBackgroundColor}
-                  progressTrackColor={progressTrackColor}
-                  progressFillColor={progressFillColor}
-                  subtitleColor={subtitleColor}
-                  showPendingIndicator={showPendingIndicator}
-                  progressWidth={progressWidth}
-                  handleHabitPress={handleHabitPress}
-                  handleHabitLongPress={handleHabitLongPress}
-                  cardAnimations={cardAnimations}
+                  isCompleted={isCompletedCard}
                   partnership={activePartnerships[`core_${card.key}`]}
                   pendingInvite={pendingInvites[`core_${card.key}`]}
                   partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
+                  onPress={() => handleHabitPress(card.habitId)}
+                  onLongPress={() => handleHabitLongPress(card.habitId)}
                   onInvite={() => handleInvitePress('core', card.key, card.title)}
                   onRemovePartner={() => {
                     const partnership = activePartnerships[`core_${card.key}`];
@@ -5020,82 +5152,172 @@ function ActionScreen() {
                     const partnership = activePartnerships[`core_${card.key}`];
                     return partnership ? lastNudgeTimes[partnership.id] || null : null;
                   })()}
+                  showPendingIndicator={showPendingIndicator}
+                  progressWidth={progressWidth}
+                  progressFillColor={progressFillColor}
+                  progressTrackColor={progressTrackColor}
+                  theme={theme}
+                  styles={styles}
+                  backgroundColor={cardBackgroundColor}
+                  isDark={isDark}
+                />
+              );
+            })}
+          </View>
+        )}
+
+        {/* White Habit Cards */}
+        {habitViewMode === 'carousel' ? (
+          <View style={[styles.highlightCarouselContainer, { marginTop: 10 }]}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ overflow: 'visible' }}
+              snapToInterval={spotlightCardWidth + 10}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              contentContainerStyle={styles.highlightCarouselContent}
+            >
+              {whiteHabitCards.map((card, index) => {
+                const lookupKey = `custom_${card.habit?.id}`;
+                const partnershipId = activePartnerships[lookupKey]?.id;
+                const pendingId = pendingInvites[lookupKey]?.id;
+                
+                return (
+                <WhiteHabitCard
+                  key={`${card.key}-${partnershipId || 'no-partner'}-${pendingId || 'no-invite'}`}
+                  card={card}
+                  index={index}
+                  totalCards={whiteHabitCards.length}
+                  spotlightCardWidth={spotlightCardWidth}
+                  whiteCardShadowColor={whiteCardShadowColor}
+                  customHabitsLoading={customHabitsLoading}
+                  theme={theme}
+                  customHabitsDate={customHabitsDate}
+                  todayDate={todayDate}
+                  partnership={activePartnerships[lookupKey]}
+                  pendingInvite={pendingInvites[lookupKey]}
+                  partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
+                  onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
+                  onInfo={() => {
+                    setStatsHabit(card.habit || null);
+                    setShowCustomHabitStats(true);
+                  }}
+                  onRemovePartner={() => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    if (partnership) {
+                      handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                    }
+                  }}
+                  onCancelInvite={() => {
+                    const invite = pendingInvites[`custom_${card.habit?.id}`];
+                    if (invite) {
+                      handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                    }
+                  }}
+                  onNudge={async () => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    if (partnership) {
+                      return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                    }
+                    return null;
+                  }}
+                  lastNudgeTime={(() => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    return partnership ? lastNudgeTimes[partnership.id] || null : null;
+                  })()}
+                  toggleHabitCompletion={handleCustomHabitToggle}
+                  playCompletionSound={playCompletionSound}
+                  loadHabitForEditing={loadHabitForEditing}
+                  setShowCustomHabitModal={setShowCustomHabitModal}
+                  styles={styles}
+                />
+              );
+              })}
+            </ScrollView>
+          </View>
+        ) : (
+          <View style={[styles.habitListContainer, { marginTop: 10 }]}>
+            {whiteHabitCards.map((card, index) => {
+              const lookupKey = `custom_${card.habit?.id}`;
+              const isCreateCard = card.key === 'create_new_habit';
+              
+              // Skip create card in list view for now, or handle it specially
+              if (isCreateCard) {
+                return (
+                  <TouchableOpacity
+                    key={card.key}
+                    onPress={() => setShowCustomHabitModal(true)}
+                    style={[styles.habitListItem, { 
+                      backgroundColor: theme.cardBackground, 
+                      borderColor: theme.border,
+                      borderStyle: 'dashed',
+                      opacity: 0.7
+                    }]}
+                  >
+                    <View style={styles.habitListItemTopRow}>
+                      <View style={styles.habitListItemLeft}>
+                        <Text style={[styles.habitListItemTitle, { color: theme.textSecondary }]}>
+                          + Create New Habit
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle-outline" size={20} color={theme.textSecondary} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
+
+              const isCompleted = card.progress >= 1;
+              const progressTrackColor = 'rgba(0, 0, 0, 0.1)';
+              const progressFillColor = card.accent;
+
+              return (
+                <CustomHabitListItemWrapper
+                  key={`${card.key}-${activePartnerships[lookupKey]?.id || 'no-partner'}-${pendingInvites[lookupKey]?.id || 'no-invite'}`}
+                  card={card}
+                  isCompleted={isCompleted}
+                  partnership={activePartnerships[lookupKey]}
+                  pendingInvite={pendingInvites[lookupKey]}
+                  partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
+                  onPress={() => loadHabitForEditing(card.habit)}
+                  onLongPress={() => {
+                    if (card.habit) {
+                      handleCustomHabitToggle(card.habit.id, customHabitsDate || todayDate);
+                    }
+                  }}
+                  onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
+                  onRemovePartner={() => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    if (partnership) {
+                      handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                    }
+                  }}
+                  onCancelInvite={() => {
+                    const invite = pendingInvites[`custom_${card.habit?.id}`];
+                    if (invite) {
+                      handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                    }
+                  }}
+                  onNudge={async () => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    if (partnership) {
+                      return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                    }
+                    return null;
+                  }}
+                  lastNudgeTime={(() => {
+                    const partnership = activePartnerships[`custom_${card.habit?.id}`];
+                    return partnership ? lastNudgeTimes[partnership.id] || null : null;
+                  })()}
+                  progressFillColor={progressFillColor}
+                  progressTrackColor={progressTrackColor}
+                  theme={theme}
                   styles={styles}
                 />
               );
             })}
-          </ScrollView>
-        </View>
-
-        {/* White Habit Cards */}
-        <View style={[styles.highlightCarouselContainer, { marginTop: 10 }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ overflow: 'visible' }}
-            snapToInterval={spotlightCardWidth + 10}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            contentContainerStyle={styles.highlightCarouselContent}
-          >
-            {whiteHabitCards.map((card, index) => {
-              const lookupKey = `custom_${card.habit?.id}`;
-              const partnershipId = activePartnerships[lookupKey]?.id;
-              const pendingId = pendingInvites[lookupKey]?.id;
-              
-              return (
-              <WhiteHabitCard
-                key={`${card.key}-${partnershipId || 'no-partner'}-${pendingId || 'no-invite'}`}
-                card={card}
-                index={index}
-                totalCards={whiteHabitCards.length}
-                spotlightCardWidth={spotlightCardWidth}
-                whiteCardShadowColor={whiteCardShadowColor}
-                customHabitsLoading={customHabitsLoading}
-                theme={theme}
-                customHabitsDate={customHabitsDate}
-                todayDate={todayDate}
-                partnership={activePartnerships[lookupKey]}
-                pendingInvite={pendingInvites[lookupKey]}
-                partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
-                onInvite={() => handleInvitePress('custom', card.habit?.id || '', card.title)}
-                onInfo={() => {
-                  setStatsHabit(card.habit || null);
-                  setShowCustomHabitStats(true);
-                }}
-                onRemovePartner={() => {
-                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
-                  if (partnership) {
-                    handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
-                  }
-                }}
-                onCancelInvite={() => {
-                  const invite = pendingInvites[`custom_${card.habit?.id}`];
-                  if (invite) {
-                    handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
-                  }
-                }}
-                onNudge={async () => {
-                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
-                  if (partnership) {
-                    return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
-                  }
-                  return null;
-                }}
-                lastNudgeTime={(() => {
-                  const partnership = activePartnerships[`custom_${card.habit?.id}`];
-                  return partnership ? lastNudgeTimes[partnership.id] || null : null;
-                })()}
-                toggleHabitCompletion={handleCustomHabitToggle}
-                playCompletionSound={playCompletionSound}
-                loadHabitForEditing={loadHabitForEditing}
-                setShowCustomHabitModal={setShowCustomHabitModal}
-                styles={styles}
-              />
-            );
-            })}
-          </ScrollView>
-        </View>
+          </View>
+        )}
 
         {/* Challenges Section */}
         <View style={styles.section}>
@@ -8481,6 +8703,49 @@ const styles = StyleSheet.create({
   },
   highlightCarouselContent: {
     paddingHorizontal: 24,
+  },
+  habitListContainer: {
+    paddingHorizontal: 24,
+    marginTop: 10,
+    marginBottom: 0,
+  },
+  habitListItem: {
+    width: '100%',
+    minHeight: 70,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  habitListItemTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  habitListItemLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  habitListItemTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  habitListItemMetric: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  habitListItemProgress: {
+    width: '100%',
+    height: 5,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   highlightCard: {
     borderRadius: 20,
