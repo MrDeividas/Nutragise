@@ -547,7 +547,8 @@ const CustomHabitListItemWrapper = ({
   progressFillColor,
   progressTrackColor,
   theme,
-  styles
+  styles,
+  onEdit
 }: any) => {
   const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
 
@@ -588,6 +589,7 @@ const CustomHabitListItemWrapper = ({
       styles={styles}
       backgroundColor="#FFFFFF"
       isDark={false}
+      onEdit={onEdit}
     />
   );
 };
@@ -670,9 +672,9 @@ const WhiteHabitCard = ({
 
   const handleCardLongPress = useCallback(() => {
     if (isCreateCard || !card.habit) return;
-    playCompletionSound();
+    // Sound and animation will be triggered after API call completes in handleCustomHabitToggle
     toggleHabitCompletion(card.habit.id, customHabitsDate || todayDate);
-  }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
+  }, [isCreateCard, card.habit, toggleHabitCompletion, customHabitsDate, todayDate]);
 
   const isCompleted = !isCreateCard && card.progress >= 1;
   const cardBackgroundColor = '#FFFFFF';
@@ -1264,6 +1266,41 @@ function ActionScreen() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [reorderTab, setReorderTab] = useState<'core' | 'custom'>('core');
   const [habitViewMode, setHabitViewMode] = useState<'carousel' | 'list'>('carousel');
+  const [coreHabitsExpanded, setCoreHabitsExpanded] = useState(false);
+  const [customHabitsExpanded, setCustomHabitsExpanded] = useState(false);
+  
+  // Load saved view mode preference
+  useEffect(() => {
+    const loadViewModePreference = async () => {
+      try {
+        if (user?.id) {
+          const stored = await AsyncStorage.getItem(`habit_view_mode_${user.id}`);
+          if (stored && (stored === 'carousel' || stored === 'list')) {
+            setHabitViewMode(stored as 'carousel' | 'list');
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load view mode preference:', error);
+      }
+    };
+    
+    loadViewModePreference();
+  }, [user?.id]);
+  
+  // Save view mode preference when it changes
+  const handleViewModeChange = useCallback((newMode: 'carousel' | 'list') => {
+    setHabitViewMode(newMode);
+    const savePreference = async () => {
+      try {
+        if (user?.id) {
+          await AsyncStorage.setItem(`habit_view_mode_${user.id}`, newMode);
+        }
+      } catch (error) {
+        console.warn('Failed to save view mode preference:', error);
+      }
+    };
+    savePreference();
+  }, [user?.id]);
   const [reorderableCustomHabits, setReorderableCustomHabits] = useState<CustomHabit[]>([]);
   const [customHabitOrder, setCustomHabitOrder] = useState<string[]>([]);
   const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
@@ -1504,7 +1541,7 @@ function ActionScreen() {
   const [showReflectModal, setShowReflectModal] = useState(false);
   const [showColdShowerModal, setShowColdShowerModal] = useState(false);
   const [showEditHabitsModal, setShowEditHabitsModal] = useState(false);
-  const [selectedHabits, setSelectedHabits] = useState<string[]>(DEFAULT_HABITS);
+  const [selectedHabits, setSelectedHabits] = useState<string[]>([]);
   const [habitSchedules, setHabitSchedules] = useState<Record<string, boolean[]>>({});
   const [todayOverrides, setTodayOverrides] = useState<Set<string>>(new Set());
   const [completedHabits, setCompletedHabits] = useState<Set<string>>(new Set());
@@ -2227,14 +2264,12 @@ function ActionScreen() {
             ...existing,
             baseProgress: displayProgress,
           };
-          if (!existing.completed) {
-            existing.progressAnimated.setValue(displayProgress);
-          }
+          // Don't set value directly - let the component animate it
           changed = true;
         }
 
         if (existing.completed !== shouldBeCompleted) {
-          existing.progressAnimated.setValue(displayProgress);
+          // Don't set value directly - let updateCardCompletionVisual handle the animation
           nextState[card.key] = {
             ...existing,
             baseProgress: displayProgress,
@@ -2307,17 +2342,8 @@ function ActionScreen() {
 
       // Show 5% if not completed (so user can see the color), otherwise 100% if completed
       const displayProgress = completed ? 1 : 0.05;
-      const targetValue = displayProgress;
-      if (animate) {
-        Animated.timing(current.progressAnimated, {
-          toValue: targetValue,
-          duration: 450,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: false,
-        }).start();
-      } else {
-        current.progressAnimated.setValue(targetValue);
-      }
+      // Don't animate here - let the component handle animation based on baseProgress change
+      // Just update the state, and the component's useEffect will trigger the animation
 
       if (current.completed === completed && current.baseProgress === displayProgress) {
         return prev;
@@ -2421,7 +2447,13 @@ function ActionScreen() {
     const wasCompleted = !!habitCompletions[habitId]?.status && habitCompletions[habitId]?.status === 'completed';
     const newStatus = !wasCompleted;
     
+    // Save to database first
     await toggleHabitCompletion(habitId, date);
+    
+    // Only trigger animation and sound AFTER successful save
+    if (newStatus) {
+      playCompletionSound();
+    }
     
     // Update partner progress
     if (user) {
@@ -2430,9 +2462,9 @@ function ActionScreen() {
         habitInviteService.updatePartnerProgress(partnership.id, user.id, date, newStatus);
       }
     }
-  }, [toggleHabitCompletion, habitCompletions, user, activePartnerships]);
+  }, [toggleHabitCompletion, habitCompletions, user, activePartnerships, playCompletionSound]);
 
-  const markHabitCompleted = useCallback((habitId: string) => {
+  const markHabitCompleted = useCallback((habitId: string, shouldAnimate: boolean = true) => {
     isCompletingHabitRef.current = true; // Block immediate sorting
     setCompletedHabits(prev => {
       if (prev.has(habitId)) return prev;
@@ -2440,16 +2472,22 @@ function ActionScreen() {
       next.add(habitId);
       return next;
     });
-    playCompletionSound();
-    updateCardCompletionVisual(habitId, true, { animate: true });
-    clearHabitNeedsDetails(habitId);
     
+    if (shouldAnimate) {
+      playCompletionSound();
+      updateCardCompletionVisual(habitId, true, { animate: true });
+      
+      // Animate card to end after bar fills (450ms)
+      setTimeout(() => {
+        animateCardToEnd(habitId);
+      }, 500);
+    } else {
+      // Update visual state without animation (for immediate UI feedback)
+      updateCardCompletionVisual(habitId, true, { animate: false });
+    }
+    
+    clearHabitNeedsDetails(habitId);
     checkAndSyncPartner(habitId, true);
-
-    // Animate card to end after bar fills (450ms)
-    setTimeout(() => {
-      animateCardToEnd(habitId);
-    }, 500);
   }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails, animateCardToEnd, checkAndSyncPartner]);
 
   const markHabitUncompleted = useCallback((habitId: string) => {
@@ -2563,11 +2601,22 @@ function ActionScreen() {
     if (habitId === 'focus') return;
     if (completedHabits.has(habitId)) return;
     
-    markHabitCompleted(habitId);
+    // Update UI state immediately (without animation) for instant feedback
+    markHabitCompleted(habitId, false);
     
+    // Wait for API call to complete
     const success = await persistQuickCompletion(habitId);
     
-    if (!success) {
+    if (success) {
+      // Only trigger animation and sound AFTER successful save
+      playCompletionSound();
+      updateCardCompletionVisual(habitId, true, { animate: true });
+      
+      // Animate card to end after bar fills (450ms)
+      setTimeout(() => {
+        animateCardToEnd(habitId);
+      }, 500);
+    } else {
       // Check if habit actually exists in database before uncompleting
       // For habits like meditation that use trackDailyHabit, the function returns false
       // if already completed, but we should keep it marked as completed in UI
@@ -2580,10 +2629,9 @@ function ActionScreen() {
       if (!partnership) {
         // Only revert if there's no partner
         markHabitUncompleted(habitId);
-      } else {
       }
     }
-  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion, activePartnerships]);
+  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion, activePartnerships, playCompletionSound, updateCardCompletionVisual, animateCardToEnd]);
 
   // Automatically sort habits on initial load
   useEffect(() => {
@@ -3068,15 +3116,22 @@ function ActionScreen() {
       const today = getTodayDateStringHelper();
       if (today !== currentDate) {
         setCurrentDate(today);
-        // New day detected - reset to saved order
+        // New day detected - reset to saved order (filtered by selected habits)
         (async () => {
           try {
-            const storedOrder = await loadCardOrder();
-            let initialCards = habitSpotlightCardsBase;
+            if (selectedHabits.length === 0) return;
             
-            if (storedOrder && storedOrder.length === habitSpotlightCardsBase.length) {
+            const storedOrder = await loadCardOrder();
+            
+            // Filter to only selected habits
+            const selectedHabitIdsSet = new Set(selectedHabits);
+            const filteredBase = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
+            
+            let initialCards = filteredBase;
+            
+            if (storedOrder && storedOrder.length > 0) {
               const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
-              initialCards = [...habitSpotlightCardsBase].sort((a, b) => {
+              initialCards = [...filteredBase].sort((a, b) => {
                 const aIndex = orderMap.get(a.habitId) ?? Infinity;
                 const bIndex = orderMap.get(b.habitId) ?? Infinity;
                 return aIndex - bIndex;
@@ -3099,11 +3154,11 @@ function ActionScreen() {
     const interval = setInterval(checkNewDay, 60000); // Check every minute
     
     return () => clearInterval(interval);
-  }, [currentDate, getTodayDateStringHelper, loadCardOrder, sortHabitsByCompletion, completedHabits]);
+  }, [currentDate, getTodayDateStringHelper, loadCardOrder, sortHabitsByCompletion, completedHabits, selectedHabits, habitSpotlightCardsBase]);
 
   // Load persisted card order on mount and sort by completion status
   useEffect(() => {
-    if (!user) return;
+    if (!user || selectedHabits.length === 0) return;
     
     let isMounted = true;
     
@@ -3118,12 +3173,16 @@ function ActionScreen() {
           setCustomHabitOrder(storedCustomOrder);
         }
 
-        let initialCards = habitSpotlightCardsBase;
+        // Filter to only selected habits
+        const selectedHabitIdsSet = new Set(selectedHabits);
+        const filteredBase = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
         
-        // If we have a stored order, restore it
-        if (storedOrder && storedOrder.length === habitSpotlightCardsBase.length) {
+        let initialCards = filteredBase;
+        
+        // If we have a stored order, restore it (but only for selected habits)
+        if (storedOrder && storedOrder.length > 0) {
           const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
-          initialCards = [...habitSpotlightCardsBase].sort((a, b) => {
+          initialCards = [...filteredBase].sort((a, b) => {
             const aIndex = orderMap.get(a.habitId) ?? Infinity;
             const bIndex = orderMap.get(b.habitId) ?? Infinity;
             return aIndex - bIndex;
@@ -3139,9 +3198,11 @@ function ActionScreen() {
         }
       } catch (error) {
         console.warn('Failed to load card order:', error);
-        // Fallback: just sort by completion
+        // Fallback: filter and sort by completion
         if (isMounted) {
-          const sorted = sortHabitsByCompletion(habitSpotlightCardsBase, completedHabits);
+          const selectedHabitIdsSet = new Set(selectedHabits);
+          const filteredBase = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
+          const sorted = sortHabitsByCompletion(filteredBase, completedHabits);
           setHabitSpotlightCards(sorted);
           habitSpotlightCardsRef.current = sorted;
         }
@@ -3151,7 +3212,43 @@ function ActionScreen() {
     return () => {
       isMounted = false;
     };
-  }, [user, loadCardOrder, sortHabitsByCompletion]);
+  }, [user, selectedHabits, loadCardOrder, sortHabitsByCompletion, habitSpotlightCardsBase, completedHabits]);
+
+  // Filter habitSpotlightCards based on selectedHabits
+  useEffect(() => {
+    if (selectedHabits.length > 0) {
+      const selectedHabitIdsSet = new Set(selectedHabits);
+      const filtered = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
+      
+      // Load saved order if available
+      (async () => {
+        try {
+          const storedOrder = await loadCardOrder();
+          let orderedCards = filtered;
+          
+          if (storedOrder && storedOrder.length > 0) {
+            const orderMap = new Map(storedOrder.map((id, index) => [id, index]));
+            orderedCards = [...filtered].sort((a, b) => {
+              const aIndex = orderMap.get(a.habitId) ?? Infinity;
+              const bIndex = orderMap.get(b.habitId) ?? Infinity;
+              return aIndex - bIndex;
+            });
+          }
+          
+          // Sort by completion status
+          const sorted = sortHabitsByCompletion(orderedCards, completedHabits);
+          setHabitSpotlightCards(sorted);
+          habitSpotlightCardsRef.current = sorted;
+        } catch (error) {
+          console.warn('Failed to filter cards by selected habits:', error);
+          // Fallback: just filter and sort by completion
+          const sorted = sortHabitsByCompletion(filtered, completedHabits);
+          setHabitSpotlightCards(sorted);
+          habitSpotlightCardsRef.current = sorted;
+        }
+      })();
+    }
+  }, [selectedHabits, habitSpotlightCardsBase, loadCardOrder, sortHabitsByCompletion, completedHabits]);
 
   // Re-sync completed habits whenever today's stored data loads/changes
   useEffect(() => {
@@ -3183,7 +3280,15 @@ function ActionScreen() {
           dailyHabitsService.getSelectedHabits(user.id),
           dailyHabitsService.getHabitSchedules(user.id)
         ]);
-        setSelectedHabits(habits);
+        
+        // If habits array is empty, it means user hasn't saved habits yet, use default
+        // Otherwise, use the saved habits from onboarding
+        if (habits && habits.length > 0) {
+          setSelectedHabits(habits);
+        } else {
+          setSelectedHabits(DEFAULT_HABITS);
+        }
+        
         setHabitSchedules(schedules);
         
         // Sync completed habits with existing data
@@ -3191,6 +3296,8 @@ function ActionScreen() {
       }
     } catch (error) {
       console.error('Error loading habits:', error);
+      // On error, fall back to default habits
+      setSelectedHabits(DEFAULT_HABITS);
     }
   };
 
@@ -3577,10 +3684,7 @@ function ActionScreen() {
     const { dailyHabits } = useActionStore.getState();
     switch (habitId) {
       case 'meditation':
-        (navigation as any).navigate('Meditation', {}, {
-          animation: 'slide_from_bottom',
-          presentation: 'modal'
-        });
+        (navigation as any).navigate('Meditation');
         return;
 
       case 'microlearn':
@@ -4818,11 +4922,11 @@ function ActionScreen() {
               pointerEvents="none"
             >
                   <View style={styles.headerStat}>
-                    <Ionicons name="wallet-outline" size={18} color={theme.textPrimary} />
+                    <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>Balance:</Text>
                     <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>£{walletBalance.toFixed(0)}</Text>
                   </View>
                   <View style={styles.headerStat}>
-                    <Ionicons name="diamond-outline" size={18} color={theme.textPrimary} />
+                    <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>Points:</Text>
                 <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>{totalPoints}</Text>
                   </View>
                 </Animated.View>
@@ -5006,7 +5110,7 @@ function ActionScreen() {
               <Ionicons name="swap-vertical" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
             <TouchableOpacity 
-              onPress={() => setHabitViewMode(prev => prev === 'carousel' ? 'list' : 'carousel')} 
+              onPress={() => handleViewModeChange(habitViewMode === 'carousel' ? 'list' : 'carousel')} 
               accessibilityRole="button"
             >
               <Ionicons 
@@ -5102,7 +5206,7 @@ function ActionScreen() {
           </View>
         ) : (
           <View style={styles.habitListContainer}>
-            {habitSpotlightCards.map((card, index) => {
+            {(coreHabitsExpanded ? habitSpotlightCards : habitSpotlightCards.slice(0, 3)).map((card, index) => {
               const cardState = habitCardState[card.key];
               const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
               const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
@@ -5160,9 +5264,28 @@ function ActionScreen() {
                   styles={styles}
                   backgroundColor={cardBackgroundColor}
                   isDark={isDark}
+                  onInfo={() => handleHabitPress(card.habitId)}
                 />
               );
             })}
+            {habitSpotlightCards.length > 3 && (
+              <TouchableOpacity
+                onPress={() => setCoreHabitsExpanded(!coreHabitsExpanded)}
+                style={[styles.expandButton, { 
+                  backgroundColor: theme.cardBackground,
+                  borderColor: theme.border 
+                }]}
+              >
+                <Text style={[styles.expandButtonText, { color: theme.textPrimary }]}>
+                  {coreHabitsExpanded ? 'Show Less' : `Show ${habitSpotlightCards.length - 3} More`}
+                </Text>
+                <Ionicons 
+                  name={coreHabitsExpanded ? 'chevron-up' : 'chevron-down'} 
+                  size={16} 
+                  color={theme.textPrimary} 
+                />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -5238,48 +5361,60 @@ function ActionScreen() {
           </View>
         ) : (
           <View style={[styles.habitListContainer, { marginTop: 10 }]}>
-            {whiteHabitCards.map((card, index) => {
-              const lookupKey = `custom_${card.habit?.id}`;
-              const isCreateCard = card.key === 'create_new_habit';
+            {(() => {
+              // Separate create card from actual custom habits
+              const createCard = whiteHabitCards.find(card => card.key === 'create_new_habit');
+              const actualCustomHabits = whiteHabitCards.filter(card => card.key !== 'create_new_habit');
+              const displayedHabits = customHabitsExpanded ? actualCustomHabits : actualCustomHabits.slice(0, 3);
+              // Put create card at the bottom instead of top
+              const allCards = createCard ? [...displayedHabits, createCard] : displayedHabits;
               
-              // Skip create card in list view for now, or handle it specially
-              if (isCreateCard) {
-                return (
-                  <TouchableOpacity
-                    key={card.key}
-                    onPress={() => setShowCustomHabitModal(true)}
-                    style={[styles.habitListItem, { 
-                      backgroundColor: theme.cardBackground, 
-                      borderColor: theme.border,
-                      borderStyle: 'dashed',
-                      opacity: 0.7
-                    }]}
-                  >
-                    <View style={styles.habitListItemTopRow}>
-                      <View style={styles.habitListItemLeft}>
-                        <Text style={[styles.habitListItemTitle, { color: theme.textSecondary }]}>
-                          + Create New Habit
-                        </Text>
+              return allCards.map((card, index) => {
+                const lookupKey = `custom_${card.habit?.id}`;
+                const isCreateCard = card.key === 'create_new_habit';
+                
+                // Handle create card in list view
+                if (isCreateCard) {
+                  return (
+                    <TouchableOpacity
+                      key={card.key}
+                      onPress={() => setShowCustomHabitModal(true)}
+                      style={[styles.habitListItem, { 
+                        backgroundColor: theme.cardBackground, 
+                        borderColor: theme.border,
+                        borderStyle: 'dashed',
+                        opacity: 0.7
+                      }]}
+                    >
+                      <View style={styles.habitListItemTopRow}>
+                        <View style={styles.habitListItemLeft}>
+                          <Text style={[styles.habitListItemTitle, { color: theme.textSecondary }]}>
+                            + Create New Habit
+                          </Text>
+                        </View>
+                        <Ionicons name="add-circle-outline" size={20} color={theme.textSecondary} />
                       </View>
-                      <Ionicons name="add-circle-outline" size={20} color={theme.textSecondary} />
-                    </View>
-                  </TouchableOpacity>
-                );
-              }
+                    </TouchableOpacity>
+                  );
+                }
 
-              const isCompleted = card.progress >= 1;
-              const progressTrackColor = 'rgba(0, 0, 0, 0.1)';
-              const progressFillColor = card.accent;
+                const isCompleted = card.progress >= 1;
+                const progressTrackColor = 'rgba(0, 0, 0, 0.1)';
+                const progressFillColor = card.accent;
 
-              return (
-                <CustomHabitListItemWrapper
-                  key={`${card.key}-${activePartnerships[lookupKey]?.id || 'no-partner'}-${pendingInvites[lookupKey]?.id || 'no-invite'}`}
-                  card={card}
-                  isCompleted={isCompleted}
-                  partnership={activePartnerships[lookupKey]}
-                  pendingInvite={pendingInvites[lookupKey]}
-                  partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
-                  onPress={() => loadHabitForEditing(card.habit)}
+                return (
+                  <CustomHabitListItemWrapper
+                    key={`${card.key}-${activePartnerships[lookupKey]?.id || 'no-partner'}-${pendingInvites[lookupKey]?.id || 'no-invite'}`}
+                    card={card}
+                    isCompleted={isCompleted}
+                    partnership={activePartnerships[lookupKey]}
+                    pendingInvite={pendingInvites[lookupKey]}
+                    partnerStatus={partnerCompletionStatus[`custom_${card.habit?.id}`]}
+                  onPress={() => {
+                    if (card.habit) {
+                      loadHabitForEditing(card.habit);
+                    }
+                  }}
                   onLongPress={() => {
                     if (card.habit) {
                       handleCustomHabitToggle(card.habit.id, customHabitsDate || todayDate);
@@ -5313,9 +5448,37 @@ function ActionScreen() {
                   progressTrackColor={progressTrackColor}
                   theme={theme}
                   styles={styles}
+                  onEdit={() => {
+                    if (card.habit) {
+                      loadHabitForEditing(card.habit);
+                    }
+                  }}
                 />
+                );
+              });
+            })()}
+            {(() => {
+              const actualCustomHabits = whiteHabitCards.filter(card => card.key !== 'create_new_habit');
+              const hasMoreThan3 = actualCustomHabits.length > 3;
+              return hasMoreThan3 && (
+                <TouchableOpacity
+                  onPress={() => setCustomHabitsExpanded(!customHabitsExpanded)}
+                  style={[styles.expandButton, { 
+                    backgroundColor: theme.cardBackground,
+                    borderColor: theme.border 
+                  }]}
+                >
+                  <Text style={[styles.expandButtonText, { color: theme.textPrimary }]}>
+                    {customHabitsExpanded ? 'Show Less' : `Show ${actualCustomHabits.length - 3} More`}
+                  </Text>
+                  <Ionicons 
+                    name={customHabitsExpanded ? 'chevron-up' : 'chevron-down'} 
+                    size={16} 
+                    color={theme.textPrimary} 
+                  />
+                </TouchableOpacity>
               );
-            })}
+            })()}
           </View>
         )}
 
@@ -5362,7 +5525,7 @@ function ActionScreen() {
           ) : (
             <View style={[styles.challengesContainer, { paddingVertical: 20, alignItems: 'center' }]}>
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No active challenges. Join a challenge on the Compete page!
+                No active challenges. Join a challenge on the Challenge page!
               </Text>
             </View>
           )}
@@ -8747,6 +8910,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
+  expandButton: {
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  expandButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   highlightCard: {
     borderRadius: 20,
     padding: 16,
@@ -9256,7 +9435,7 @@ const styles = StyleSheet.create({
   headerStatsRow: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 12,
     gap: 12,
@@ -9265,6 +9444,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  headerStatLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   headerStatText: {
     fontSize: 14,

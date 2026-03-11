@@ -83,10 +83,10 @@ export default function SignInScreen({ navigation }: any) {
               style={[styles.input, { 
                 backgroundColor: 'rgba(128, 128, 128, 0.15)',
                 borderColor: 'rgba(128, 128, 128, 0.3)',
-                color: theme.textPrimary
+                color: '#000000'
               }]}
               placeholder="Enter your email"
-              placeholderTextColor="rgba(255, 255, 255, 0.6)"
+              placeholderTextColor="rgba(0, 0, 0, 0.5)"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -101,10 +101,10 @@ export default function SignInScreen({ navigation }: any) {
               style={[styles.input, { 
                 backgroundColor: 'rgba(128, 128, 128, 0.15)',
                 borderColor: 'rgba(128, 128, 128, 0.3)',
-                color: theme.textPrimary
+                color: '#000000'
               }]}
               placeholder="Enter your password"
-              placeholderTextColor="rgba(255, 255, 255, 0.6)"
+              placeholderTextColor="rgba(0, 0, 0, 0.5)"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -112,7 +112,7 @@ export default function SignInScreen({ navigation }: any) {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#EA580C' }, loading && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: '#2DD4BF' }, loading && styles.buttonDisabled]}
             onPress={handleSignIn}
             disabled={loading}
           >
@@ -126,7 +126,7 @@ export default function SignInScreen({ navigation }: any) {
           <View style={styles.footer}>
             <Text style={[styles.footerText, { color: theme.textSecondary }]}>Don't have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-              <Text style={[styles.linkText, { color: '#EA580C' }]}>Sign Up</Text>
+              <Text style={[styles.linkText, { color: '#2DD4BF' }]}>Sign Up</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -141,9 +141,9 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 24,
-    paddingTop: 80,
+    paddingTop: 200,
   },
   header: {
     alignItems: 'center',
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 10,
   },
   footerText: {
   },

@@ -84,26 +84,28 @@ export default function OnboardingScreen({ navigation }: any) {
   const canGoNext = () => {
     switch (currentStep) {
       case 2: {
-        // Step 2: Habit Selection - Must have at least 6 habits and ALL selected habits must have frequencies
-        // Compulsory habits: sleep, water (auto-selected), update_goal and reflect (must be selected manually)
-        // For fixed habits (sleep, water), they should have all 7 days
-        // For update_goal: needs at least 1 day per week
-        // For reflect: needs at least 2 days per week
-        // For other habits, they need at least 3 days per week
+        // Step 2: Habit Selection - Must have at least 3 core habits
+        // Compulsory habits: sleep, reflect, exercise (run) - all auto-selected
+        // No minimum days required for schedules
         
         // Check if compulsory habits are selected
-        const hasUpdateGoal = data.selectedHabits.includes('update_goal');
+        const hasSleep = data.selectedHabits.includes('sleep');
         const hasReflect = data.selectedHabits.includes('reflect');
-        if (!hasUpdateGoal) {
-          console.log('❌ update_goal (compulsory) not selected');
+        const hasExercise = data.selectedHabits.includes('run');
+        if (!hasSleep) {
+          console.log('❌ sleep (compulsory) not selected');
           return false;
         }
         if (!hasReflect) {
           console.log('❌ reflect (compulsory) not selected');
           return false;
         }
+        if (!hasExercise) {
+          console.log('❌ exercise/run (compulsory) not selected');
+          return false;
+        }
         
-        const hasMinHabits = data.selectedHabits.length >= 6;
+        const hasMinHabits = data.selectedHabits.length >= 3;
         
         if (!hasMinHabits) {
           console.log('❌ Not enough habits:', data.selectedHabits.length);
@@ -121,47 +123,8 @@ export default function OnboardingScreen({ navigation }: any) {
             return false;
           }
           
-          // Check if at least one day is selected
-          if (!freq.some(day => day === true)) {
-            invalidHabits.push(`${habitId}: no days selected`);
-            return false;
-          }
-          
-          const dayCount = freq.filter(day => day === true).length;
-          const isFixed = ['sleep', 'water'].includes(habitId);
-          
-          // Fixed habits must have all 7 days selected
-          if (isFixed) {
-            if (dayCount !== 7) {
-              invalidHabits.push(`${habitId}: fixed habit should have 7 days, has ${dayCount}`);
-              return false;
-            }
-            return true;
-          }
-          
-          // update_goal needs at least 1 day
-          if (habitId === 'update_goal') {
-            if (dayCount < 1) {
-              invalidHabits.push(`${habitId}: needs at least 1 day, has ${dayCount}`);
-              return false;
-            }
-            return true;
-          }
-          
-          // reflect needs at least 2 days
-          if (habitId === 'reflect') {
-            if (dayCount < 2) {
-              invalidHabits.push(`${habitId}: needs at least 2 days, has ${dayCount}`);
-              return false;
-            }
-            return true;
-          }
-          
-          // Other habits need at least 3 days
-          if (dayCount < 3) {
-            invalidHabits.push(`${habitId}: needs at least 3 days, has ${dayCount}`);
-            return false;
-          }
+          // No minimum days required - any schedule is valid
+          // Just ensure the frequency array exists and is valid
           return true;
         });
         
@@ -224,6 +187,12 @@ export default function OnboardingScreen({ navigation }: any) {
       if (data.isPremium !== undefined && data.isPremium !== null) {
         partialData.isPremium = data.isPremium;
       }
+      // Save onboarding answers if they exist (steps 6-10)
+      if (data.lifeDescription) partialData.lifeDescription = data.lifeDescription;
+      if (data.changeReason) partialData.changeReason = data.changeReason;
+      if (data.proudMoment) partialData.proudMoment = data.proudMoment;
+      if (data.morningMotivation) partialData.morningMotivation = data.morningMotivation;
+      if (data.currentState) partialData.currentState = data.currentState;
 
       // Save partial data
       const success = await onboardingService.savePartialOnboardingData(
@@ -238,52 +207,75 @@ export default function OnboardingScreen({ navigation }: any) {
         return;
       }
 
-      // Save habits if they exist
+      // Save habits if they exist (with error handling)
       if (data.selectedHabits && data.selectedHabits.length > 0) {
-        await dailyHabitsService.updateSelectedHabits(currentUser.id, data.selectedHabits);
+        try {
+          await dailyHabitsService.updateSelectedHabits(currentUser.id, data.selectedHabits);
+        } catch (error) {
+          console.error('Error saving habits:', error);
+          // Continue even if this fails
+        }
       }
 
-      // Save habit frequencies
+      // Save habit frequencies (only if they have at least one day selected)
       if (data.habitFrequencies && Object.keys(data.habitFrequencies).length > 0) {
-        for (const [habitId, schedule] of Object.entries(data.habitFrequencies)) {
-          await dailyHabitsService.updateHabitSchedule(currentUser.id, habitId, schedule);
+        try {
+          const savePromises = Object.entries(data.habitFrequencies)
+            .filter(([_, schedule]) => {
+              // Only save if at least one day is selected
+              return Array.isArray(schedule) && schedule.some(day => day === true);
+            })
+            .map(([habitId, schedule]) => 
+              dailyHabitsService.updateHabitSchedule(currentUser.id, habitId, schedule as boolean[])
+            );
+          
+          await Promise.all(savePromises);
+        } catch (error) {
+          console.error('Error saving habit frequencies:', error);
+          // Continue even if this fails
         }
       }
 
       setExiting(false);
       
       // Check if user already has a username/profile set up
-      // Check both profiles and users tables
-      const [profileResult, userResult] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('username, display_name')
-          .eq('id', currentUser.id)
-          .single(),
-        supabase
-          .from('users')
-          .select('username')
-          .eq('id', currentUser.id)
-          .single()
-      ]);
+      // Check both profiles and users tables (with error handling)
+      try {
+        const [profileResult, userResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('username, display_name')
+            .eq('id', currentUser.id)
+            .single(),
+          supabase
+            .from('users')
+            .select('username')
+            .eq('id', currentUser.id)
+            .single()
+        ]);
 
-      const profileData = profileResult.data;
-      const userData = userResult.data;
-      const username = profileData?.username || userData?.username;
+        const profileData = profileResult.data;
+        const userData = userResult.data;
+        const username = profileData?.username || userData?.username;
 
-      // Check if username exists and is not just a UUID or email prefix (default placeholders)
-      // If username matches the user ID (UUID format) or email prefix, it's a placeholder
-      const hasRealUsername = username && 
-                             username !== currentUser.id &&
-                             username !== currentUser.email?.split('@')[0];
+        // Check if username exists and is not just a UUID or email prefix (default placeholders)
+        // If username matches the user ID (UUID format) or email prefix, it's a placeholder
+        const hasRealUsername = username && 
+                               username !== currentUser.id &&
+                               username !== currentUser.email?.split('@')[0];
 
-      if (hasRealUsername) {
-        // User already has a profile set up, just go back to main app
-        console.log('✅ Profile already set up, navigating back to main app');
-        navigation.goBack();
-      } else {
-        // User doesn't have a profile yet, navigate to ProfileSetup
-        console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
+        if (hasRealUsername) {
+          // User already has a profile set up, just go back to main app
+          console.log('✅ Profile already set up, navigating back to main app');
+          navigation.goBack();
+        } else {
+          // User doesn't have a profile yet, navigate to ProfileSetup
+          console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
+          navigation.navigate('ProfileSetup');
+        }
+      } catch (profileError) {
+        console.error('Error checking profile:', profileError);
+        // Default to ProfileSetup if we can't determine profile status
         navigation.navigate('ProfileSetup');
       }
     } catch (error) {

@@ -500,30 +500,41 @@ class ChallengePotService {
         }
       }
 
-      // Get all payment intent IDs for this challenge (for tracking)
-      const { data: allParticipants } = await supabase
-        .from('challenge_participants')
-        .select('stripe_payment_intent_id')
-        .eq('challenge_id', challengeId)
-        .not('stripe_payment_intent_id', 'is', null);
-
-      const paymentIntentIds = allParticipants
-        ?.map(p => p.stripe_payment_intent_id)
-        .filter(Boolean) || [];
-
-      // Distribute to each winner via Stripe Connect
+      // Distribute to each winner.
+      // For hold-based participants (payment_capture_method = 'hold'), the Stripe
+      // capture/cancel was already handled by settle-challenge-payments. We only
+      // need to credit their in-app wallets here.
+      // For wallet-escrow and immediate-capture participants, use the existing
+      // Stripe Connect transfer (transferChallengeWinnings).
       for (const participant of participants) {
-        try {
-          // Transfer winnings via Stripe Connect (adds to wallet, can be upgraded to direct bank transfer)
-          const { stripeService } = await import('./stripeService');
-          await stripeService.transferChallengeWinnings(
-            participant.user_id,
-            payoutPerWinner,
-            challengeId,
-            paymentIntentIds
-          );
+        const isHoldParticipant = participant.payment_capture_method === 'hold';
 
-          // Update participant record
+        try {
+          if (isHoldParticipant) {
+            // Hold was already cancelled in settle-challenge-payments (Stripe side done).
+            // Just credit the winnings share to the wallet.
+            await walletService.creditWinnings(participant.user_id, payoutPerWinner, challengeId);
+          } else {
+            // Legacy path: wallet-escrow or immediately-captured card payment.
+            const { data: allParticipantsForIds } = await supabase
+              .from('challenge_participants')
+              .select('stripe_payment_intent_id')
+              .eq('challenge_id', challengeId)
+              .not('stripe_payment_intent_id', 'is', null);
+
+            const paymentIntentIds = allParticipantsForIds
+              ?.map((p: any) => p.stripe_payment_intent_id)
+              .filter(Boolean) || [];
+
+            const { stripeService } = await import('./stripeService');
+            await stripeService.transferChallengeWinnings(
+              participant.user_id,
+              payoutPerWinner,
+              challengeId,
+              paymentIntentIds
+            );
+          }
+
           await supabase
             .from('challenge_participants')
             .update({
@@ -533,14 +544,13 @@ class ChallengePotService {
             })
             .eq('id', participant.id);
 
-          console.log('✅ Paid winner via Stripe Connect:', {
+          console.log('✅ Paid winner:', {
             userId: participant.user_id,
             amount: payoutPerWinner,
+            method: isHoldParticipant ? 'wallet_credit' : 'stripe_connect',
           });
         } catch (error) {
           console.error('❌ Error paying winner:', error);
-          
-          // Mark payout as failed
           await supabase
             .from('challenge_participants')
             .update({

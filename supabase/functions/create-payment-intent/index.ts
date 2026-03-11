@@ -3,11 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-  apiVersion: "2023-10-16",
-  httpClient: Stripe.createFetchHttpClient(),
-})
-
+// Stripe client is created per-request so updated STRIPE_SECRET_KEY in Supabase
+// is used immediately without redeploying the function.
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
 const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || ""
 
@@ -23,14 +20,22 @@ serve(async (req: Request) => {
     })
   }
 
-  // Check if Stripe key is configured
+  // Check if Stripe key is configured and is a real key (not a placeholder)
   const stripeKey = Deno.env.get("STRIPE_SECRET_KEY")
-  if (!stripeKey) {
-    console.error("STRIPE_SECRET_KEY is not set")
+  // Safe diagnostic: log first 8 chars so you can confirm which key the function sees (check Supabase → Edge Functions → create-payment-intent → Logs)
+  console.log("STRIPE_SECRET_KEY from env:", stripeKey ? `${stripeKey.slice(0, 8)}...` : "(empty)")
+  const isPlaceholder = !stripeKey ||
+    stripeKey.includes("your_") ||
+    stripeKey.includes("sk_") === false ||
+    (stripeKey.startsWith("sk_test_") === false && stripeKey.startsWith("sk_live_") === false)
+  if (isPlaceholder) {
+    console.error("STRIPE_SECRET_KEY is not set or is a placeholder. Set it in Supabase Dashboard → Project Settings → Edge Functions → Secrets.")
     return new Response(
-      JSON.stringify({ error: "Stripe secret key not configured" }),
+      JSON.stringify({
+        error: "Stripe secret key not configured. Set STRIPE_SECRET_KEY in Supabase Edge Function secrets (Dashboard → Project Settings → Edge Functions → Secrets) to your Stripe secret key (sk_test_... or sk_live_...).",
+      }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
@@ -38,6 +43,12 @@ serve(async (req: Request) => {
       }
     )
   }
+
+  // Create Stripe client with current secret (so dashboard secret updates apply without redeploy)
+  const stripe = new Stripe(stripeKey, {
+    apiVersion: "2023-10-16",
+    httpClient: Stripe.createFetchHttpClient(),
+  })
 
   // Validate JWT authentication
   const authHeader = req.headers.get("Authorization")

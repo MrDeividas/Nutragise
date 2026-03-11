@@ -54,30 +54,44 @@ serve(async (req: Request) => {
     // Get the payment intent to check its status
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
 
+    // Handle hold-based payments (requires_capture = authorized but not yet captured)
+    // Cancel the authorization rather than creating a refund — no charge was ever made
+    if (paymentIntent.status === "requires_capture") {
+      const cancelled = await stripe.paymentIntents.cancel(paymentIntentId)
+      console.log("✅ Hold cancelled (user left before challenge ended):", {
+        paymentIntentId,
+        status: cancelled.status,
+      })
+      return new Response(
+        JSON.stringify({
+          refundId: null,
+          amount: paymentIntent.amount / 100,
+          status: "cancelled",
+          method: "hold_cancelled",
+        }),
+        {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          status: 200,
+        }
+      )
+    }
+
     if (paymentIntent.status !== "succeeded") {
       return new Response(
         JSON.stringify({ 
-          error: `Payment intent is not in succeeded status. Current status: ${paymentIntent.status}` 
+          error: `Payment intent is not in a refundable status. Current status: ${paymentIntent.status}` 
         }),
         {
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           status: 400,
         }
       )
     }
 
-    // Create refund
-    const refundParams: any = {
-      payment_intent: paymentIntentId,
-    }
-
-    // If amount is specified, do partial refund
+    // Standard refund for immediately-captured payments
+    const refundParams: any = { payment_intent: paymentIntentId }
     if (amount) {
-      const amountInPence = Math.round(amount * 100)
-      refundParams.amount = amountInPence
+      refundParams.amount = Math.round(amount * 100)
     }
 
     const refund = await stripe.refunds.create(refundParams)
@@ -91,8 +105,9 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         refundId: refund.id,
-        amount: refund.amount / 100, // Convert back to pounds
+        amount: refund.amount / 100,
         status: refund.status,
+        method: "refund",
       }),
       {
         headers: { 

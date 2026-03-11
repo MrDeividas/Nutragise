@@ -388,7 +388,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
                   style={[
                     styles.frequencyDay,
                     { backgroundColor: 'rgba(128, 128, 128, 0.2)' },
-                    goal.frequency && goal.frequency[index] && styles.activeFrequencyDay
+                    goal.frequency && goal.frequency[index] && { backgroundColor: theme.primary }
                   ]}
                 >
                   <Text style={[
@@ -421,7 +421,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
                 <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Milestones</Text>
                 {goal.milestones.map((milestone, index) => (
                   <View key={index} style={styles.milestoneItem}>
-                    <View style={styles.milestoneNumber}>
+                    <View style={[styles.milestoneNumber, { backgroundColor: theme.primary }]}>
                       <Text style={styles.milestoneNumberText}>{index + 1}</Text>
                     </View>
                     <Text style={[styles.milestoneText, { color: theme.textPrimary }]}>{milestone}</Text>
@@ -612,30 +612,33 @@ const styles = StyleSheet.create({
   updateActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    flexWrap: 'wrap',
   },
   updateActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
+    flexShrink: 1,
   },
   updateActionText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   },
   postButton: {
     marginLeft: 'auto',
     paddingVertical: 8,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 8,
+    minWidth: 70,
   },
   postButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   goalHeader: {
@@ -712,7 +715,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   activeFrequencyDay: {
-    backgroundColor: '#EA580C',
+    // backgroundColor is now set dynamically in the component
   },
   frequencyDayText: {
     fontSize: 12,
@@ -736,7 +739,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#EA580C',
+    // backgroundColor is now set dynamically in the component
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,

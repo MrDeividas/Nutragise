@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { DailyHabits } from '../types/database';
 import { pillarProgressService } from './pillarProgressService';
 import { notificationService } from './notificationService';
+import { habitChallengeSyncService } from './habitChallengeSyncService';
 
 interface DailyPointsBreakdown {
   daily: number;
@@ -188,6 +189,15 @@ class PointsService {
           pillar_progress: 0.36
         }).catch(console.error);
       }
+
+      // Sync to challenge submission (non-blocking)
+      habitChallengeSyncService
+        .syncHabitCompletionToChallenge(userId, habitType, targetDate)
+        .catch((err) => {
+          if (__DEV__) {
+            console.warn(`Failed to sync ${habitType} to challenge:`, err);
+          }
+        });
 
       return true;
     } catch (error) {
@@ -494,6 +504,17 @@ class PointsService {
       }
       
       await this.checkAndAwardBonus(userId, targetDate);
+
+      // Sync update_goal to challenge submission (non-blocking)
+      if (habitType === 'update_goal') {
+        habitChallengeSyncService
+          .syncHabitCompletionToChallenge(userId, 'update_goal', targetDate)
+          .catch((err) => {
+            if (__DEV__) {
+              console.warn('Failed to sync update_goal to challenge:', err);
+            }
+          });
+      }
 
       // Track pillar progress and create reward notifications
       if (targetDate === new Date().toISOString().split('T')[0]) {

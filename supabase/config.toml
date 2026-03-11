@@ -13,9 +13,20 @@ port = 54323
 
 # Edge Functions Configuration
 [functions.check-ended-challenges]
-# Run every hour to check for ended challenges
-# Cron format: minute hour day month day-of-week
+# Run every hour — marks ended challenges for review and triggers settle-challenge-payments
 verify_jwt = false
+
+[functions.authorize-challenge-payments]
+# Run every hour — places holds on cards for challenges that just started
+verify_jwt = false
+
+[functions.settle-challenge-payments]
+# Called internally by check-ended-challenges — not a standalone cron
+verify_jwt = false
+
+[functions.setup-challenge-payment]
+# Called by the app when a user joins a 7-day challenge (saves their card)
+verify_jwt = true
 
 [edge_runtime]
 policy = "per_worker"

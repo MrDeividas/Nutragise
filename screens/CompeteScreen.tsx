@@ -45,8 +45,10 @@ export default function CompeteScreen({ navigation }: any) {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [myCreatedChallenges, setMyCreatedChallenges] = useState<Challenge[]>([]);
   const [privateChallenges, setPrivateChallenges] = useState<Challenge[]>([]);
-  const [myChallengesExpanded, setMyChallengesExpanded] = useState(true);
-  const [privateChallengesExpanded, setPrivateChallengesExpanded] = useState(true);
+  const [coreHabitChallenges, setCoreHabitChallenges] = useState<Challenge[]>([]);
+  const [myChallengesExpanded, setMyChallengesExpanded] = useState(false);
+  const [privateChallengesExpanded, setPrivateChallengesExpanded] = useState(false);
+  const [coreHabitsExpanded, setCoreHabitsExpanded] = useState(true);
   const [investExpanded, setInvestExpanded] = useState(true);
   const [freeExpanded, setFreeExpanded] = useState(true);
   
@@ -85,6 +87,31 @@ export default function CompeteScreen({ navigation }: any) {
       loadPrivateChallenges();
     }
   }, [user]);
+
+  // Auto-collapse sections if they have no challenges
+  useEffect(() => {
+    if (myCreatedChallenges.length === 0) {
+      setMyChallengesExpanded(false);
+    } else if (myCreatedChallenges.length > 0 && !myChallengesExpanded) {
+      setMyChallengesExpanded(true);
+    }
+  }, [myCreatedChallenges.length]);
+
+  useEffect(() => {
+    if (privateChallenges.length === 0) {
+      setPrivateChallengesExpanded(false);
+    } else if (privateChallenges.length > 0 && !privateChallengesExpanded) {
+      setPrivateChallengesExpanded(true);
+    }
+  }, [privateChallenges.length]);
+
+  useEffect(() => {
+    if (coreHabitChallenges.length === 0) {
+      setCoreHabitsExpanded(false);
+    } else if (coreHabitChallenges.length > 0 && !coreHabitsExpanded) {
+      setCoreHabitsExpanded(true);
+    }
+  }, [coreHabitChallenges.length]);
 
   const loadUserProfile = async () => {
     if (user?.id) {
@@ -136,21 +163,23 @@ export default function CompeteScreen({ navigation }: any) {
       apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
       
       // Handle recurring challenges first
+      console.log('🔄 Handling recurring challenges...');
       await challengesService.handleRecurringChallenges();
       
       const allChallenges = await challengesService.getChallenges();
+      console.log(`📊 Total challenges fetched: ${allChallenges.length}`);
       const now = new Date();
       
-      // Show only upcoming challenges (not active, not ended)
+      // Show active and upcoming challenges (not ended)
       // Filter out private challenges from public lists
       const availableChallenges = allChallenges.filter(challenge => {
         const startDate = new Date(challenge.start_date);
         const endDate = new Date(challenge.end_date);
         endDate.setHours(23, 59, 59, 999); // Include full end day
-        const isNotEnded = now <= endDate; // Changed to <= to include the full end day
-        const isUpcoming = now < startDate; // Only show challenges that haven't started yet
+        const isNotEnded = now <= endDate; // Include challenges that haven't ended yet
+        const isActiveOrUpcoming = (challenge.status === 'active' || challenge.status === 'upcoming'); // Show both active and upcoming
         const isPublic = challenge.visibility !== 'private'; // Only show public challenges
-        const shouldShow = isNotEnded && isUpcoming && isPublic;
+        const shouldShow = isNotEnded && isActiveOrUpcoming && isPublic;
         
         return shouldShow;
       });
@@ -272,11 +301,41 @@ export default function CompeteScreen({ navigation }: any) {
       
       const deduplicatedChallenges = Array.from(recurringChallengeMap.values());
       
-      // Separate free and investment challenges
-      const free = deduplicatedChallenges.filter(challenge => !challenge.entry_fee || challenge.entry_fee === 0);
-      const invest = deduplicatedChallenges.filter(challenge => challenge.entry_fee && challenge.entry_fee > 0);
+      // Helper function to identify core habit challenges
+      const isCoreHabitChallenge = (challenge: Challenge): boolean => {
+        const coreHabitTitles = [
+          'Gym Challenge',
+          'Exercise Challenge',
+          'Goal Update Challenge',
+          'Microlearn Challenge',
+          'Focus Challenge',
+          'Reflection Challenge',
+          'Water Challenge',
+          'Cold Shower Challenge',
+          'Screen Time Challenge',
+          'Sleep Challenge',
+          'Meditation Challenge',
+        ];
+        return coreHabitTitles.includes(challenge.title);
+      };
+      
+      // Separate core habit challenges
+      const coreHabits = deduplicatedChallenges.filter(isCoreHabitChallenge);
+      const otherChallenges = deduplicatedChallenges.filter(challenge => !isCoreHabitChallenge(challenge));
+      
+      console.log(`✅ Core Habit Challenges: ${coreHabits.length}`, coreHabits.map(c => ({
+        title: c.title,
+        status: c.status,
+        start: new Date(c.start_date).toLocaleDateString(),
+        end: new Date(c.end_date).toLocaleDateString(),
+      })));
+      
+      // Separate free and investment challenges from non-core challenges
+      const free = otherChallenges.filter(challenge => !challenge.entry_fee || challenge.entry_fee === 0);
+      const invest = otherChallenges.filter(challenge => challenge.entry_fee && challenge.entry_fee > 0);
       
       setChallenges(deduplicatedChallenges);
+      setCoreHabitChallenges(coreHabits);
       setFreeChallenges(free);
       setInvestChallenges(invest);
     } catch (error) {
@@ -522,7 +581,7 @@ export default function CompeteScreen({ navigation }: any) {
         </View>
         
         <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          Compete
+          Challenge
         </Text>
         
           <TouchableOpacity 
@@ -560,7 +619,8 @@ export default function CompeteScreen({ navigation }: any) {
           onJoinPress={() => setShowJoinModal(true)}
         />
 
-        {/* Private Challenges Section - For challenges joined via code */}
+        {/* Private Challenges Section - Show at top if has challenges */}
+        {privateChallenges.length > 0 && (
           <View style={styles.section}>
             <TouchableOpacity 
               style={styles.sectionHeader}
@@ -586,9 +646,11 @@ export default function CompeteScreen({ navigation }: any) {
                   <ActivityIndicator size="large" color="#10B981" />
                 </View>
               ) : privateChallenges.length === 0 ? (
-                <View style={styles.emptyChallengesContainer}>
+                <View style={[styles.emptyChallengesContainer, { backgroundColor: theme.cardBackground }]}>
+                  <Ionicons name="lock-closed-outline" size={48} color={theme.textSecondary} />
+                  <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>No Private Challenges Yet</Text>
                   <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No private challenges found
+                    Join a private challenge with a code or create one below!
                   </Text>
                 </View>
               ) : (
@@ -615,9 +677,10 @@ export default function CompeteScreen({ navigation }: any) {
           </View>
         )}
         </View>
+        )}
 
-        {/* My Challenges Section - PRO only (for challenges created by user) */}
-        {userProfile?.is_pro && (
+        {/* My Challenges Section - Show at top if PRO and has challenges */}
+        {userProfile?.is_pro && myCreatedChallenges.length > 0 && (
           <View style={styles.section}>
           <TouchableOpacity 
               style={styles.sectionHeader}
@@ -644,6 +707,52 @@ export default function CompeteScreen({ navigation }: any) {
               />
             )}
         </View>
+        )}
+
+        {/* Core Habits Section */}
+        {coreHabitChallenges.length > 0 && (
+          <View style={styles.section}>
+            <TouchableOpacity 
+              style={styles.sectionHeader}
+              onPress={() => setCoreHabitsExpanded(!coreHabitsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="fitness" size={20} color={theme.primary} />
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  Core Habits
+                </Text>
+              </View>
+              <Ionicons 
+                name={coreHabitsExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.textSecondary} 
+              />
+            </TouchableOpacity>
+            {coreHabitsExpanded && (
+              <View style={styles.challengesContent}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={snapInterval}
+                  snapToAlignment="start"
+                  decelerationRate="fast"
+                  contentContainerStyle={styles.challengesScrollContent}
+                  style={{ overflow: 'visible' }}
+                >
+                  {coreHabitChallenges.map((challenge) => (
+                    <ChallengeCard
+                      key={challenge.id}
+                      challenge={challenge}
+                      onPress={() => handleChallengePress(challenge)}
+                      isJoined={joinedChallengeIds.has(challenge.id)}
+                      isCompleted={completedChallengeIds.has(challenge.id)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
         )}
 
         {/* Investment Challenges Section */}
@@ -753,6 +862,76 @@ export default function CompeteScreen({ navigation }: any) {
           )}
         </View>
 
+        {/* Private Challenges Section - Show at bottom if empty */}
+        {privateChallenges.length === 0 && (
+          <View style={styles.section}>
+            <TouchableOpacity 
+              style={styles.sectionHeader}
+              onPress={() => setPrivateChallengesExpanded(!privateChallengesExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="lock-closed" size={20} color={theme.primary} />
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  Private Challenges
+                </Text>
+              </View>
+              <Ionicons 
+                name={privateChallengesExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.textSecondary} 
+              />
+            </TouchableOpacity>
+            {privateChallengesExpanded && (
+              <View style={styles.challengesContent}>
+              {challengesLoading ? (
+                <View style={styles.challengesLoadingContainer}>
+                  <ActivityIndicator size="large" color="#10B981" />
+                </View>
+              ) : (
+                <View style={[styles.emptyChallengesContainer, { backgroundColor: theme.cardBackground }]}>
+                  <Ionicons name="lock-closed-outline" size={48} color={theme.textSecondary} />
+                  <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>No Private Challenges Yet</Text>
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    Join a private challenge with a code or create one below!
+                  </Text>
+                </View>
+              )}
+          </View>
+        )}
+        </View>
+        )}
+
+        {/* My Challenges Section - Show at bottom if PRO and empty */}
+        {userProfile?.is_pro && myCreatedChallenges.length === 0 && (
+          <View style={styles.section}>
+          <TouchableOpacity 
+              style={styles.sectionHeader}
+              onPress={() => setMyChallengesExpanded(!myChallengesExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="trophy" size={20} color={theme.primary} />
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  My Challenges
+                </Text>
+              </View>
+              <Ionicons 
+                name={myChallengesExpanded ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color={theme.textSecondary} 
+              />
+          </TouchableOpacity>
+            {myChallengesExpanded && (
+              <MyChallengesSection
+                challenges={myCreatedChallenges}
+                onEdit={handleEditChallenge}
+                onDelete={handleDeleteChallenge}
+              />
+            )}
+        </View>
+        )}
+
       </ScrollView>
 
       {/* Upgrade to Pro Modal */}
@@ -778,6 +957,7 @@ export default function CompeteScreen({ navigation }: any) {
         visible={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateChallenge}
+        isPro={userProfile?.is_pro === true}
       />
 
       {/* Join Private Challenge Modal */}
@@ -939,9 +1119,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 12,
+    textAlign: 'center',
+  },
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
+    marginTop: 8,
   },
   pointsContainer: {
     alignItems: 'flex-end',

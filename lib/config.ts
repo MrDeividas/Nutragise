@@ -1,5 +1,5 @@
 // Configuration for API keys and environment variables
-import { DEEPSEEK_API_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } from '@env';
+import { DEEPSEEK_API_KEY, STRIPE_PUBLISHABLE_KEY } from '@env';
 export const config = {
   // DeepSeek API Configuration
   deepseek: {
@@ -13,8 +13,6 @@ export const config = {
   // Stripe Configuration
   stripe: {
     publishableKey: STRIPE_PUBLISHABLE_KEY || '',
-    secretKey: STRIPE_SECRET_KEY || '',
-    webhookSecret: STRIPE_WEBHOOK_SECRET || '',
   },
   
   // App Configuration

@@ -35,11 +35,13 @@ import CompeteScreen from './screens/CompeteScreen';
 import StoreScreen from './screens/StoreScreen';
 import InventoryScreen from './screens/InventoryScreen';
 import RaffleScreen from './screens/RaffleScreen';
+import MeditationPlayerScreen from './screens/MeditationPlayerScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
 const ProfileSettingsScreen = lazy(() => import('./screens/ProfileSettingsScreen'));
 const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
+const OnboardingAnswersScreen = lazy(() => import('./screens/OnboardingAnswersScreen'));
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const CommunityScreen = lazy(() => import('./screens/CommunityScreen'));
@@ -166,6 +168,15 @@ function ProfileStack() {
           }}
         />
         <Stack.Screen 
+          name="OnboardingAnswers" 
+          component={OnboardingAnswersScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal'
+          }}
+        />
+        <Stack.Screen 
           name="ProfileCard" 
           component={ProfileCardScreen}
           options={{
@@ -251,7 +262,7 @@ function MainTabs() {
       <Tab.Screen name="Action" component={ActionStack} options={{ tabBarLabel: 'Action' }} />
       <Tab.Screen 
         name="Discover"
-        options={{ tabBarLabel: 'Compete' }}>
+        options={{ tabBarLabel: 'Challenge' }}>
         {({ navigation }) => (
             <CompeteScreen navigation={navigation} />
         )}
@@ -311,10 +322,22 @@ function AppStack() {
         name="Meditation" 
         component={MeditationScreen}
         options={{
-          animation: 'slide_from_bottom',
+          animation: 'slide_from_right',
           animationDuration: 200,
           gestureEnabled: true,
-          gestureDirection: 'vertical'
+          gestureDirection: 'horizontal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="MeditationPlayer" 
+        component={MeditationPlayerScreen as any}
+        options={{
+          animation: 'slide_from_right',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
         }}
       />
       <Stack.Screen 

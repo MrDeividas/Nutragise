@@ -164,52 +164,39 @@ export default function ProfileSetupScreen() {
         return;
       }
 
-      // Only mark onboarding as complete if the user actually completed all onboarding steps
-      // Check current onboarding status first
+      // Mark onboarding as complete when profile is saved
+      // This allows users who exited onboarding early to still use the app
       const { data: profileData, error: fetchError } = await supabase
         .from('profiles')
         .select('onboarding_completed, onboarding_last_step')
         .eq('id', user.id)
         .single();
 
-      if (!fetchError && profileData) {
-        // Only set onboarding_completed to true if:
-        // 1. It's already true (user completed onboarding before profile setup)
-        // 2. OR onboarding_last_step is 13 (user completed all steps)
-        // If onboarding_completed is false and last_step < 13, user exited early - don't mark as complete
-        const shouldMarkComplete = profileData.onboarding_completed === true || 
-                                   (profileData.onboarding_last_step === 13 && profileData.onboarding_completed === false);
-        
-        if (shouldMarkComplete && !profileData.onboarding_completed) {
-          const { error: onboardingError } = await supabase
-            .from('profiles')
-            .update({ onboarding_completed: true })
-            .eq('id', user.id);
+      if (!fetchError && profileData && !profileData.onboarding_completed) {
+        // Mark onboarding as complete so user can access the app
+        const { error: onboardingError } = await supabase
+          .from('profiles')
+          .update({ onboarding_completed: true })
+          .eq('id', user.id);
 
-          if (onboardingError) {
-            console.error('❌ Error marking onboarding complete:', onboardingError);
-            // Don't fail the whole operation - profile was saved successfully
-          } else {
-            console.log('✅ Marked onboarding as complete (user finished all steps)');
-          }
+        if (onboardingError) {
+          console.error('❌ Error marking onboarding complete:', onboardingError);
+          // Don't fail the whole operation - profile was saved successfully
         } else {
-          console.log('ℹ️ Not marking onboarding as complete:', {
-            currentStatus: profileData.onboarding_completed,
-            lastStep: profileData.onboarding_last_step,
-            reason: profileData.onboarding_completed === false && profileData.onboarding_last_step && profileData.onboarding_last_step < 13 ? 'User exited early' : 'Already handled'
-          });
+          console.log('✅ Marked onboarding as complete (profile setup finished)');
         }
       }
 
-      // If onboarding is already complete, just navigate back and let App.tsx handle it
-      // Otherwise show success message (App.tsx will handle navigation after detecting onboarding_completed: true)
-      if (profileData?.onboarding_completed) {
-        console.log('✅ Profile saved and onboarding already complete, navigating back');
-        navigation.goBack();
-      } else {
-        // Show success message and let App.tsx handle the navigation
-        Alert.alert('Success', 'Profile completed! Welcome to Nutrapp!');
-      }
+      // Show success message and navigate back
+      // App.tsx will detect onboarding_completed: true and show the main app
+      Alert.alert('Success', 'Profile completed! Welcome to Nutrapp!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            navigation.goBack();
+          }
+        }
+      ]);
       
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);

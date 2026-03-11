@@ -16,7 +16,45 @@ const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
 
 export default function ChallengeCard({ challenge, onPress, isJoined, isCompleted }: ChallengeCardProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+
+  // Check if this is a core habit challenge
+  const isCoreHabitChallenge = () => {
+    const coreHabitTitles = [
+      'Gym Challenge',
+      'Exercise Challenge',
+      'Goal Update Challenge',
+      'Microlearn Challenge',
+      'Focus Challenge',
+      'Reflection Challenge',
+      'Water Challenge',
+      'Cold Shower Challenge',
+      'Screen Time Challenge',
+      'Sleep Challenge',
+      'Meditation Challenge',
+    ];
+    return coreHabitTitles.includes(challenge.title);
+  };
+
+  const isCoreHabit = isCoreHabitChallenge();
+  
+  // Get accent color for core habit challenges (matching ActionScreen)
+  const getCoreHabitAccentColor = (challengeTitle: string): string | null => {
+    const accentMap: Record<string, string> = {
+      'Gym Challenge': '#EF4444',
+      'Exercise Challenge': '#FFEB3B', // run
+      'Goal Update Challenge': '#A78BFA', // update_goal
+      'Microlearn Challenge': '#FB7185',
+      'Focus Challenge': '#F472B6',
+      'Reflection Challenge': '#F59E0B',
+      'Water Challenge': '#60A5FA',
+      'Cold Shower Challenge': '#7DD3FC',
+      'Screen Time Challenge': '#FCD34D',
+      'Sleep Challenge': '#34D399',
+      'Meditation Challenge': '#2DD4BF',
+    };
+    return accentMap[challengeTitle] || null;
+  };
 
   const getCategoryColor = (category: string) => {
     switch (category.toLowerCase()) {
@@ -133,8 +171,11 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
   const categoryColor = getCategoryColor(challenge.category);
   const categoryIcon = getCategoryIcon(challenge.category);
   
-  // Use dark purple for private challenges, otherwise use category color
-  const sectionColor = challenge.visibility === 'private' ? '#4B0082' : categoryColor;
+  // For core habit challenges, use dark grey color (matching ActionScreen core habit cards)
+  // For private challenges, use dark purple, otherwise use category color
+  const sectionColor = challenge.visibility === 'private' 
+    ? '#4B0082' 
+    : (isCoreHabit ? (isDark ? '#1f1f1f' : '#111827') : categoryColor);
 
   return (
     <TouchableOpacity
@@ -147,6 +188,13 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
       
       {/* Content */}
       <View style={styles.content}>
+        {/* Pro Star (Top Right) */}
+        {challenge.is_pro_only && (
+          <View style={styles.proStar}>
+            <Ionicons name="star" size={20} color="#F59E0B" />
+          </View>
+        )}
+        
         {/* Top Section */}
         <View style={styles.topSection}>
           <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
@@ -185,6 +233,25 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
 
         {/* Bottom Section */}
         <View style={styles.bottomSection}>
+          <View style={styles.feeContainer}>
+            <View style={styles.feeRow}>
+              <Ionicons name="pricetag-outline" size={14} color="rgba(255,255,255,0.9)" />
+              <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
+                {formatEntryFee(challenge.entry_fee)}
+              </Text>
+            </View>
+            <View style={styles.feeRow}>
+              <Ionicons name="cash-outline" size={14} color="rgba(255,255,255,0.9)" />
+              <Text style={[styles.potText, { color: 'rgba(255,255,255,0.9)' }]}>
+                £{(challenge.participant_count || 0) * challenge.entry_fee} pot
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
+            {getTimeRemaining()}
+          </Text>
+
           <View style={styles.tagsContainer}>
             <View style={[styles.tag, { backgroundColor: sectionColor }]}>
               <Ionicons name={challenge.visibility === 'private' ? 'lock-closed-outline' : categoryIcon} size={12} color="#FFFFFF" />
@@ -197,26 +264,6 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
             </View>
           </View>
 
-          <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
-            {getTimeRemaining()}
-          </Text>
-
-          <View style={styles.feeContainer}>
-            <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
-              {formatEntryFee(challenge.entry_fee)} challenge
-            </Text>
-            <Text style={[styles.potText, { color: 'rgba(255,255,255,0.9)' }]}>
-              £{(challenge.participant_count || 0) * challenge.entry_fee} shared pot
-            </Text>
-          </View>
-
-          {/* Pro Badge (Bottom Right) */}
-          {challenge.is_pro_only && (
-            <View style={styles.proBadge}>
-              <Ionicons name="star" size={10} color="#FFFFFF" />
-              <Text style={styles.proBadgeText}>PRO</Text>
-            </View>
-          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -388,39 +435,33 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
   feeContainer: {
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  feeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   feeText: {
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 2,
   },
   potText: {
     fontSize: 12,
     fontWeight: '500',
   },
-  proBadge: {
+  proStar: {
     position: 'absolute',
-    bottom: 12,
+    top: 12,
     right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
     zIndex: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
-  },
-  proBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
   },
 });

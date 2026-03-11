@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -60,6 +60,43 @@ const AnimatedHabitCard = ({
   const anim = cardAnimations[card.key];
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [canNudge, setCanNudge] = useState(true);
+  
+  // Local progress animation for smooth transitions - initialize from current state
+  const [localProgressAnimated] = useState(() => {
+    // Get initial value from cardState if available, otherwise default
+    const initialProgress = cardState?.baseProgress ?? (cardState?.completed ? 1 : 0.05);
+    return new Animated.Value(initialProgress);
+  });
+  
+  // Track previous baseProgress to detect changes
+  const prevBaseProgressRef = React.useRef<number | undefined>(cardState?.baseProgress);
+  
+  // Animate progress when cardState changes - exactly like WhiteHabitCard does
+  useEffect(() => {
+    const targetProgress = cardState?.baseProgress ?? (cardState?.completed ? 1 : 0.05);
+    const prevProgress = prevBaseProgressRef.current;
+    
+    // Only animate if the value actually changed
+    if (prevProgress === undefined || targetProgress !== prevProgress) {
+      // Always animate from current animated value to target
+      // This ensures smooth transitions even if state updates are fast
+      Animated.timing(localProgressAnimated, {
+        toValue: targetProgress,
+        duration: 450,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }).start();
+      
+      // Update ref
+      prevBaseProgressRef.current = targetProgress;
+    }
+  }, [cardState?.baseProgress, cardState?.completed, localProgressAnimated]);
+  
+  // Create interpolated width from local animation
+  const smoothProgressWidth = localProgressAnimated.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
   
   useEffect(() => {
     console.log('[AnimatedHabitCard] lastNudgeTime changed:', lastNudgeTime);
@@ -148,11 +185,11 @@ const AnimatedHabitCard = ({
         </View>
 
         <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor }]}>
-          <Reanimated.View
+          <Animated.View
             style={[
               styles.highlightCardProgressFill,
               {
-                width: progressWidth,
+                width: smoothProgressWidth,
                 backgroundColor: progressFillColor,
               },
             ]}

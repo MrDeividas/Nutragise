@@ -21,7 +21,9 @@
       "infoPlist": {
         "NSHealthShareUsageDescription": "We need access to your health data to automatically track your sleep, steps, and exercise habits.",
         "NSHealthUpdateUsageDescription": "We need permission to save your health data.",
-        "UIBackgroundModes": ["fetch"]
+        "UIBackgroundModes": [
+          "fetch"
+        ]
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
@@ -38,6 +40,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-audio"
+    ]
   }
 }

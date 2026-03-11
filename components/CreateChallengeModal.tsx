@@ -24,13 +24,16 @@ interface Props {
   onSubmit: (data: CreateChallengeData, type: 'private' | 'public') => Promise<void>;
   editMode?: boolean;
   initialData?: Partial<CreateChallengeData>;
+  isPro?: boolean;
 }
 
-export default function CreateChallengeModal({ visible, onClose, onSubmit, editMode = false, initialData }: Props) {
+export default function CreateChallengeModal({ visible, onClose, onSubmit, editMode = false, initialData, isPro = false }: Props) {
   const { theme } = useTheme();
   const [step, setStep] = useState(1);
   const [challengeType, setChallengeType] = useState<'private' | 'public'>('private');
   const [loading, setLoading] = useState(false);
+  // Free users are locked to 7-day challenges
+  const FREE_USER_MAX_DAYS = 7;
   
   // Form data
   const [title, setTitle] = useState(initialData?.title || '');
@@ -133,7 +136,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       <TouchableOpacity
         style={[
           styles.typeOption,
-          { backgroundColor: theme.cardBackground, borderColor: challengeType === 'private' ? theme.primary : theme.border },
+          { backgroundColor: theme.cardBackground, borderColor: challengeType === 'private' ? theme.primary : '#E5E7EB' },
         ]}
         onPress={() => setChallengeType('private')}
       >
@@ -158,7 +161,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       <TouchableOpacity
         style={[
           styles.typeOption,
-          { backgroundColor: theme.cardBackground, borderColor: challengeType === 'public' ? theme.primary : theme.border },
+          { backgroundColor: theme.cardBackground, borderColor: challengeType === 'public' ? theme.primary : '#E5E7EB' },
         ]}
         onPress={() => setChallengeType('public')}
       >
@@ -202,7 +205,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       {/* Title */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>Title *</Text>
       <TextInput
-        style={[styles.input, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: theme.border }]}
+        style={[styles.input, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: '#E5E7EB' }]}
         placeholder="Enter challenge title"
         placeholderTextColor={theme.textSecondary}
         value={title}
@@ -212,7 +215,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       {/* Description */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>Description *</Text>
       <TextInput
-        style={[styles.textArea, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: theme.border }]}
+        style={[styles.textArea, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: '#E5E7EB' }]}
         placeholder="Describe your challenge..."
         placeholderTextColor={theme.textSecondary}
         value={description}
@@ -224,7 +227,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       {/* Start Date */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>Start Date</Text>
       <TouchableOpacity
-        style={[styles.datePickerButton, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
+        style={[styles.datePickerButton, { backgroundColor: theme.cardBackground, borderColor: '#E5E7EB' }]}
         onPress={() => setShowDatePicker(true)}
       >
         <Ionicons name="calendar-outline" size={20} color={theme.primary} />
@@ -263,25 +266,51 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
 
       {/* Duration */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>Duration</Text>
+      {!isPro && (
+        <Text style={[styles.proHint, { color: theme.textSecondary }]}>
+          Free users: 7-day challenges only. Upgrade to Pro for longer durations.
+        </Text>
+      )}
       <View style={styles.durationRow}>
-        {[3, 7, 14, 30].map((days) => (
-          <TouchableOpacity
-            key={days}
-            style={[
-              styles.durationButton,
-              { 
-                backgroundColor: theme.cardBackground, 
-                borderColor: durationDays === days ? theme.primary : theme.border,
-                borderWidth: 2,
-              },
-            ]}
-            onPress={() => setDurationDays(days)}
-          >
-            <Text style={[styles.durationLabel, { color: durationDays === days ? theme.primary : theme.textSecondary, fontWeight: durationDays === days ? '700' : '500' }]}>
-              {days} days
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {[3, 7, 14, 30].map((days) => {
+          const isLocked = !isPro && days > FREE_USER_MAX_DAYS;
+          const isSelected = durationDays === days;
+          return (
+            <TouchableOpacity
+              key={days}
+              style={[
+                styles.durationButton,
+                {
+                  backgroundColor: isLocked ? '#F3F4F6' : theme.cardBackground,
+                  borderColor: isSelected ? theme.primary : '#E5E7EB',
+                  borderWidth: isSelected ? 2 : 1,
+                  opacity: isLocked ? 0.5 : 1,
+                },
+              ]}
+              onPress={() => {
+                if (isLocked) {
+                  Alert.alert(
+                    'Pro Feature',
+                    `Challenges longer than 7 days are available to Pro members only. Upgrade to unlock 14-day and 30-day challenges.`,
+                    [{ text: 'OK' }]
+                  );
+                  return;
+                }
+                setDurationDays(days);
+              }}
+            >
+              <Text style={[styles.durationLabel, {
+                color: isSelected ? theme.primary : theme.textSecondary,
+                fontWeight: isSelected ? '700' : '500',
+              }]}>
+                {days} days
+              </Text>
+              {isLocked && (
+                <Text style={styles.proTag}>PRO</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Entry Fee */}
@@ -294,8 +323,8 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
               styles.entryFeeButton,
               { 
                 backgroundColor: theme.cardBackground, 
-                borderColor: entryFee === fee ? theme.primary : theme.border,
-                borderWidth: 2,
+                borderColor: entryFee === fee ? theme.primary : '#E5E7EB',
+                borderWidth: entryFee === fee ? 2 : 1,
               },
             ]}
             onPress={() => setEntryFee(fee)}
@@ -320,7 +349,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       {/* Requirement */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>Requirement *</Text>
       <TextInput
-        style={[styles.input, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: theme.border }]}
+        style={[styles.input, { backgroundColor: theme.cardBackground, color: theme.textPrimary, borderColor: '#E5E7EB' }]}
         placeholder="e.g., Walk 10,000 steps"
         placeholderTextColor={theme.textSecondary}
         value={requirementText}
@@ -333,7 +362,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
         <TouchableOpacity
           style={[
             styles.frequencyButton,
-            { backgroundColor: theme.cardBackground, borderColor: frequency === 'daily' ? theme.primary : theme.border },
+            { backgroundColor: theme.cardBackground, borderColor: frequency === 'daily' ? theme.primary : '#E5E7EB' },
           ]}
           onPress={() => setFrequency('daily')}
         >
@@ -344,7 +373,7 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
         <TouchableOpacity
           style={[
             styles.frequencyButton,
-            { backgroundColor: theme.cardBackground, borderColor: frequency === 'weekly' ? theme.primary : theme.border },
+            { backgroundColor: theme.cardBackground, borderColor: frequency === 'weekly' ? theme.primary : '#E5E7EB' },
           ]}
           onPress={() => setFrequency('weekly')}
         >
@@ -357,10 +386,9 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
       {/* Buttons */}
       <View style={styles.buttonRow}>
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
+          style={[styles.backButton, { backgroundColor: theme.cardBackground, borderColor: '#E5E7EB' }]}
           onPress={() => setStep(1)}
         >
-          <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
           <Text style={[styles.backButtonText, { color: theme.textPrimary }]}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -371,12 +399,9 @@ export default function CreateChallengeModal({ visible, onClose, onSubmit, editM
           {loading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <>
-              <Text style={styles.createButtonText}>
-                {challengeType === 'private' ? 'Create Challenge' : 'Send Request'}
-              </Text>
-              <Ionicons name="checkmark" size={20} color="white" />
-            </>
+            <Text style={styles.createButtonText}>
+              {challengeType === 'private' ? 'Create Challenge' : 'Send Request'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -586,11 +611,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 12,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   durationLabel: {
     fontSize: 13,
+  },
+  proHint: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  proTag: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#F59E0B',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 2,
   },
   entryFeeRow: {
     flexDirection: 'row',
@@ -602,6 +644,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 12,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

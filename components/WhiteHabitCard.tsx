@@ -113,9 +113,9 @@ const WhiteHabitCard = ({
 
   const handleCardLongPress = useCallback(() => {
     if (isCreateCard || !card.habit) return;
-    playCompletionSound();
+    // Sound and animation will be triggered after API call completes in handleCustomHabitToggle
     toggleHabitCompletion(card.habit.id, customHabitsDate || todayDate);
-  }, [isCreateCard, card.habit, playCompletionSound, toggleHabitCompletion, customHabitsDate, todayDate]);
+  }, [isCreateCard, card.habit, toggleHabitCompletion, customHabitsDate, todayDate]);
 
   const isCompleted = !isCreateCard && (card.progress >= 1);
   const cardBackgroundColor = '#FFFFFF';

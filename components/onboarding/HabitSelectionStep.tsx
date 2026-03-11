@@ -19,7 +19,7 @@ const ALL_HABITS: Habit[] = [
   { id: 'meditation', name: 'Meditation', icon: '🧘', isPremium: false, isCore: true },
   { id: 'microlearn', name: 'Microlearning', icon: '📚', isPremium: false, isCore: true },
   { id: 'gym', name: 'Gym', icon: '💪', isPremium: false, isCore: true },
-  { id: 'run', name: 'Run', icon: '🏃', isPremium: false, isCore: true },
+  { id: 'run', name: 'Exercise', icon: '🏃', isPremium: false, isCore: true },
   { id: 'focus', name: 'Focus', icon: '🎯', isPremium: false, isCore: false },
   { id: 'screen_time', name: 'Screen Time Limit', icon: '📱', isPremium: false, isCore: true },
   { id: 'cold_shower', name: 'Cold Shower', icon: '🚿', isPremium: false, isCore: false },
@@ -37,9 +37,9 @@ const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 // Habits that should auto-set to all 7 days and be non-editable
 const FIXED_FREQUENCY_HABITS: string[] = []; // Empty - all habits can have their schedules edited
 // Habits that are compulsory and cannot be deselected
-const COMPULSORY_HABITS = ['sleep', 'water', 'update_goal', 'reflect'];
+const COMPULSORY_HABITS = ['sleep', 'reflect', 'run'];
 // Habits that are auto-selected on mount
-const AUTO_SELECTED_HABITS = ['sleep', 'water'];
+const AUTO_SELECTED_HABITS = ['sleep', 'reflect', 'run'];
 const ALL_7_DAYS = [true, true, true, true, true, true, true];
 
 export default function HabitSelectionStep({
@@ -49,10 +49,12 @@ export default function HabitSelectionStep({
   onChange
 }: HabitSelectionStepProps) {
   const { theme } = useTheme();
-  const [collapsedHabits, setCollapsedHabits] = useState<Set<string>>(new Set());
+  // Start with all habits collapsed (schedule hidden by default)
+  const [collapsedHabits, setCollapsedHabits] = useState<Set<string>>(new Set(ALL_HABITS.map(h => h.id)));
+  // Track habits that have chosen "No Schedule" - these won't show buttons
+  const [noScheduleHabits, setNoScheduleHabits] = useState<Set<string>>(new Set());
 
-  // Auto-select compulsory habits (sleep and water) on mount if they're not already selected
-  // Note: update_goal is compulsory but NOT auto-selected - user must select it manually
+  // Auto-select compulsory habits (sleep, reflect, and exercise) on mount if they're not already selected
   useEffect(() => {
     const autoSelectedPresent = AUTO_SELECTED_HABITS.every(id => selectedHabits.includes(id));
     
@@ -60,12 +62,16 @@ export default function HabitSelectionStep({
       const newSelected = [...new Set([...selectedHabits, ...AUTO_SELECTED_HABITS])];
       const newFrequencies = { ...habitFrequencies };
       
-      // Auto-set auto-selected habits to all 7 days
+      // Auto-set auto-selected habits to no days selected (user will select)
       AUTO_SELECTED_HABITS.forEach(habitId => {
         if (!newFrequencies[habitId]) {
-          newFrequencies[habitId] = ALL_7_DAYS;
+          // Start with no days selected - user will select their schedule
+          newFrequencies[habitId] = [false, false, false, false, false, false, false];
         }
       });
+      
+      // Keep schedules collapsed so buttons show first (don't auto-expand)
+      // The schedules will stay collapsed, showing the "Set Schedule" and "No Schedule" buttons
       
       onChange({ selectedHabits: newSelected, habitFrequencies: newFrequencies, isPremium });
     }
@@ -93,17 +99,13 @@ export default function HabitSelectionStep({
       // For fixed frequency habits, auto-set to all 7 days
       if (FIXED_FREQUENCY_HABITS.includes(habitId)) {
         newFrequencies[habitId] = ALL_7_DAYS;
-      } else if (habitId === 'update_goal') {
-        // Update Goal requires at least 1 day, set default to Monday only
-        newFrequencies[habitId] = [false, true, false, false, false, false, false]; // S, M, T, W, T, F, S
-      } else if (habitId === 'reflect') {
-        // Reflect requires at least 2 days, set default to Monday and Wednesday
-        newFrequencies[habitId] = [false, true, false, true, false, false, false]; // S, M, T, W, T, F, S
       } else {
-        // For non-fixed habits, auto-set default to 3 days (Mon, Wed, Fri)
-        // This ensures validation passes immediately
-        newFrequencies[habitId] = [false, true, false, true, false, true, false]; // S, M, T, W, T, F, S
+        // For all other habits, start with no days selected
+        newFrequencies[habitId] = [false, false, false, false, false, false, false];
       }
+      
+      // Keep schedule collapsed so buttons show first (don't auto-expand)
+      // The schedule will stay collapsed, showing the "Set Schedule" and "No Schedule" buttons
       
       onChange({ selectedHabits: newSelected, habitFrequencies: newFrequencies, isPremium: newIsPremium });
     }
@@ -150,22 +152,74 @@ export default function HabitSelectionStep({
     setCollapsedHabits(newCollapsed);
   };
 
-  const toggleHabitWithExpand = (habitId: string) => {
-    // If already selected and collapsed, toggle to expand
-    if (selectedHabits.includes(habitId) && collapsedHabits.has(habitId) && !FIXED_FREQUENCY_HABITS.includes(habitId)) {
-      const newCollapsed = new Set(collapsedHabits);
-      newCollapsed.delete(habitId);
-      setCollapsedHabits(newCollapsed);
+  const handleHabitClick = (habitId: string) => {
+    // If not selected, toggle to select it
+    if (!selectedHabits.includes(habitId)) {
+      toggleHabit(habitId);
+    } else if (noScheduleHabits.has(habitId) && !FIXED_FREQUENCY_HABITS.includes(habitId)) {
+      // If already selected and in noScheduleHabits, show buttons again to allow editing
+      const newNoSchedule = new Set(noScheduleHabits);
+      newNoSchedule.delete(habitId);
+      setNoScheduleHabits(newNoSchedule);
+    }
+    // If already selected and not in noScheduleHabits, do nothing (buttons will handle schedule)
+  };
+
+  const handleTickClick = (habitId: string) => {
+    // Prevent deselecting compulsory habits
+    if (COMPULSORY_HABITS.includes(habitId) && selectedHabits.includes(habitId)) {
+      return; // Cannot deselect compulsory habits
+    }
+    
+    // Toggle selection
+    if (selectedHabits.includes(habitId)) {
+      deselectHabit(habitId);
+      // Remove from noScheduleHabits if it was there
+      const newNoSchedule = new Set(noScheduleHabits);
+      newNoSchedule.delete(habitId);
+      setNoScheduleHabits(newNoSchedule);
     } else {
-      // Normal toggle
       toggleHabit(habitId);
     }
+  };
+
+  const handleSetSchedule = (habitId: string) => {
+    // Remove from "no schedule" set so buttons can show again if needed
+    const newNoSchedule = new Set(noScheduleHabits);
+    newNoSchedule.delete(habitId);
+    setNoScheduleHabits(newNoSchedule);
+    // Open the schedule
+    const newCollapsed = new Set(collapsedHabits);
+    newCollapsed.delete(habitId);
+    setCollapsedHabits(newCollapsed);
+  };
+
+  const handleNoSchedule = (habitId: string) => {
+    // Batch all state updates together to prevent jitter
+    // First, update local state (visual changes)
+    const newNoSchedule = new Set(noScheduleHabits);
+    newNoSchedule.add(habitId);
+    setNoScheduleHabits(newNoSchedule);
+    
+    // Collapse the schedule
+    const newCollapsed = new Set(collapsedHabits);
+    newCollapsed.add(habitId);
+    setCollapsedHabits(newCollapsed);
+    
+    // Then update data (triggers parent re-render)
+    const newFrequencies = { ...habitFrequencies };
+    newFrequencies[habitId] = [false, false, false, false, false, false, false];
+    onChange({ selectedHabits, habitFrequencies: newFrequencies, isPremium });
   };
 
   const collapseSchedule = (habitId: string) => {
     const newCollapsed = new Set(collapsedHabits);
     newCollapsed.add(habitId);
     setCollapsedHabits(newCollapsed);
+    // Hide the buttons after confirming schedule
+    const newNoSchedule = new Set(noScheduleHabits);
+    newNoSchedule.add(habitId);
+    setNoScheduleHabits(newNoSchedule);
   };
 
   const togglePremium = () => {
@@ -205,13 +259,9 @@ export default function HabitSelectionStep({
     if (FIXED_FREQUENCY_HABITS.includes(habitId)) {
       return true; // Fixed habits are always valid (7 days)
     }
-    if (habitId === 'update_goal') {
-      return getDayCount(habitId) >= 1; // Update Goal requires at least 1 day
-    }
-    if (habitId === 'reflect') {
-      return getDayCount(habitId) >= 2; // Reflect requires at least 2 days
-    }
-    return getDayCount(habitId) >= 3; // Other habits require at least 3 days
+    // Check if at least one day is selected (for the tick icon to turn green)
+    const dayCount = getDayCount(habitId);
+    return dayCount > 0;
   };
 
   return (
@@ -220,11 +270,21 @@ export default function HabitSelectionStep({
         Your new journey begins here
       </Text>
       <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-        Select at least 6 habits and customise the schedule
+        Select at least 3 core habits and customise the schedule
       </Text>
 
       <View style={styles.habitsContainer}>
-        {ALL_HABITS.map((habit) => {
+        {ALL_HABITS
+          .sort((a, b) => {
+            // Put compulsory habits first
+            const aIsCompulsory = COMPULSORY_HABITS.includes(a.id);
+            const bIsCompulsory = COMPULSORY_HABITS.includes(b.id);
+            if (aIsCompulsory && !bIsCompulsory) return -1;
+            if (!aIsCompulsory && bIsCompulsory) return 1;
+            // Keep original order for non-compulsory habits
+            return 0;
+          })
+          .map((habit) => {
           const isSelected = selectedHabits.includes(habit.id);
           const isFixed = FIXED_FREQUENCY_HABITS.includes(habit.id);
           const isCompulsory = COMPULSORY_HABITS.includes(habit.id);
@@ -249,21 +309,14 @@ export default function HabitSelectionStep({
                 <View style={styles.habitHeader}>
                   <TouchableOpacity 
                     style={styles.habitInfo}
-                    onPress={() => toggleHabitWithExpand(habit.id)}
+                    onPress={() => handleHabitClick(habit.id)}
                   >
                     <Text style={styles.habitIcon}>{habit.icon}</Text>
                     <Text style={[styles.habitName, { color: isSelected ? '#FFFFFF' : theme.textPrimary }]}>
                       {habit.name}
                     </Text>
-                    {habit.isPremium && (
+                    {habit.isPremium && habit.id !== 'reflect' && (
                       <View style={[styles.badge, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.badgeText}>
-                          {habit.id === 'reflect' ? 'FREE' : 'PRO'}
-                        </Text>
-                      </View>
-                    )}
-                    {habit.id === 'reflect' && (
-                      <View style={[styles.badge, { backgroundColor: theme.primary, marginLeft: 4 }]}>
                         <Text style={styles.badgeText}>PRO</Text>
                       </View>
                     )}
@@ -283,7 +336,7 @@ export default function HabitSelectionStep({
                     )}
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    onPress={() => toggleHabitWithExpand(habit.id)}
+                    onPress={() => handleTickClick(habit.id)}
                     disabled={isCompulsory && isSelected}
                     style={{ opacity: isCompulsory && isSelected ? 0.5 : 1 }}
                   >
@@ -295,6 +348,28 @@ export default function HabitSelectionStep({
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Schedule buttons - show when habit is selected and schedule is collapsed, but not if user chose "No Schedule" */}
+              {isSelected && !shouldExpand && !isFixed && !noScheduleHabits.has(habit.id) && (
+                <View style={[styles.scheduleButtonsContainer, { backgroundColor: 'rgba(128, 128, 128, 0.05)', borderColor: theme.borderSecondary }]}>
+                  <TouchableOpacity
+                    style={[styles.scheduleButton, { backgroundColor: '#4B5563' }]}
+                    onPress={() => handleSetSchedule(habit.id)}
+                  >
+                    <Text style={[styles.scheduleButtonText, { color: '#FFFFFF' }]}>
+                      Set Schedule
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleButton, { backgroundColor: '#4B5563' }]}
+                    onPress={() => handleNoSchedule(habit.id)}
+                  >
+                    <Text style={[styles.scheduleButtonText, { color: '#FFFFFF' }]}>
+                      No Schedule
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Inline schedule selector - only for non-fixed habits that are selected and not collapsed */}
               {shouldExpand && (
@@ -337,7 +412,6 @@ export default function HabitSelectionStep({
                         }
                       ]}
                       onPress={() => collapseSchedule(habit.id)}
-                      disabled={!isValid}
                     >
                       <Ionicons
                         name="checkmark"
@@ -346,26 +420,6 @@ export default function HabitSelectionStep({
                       />
                     </TouchableOpacity>
                   </View>
-                  {!isValid && habit.id === 'update_goal' && (
-                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
-                      Please select at least 1 day per week
-                    </Text>
-                  )}
-                  {!isValid && habit.id === 'reflect' && (
-                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
-                      Please select at least 2 days per week
-                    </Text>
-                  )}
-                  {!isValid && habit.id !== 'update_goal' && habit.id !== 'reflect' && (
-                    <Text style={[styles.warningText, { color: '#FF6B6B' }]}>
-                      Please select at least 3 days per week
-                    </Text>
-                  )}
-                  {isValid && dayCount > 0 && (
-                    <Text style={[styles.dayCountText, { color: theme.textSecondary }]}>
-                      {dayCount} {dayCount === 1 ? 'day' : 'days'} selected
-                    </Text>
-                  )}
                 </View>
               )}
             </View>
@@ -500,6 +554,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     fontWeight: '500',
+  },
+  scheduleButtonsContainer: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  scheduleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scheduleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   toggleContainer: {
     marginTop: 16,

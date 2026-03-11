@@ -10,7 +10,6 @@ import {
   Platform,
   StyleSheet
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
@@ -129,12 +128,12 @@ export default function SignUpScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <View style={styles.content}>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: '#FCFAF9' }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <View style={styles.content}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
@@ -143,8 +142,8 @@ export default function SignUpScreen({ navigation }: any) {
             >
               <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Text style={[styles.title, { color: theme.textPrimary }]}>Join Nutrapp</Text>
-            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+            <Text style={[styles.title, { color: '#000000' }]}>Join Nutrapp</Text>
+            <Text style={[styles.subtitle, { color: '#000000' }]}>
               Start your health journey today
             </Text>
           </View>
@@ -270,7 +269,7 @@ export default function SignUpScreen({ navigation }: any) {
             <TouchableOpacity
               style={[
                 styles.button, 
-                { backgroundColor: loading ? 'rgba(128, 128, 128, 0.3)' : theme.primary }
+                { backgroundColor: loading ? 'rgba(128, 128, 128, 0.3)' : '#2DD4BF' }
               ]}
               onPress={handleEmailSignUp}
               disabled={loading}
@@ -284,12 +283,12 @@ export default function SignUpScreen({ navigation }: any) {
 
             {showResendOption && (
               <TouchableOpacity
-                style={[styles.resendButton, { borderColor: theme.primary }]}
+                style={[styles.resendButton, { borderColor: '#2DD4BF' }]}
                 onPress={handleResendEmail}
                 disabled={loading}
               >
-                <Ionicons name="mail-outline" size={20} color={theme.primary} />
-                <Text style={[styles.resendButtonText, { color: theme.primary }]}>
+                <Ionicons name="mail-outline" size={20} color="#2DD4BF" />
+                <Text style={[styles.resendButtonText, { color: '#2DD4BF' }]}>
                   Resend Verification Email
                 </Text>
               </TouchableOpacity>
@@ -302,20 +301,16 @@ export default function SignUpScreen({ navigation }: any) {
             Already have an account?{' '}
           </Text>
           <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-            <Text style={[styles.linkText, { color: theme.primary }]}>Sign In</Text>
+            <Text style={[styles.linkText, { color: '#2DD4BF' }]}>Sign In</Text>
           </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
-    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  keyboardView: {
     flex: 1,
   },
   content: {

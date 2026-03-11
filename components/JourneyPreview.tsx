@@ -30,7 +30,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<DailyPost | null>(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState<number>(0);
-  const theme = useTheme();
+  const { theme } = useTheme();
 
   useEffect(() => {
     loadRecentJourney();
@@ -219,16 +219,25 @@ interface DayDetailModalProps {
 function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailModalProps) {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   
-  const habitsList = [
-    { key: 'gym', label: '🏋️ Gym', value: day.gym_completed },
-    { key: 'meditation', label: '🧘 Meditation', value: day.meditation_completed },
-    { key: 'microlearn', label: '📚 Microlearn', value: day.microlearn_completed },
-    { key: 'sleep', label: '😴 Sleep', value: day.sleep_completed },
-    { key: 'water', label: '💧 Water', value: day.water_completed },
-    { key: 'run', label: '🏃 Run', value: day.run_completed },
-    { key: 'reflect', label: '✍️ Reflect', value: day.reflect_completed },
-    { key: 'cold_shower', label: '🚿 Cold Shower', value: day.cold_shower_completed },
-  ];
+  // Map habit names to their display info
+  const habitMap: Record<string, { label: string }> = {
+    gym: { label: '🏋️ Gym' },
+    meditation: { label: '🧘 Meditation' },
+    microlearn: { label: '📚 Microlearn' },
+    sleep: { label: '😴 Sleep' },
+    water: { label: '💧 Water' },
+    run: { label: '🏃 Run' },
+    reflect: { label: '✍️ Reflect' },
+    cold_shower: { label: '🚿 Cold Shower' },
+  };
+
+  // Create habits list from habits_completed array
+  const allHabits = Object.keys(habitMap);
+  const habitsList = allHabits.map(key => ({
+    key,
+    label: habitMap[key].label,
+    value: day.habits_completed?.includes(key) || false,
+  }));
 
   const completedHabits = habitsList.filter(h => h.value).length;
 
@@ -262,7 +271,7 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
             style={styles.scrollView}
           >
             {/* Photos */}
-            {day.photos.length > 0 && (
+            {day.photos && Array.isArray(day.photos) && day.photos.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
                   Progress Photos ({day.photos.length})
@@ -305,60 +314,19 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
               </View>
             </View>
 
-            {/* Mood & Energy */}
-            {(day.mood_rating || day.energy_level) && (
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-                  Mood & Energy
-                </Text>
-                <View style={styles.moodEnergyContainer}>
-                  {day.mood_rating && (
-                    <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                      <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
-                        Mood
-                      </Text>
-                      <View style={styles.ratingStars}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Ionicons
-                            key={star}
-                            name={star <= day.mood_rating! ? "star" : "star-outline"}
-                            size={20}
-                            color="#F59E0B"
-                          />
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                  {day.energy_level && (
-                    <View style={[styles.moodEnergyItem, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                      <Text style={[styles.moodEnergyLabel, { color: '#ffffff' }]}>
-                        Energy
-                      </Text>
-                      <View style={styles.ratingStars}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Ionicons
-                            key={star}
-                            name={star <= day.energy_level! ? "flash" : "flash-outline"}
-                            size={20}
-                            color="#10B981"
-                          />
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
+            {/* Mood & Energy - Not available in DailyPost type, so hiding this section */}
 
-            {/* Caption */}
-            {day.caption && (
+            {/* Captions */}
+            {day.captions && day.captions.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-                  Note
+                  Notes ({day.captions.length})
                 </Text>
-                <Text style={[styles.sectionContent, { color: '#ffffff' }]}>
-                  {day.caption}
-                </Text>
+                {day.captions.map((caption, index) => (
+                  <Text key={index} style={[styles.sectionContent, { color: '#ffffff', marginBottom: 8 }]}>
+                    {caption}
+                  </Text>
+                ))}
               </View>
             )}
           </ScrollView>
@@ -471,7 +439,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 10,
-    maxHeight: '100%',
     overflow: 'hidden',
     minHeight: 300,
   },

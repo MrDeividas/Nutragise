@@ -60,8 +60,9 @@ export interface ChallengeSubmission {
   id: string;
   challenge_id: string;
   user_id: string;
-  photo_url: string;
+  photo_url: string | null; // Allow null for automatic submissions
   submitted_at: string;
+  submission_date?: string; // DATE field for daily tracking (YYYY-MM-DD)
   week_number: number;
   verification_status: 'pending' | 'approved' | 'rejected';
   submission_notes?: string;

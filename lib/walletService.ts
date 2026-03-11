@@ -354,6 +354,50 @@ class WalletService {
   }
 
   /**
+   * Credit challenge winnings to a user's wallet.
+   * Used by the hold-based payment flow where Stripe captures/cancels are already
+   * handled server-side; this just adds the winners' share to their in-app wallet.
+   * Note: no userId validation here because this is called from server-side
+   * distributePot (which already validates via admin context).
+   */
+  async creditWinnings(
+    userId: string,
+    amount: number,
+    challengeId: string
+  ): Promise<void> {
+    try {
+      const wallet = await this.getWallet(userId);
+      const newBalance = Number(wallet.balance) + amount;
+
+      const { error: updateError } = await supabase
+        .from('user_wallets')
+        .update({ balance: newBalance })
+        .eq('id', wallet.id);
+
+      if (updateError) throw updateError;
+
+      await supabase.from('wallet_transactions').insert({
+        wallet_id: wallet.id,
+        type: 'payout',
+        amount,
+        challenge_id: challengeId,
+        status: 'completed',
+        metadata: {
+          source: 'challenge_winnings',
+          credited_at: new Date().toISOString(),
+        },
+      });
+
+      if (__DEV__) {
+        console.log(`✅ Credited £${amount.toFixed(2)} winnings to wallet for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('Error in creditWinnings:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Withdraw funds to original card (Stripe Refund)
    * Calls Edge Function to process refund and update wallet
    */

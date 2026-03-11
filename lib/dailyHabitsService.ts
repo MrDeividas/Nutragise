@@ -4,6 +4,7 @@ import { DailyHabits, CreateDailyHabitsData, UpdateDailyHabitsData, HabitStreak 
 import { DEFAULT_HABITS } from '../components/DailyHabitsSummary';
 import { pillarProgressService } from './pillarProgressService';
 import { notificationService } from './notificationService';
+import { habitChallengeSyncService } from './habitChallengeSyncService';
 
 class DailyHabitsService {
   /**
@@ -174,6 +175,13 @@ class DailyHabitsService {
         apiCache.delete(cacheKey);
       });
       
+      // Sync habit completions to challenge submissions (non-blocking)
+      this.syncHabitsToChallenges(userId, date, habitData).catch(err => {
+        if (__DEV__) {
+          console.warn('Error syncing habits to challenges:', err);
+        }
+      });
+      
       return result;
     } catch (error) {
       console.error('Error in upsertDailyHabits:', error);
@@ -238,7 +246,136 @@ class DailyHabitsService {
     try {
       console.log(`🗑️ Clearing habit:`, { userId, date, habitType });
       
-      // Clear the habit from database
+      // Handle screen_time directly (stored as screen_time_minutes in daily_habits)
+      if (habitType === 'screen_time') {
+        const { data: existing, error: fetchError } = await supabase
+          .from('daily_habits')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('date', date)
+          .single();
+        
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          console.error('Error fetching daily habits:', fetchError);
+          return false;
+        }
+        
+        if (existing && (existing as any).screen_time_minutes) {
+          // Clear screen_time_minutes
+          const { error: updateError } = await supabase
+            .from('daily_habits')
+            .update({ screen_time_minutes: null })
+            .eq('user_id', userId)
+            .eq('date', date);
+          
+          if (updateError) {
+            console.error('Error clearing screen_time:', updateError);
+            throw updateError;
+          }
+          
+          // Deduct points if it's today
+          if (date === new Date().toISOString().split('T')[0]) {
+            const { data: pointsRecord } = await supabase
+              .from('user_points_daily')
+              .select('*')
+              .eq('user_id', userId)
+              .eq('date', date)
+              .single();
+            
+            if (pointsRecord) {
+              const pointsToDeduct = 15; // DAILY_HABIT_POINTS
+              const newDailyPoints = Math.max(0, (pointsRecord.daily_habits_points || 0) - pointsToDeduct);
+              const newTotalPoints = Math.max(0, (pointsRecord.total_points_today || 0) - pointsToDeduct);
+              
+              await supabase
+                .from('user_points_daily')
+                .update({
+                  daily_habits_points: newDailyPoints,
+                  total_points_today: newTotalPoints
+                })
+                .eq('user_id', userId)
+                .eq('date', date);
+            }
+            
+            // Deduct pillar progress
+            pillarProgressService.deductAction(userId, 'discipline', 'screen_time').catch(err => {
+              console.error('Failed to deduct screen_time from pillar:', err);
+            });
+            
+            // Delete notification
+            notificationService.deleteHabitRewardNotification(userId, 'screen_time', date).catch(err => {
+              console.error('Failed to delete screen_time notification:', err);
+            });
+          }
+          
+          console.log(`✅ Cleared screen_time for ${date}`);
+          return true;
+        }
+        
+        return true;
+      }
+      
+      // Core habits (like, comment, share, update_goal) are tracked in user_points_daily, not daily_habits
+      const coreHabits = ['like', 'comment', 'share', 'update_goal'];
+      if (coreHabits.includes(habitType)) {
+        // Clear core habit from user_points_daily
+        const fieldMap: { [key: string]: string } = {
+          like: 'liked_today',
+          comment: 'commented_today',
+          share: 'shared_today',
+          update_goal: 'updated_goal_today'
+        };
+        
+        const field = fieldMap[habitType];
+        if (!field) {
+          console.warn(`Unknown core habit type: ${habitType}`);
+          return false;
+        }
+        
+        // Get current points record
+        const { data: existing, error: fetchError } = await supabase
+          .from('user_points_daily')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('date', date)
+          .single();
+        
+        if (fetchError && fetchError.code !== 'PGRST116') {
+          console.error('Error fetching daily points:', fetchError);
+          return false;
+        }
+        
+        if (existing && existing[field]) {
+          // Calculate points to deduct
+          const pointsToDeduct = habitType === 'share' ? 20 : (habitType === 'update_goal' ? 25 : 0);
+          const newCorePoints = Math.max(0, (existing.core_habits_points || 0) - pointsToDeduct);
+          const newTotalPoints = Math.max(0, (existing.total_points_today || 0) - pointsToDeduct);
+          
+          // Update the record
+          const { error: updateError } = await supabase
+            .from('user_points_daily')
+            .update({
+              [field]: false,
+              core_habits_points: newCorePoints,
+              total_points_today: newTotalPoints
+            })
+            .eq('user_id', userId)
+            .eq('date', date);
+          
+          if (updateError) {
+            console.error('Error clearing core habit:', updateError);
+            throw updateError;
+          }
+          
+          console.log(`✅ Cleared core habit ${habitType} for ${date}`);
+          return true;
+        }
+        
+        // Already cleared or doesn't exist
+        return true;
+      }
+      
+      // For regular daily habits, use the RPC function
       const { error } = await supabase.rpc('clear_daily_habit', {
         p_user_id: userId,
         p_date: date,
@@ -262,6 +399,8 @@ class DailyHabitsService {
           sleep: { pillar: 'discipline', habitKey: 'sleep' },
           meditation: { pillar: 'growth_wisdom', habitKey: 'meditation' },
           microlearn: { pillar: 'growth_wisdom', habitKey: 'microlearn' },
+          update_goal: { pillar: 'discipline', habitKey: 'update_goal' },
+          screen_time: { pillar: 'discipline', habitKey: 'screen_time' },
         };
 
         const mapping = habitToPillarMap[habitType];
@@ -748,6 +887,85 @@ class DailyHabitsService {
   }
 
   /**
+   * Sync completed habits to challenge submissions
+   */
+  private async syncHabitsToChallenges(
+    userId: string,
+    date: string,
+    habitData: CreateDailyHabitsData
+  ): Promise<void> {
+    try {
+      // Check which habits were completed and sync them
+      const habitsToSync: string[] = [];
+
+      // Gym
+      if (habitData.gym_day_type === 'active') {
+        habitsToSync.push('gym');
+      }
+
+      // Run (Exercise Challenge)
+      if (habitData.run_day_type === 'active' || habitData.run_activity_type) {
+        habitsToSync.push('run');
+      }
+
+      // Water
+      if (habitData.water_intake && habitData.water_intake > 0) {
+        habitsToSync.push('water');
+      }
+
+      // Sleep
+      if (
+        (habitData.sleep_hours && habitData.sleep_hours > 0) ||
+        (habitData.sleep_bedtime_hours !== undefined &&
+          habitData.sleep_wakeup_hours !== undefined)
+      ) {
+        habitsToSync.push('sleep');
+      }
+
+      // Reflect
+      if (habitData.reflect_mood || habitData.reflect_energy) {
+        habitsToSync.push('reflect');
+      }
+
+      // Cold Shower
+      if (habitData.cold_shower_completed) {
+        habitsToSync.push('cold_shower');
+      }
+
+      // Focus
+      if (habitData.focus_completed) {
+        habitsToSync.push('focus');
+      }
+
+      // Screen Time (check if screen_time_minutes exists in habitData)
+      if ((habitData as any).screen_time_minutes !== undefined && (habitData as any).screen_time_minutes > 0) {
+        habitsToSync.push('screen_time');
+      }
+
+      // Sync each completed habit to its challenge
+      await Promise.all(
+        habitsToSync.map((habitType) =>
+          habitChallengeSyncService
+            .syncHabitCompletionToChallenge(userId, habitType, date)
+            .catch((err) => {
+              if (__DEV__) {
+                console.warn(
+                  `Failed to sync ${habitType} to challenge:`,
+                  err
+                );
+              }
+            })
+        )
+      );
+    } catch (error) {
+      // Don't throw - sync failures shouldn't break habit saving
+      if (__DEV__) {
+        console.error('Error in syncHabitsToChallenges:', error);
+      }
+    }
+  }
+
+  /**
    * Test function to verify database connection
    */
   async testConnection(): Promise<boolean> {
@@ -905,10 +1123,18 @@ class DailyHabitsService {
         .single();
       
       if (error) throw error;
-      return data?.selected_daily_habits || DEFAULT_HABITS;
+      
+      // Return saved habits if they exist and are not null/empty
+      // Only fall back to DEFAULT_HABITS if the field is null/undefined/empty
+      if (data?.selected_daily_habits && Array.isArray(data.selected_daily_habits) && data.selected_daily_habits.length > 0) {
+        return data.selected_daily_habits;
+      }
+      
+      // Return empty array if no habits are saved (let ActionScreen handle the default)
+      return [];
     } catch (error) {
       console.error('Error getting selected habits:', error);
-      return DEFAULT_HABITS;
+      return [];
     }
   }
 

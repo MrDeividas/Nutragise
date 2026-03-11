@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import { walletService } from '../lib/walletService';
 import { challengePotService } from '../lib/challengePotService';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
-import { ChallengeWithDetails, ChallengeProgress } from '../types/challenges';
+import { ChallengeWithDetails, ChallengeProgress, getChallengeWeekNumber, getCurrentWeekForRecurringChallenge, isRecurringChallenge } from '../types/challenges';
 import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
@@ -34,7 +34,7 @@ export default function ChallengeDetailScreen({ route }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const { challengeId } = route.params;
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { initPaymentSheet, presentPaymentSheet, collectBankAccountForSetup } = useStripe();
   
   const [challenge, setChallenge] = useState<ChallengeWithDetails | null>(null);
   const [progress, setProgress] = useState<ChallengeProgress | null>(null);
@@ -49,11 +49,26 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [participantTodaySubmissions, setParticipantTodaySubmissions] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadChallengeDetails();
     loadUserProfile();
   }, [challengeId]);
+
+  // Refresh progress when schedule tab becomes active (but not on every render)
+  const prevActiveTab = useRef(activeTab);
+  useEffect(() => {
+    if (activeTab === 'schedule' && prevActiveTab.current !== 'schedule' && isParticipating && challenge && user) {
+      const refreshProgress = async () => {
+        const progressData = await challengesService.getChallengeProgress(challenge.id, user.id);
+        setProgress(progressData);
+        await loadParticipantTodaySubmissions(challenge.id);
+      };
+      refreshProgress();
+    }
+    prevActiveTab.current = activeTab;
+  }, [activeTab, challenge?.id, user?.id, isParticipating]);
 
   const loadUserProfile = async () => {
     if (user?.id) {
@@ -80,6 +95,37 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
+  const loadParticipantTodaySubmissions = async (challengeId: string) => {
+    if (!challengeId) return;
+    
+    const today = new Date();
+    const todayDateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Query all submissions for this challenge from today using submission_date
+    const { data: submissions, error } = await supabase
+      .from('challenge_submissions')
+      .select('user_id, submission_date, submitted_at')
+      .eq('challenge_id', challengeId)
+      .eq('submission_date', todayDateString);
+    
+    if (!error && submissions) {
+      const todayUserIds = new Set(submissions.map(sub => sub.user_id));
+      
+      if (__DEV__) {
+        console.log('👥 Participant today submissions:', {
+          challengeId,
+          todayDateString,
+          totalTodaySubmissions: submissions.length,
+          todaySubmissions: Array.from(todayUserIds),
+        });
+      }
+      
+      setParticipantTodaySubmissions(todayUserIds);
+    } else if (error) {
+      console.error('❌ Error loading participant today submissions:', error);
+    }
+  };
+
   const loadChallengeDetails = async () => {
     try {
       setLoading(true);
@@ -92,6 +138,25 @@ export default function ChallengeDetailScreen({ route }: any) {
         
         if (isParticipatingCheck) {
           const progressData = await challengesService.getChallengeProgress(challengeData.id, user.id);
+          
+          if (__DEV__) {
+            console.log('📊 Loaded progress data for challenge:', {
+              challengeId: challengeData.id,
+              challengeTitle: challengeData.title,
+              isRecurring: isRecurringChallenge(challengeData),
+              totalSubmissions: progressData ? Object.values(progressData.submissions_by_week).flat().length : 0,
+              submissionsByWeek: progressData?.submissions_by_week,
+              allSubmissions: progressData ? Object.values(progressData.submissions_by_week).flat().map(s => ({
+                id: s.id,
+                week_number: s.week_number,
+                submitted_at: s.submitted_at,
+                photo_url: s.photo_url,
+                verification_status: s.verification_status,
+                date: new Date(s.submitted_at).toDateString(),
+              })) : [],
+            });
+          }
+          
           setProgress(progressData);
         }
 
@@ -104,6 +169,9 @@ export default function ChallengeDetailScreen({ route }: any) {
         // Load user's wallet balance
         const balance = await walletService.getBalance(user.id);
         setWalletBalance(balance);
+        
+        // Load participant today submissions
+        await loadParticipantTodaySubmissions(challengeData.id);
       }
     } catch (error) {
       console.error('Error loading challenge details:', error);
@@ -115,151 +183,116 @@ export default function ChallengeDetailScreen({ route }: any) {
 
   const handleJoinChallenge = async () => {
     if (!user || !challenge) return;
-    
-    // Check if challenge is pro-only and user is not pro
+
+    // Block pro-only challenges for free users
     if (challenge.is_pro_only && !userProfile?.is_pro) {
       setShowUpgradeModal(true);
       return;
     }
-    
+
+    // Block challenges longer than 7 days for free users
+    if (!userProfile?.is_pro && (challenge.duration_weeks || 1) > 1) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const entryFee = challenge.entry_fee || 0;
+    const isSevenDayChallenge = (challenge.duration_weeks || 1) <= 1;
 
     try {
       setJoining(true);
 
-      // For challenges with entry fee, check wallet balance first
-      if (entryFee > 0) {
-        // Check if user has sufficient wallet balance
-        const hasSufficientBalance = walletBalance >= entryFee;
-        
-        if (hasSufficientBalance) {
-          // User has enough in wallet - use wallet funds
-          
-          // Step 1: Initiate join with wallet (Transfers from wallet to Stripe Escrow)
-          // The service handles the wallet deduction and Stripe Payment Intent creation
-          const { paymentIntentId } = 
-            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
-          
-          // Step 2: Complete the join (payment already processed from wallet)
-          await challengesService.completeChallengeJoin(
-            challenge.id,
-            user.id,
-            paymentIntentId
-          );
-
-          Alert.alert(
-            'Success!', 
-            `You've joined the challenge! £${entryFee.toFixed(2)} has been transferred to escrow until the challenge completes.`
-          );
-        } else {
-          // Insufficient wallet balance - show payment options
-          console.log(`⚠️ [ChallengeDetailScreen] Insufficient wallet balance, showing payment options`);
-          
-          // First, calculate the fee to show user
-          const { stripeFeeCalculator } = await import('../lib/stripeFeeCalculator');
-          const feeCalculation = stripeFeeCalculator.calculateFee(entryFee, true);
-          
-      Alert.alert(
-        'Insufficient Balance',
-            `You need £${entryFee.toFixed(2)} to join this challenge. Your current balance is £${walletBalance.toFixed(2)}.\n\nCard payment total: £${feeCalculation.totalAmount.toFixed(2)}\n(Entry: £${entryFee.toFixed(2)} + Stripe fee: £${feeCalculation.stripeFee.toFixed(2)})\n\nWould you like to:\n• Add funds to wallet (no fee)\n• Pay directly with card`,
-        [
-          {
-                text: 'Add to Wallet',
-            onPress: () => navigation.navigate('Wallet'),
-          },
-          {
-                text: `Pay £${feeCalculation.totalAmount.toFixed(2)} with Card`,
-                onPress: async () => {
-                  // Pay directly with card via Stripe
-                  try {
-                    setJoining(true);
-                    
-                    // Step 1: Initiate join (creates Stripe Payment Intent with Stripe fee)
-                    const { paymentIntentId, clientSecret, entryFee: fee, stripeFee, totalAmount } = 
-                      await challengesService.initiateChallengeJoin(challenge.id, user.id);
-                    
-                    // Step 2: Initialize Stripe Payment Sheet
-                    const { error: initError } = await initPaymentSheet({
-                      merchantDisplayName: 'NutrApp',
-                      paymentIntentClientSecret: clientSecret,
-                      defaultBillingDetails: { 
-                        name: user.email?.split('@')[0] || 'User',
-                        email: user.email || undefined,
-                      },
-                      returnURL: 'nutrapp://stripe-redirect',
-                    });
-
-                    if (initError) {
-                      throw new Error(initError.message);
-                    }
-
-                    // Step 3: Present Payment Sheet
-                    const { error: presentError } = await presentPaymentSheet();
-
-                    if (presentError) {
-                      if (presentError.code === 'Canceled') {
-                        return;
-                      }
-                      throw new Error(presentError.message);
-                    }
-
-                    // Step 4: Payment succeeded - complete the join
-                    await challengesService.completeChallengeJoin(
-                      challenge.id,
-                      user.id,
-                      paymentIntentId
-                    );
-
-      Alert.alert(
-                      'Success!', 
-                      `You've joined the challenge! £${totalAmount.toFixed(2)} has been processed (£${fee.toFixed(2)} entry + £${stripeFee.toFixed(2)} fee). Funds are held in escrow until the challenge completes.`
-                    );
-                    
-                  setIsParticipating(true);
-                  await loadChallengeDetails();
-                  } catch (error: any) {
-                    console.error('❌ [ChallengeDetailScreen] Error with card payment:', error);
-                    Alert.alert('Error', error.message || 'Payment failed. Please try again.');
-              } finally {
-                setJoining(false);
-              }
-            },
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-        ]
-      );
-      return;
-    }
-      } else {
-        // Free challenge - join directly (no payment needed)
-        console.log(`🆓 [ChallengeDetailScreen] Joining free challenge`);
-        await challengesService.completeChallengeJoin(
-          challenge.id,
-          user.id,
-          null
-        );
-        Alert.alert('Success!', 'You have joined the challenge!');
+      if (entryFee <= 0) {
+        // Free challenge — join immediately, no payment
+        await challengesService.completeChallengeJoin(challenge.id, user.id, null);
+        Alert.alert('Joined!', 'You have joined the challenge. Good luck!');
+        setIsParticipating(true);
+        await loadChallengeDetails();
+        return;
       }
 
-      // Reload challenge details
+      if (isSevenDayChallenge) {
+        // ── HOLD-BASED FLOW (7-day challenges) ──
+        // Step 1: Create SetupIntent — save card, no charge yet
+        const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
+          await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
+
+        // Step 2: Show Stripe Setup Sheet (user saves their card)
+        const { error: initError } = await initPaymentSheet({
+          merchantDisplayName: 'NutrApp',
+          setupIntentClientSecret,
+          defaultBillingDetails: {
+            name: user.email?.split('@')[0] || 'User',
+            email: user.email || undefined,
+          },
+          returnURL: 'nutrapp://stripe-redirect',
+        });
+
+        if (initError) throw new Error(initError.message);
+
+        const { error: presentError } = await presentPaymentSheet();
+
+        if (presentError) {
+          if (presentError.code === 'Canceled') return;
+          throw new Error(presentError.message);
+        }
+
+        // Step 3: Retrieve the saved payment method ID from the SetupIntent
+        // The SetupIntent is confirmed — extract the payment method
+        // We pass setupIntentId and a placeholder paymentMethodId;
+        // the Edge Function authorize-challenge-payments will resolve the PM
+        // from the SetupIntent when the challenge starts.
+        await challengesService.completeHoldChallengeJoin(
+          challenge.id,
+          user.id,
+          setupIntentId,
+          setupIntentId // payment method is resolved server-side at challenge start
+        );
+
+        Alert.alert(
+          'Joined!',
+          `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
+        );
+      } else {
+        // ── PRO USER: LONGER CHALLENGE FLOW ──
+        // Check wallet first; if enough, use wallet escrow
+        const hasSufficientBalance = walletBalance >= entryFee;
+
+        if (hasSufficientBalance) {
+          const { paymentIntentId } =
+            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
+          await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
+          Alert.alert(
+            'Joined!',
+            `£${entryFee.toFixed(2)} moved to escrow. It's returned if you complete the challenge, kept if you don't.`
+          );
+        } else {
+          // Pro user, longer challenge, insufficient wallet — prompt to top up
+          Alert.alert(
+            'Insufficient Balance',
+            `You need £${entryFee.toFixed(2)} in your wallet to join this challenge.\n\nYour balance: £${walletBalance.toFixed(2)}\n\nFor challenges longer than 7 days, please top up your wallet first.`,
+            [
+              { text: 'Add Funds', onPress: () => navigation.navigate('Wallet') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+      }
+
       setIsParticipating(true);
       await loadChallengeDetails();
-      
     } catch (error: any) {
       console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
-      Alert.alert(
-        'Error', 
-        error.message || 'Failed to join challenge. Please try again.'
-      );
+      Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
     } finally {
       setJoining(false);
     }
   };
 
   const handleUploadPhoto = () => {
+    if (!challenge) return;
+    
     // Check if challenge has started
     const now = new Date();
     const startDate = new Date(challenge.start_date);
@@ -268,6 +301,26 @@ export default function ChallengeDetailScreen({ route }: any) {
       Alert.alert(
         'Challenge Not Started',
         'This challenge has not started yet. You cannot submit photos until the challenge begins.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    // Check if user has already submitted today
+    const hasSubmitted = hasTodaysSubmission();
+    
+    if (__DEV__) {
+      console.log('📤 Upload button clicked:', {
+        hasSubmittedToday: hasSubmitted,
+        challengeId: challenge.id,
+        challengeTitle: challenge.title,
+      });
+    }
+    
+    if (hasSubmitted) {
+      Alert.alert(
+        'Already Submitted',
+        'You have already submitted a photo today. You can only submit once per day.',
         [{ text: 'OK' }]
       );
       return;
@@ -316,25 +369,59 @@ export default function ChallengeDetailScreen({ route }: any) {
     if (!user || !challenge) return;
     
     try {
+      // Calculate the correct week number based on challenge type
+      const weekNumber = isRecurringChallenge(challenge) 
+        ? getCurrentWeekForRecurringChallenge(challenge)
+        : getChallengeWeekNumber(challenge);
+      
+      if (__DEV__) {
+        console.log('📸 Submitting photo:', {
+          challengeId: challenge.id,
+          challengeTitle: challenge.title,
+          isRecurring: isRecurringChallenge(challenge),
+          weekNumber,
+          userId: user.id,
+        });
+      }
+      
       const success = await challengesService.submitChallengeProof(
         challenge.id,
         user.id,
         photoUrl,
-        selectedWeek,
+        weekNumber,
         notes
       );
       
       if (success) {
+        if (__DEV__) {
+          console.log('✅ Photo submitted successfully');
+        }
+        
+        // Close the submission modal
+        setShowSubmissionModal(false);
+        
+        // Small delay to ensure database has updated
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (__DEV__) {
+          console.log('🔄 Reloading challenge details after submission...');
+        }
+        
+        // Reload entire challenge details (this will fetch fresh progress and participant data)
+        await loadChallengeDetails();
+        
+        if (__DEV__) {
+          console.log('✅ Challenge details reloaded, checking submission status...');
+        }
+        
         Alert.alert('Success', 'Photo submitted successfully!');
-        // Reload progress
-        const progressData = await challengesService.getChallengeProgress(challenge.id, user.id);
-        setProgress(progressData);
       } else {
         Alert.alert('Error', 'Failed to submit photo');
       }
     } catch (error) {
-      console.error('Error submitting photo:', error);
-      Alert.alert('Error', (error as Error).message || 'Failed to submit photo');
+      console.error('❌ Error submitting photo:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit photo';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -342,15 +429,32 @@ export default function ChallengeDetailScreen({ route }: any) {
     if (!progress || !challenge) return false;
     
     const today = new Date();
-    const todayStr = today.toDateString();
+    const todayDateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
     
     // Check all submissions across all weeks
     const allSubmissions = Object.values(progress.submissions_by_week).flat();
     
-    return allSubmissions.some(sub => {
+    const hasSubmission = allSubmissions.some(sub => {
+      // Use submission_date if available, otherwise fall back to submitted_at date
+      if (sub.submission_date) {
+        return sub.submission_date === todayDateString;
+      }
+      // Fallback: extract date from submitted_at
       const subDate = new Date(sub.submitted_at);
-      return subDate.toDateString() === todayStr;
+      const subDateString = subDate.toISOString().split('T')[0];
+      return subDateString === todayDateString;
     });
+    
+    if (__DEV__) {
+      console.log('🔍 Checking today\'s submission:', {
+        todayDateString,
+        hasSubmission,
+        totalSubmissions: allSubmissions.length,
+        submissionDates: allSubmissions.map(s => s.submission_date || new Date(s.submitted_at).toISOString().split('T')[0]),
+      });
+    }
+    
+    return hasSubmission;
   };
 
   const getCategoryColor = (category: string) => {
@@ -601,7 +705,7 @@ export default function ChallengeDetailScreen({ route }: any) {
 
         {/* Wallet Balance (if not participating and has entry fee) */}
         {challenge.entry_fee && challenge.entry_fee > 0 && !isParticipating && (
-          <View style={[styles.balanceCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderColor }]}>
+          <View style={[styles.balanceCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View>
                 <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
@@ -802,7 +906,7 @@ export default function ChallengeDetailScreen({ route }: any) {
         )}
 
         {activeTab === 'schedule' && (
-          <View style={styles.tabContent}>
+          <View style={styles.tabContent} key={`schedule-${progress?.submissions_by_week ? Object.keys(progress.submissions_by_week).length : 0}`}>
             <View style={styles.scheduleContainer}>
               {Array.from({ length: challenge.duration_weeks }, (_, weekIndex) => {
                 const challengeStartDate = new Date(challenge.start_date);
@@ -825,17 +929,56 @@ export default function ChallengeDetailScreen({ route }: any) {
                       const activityDate = new Date(weekStartDate);
                       activityDate.setDate(weekStartDate.getDate() + dayIndex);
                       
+                      // Get day of the week name
+                      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                      const dayName = dayNames[activityDate.getDay()];
+                      
                       // Check if submission exists for this date
-                      const hasSubmission = progress?.submissions_by_week[weekIndex + 1]?.some(sub => {
+                      // For recurring challenges, all submissions are in week 1, so check week 1
+                      // For regular challenges, check the corresponding week
+                      const weekToCheck = isRecurringChallenge(challenge) ? 1 : weekIndex + 1;
+                      
+                      // Normalize activity date to midnight for comparison
+                      const normalizedActivityDate = new Date(activityDate);
+                      normalizedActivityDate.setHours(0, 0, 0, 0);
+                      const activityDateStr = normalizedActivityDate.toDateString();
+                      
+                      const hasSubmission = progress?.submissions_by_week[weekToCheck]?.some(sub => {
                         const subDate = new Date(sub.submitted_at);
-                        return subDate.toDateString() === activityDate.toDateString();
+                        subDate.setHours(0, 0, 0, 0);
+                        const subDateStr = subDate.toDateString();
+                        return subDateStr === activityDateStr;
                       });
+                      
+                      if (__DEV__ && activityDateStr === new Date().toDateString()) {
+                        console.log('📅 Checking today\'s submission:', {
+                          weekToCheck,
+                          activityDateStr,
+                          hasSubmission,
+                          submissionsInWeek: progress?.submissions_by_week[weekToCheck]?.map(s => {
+                            const d = new Date(s.submitted_at);
+                            d.setHours(0, 0, 0, 0);
+                            return {
+                              date: d.toDateString(),
+                              submitted_at: s.submitted_at,
+                            };
+                          }),
+                        });
+                      }
+                      
+                      // Check if date has passed without submission (missed)
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const checkDate = new Date(activityDate);
+                      checkDate.setHours(0, 0, 0, 0);
+                      const hasPassed = checkDate < today;
+                      const isMissed = hasPassed && !hasSubmission && isParticipating;
                       
                       return (
                         <View key={dayIndex} style={styles.activityItem}>
                           <View style={styles.activityContent}>
                             <Text style={[styles.activityNumber, { color: theme.textSecondary }]}>
-                              Activity {dayIndex + 1}
+                              {dayName} • Activity {dayIndex + 1}
                             </Text>
                             <Text style={[styles.activityName, { color: theme.textPrimary }]}>
                               10k steps a day
@@ -844,6 +987,11 @@ export default function ChallengeDetailScreen({ route }: any) {
                           {hasSubmission && (
                             <View style={[styles.submissionCheck, { backgroundColor: categoryColor }]}>
                               <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            </View>
+                          )}
+                          {isMissed && (
+                            <View style={[styles.submissionCheck, { backgroundColor: '#EF4444' }]}>
+                              <Ionicons name="close-circle" size={16} color="#FFFFFF" />
                             </View>
                           )}
                         </View>
@@ -908,48 +1056,50 @@ export default function ChallengeDetailScreen({ route }: any) {
           <View style={styles.tabContent}>
             <View style={styles.participantsContainer}>
               {challenge.participants && challenge.participants.length > 0 ? (
-                challenge.participants.map((participant, index) => (
-                  <View 
-                    key={participant.id || index} 
-                    style={[styles.participantItem, { borderBottomColor: theme.borderColor }]}
-                  >
-                    {participant.user?.avatar_url ? (
-                      <Image 
-                        source={{ uri: participant.user.avatar_url }} 
-                        style={styles.participantAvatar}
-                      />
-                    ) : (
-                      <View style={[styles.participantAvatarPlaceholder, { backgroundColor: categoryColor }]}>
-                        <Text style={styles.participantAvatarInitial}>
-                          {(participant.user?.username || participant.user?.display_name || 'U').charAt(0).toUpperCase()}
+                challenge.participants.map((participant, index) => {
+                  const hasCompletedToday = participantTodaySubmissions.has(participant.user_id);
+                  return (
+                    <View 
+                      key={participant.id || index} 
+                      style={[styles.participantItem, {
+                        backgroundColor: '#FFFFFF',
+                        borderColor: '#E5E7EB' as any,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 8,
+                        elevation: 3,
+                      }]}
+                    >
+                      {/* Avatar */}
+                      {participant.user?.avatar_url ? (
+                        <Image 
+                          source={{ uri: participant.user.avatar_url }} 
+                          style={styles.participantAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
+                          <Ionicons name="person" size={20} color={theme.textSecondary} />
+                        </View>
+                      )}
+                      
+                      {/* User Info */}
+                      <View style={styles.participantInfo}>
+                        <Text style={[styles.participantName, { color: theme.textPrimary }]}>
+                          {participant.user?.display_name || participant.user?.username || 'Anonymous'}
                         </Text>
                       </View>
-                    )}
-                    <View style={styles.participantInfo}>
-                      <Text style={[styles.participantName, { color: theme.textPrimary }]}>
-                        {participant.user?.display_name || participant.user?.username || 'Anonymous'}
-                      </Text>
-                      <Text style={[styles.participantStatus, { color: theme.textSecondary }]}>
-                        {participant.completion_percentage || 0}% complete
-                      </Text>
+                      
+                      {/* Completed Today Indicator */}
+                      {hasCompletedToday && (
+                        <View style={styles.completedTodayBadge}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                          <Text style={styles.completedTodayText}>Completed Today</Text>
+                        </View>
+                      )}
                     </View>
-                    {participant.status === 'completed' && (
-                      <View style={[styles.statusBadge, { backgroundColor: '#10B981' }]}>
-                        <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                      </View>
-                    )}
-                    {participant.status === 'active' && (
-                      <View style={[styles.statusBadge, { backgroundColor: categoryColor }]}>
-                        <Ionicons name="time-outline" size={16} color="#FFFFFF" />
-                      </View>
-                    )}
-                    {participant.status === 'failed' && (
-                      <View style={[styles.statusBadge, { backgroundColor: '#EF4444' }]}>
-                        <Ionicons name="close-circle" size={16} color="#FFFFFF" />
-                      </View>
-                    )}
-                  </View>
-                ))
+                  );
+                })
               ) : (
                 <View style={styles.emptyParticipants}>
                   <Ionicons name="people-outline" size={48} color={theme.textSecondary} />
@@ -1470,24 +1620,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   participantAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
   },
   participantAvatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  participantAvatarInitial: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
   },
   participantInfo: {
     flex: 1,
@@ -1495,11 +1643,17 @@ const styles = StyleSheet.create({
   },
   participantName: {
     fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontWeight: '500',
   },
-  participantStatus: {
+  completedTodayBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  completedTodayText: {
     fontSize: 13,
+    fontWeight: '500',
+    color: '#10B981',
   },
   statusBadge: {
     width: 28,

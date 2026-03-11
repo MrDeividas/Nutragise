@@ -119,6 +119,22 @@ class OnboardingService {
       if (data.isPremium !== undefined && data.isPremium !== null) {
         updateData.is_premium = data.isPremium;
       }
+      // Save onboarding answers if they exist (steps 6-10)
+      if (data.lifeDescription !== undefined && data.lifeDescription !== null && data.lifeDescription !== '') {
+        updateData.life_description = data.lifeDescription;
+      }
+      if (data.changeReason !== undefined && data.changeReason !== null && data.changeReason !== '') {
+        updateData.change_reason = data.changeReason;
+      }
+      if (data.proudMoment !== undefined && data.proudMoment !== null && data.proudMoment !== '') {
+        updateData.proud_moment = data.proudMoment;
+      }
+      if (data.morningMotivation !== undefined && data.morningMotivation !== null && data.morningMotivation !== '') {
+        updateData.morning_motivation = data.morningMotivation;
+      }
+      if (data.currentState !== undefined && data.currentState !== null && data.currentState !== '') {
+        updateData.current_state = data.currentState;
+      }
 
       // Update profile with partial onboarding fields
       const { error: profileError } = await supabase

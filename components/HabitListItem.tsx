@@ -26,6 +26,8 @@ interface HabitListItemProps {
   styles: any;
   backgroundColor?: string;
   isDark?: boolean;
+  onEdit?: () => void;
+  onInfo?: () => void;
 }
 
 const HabitListItem = ({
@@ -49,7 +51,9 @@ const HabitListItem = ({
   theme,
   styles,
   backgroundColor,
-  isDark = false
+  isDark = false,
+  onEdit,
+  onInfo
 }: HabitListItemProps) => {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [canNudge, setCanNudge] = useState(true);
@@ -243,9 +247,53 @@ const HabitListItem = ({
               </View>
             </View>
             
-            {/* Right Section - Partnership Controls */}
-            <View style={{ flexShrink: 0 }}>
+            {/* Right Section - Partnership Controls and Menu */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               {renderPartnershipControls()}
+              {(onEdit || partnership) && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    if (onEdit && card.habit) {
+                      // Custom habit with edit option
+                      if (partnership) {
+                        Alert.alert(
+                          card.title,
+                          'Choose an option',
+                          [
+                            {
+                              text: 'Edit Habit',
+                              onPress: () => onEdit()
+                            },
+                            {
+                              text: 'Remove Partner',
+                              style: 'destructive',
+                              onPress: () => onRemovePartner()
+                            },
+                            {
+                              text: 'Cancel',
+                              style: 'cancel'
+                            }
+                          ]
+                        );
+                      } else {
+                        // No partnership, just edit
+                        onEdit();
+                      }
+                    } else if (partnership) {
+                      // Core habit with partnership - remove partner
+                      onRemovePartner();
+                    }
+                  }}
+                  style={{ padding: 4 }}
+                >
+                  <Ionicons 
+                    name="ellipsis-vertical" 
+                    size={16} 
+                    color="rgba(255, 255, 255, 0.9)" 
+                  />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -286,9 +334,30 @@ const HabitListItem = ({
             </View>
           </View>
           
-          {/* Right Section - Partnership Controls */}
-          <View style={{ flexShrink: 0 }}>
+          {/* Right Section - Partnership Controls and Menu */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {renderPartnershipControls()}
+            {(onInfo || partnership) && (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  if (onInfo) {
+                    // Core habit - show info
+                    onInfo();
+                  } else if (partnership) {
+                    // Core habit with partnership - remove partner
+                    onRemovePartner();
+                  }
+                }}
+                style={{ padding: 4 }}
+              >
+                <Ionicons 
+                  name="ellipsis-vertical" 
+                  size={16} 
+                  color="rgba(255, 255, 255, 0.65)" 
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       )}

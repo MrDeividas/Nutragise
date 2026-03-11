@@ -137,6 +137,10 @@ class ChallengesService {
       const recurringTitles = new Set<string>();
       const seenChallengeIds = new Set<string>(); // Track by ID to prevent duplicates
 
+      if (__DEV__) {
+        console.log(`🔍 [getChallenges] Filtering ${challenges.length} challenges at ${now.toISOString()}`);
+      }
+
       for (const challenge of challenges) {
         // Skip if we've already seen this challenge ID (duplicate prevention)
         if (seenChallengeIds.has(challenge.id)) {
@@ -194,6 +198,18 @@ class ChallengesService {
             const isUpcoming = (now < challengeStart && challengeStart <= oneWeekFromNow);
             const isRecentlyEnded = (now > challengeEnd && now <= oneWeekFromNow);
             
+            if (__DEV__) {
+              console.log(`📅 [Weekly] ${challenge.title}:`, {
+                start: challengeStart.toISOString(),
+                end: challengeEnd.toISOString(),
+                status: challenge.status,
+                isActive,
+                isUpcoming,
+                isRecentlyEnded,
+                willShow: isActive || isUpcoming || isRecentlyEnded,
+              });
+            }
+            
             // Show if active, upcoming, or recently ended (to bridge gaps)
             if (isActive || isUpcoming || isRecentlyEnded) {
               // Only add if we haven't already added a challenge with this title
@@ -202,8 +218,14 @@ class ChallengesService {
               if (!recurringTitles.has(key)) {
                 filteredChallenges.push(challenge);
                 recurringTitles.add(key);
+                if (__DEV__) {
+                  console.log(`  ✅ Added ${challenge.title}`);
+                }
+              } else {
+                if (__DEV__) {
+                  console.log(`  ⏭️  Skipped duplicate ${challenge.title}`);
+                }
               }
-              // Duplicate weekly challenges are silently skipped (filtering is working correctly)
             }
           }
         } else {
@@ -333,32 +355,61 @@ class ChallengesService {
   }
 
   /**
-   * Initiate challenge join - creates Stripe Payment Intent for escrow
-   * Returns payment intent details for UI to show Stripe Payment Sheet
-   * Includes Stripe fee calculation (user covers fees)
+   * Check whether a user is allowed to join a challenge based on their subscription tier.
+   * Free users: 7-day (1 week) challenges only.
+   * Pro users: any duration.
    */
-  async initiateChallengeJoin(challengeId: string, userId: string): Promise<{
-    paymentIntentId: string;
-    clientSecret: string;
-    entryFee: number; // Original entry fee (before Stripe fee)
-    stripeFee: number; // Stripe processing fee
-    totalAmount: number; // Total amount user pays (entryFee + stripeFee)
+  async checkChallengeAccessForUser(userId: string, durationWeeks: number): Promise<void> {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_pro')
+      .eq('id', userId)
+      .single();
+
+    const isPro = profile?.is_pro === true;
+
+    if (!isPro && durationWeeks > 1) {
+      throw new Error(
+        'Free users can only join 7-day challenges. Upgrade to Pro to join longer challenges.'
+      );
+    }
+  }
+
+  /**
+   * Initiate a hold-based challenge join (7-day challenges).
+   * Creates a Stripe SetupIntent so the user can save their card.
+   * The actual hold (PaymentIntent, manual capture) is placed at challenge start.
+   * Returns setupIntentClientSecret for the Stripe Setup Sheet.
+   */
+  async initiateChallengeJoinWithHold(
+    challengeId: string,
+    userId: string
+  ): Promise<{
+    setupIntentClientSecret: string;
+    setupIntentId: string;
+    entryFee: number;
   }> {
-    // Validate user ID matches authenticated user
     await this.validateUserId(userId);
     try {
-      // Get challenge details
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('User not authenticated. Please log in again.');
+      }
+
       const { data: challenge } = await supabase
         .from('challenges')
-        .select('*, status, start_date, max_participants, is_recurring, title, recurring_schedule, entry_fee')
+        .select('id, title, entry_fee, duration_weeks, status')
         .eq('id', challengeId)
         .single();
 
-      if (!challenge) {
-        throw new Error('Challenge not found');
+      if (!challenge) throw new Error('Challenge not found');
+
+      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
+
+      if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
+        throw new Error('Challenge is not open for joining');
       }
 
-      // Check if already joined
       const { data: existing } = await supabase
         .from('challenge_participants')
         .select('id, status')
@@ -366,9 +417,133 @@ class ChallengesService {
         .eq('user_id', userId)
         .single();
 
-      if (existing && existing.status === 'active') {
-        throw new Error('Already joined this challenge');
+      if (existing?.status === 'active') throw new Error('Already joined this challenge');
+
+      const { url: supabaseUrl } = (stripeService as any).getSupabaseConfig();
+      const response = await fetch(`${supabaseUrl}/functions/v1/setup-challenge-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ challengeId }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to set up payment hold');
       }
+
+      const data = await response.json();
+      return {
+        setupIntentClientSecret: data.setupIntentClientSecret,
+        setupIntentId: data.setupIntentId,
+        entryFee: data.entryFee,
+      };
+    } catch (error) {
+      console.error('Error initiating hold-based challenge join:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete a hold-based challenge join after the SetupIntent succeeds.
+   * Saves the payment method ID to challenge_participants so the hold can be
+   * placed when the challenge starts.
+   */
+  async completeHoldChallengeJoin(
+    challengeId: string,
+    userId: string,
+    setupIntentId: string,
+    paymentMethodId: string
+  ): Promise<void> {
+    await this.validateUserId(userId);
+    try {
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('entry_fee')
+        .eq('id', challengeId)
+        .single();
+
+      const entryFee = challenge?.entry_fee || 0;
+
+      const { data: existing } = await supabase
+        .from('challenge_participants')
+        .select('id')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (existing) {
+        await supabase
+          .from('challenge_participants')
+          .update({
+            payment_capture_method: entryFee > 0 ? 'hold' : 'free',
+            stripe_setup_intent_id: setupIntentId,
+            stripe_payment_method_id: paymentMethodId,
+            payment_status: 'pending',
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase.from('challenge_participants').insert({
+          challenge_id: challengeId,
+          user_id: userId,
+          status: 'active',
+          payment_status: entryFee > 0 ? 'pending' : 'paid',
+          completion_percentage: 0,
+          payment_capture_method: entryFee > 0 ? 'hold' : 'free',
+          stripe_setup_intent_id: setupIntentId,
+          stripe_payment_method_id: paymentMethodId,
+          payment_settled: false,
+        });
+      }
+
+      if (entryFee > 0) {
+        await challengePotService.addInvestment(challengeId, userId, entryFee);
+      }
+
+      apiCache.delete(apiCache.generateKey('challenges', 'all'));
+      apiCache.delete(apiCache.generateKey('challenges', 'active'));
+    } catch (error) {
+      console.error('Error completing hold challenge join:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initiate challenge join - creates Stripe Payment Intent for escrow
+   * Returns payment intent details for UI to show Stripe Payment Sheet
+   * Includes Stripe fee calculation (user covers fees)
+   * NOTE: This is kept for Pro users on longer challenges (immediate capture).
+   */
+  async initiateChallengeJoin(challengeId: string, userId: string): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    entryFee: number;
+    stripeFee: number;
+    totalAmount: number;
+  }> {
+    await this.validateUserId(userId);
+    try {
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('*, status, start_date, max_participants, is_recurring, title, recurring_schedule, entry_fee, duration_weeks')
+        .eq('id', challengeId)
+        .single();
+
+      if (!challenge) throw new Error('Challenge not found');
+
+      // Enforce free-user restriction
+      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
+
+      const { data: existing } = await supabase
+        .from('challenge_participants')
+        .select('id, status')
+        .eq('challenge_id', challengeId)
+        .eq('user_id', userId)
+        .single();
+
+      if (existing && existing.status === 'active') throw new Error('Already joined this challenge');
 
       if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
         throw new Error('Challenge is not open for joining');
@@ -377,13 +552,8 @@ class ChallengesService {
       const entryFee = challenge.entry_fee || 0;
 
       if (entryFee > 0) {
-        // Create Stripe Payment Intent for escrow (includes Stripe fee)
-        const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } = 
-          await stripeService.createChallengePaymentIntent(
-            entryFee,
-            userId,
-            challengeId
-          );
+        const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } =
+          await stripeService.createChallengePaymentIntent(entryFee, userId, challengeId);
 
         return {
           paymentIntentId,
@@ -393,14 +563,8 @@ class ChallengesService {
           totalAmount: totalAmount || entryFee,
         };
       } else {
-        // Free challenge - no payment needed
-        // Create participant record immediately
         await this.completeChallengeJoin(challengeId, userId, null);
-        return {
-          paymentIntentId: '',
-          clientSecret: '',
-          entryFee: 0,
-        };
+        return { paymentIntentId: '', clientSecret: '', entryFee: 0, stripeFee: 0, totalAmount: 0 };
       }
     } catch (error) {
       console.error('Error initiating challenge join:', error);
@@ -719,14 +883,14 @@ class ChallengesService {
         throw error;
       }
 
-      const challenges = data?.map(item => item.challenge) || [];
+      const challenges = (data?.map((item: any) => item.challenge).filter(Boolean) || []) as unknown as Challenge[];
       
       if (challenges.length === 0) {
         return [];
       }
 
       // Get participant counts for all challenges in a single batch query
-      const challengeIds = challenges.map(c => c.id);
+      const challengeIds = challenges.map((c: Challenge) => c.id);
       const { data: participantCounts, error: countError } = await supabase
         .from('challenge_participants')
         .select('challenge_id')
@@ -746,10 +910,10 @@ class ChallengesService {
       }
 
       // Add participant_count to each challenge
-      return challenges.map(challenge => ({
+      return challenges.map((challenge: Challenge) => ({
         ...challenge,
         participant_count: countMap.get(challenge.id) || 0,
-      }));
+      })) as Challenge[];
     } catch (error) {
       console.error('Error in getUserChallenges:', error);
       throw error;
@@ -838,66 +1002,113 @@ class ChallengesService {
         }
       }
 
-      // Check if submission already exists for this week/day
-      let existingSubmissionQuery = supabase
+      // Check if submission already exists for TODAY using submission_date
+      // The unique constraint on (challenge_id, user_id, submission_date) will prevent duplicates
+      const todayDate = new Date();
+      const todayDateString = todayDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      
+      const { data: todaySubmission } = await supabase
         .from('challenge_submissions')
-        .select('id')
+        .select('id, submitted_at, submission_date')
         .eq('challenge_id', challengeId)
-        .eq('user_id', userId);
-
-      if (requirements?.frequency === 'daily') {
-        // For daily challenges, check if submission exists for today
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-        
-        existingSubmissionQuery = existingSubmissionQuery
-          .gte('submitted_at', startOfDay.toISOString())
-          .lt('submitted_at', endOfDay.toISOString());
-      } else {
-        // For weekly challenges, check by week number
-        existingSubmissionQuery = existingSubmissionQuery.eq('week_number', weekNumber);
+        .eq('user_id', userId)
+        .eq('submission_date', todayDateString)
+        .maybeSingle();
+      
+      if (__DEV__) {
+        console.log('🔍 Checking for today\'s submission:', {
+          challengeId,
+          userId,
+          todayDateString,
+          hasTodaySubmission: !!todaySubmission,
+          todaySubmission: todaySubmission ? {
+            id: todaySubmission.id,
+            submitted_at: todaySubmission.submitted_at,
+            submission_date: todaySubmission.submission_date,
+          } : null,
+        });
       }
-
-      const { data: existingSubmission } = await existingSubmissionQuery.single();
-
+      
       let submissionId: string | undefined;
 
-      if (existingSubmission) {
-        // Update existing submission
+      if (todaySubmission) {
+        // Update today's submission with new photo (user is resubmitting same day)
+        if (__DEV__) {
+          console.log('📝 Updating today\'s existing submission');
+        }
+        
         const { error } = await supabase
           .from('challenge_submissions')
           .update({
             photo_url: photoUrl,
             submission_notes: submissionNotes,
             verification_status: 'pending',
+            submitted_at: new Date().toISOString(), // Update timestamp
           })
-          .eq('id', existingSubmission.id);
+          .eq('id', todaySubmission.id);
 
         if (error) {
-          console.error('Error updating submission:', error);
+          console.error('❌ Error updating submission:', error);
           throw error;
         }
-        submissionId = existingSubmission.id;
-      } else {
+        
+        if (__DEV__) {
+          console.log('✅ Today\'s submission updated successfully');
+        }
+        
+        submissionId = todaySubmission.id;
+      }
+      
+      if (!todaySubmission) {
+        // Get challenge to check verification type
+        const { data: challengeData } = await supabase
+          .from('challenges')
+          .select('verification_type')
+          .eq('id', challengeId)
+          .single();
+
+        // For automatic verification, photo_url is optional and status is approved
+        const isAutomatic = challengeData?.verification_type === 'automatic';
+        
         // Create new submission
+        if (__DEV__) {
+          console.log('📝 Creating new submission:', {
+            challengeId,
+            userId,
+            weekNumber,
+            hasPhoto: !!photoUrl,
+            isAutomatic,
+          });
+        }
+        
         const { data: newSubmission, error } = await supabase
           .from('challenge_submissions')
           .insert({
             challenge_id: challengeId,
             user_id: userId,
-            photo_url: photoUrl,
+            photo_url: photoUrl || null, // Allow null for automatic submissions
             week_number: weekNumber,
             submission_notes: submissionNotes,
-            verification_status: 'pending',
+            verification_status: isAutomatic ? 'approved' : 'pending',
+            submission_date: todayDateString, // Set submission_date for unique constraint
           })
-          .select('id')
+          .select('*')
           .single();
 
         if (error) {
-          console.error('Error creating submission:', error);
+          console.error('❌ Error creating submission:', error);
           throw error;
         }
+        
+        if (__DEV__) {
+          console.log('✅ Submission created successfully:', {
+            submission: newSubmission,
+            submissionId: newSubmission?.id,
+            submittedAt: newSubmission?.submitted_at,
+            weekNumber: newSubmission?.week_number,
+          });
+        }
+        
         submissionId = newSubmission?.id;
       }
 
@@ -938,11 +1149,25 @@ class ChallengesService {
         .select('*')
         .eq('challenge_id', challengeId)
         .eq('user_id', userId)
-        .order('week_number');
+        .order('submitted_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching submissions:', error);
         throw error;
+      }
+
+      if (__DEV__) {
+        console.log('📋 Fetched submissions:', {
+          challengeId,
+          userId,
+          count: data?.length || 0,
+          submissions: data?.map(s => ({
+            id: s.id,
+            week_number: s.week_number,
+            submitted_at: s.submitted_at,
+            date: new Date(s.submitted_at).toDateString(),
+          })),
+        });
       }
 
       return data || [];
@@ -1151,21 +1376,30 @@ class ChallengesService {
   async handleRecurringChallenges(): Promise<void> {
     try {
       // Get all recurring challenges (including those without next_recurrence set)
+      // Check both 'active' and 'upcoming' status to catch all recurring parents
       const { data: recurringChallenges, error } = await supabase
         .from('challenges')
         .select('*')
         .eq('is_recurring', true)
-        .eq('status', 'active');
+        .in('status', ['active', 'upcoming']);
 
       if (error) {
         console.error('Error fetching recurring challenges:', error);
         return;
       }
 
+      if (__DEV__) {
+        console.log(`🔄 [handleRecurringChallenges] Found ${recurringChallenges?.length || 0} recurring challenges`);
+      }
+
       const now = new Date();
 
       for (const challenge of recurringChallenges || []) {
         const schedule = challenge.recurring_schedule || 'weekly'; // Default to weekly for backwards compatibility
+        
+        if (__DEV__) {
+          console.log(`  Processing: ${challenge.title} (${schedule})`);
+        }
         
         if (schedule === 'daily') {
           await this.handleDailyRecurringChallenge(challenge, now);
@@ -1301,6 +1535,15 @@ class ChallengesService {
       // 2. It's within 7 days of the next instance starting
       const shouldCreate = now >= endDate || (nextWeekStart.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000);
       
+      if (__DEV__) {
+        console.log(`  📊 ${challenge.title}:`, {
+          currentEnd: endDate.toISOString(),
+          nextStart: nextWeekStart.toISOString(),
+          shouldCreate,
+          daysUntilNext: Math.round((nextWeekStart.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
+        });
+      }
+      
       if (shouldCreate) {
         // Check if next week's challenge already exists
         // IMPORTANT: Filter by entry_fee to distinguish free vs paid versions
@@ -1321,10 +1564,17 @@ class ChallengesService {
         );
 
         if (matchingChallenges.length === 0) {
+          if (__DEV__) {
+            console.log(`  ✨ Creating next week's instance for ${challenge.title}`);
+          }
           await this.createRecurringInstance(challenge);
         } else if (matchingChallenges.length > 1) {
           // Multiple duplicates exist - log warning but don't create another
           console.warn(`⚠️ Multiple weekly challenge instances found for "${challenge.title}" (entry_fee: ${challenge.entry_fee || 0}): ${matchingChallenges.length} instances`);
+        } else {
+          if (__DEV__) {
+            console.log(`  ℹ️  Next week's instance already exists for ${challenge.title}`);
+          }
         }
         // If exactly 1 exists, that's correct - do nothing
       }

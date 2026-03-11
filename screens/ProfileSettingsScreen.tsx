@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -14,13 +14,22 @@ import { adminService } from '../lib/adminService';
 
 export default function ProfileSettingsScreen() {
   const navigation = useNavigation();
-  const { theme, isDark, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const { user, updateProfile, signOut, resendVerificationEmail, checkEmailVerification } = useAuthStore();
   const bottomNavPadding = useBottomNavPadding();
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [lastUsernameChange, setLastUsernameChange] = useState<Date | null>(null);
+  const [showChangeUsername, setShowChangeUsername] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [changingUsername, setChangingUsername] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   // Check email verification status
   const checkEmailStatus = async () => {
@@ -28,19 +37,22 @@ export default function ProfileSettingsScreen() {
     setEmailVerified(verified);
   };
 
-  // Load user profile to check is_pro status
+  // Load user profile to check is_pro status and last username change
   const loadUserProfile = async () => {
     if (!user) return;
     
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('is_pro')
+        .select('is_pro, username_last_changed')
         .eq('id', user.id)
         .single();
       
       if (!error && profile) {
         setUserProfile(profile);
+        if (profile.username_last_changed) {
+          setLastUsernameChange(new Date(profile.username_last_changed));
+        }
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
@@ -139,6 +151,122 @@ export default function ProfileSettingsScreen() {
     }
   };
 
+  // Check if user can change username (30 days restriction)
+  const canChangeUsername = (): boolean => {
+    if (!lastUsernameChange) return true; // Never changed before
+    const daysSinceChange = (Date.now() - lastUsernameChange.getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceChange >= 30;
+  };
+
+  // Handle change username
+  const handleChangeUsername = async () => {
+    if (!user) return;
+
+    if (!canChangeUsername()) {
+      const daysRemaining = Math.ceil(30 - (Date.now() - lastUsernameChange!.getTime()) / (1000 * 60 * 60 * 24));
+      Alert.alert(
+        'Cannot Change Username',
+        `You can only change your username once every 30 days. Please try again in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.`
+      );
+      return;
+    }
+
+    if (!newUsername.trim()) {
+      Alert.alert('Error', 'Please enter a username');
+      return;
+    }
+
+    if (newUsername.trim().length < 3) {
+      Alert.alert('Error', 'Username must be at least 3 characters long');
+      return;
+    }
+
+    setChangingUsername(true);
+    try {
+      // Update username in both users and profiles tables
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          username: newUsername.trim(),
+          username_last_changed: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Also update users table if possible
+      try {
+        await supabase
+          .from('users')
+          .update({ username: newUsername.trim() })
+          .eq('id', user.id);
+      } catch (usersError) {
+        // Ignore if users table update fails (RLS might block it)
+        console.warn('Failed to update users table:', usersError);
+      }
+
+      // Update local state
+      await updateProfile({ username: newUsername.trim() });
+      setLastUsernameChange(new Date());
+      setShowChangeUsername(false);
+      setNewUsername('');
+      await loadUserProfile();
+      
+      Alert.alert('Success', 'Username updated successfully!');
+    } catch (error: any) {
+      console.error('Error changing username:', error);
+      Alert.alert('Error', error.message || 'Failed to change username. Please try again.');
+    } finally {
+      setChangingUsername(false);
+    }
+  };
+
+  // Handle change password
+  const handleChangePassword = async () => {
+    if (!user) return;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'New passwords do not match');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      // Update password using Supabase auth
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setShowChangePassword(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      
+      Alert.alert('Success', 'Password updated successfully!');
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      Alert.alert('Error', error.message || 'Failed to change password. Please try again.');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   let joinDateText = 'Joined';
   if (user?.created_at) {
     const date = new Date(user.created_at);
@@ -194,30 +322,138 @@ export default function ProfileSettingsScreen() {
           </View>
         )}
 
-        {/* Theme Toggle */}
-        <View style={[styles.option, styles.optionRow, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <View style={styles.optionTextContainer}>
-            <Text style={[styles.optionText, { color: theme.textPrimary }]}>Dark Mode</Text>
-            <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>
-              Toggle between light and dark experience
-            </Text>
+        {/* Change Username */}
+        {!showChangeUsername ? (
+          <TouchableOpacity 
+            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary, opacity: canChangeUsername() ? 1 : 0.5 }]}
+            onPress={() => {
+              if (canChangeUsername()) {
+                setShowChangeUsername(true);
+              } else {
+                const daysRemaining = Math.ceil(30 - (Date.now() - lastUsernameChange!.getTime()) / (1000 * 60 * 60 * 24));
+                Alert.alert(
+                  'Cannot Change Username',
+                  `You can only change your username once every 30 days. Please try again in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.`
+                );
+              }
+            }}
+            disabled={!canChangeUsername()}
+          >
+            <View style={styles.optionRow}>
+              <Text style={[styles.optionText, { color: theme.primary }]}>Change Username</Text>
+              {!canChangeUsername() && (
+                <Text style={[styles.optionDescription, { color: theme.textSecondary, marginLeft: 8 }]}>
+                  (30 day cooldown)
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 12 }]}>Change Username</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
+              placeholder="Enter new username"
+              placeholderTextColor={theme.textTertiary}
+              value={newUsername}
+              onChangeText={setNewUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
+                onPress={() => {
+                  setShowChangeUsername(false);
+                  setNewUsername('');
+                }}
+              >
+                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: theme.primary }]}
+                onPress={handleChangeUsername}
+                disabled={changingUsername}
+              >
+                {changingUsername ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-          <Switch
-            value={isDark}
-            onValueChange={toggleTheme}
-            trackColor={{ false: 'rgba(15, 122, 120, 0.3)', true: theme.primary }}
-            thumbColor="#ffffff"
-          />
-        </View>
+        )}
 
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Change Username</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Change Email</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Change Password</Text>
+        {/* Change Password */}
+        {!showChangePassword ? (
+          <TouchableOpacity 
+            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+            onPress={() => setShowChangePassword(true)}
+          >
+            <Text style={[styles.optionText, { color: theme.primary }]}>Change Password</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 12 }]}>Change Password</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
+              placeholder="Current password"
+              placeholderTextColor={theme.textTertiary}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
+              placeholder="New password"
+              placeholderTextColor={theme.textTertiary}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
+              placeholder="Confirm new password"
+              placeholderTextColor={theme.textTertiary}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
+                onPress={() => {
+                  setShowChangePassword(false);
+                  setCurrentPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+              >
+                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: theme.primary }]}
+                onPress={handleChangePassword}
+                disabled={changingPassword}
+              >
+                {changingPassword ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        <TouchableOpacity 
+          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={() => navigation.navigate('OnboardingAnswers' as never)}
+        >
+          <Text style={[styles.optionText, { color: theme.primary }]}>View Onboarding Answers</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
@@ -414,6 +650,36 @@ const styles = StyleSheet.create({
   },
   manageSubscriptionText: {
     flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  input: {
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    fontSize: 16,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButton: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
     fontSize: 16,
     fontWeight: '600',
   },
