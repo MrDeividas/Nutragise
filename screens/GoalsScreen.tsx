@@ -206,6 +206,9 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   }>>>({});
   const [completionId, setCompletionId] = useState<string | null>(null);
   const saveTimeoutRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+  const [workoutBodyCurrentWeight, setWorkoutBodyCurrentWeight] = useState<string>('');
+  const [workoutBodyTargetWeight, setWorkoutBodyTargetWeight] = useState<string>('');
+  const [weightGoalsEditing, setWeightGoalsEditing] = useState(false);
 
   // Only fetch on first load, not on every focus
   useEffect(() => {
@@ -220,6 +223,22 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
       loadActiveSplit();
     }
   }, [user, activeTab]);
+
+  // Load workout body weight from profile when on workout tab
+  useEffect(() => {
+    if (!user?.id || activeTab !== 'workout') return;
+    (async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('workout_current_weight, workout_target_weight')
+        .eq('id', user.id)
+        .single();
+      if (data) {
+        setWorkoutBodyCurrentWeight(data.workout_current_weight != null ? String(data.workout_current_weight) : '');
+        setWorkoutBodyTargetWeight(data.workout_target_weight != null ? String(data.workout_target_weight) : '');
+      }
+    })();
+  }, [user?.id, activeTab]);
 
   // Reload split when screen comes into focus (e.g., after selecting a split)
   useFocusEffect(
@@ -605,7 +624,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 onPress={() => setShowNewGoalModal(true)}
                 style={styles.newGoalButton}
               >
-                <Ionicons name="add" size={28} color={theme.textPrimary} />
+                <Ionicons name="add" size={24} color={theme.textPrimary} />
               </TouchableOpacity>
             )}
           </View>
@@ -706,6 +725,77 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 <Ionicons name="add" size={24} color={theme.textPrimary} />
               </View>
             </TouchableOpacity>
+
+            {/* Current weight & Target weight Box */}
+            <View style={[styles.exerciseBox, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB', marginBottom: 12 }]}>
+              <View style={styles.exerciseBoxHeader}>
+                <Text style={[styles.exerciseBoxTitle, { color: theme.textPrimary }]}>Weight goals</Text>
+                {!weightGoalsEditing ? (
+                  <TouchableOpacity onPress={() => setWeightGoalsEditing(true)} style={styles.weightGoalEditButton}>
+                    <Ionicons name="create-outline" size={24} color="#000000" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {weightGoalsEditing ? (
+                <>
+                  <View style={styles.weightGoalsRow}>
+                    <View style={styles.weightGoalField}>
+                      <Text style={[styles.weightGoalLabel, { color: theme.textSecondary }]}>Current weight (kg)</Text>
+                      <TextInput
+                        style={[styles.weightGoalInput, { color: theme.textPrimary, borderColor: theme.border }]}
+                        value={workoutBodyCurrentWeight}
+                        onChangeText={setWorkoutBodyCurrentWeight}
+                        placeholder="e.g. 75"
+                        placeholderTextColor={theme.textTertiary}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                    <View style={styles.weightGoalField}>
+                      <Text style={[styles.weightGoalLabel, { color: theme.textSecondary }]}>Target weight (kg)</Text>
+                      <TextInput
+                        style={[styles.weightGoalInput, { color: theme.textPrimary, borderColor: theme.border }]}
+                        value={workoutBodyTargetWeight}
+                        onChangeText={setWorkoutBodyTargetWeight}
+                        placeholder="e.g. 70"
+                        placeholderTextColor={theme.textTertiary}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.weightGoalSaveButton, { backgroundColor: theme.primary }]}
+                    onPress={async () => {
+                      if (!user?.id) return;
+                      const currentNum = parseFloat(workoutBodyCurrentWeight);
+                      const targetNum = parseFloat(workoutBodyTargetWeight);
+                      await supabase.from('profiles').update({
+                        workout_current_weight: Number.isFinite(currentNum) ? currentNum : null,
+                        workout_target_weight: Number.isFinite(targetNum) ? targetNum : null,
+                        updated_at: new Date().toISOString(),
+                      }).eq('id', user.id);
+                      setWeightGoalsEditing(false);
+                    }}
+                  >
+                    <Text style={styles.weightGoalSaveButtonText}>Save</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <View style={styles.weightGoalsRow}>
+                  <View style={styles.weightGoalField}>
+                    <Text style={[styles.weightGoalLabel, { color: theme.textSecondary }]}>Current weight</Text>
+                    <Text style={[styles.weightGoalValue, { color: theme.textPrimary }]}>
+                      {workoutBodyCurrentWeight ? `${workoutBodyCurrentWeight} kg` : '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.weightGoalField}>
+                    <Text style={[styles.weightGoalLabel, { color: theme.textSecondary }]}>Target weight</Text>
+                    <Text style={[styles.weightGoalValue, { color: theme.textPrimary }]}>
+                      {workoutBodyTargetWeight ? `${workoutBodyTargetWeight} kg` : '—'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
 
             {/* Next Workout Box */}
             <View style={[styles.weeklyTrackerCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
@@ -1429,25 +1519,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 4,
+    paddingTop: 10,
     paddingBottom: 20,
     position: 'relative',
   },
   headerLeftContainer: {
-    width: 40,
-    height: 40,
+    width: 24,
+    height: 24,
     zIndex: 10,
   },
   headerLeftSpacer: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 24,
     zIndex: 1,
   },
   headerLeftButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 24,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     zIndex: 10,
     backgroundColor: 'transparent',
   },
@@ -1460,7 +1550,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     zIndex: 0,
     top: '50%',
-    transform: [{ translateY: -12 }],
+    transform: [{ translateY: -10 }],
   },
   headerRightButtons: {
     flexDirection: 'row',
@@ -1469,10 +1559,14 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   toggleButton: {
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   newGoalButton: {
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1682,6 +1776,49 @@ const styles = StyleSheet.create({
   },
   exerciseBoxContent: {
     marginTop: 16,
+  },
+  weightGoalsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  weightGoalField: {
+    flex: 1,
+  },
+  weightGoalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  weightGoalInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+  },
+  weightGoalValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  weightGoalEditButton: {
+    paddingLeft: 4,
+    paddingVertical: 4,
+  },
+  weightGoalEditText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  weightGoalSaveButton: {
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  weightGoalSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   muscleGroupContainer: {
     gap: 8,

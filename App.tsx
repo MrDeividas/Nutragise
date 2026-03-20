@@ -1,5 +1,6 @@
-import React, { useEffect, useState, Suspense, lazy } from 'react';
+import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import type { NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
@@ -12,6 +13,8 @@ import { useTheme } from './state/themeStore';
 import { supabase } from './lib/supabase';
 import { stripeService } from './lib/stripeService';
 import { challengesService } from './lib/challengesService';
+import { initializeAI } from './lib/config';
+import { pushNotificationService } from './lib/pushNotificationService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
 
@@ -532,14 +535,48 @@ export default function App() {
   const { user, loading, initialize } = useAuthStore();
   const { theme } = useTheme();
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   useEffect(() => {
     initialize();
+    initializeAI();
     // Check and update ended challenges to pending review status
     challengesService.checkAndUpdateEndedChallenges().catch(error => {
       console.error('Error checking ended challenges:', error);
     });
   }, []);
+
+  // Register push notifications when user logs in, clean up on logout
+  useEffect(() => {
+    if (!user) return;
+
+    // Initialise (request permission + save token to DB)
+    pushNotificationService.initialize(user.id);
+
+    // Handle notification taps — navigate to the relevant screen
+    const cleanup = pushNotificationService.setupListeners((data) => {
+      if (!navigationRef.current) return;
+      try {
+        if (data.type === 'dm' && data.chatId) {
+          navigationRef.current.navigate('ChatWindow', { chatId: data.chatId });
+        } else if (data.type === 'challenge' && data.challengeId) {
+          navigationRef.current.navigate('ChallengeDetail', { challengeId: data.challengeId });
+        } else if (data.type === 'habit_reminder' || data.type === 'nudge') {
+          navigationRef.current.navigate('Action');
+        } else if ((data.type === 'post_like' || data.type === 'post_comment') && data.postId) {
+          navigationRef.current.navigate('PostDetail', { postId: data.postId });
+        } else if (data.type === 'post_reply' && data.commentId) {
+          navigationRef.current.navigate('Action'); // fall back to feed
+        }
+      } catch (e) {
+        // Navigation may not be ready yet — silently ignore
+      }
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     // Check if user has completed onboarding
@@ -590,6 +627,7 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
         <NavigationContainer
+          ref={navigationRef}
           theme={{
             dark: false,
             colors: {

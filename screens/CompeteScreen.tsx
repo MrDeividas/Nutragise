@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {
   View,
   Text,
@@ -479,10 +480,8 @@ export default function CompeteScreen({ navigation }: any) {
           [
             {
               text: 'Copy Code',
-              onPress: () => {
-                // Using Clipboard from react-native
-                const Clipboard = require('react-native').Clipboard;
-                Clipboard.setString(result.joinCode || '');
+              onPress: async () => {
+                await Clipboard.setStringAsync(result.joinCode || '');
                 Alert.alert('Copied!', 'Join code copied to clipboard');
               },
             },

@@ -30,6 +30,9 @@ export default function ProfileSettingsScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [paypalEmail, setPaypalEmail] = useState('');
+  const [showPaypalEdit, setShowPaypalEdit] = useState(false);
+  const [savingPaypal, setSavingPaypal] = useState(false);
 
   // Check email verification status
   const checkEmailStatus = async () => {
@@ -44,7 +47,7 @@ export default function ProfileSettingsScreen() {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('is_pro, username_last_changed')
+        .select('is_pro, username_last_changed, paypal_email')
         .eq('id', user.id)
         .single();
       
@@ -52,6 +55,9 @@ export default function ProfileSettingsScreen() {
         setUserProfile(profile);
         if (profile.username_last_changed) {
           setLastUsernameChange(new Date(profile.username_last_changed));
+        }
+        if (profile.paypal_email) {
+          setPaypalEmail(profile.paypal_email);
         }
       }
     } catch (error) {
@@ -267,6 +273,35 @@ export default function ProfileSettingsScreen() {
     }
   };
 
+  const handleSavePaypalEmail = async () => {
+    if (!user) return;
+    const trimmed = paypalEmail.trim().toLowerCase();
+    if (!trimmed) {
+      Alert.alert('Error', 'Please enter a PayPal email address');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+    setSavingPaypal(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ paypal_email: trimmed })
+        .eq('id', user.id);
+      if (error) throw error;
+      setPaypalEmail(trimmed);
+      setShowPaypalEdit(false);
+      Alert.alert('Saved', 'PayPal email updated successfully');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save PayPal email');
+    } finally {
+      setSavingPaypal(false);
+    }
+  };
+
   let joinDateText = 'Joined';
   if (user?.created_at) {
     const date = new Date(user.created_at);
@@ -449,6 +484,63 @@ export default function ProfileSettingsScreen() {
             </View>
           </View>
         )}
+        {/* PayPal Email for Withdrawals */}
+        {!showPaypalEdit ? (
+          <TouchableOpacity
+            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+            onPress={() => setShowPaypalEdit(true)}
+          >
+            <View style={styles.optionRow}>
+              <Text style={[styles.optionText, { color: theme.primary }]}>PayPal Email</Text>
+              {paypalEmail ? (
+                <Text style={[styles.optionDescription, { color: theme.textSecondary, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
+                  {paypalEmail}
+                </Text>
+              ) : (
+                <Text style={[styles.optionDescription, { color: theme.textTertiary, marginLeft: 8 }]}>
+                  Not set
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
+            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 4 }]}>PayPal Email</Text>
+            <Text style={[styles.optionDescription, { color: theme.textSecondary, marginBottom: 12 }]}>
+              Used to receive withdrawals from your wallet
+            </Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
+              placeholder="your@paypal-email.com"
+              placeholderTextColor={theme.textTertiary}
+              value={paypalEmail}
+              onChangeText={setPaypalEmail}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+            />
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
+                onPress={() => setShowPaypalEdit(false)}
+              >
+                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: theme.primary }]}
+                onPress={handleSavePaypalEmail}
+                disabled={savingPaypal}
+              >
+                {savingPaypal ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity 
           style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
           onPress={() => navigation.navigate('OnboardingAnswers' as never)}

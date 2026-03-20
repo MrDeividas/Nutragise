@@ -19,16 +19,18 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 interface FullScreenPhotoModalProps {
   visible: boolean;
   photos: string[];
+  captions?: string[];
   initialIndex: number;
   onClose: () => void;
 }
 
-export default function FullScreenPhotoModal({
+const FullScreenPhotoModal: React.FC<FullScreenPhotoModalProps> = ({
   visible,
   photos,
+  captions = [],
   initialIndex,
   onClose,
-}: FullScreenPhotoModalProps) {
+}) => {
   const { theme } = useTheme();
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = React.useState(initialIndex);
@@ -118,6 +120,12 @@ export default function FullScreenPhotoModal({
             />
           </TouchableWithoutFeedback>
 
+        {captions[currentIndex] && captions[currentIndex].trim() !== '' && (
+          <View style={styles.captionContainer}>
+            <Text style={styles.captionText}>{captions[currentIndex]}</Text>
+          </View>
+        )}
+
         {/* Navigation Dots */}
         {photos.length > 1 && (
           <View style={styles.dotsContainer}>
@@ -141,7 +149,9 @@ export default function FullScreenPhotoModal({
       </TouchableWithoutFeedback>
     </Modal>
   );
-}
+};
+
+export default FullScreenPhotoModal;
 
 const styles = StyleSheet.create({
   overlay: {
@@ -189,7 +199,7 @@ const styles = StyleSheet.create({
   },
   dotsContainer: {
     position: 'absolute',
-    bottom: 50,
+    bottom: 28,
     left: 0,
     right: 0,
     flexDirection: 'row',
@@ -199,5 +209,21 @@ const styles = StyleSheet.create({
   },
   dot: {
     borderRadius: 4,
+  },
+  captionContainer: {
+    position: 'absolute',
+    bottom: 64,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  captionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

@@ -55,30 +55,40 @@ Deno.serve(async (req) => {
           ? `ends in ${minutesUntilEnd} min (early settle)`
           : `ended ${Math.abs(minutesUntilEnd)} min ago`;
 
-        try {
-          const settleResponse = await fetch(
-            `${supabaseUrl}/functions/v1/settle-challenge-payments`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseServiceKey}`,
-              },
-              body: JSON.stringify({ challengeId: challenge.id }),
+        // Only settle payments if the challenge actually has participants
+        const { count: earlyParticipantCount } = await supabase
+          .from('challenge_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('challenge_id', challenge.id);
+
+        if ((earlyParticipantCount ?? 0) === 0) {
+          console.log(`⏭️  Skipping early settle for "${challenge.title}" (${label}) — no participants`);
+        } else {
+          try {
+            const settleResponse = await fetch(
+              `${supabaseUrl}/functions/v1/settle-challenge-payments`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify({ challengeId: challenge.id }),
+              }
+            );
+            const settleResult = await settleResponse.json();
+            if (settleResult.settled > 0) {
+              console.log(`💳 Settled ${settleResult.settled} hold(s) for "${challenge.title}" (${label}):`, {
+                winners: settleResult.winners,
+                losers: settleResult.losers,
+                totalCaptured: settleResult.totalCaptured,
+              });
+            } else {
+              console.log(`ℹ️ No unsettled holds for "${challenge.title}" (${label})`);
             }
-          );
-          const settleResult = await settleResponse.json();
-          if (settleResult.settled > 0) {
-            console.log(`💳 Settled ${settleResult.settled} hold(s) for "${challenge.title}" (${label}):`, {
-              winners: settleResult.winners,
-              losers: settleResult.losers,
-              totalCaptured: settleResult.totalCaptured,
-            });
-          } else {
-            console.log(`ℹ️ No unsettled holds for "${challenge.title}" (${label})`);
+          } catch (settleErr: any) {
+            console.error(`⚠️ Early settlement failed for "${challenge.title}":`, settleErr.message);
           }
-        } catch (settleErr: any) {
-          console.error(`⚠️ Early settlement failed for "${challenge.title}":`, settleErr.message);
         }
       }
     }
@@ -113,8 +123,32 @@ Deno.serve(async (req) => {
 
     for (const challenge of endedChallenges) {
       try {
-        // Settle any remaining holds that weren't caught by Phase 1
-        // (e.g. challenges that ended between cron runs without entering the 2-hour window).
+        // Check participant count — challenges with no participants don't need admin review
+        const { count: participantCount } = await supabase
+          .from('challenge_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('challenge_id', challenge.id);
+
+        const hasParticipants = (participantCount ?? 0) > 0;
+
+        if (!hasParticipants) {
+          // Auto-approve: no participants means nothing to review
+          const { error: updateError } = await supabase
+            .from('challenges')
+            .update({ approval_status: 'approved', status: 'completed' })
+            .eq('id', challenge.id);
+
+          if (updateError) {
+            console.error(`Error auto-approving empty challenge ${challenge.id}:`, updateError);
+            errors.push({ challengeId: challenge.id, title: challenge.title, error: updateError.message });
+          } else {
+            successCount++;
+            console.log(`⏭️  Auto-approved "${challenge.title}" (no participants)`);
+          }
+          continue;
+        }
+
+        // Has participants — settle payments then send to admin review
         try {
           const settleResponse = await fetch(
             `${supabaseUrl}/functions/v1/settle-challenge-payments`,
@@ -151,7 +185,7 @@ Deno.serve(async (req) => {
           errors.push({ challengeId: challenge.id, title: challenge.title, error: updateError.message });
         } else {
           successCount++;
-          console.log(`✅ Marked "${challenge.title}" as pending review`);
+          console.log(`✅ Marked "${challenge.title}" as pending review (${participantCount} participant(s))`);
         }
       } catch (err: any) {
         console.error(`Error processing challenge ${challenge.id}:`, err);

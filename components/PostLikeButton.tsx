@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
-import { supabase } from '../lib/supabase';
-import { notificationService } from '../lib/notificationService';
 import { useActionStore } from '../state/actionStore';
 
 interface PostLikeButtonProps {
@@ -33,42 +31,16 @@ export default function PostLikeButton({
   const scaleAnim = useState(new Animated.Value(1))[0];
   const heartAnim = useState(new Animated.Value(isLiked ? 1 : 0))[0];
 
-  // Load initial state
+  // Sync when parent provides updated values (e.g. after refresh)
   useEffect(() => {
-    const loadInitialState = async () => {
-      try {
-        const { data: likeData, error: likeError } = await supabase
-          .from('post_likes')
-          .select('*')
-          .eq('post_id', postId)
-          .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
-
-        const { count, error: countError } = await supabase
-          .from('post_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('post_id', postId);
-
-        if (!likeError && !countError) {
-          const currentIsLiked = likeData && likeData.length > 0;
-          const currentCount = count || 0;
-          
-          setIsLiked(currentIsLiked);
-          setLikeCount(currentCount);
-          
-          // Set animation value
-          Animated.timing(heartAnim, {
-            toValue: currentIsLiked ? 1 : 0,
-            duration: 0,
-            useNativeDriver: true,
-          }).start();
-        }
-      } catch (error) {
-        console.error('Error loading like state:', error);
-      }
-    };
-
-    loadInitialState();
-  }, [postId]);
+    setIsLiked(initialIsLiked);
+    setLikeCount(initialLikeCount);
+    Animated.timing(heartAnim, {
+      toValue: initialIsLiked ? 1 : 0,
+      duration: 0,
+      useNativeDriver: true,
+    }).start();
+  }, [initialIsLiked, initialLikeCount]);
 
   const handleLikePress = async () => {
     if (isLoading) return;

@@ -945,7 +945,7 @@ function ProfileScreen({ navigation }: any) {
         {/* Header with Settings */}
         <View style={styles.header}>
           {/* Left side - Settings */}
-          <TouchableOpacity onPress={() => navigation.navigate('ProfileSettings')} style={{ zIndex: 1 }}>
+          <TouchableOpacity onPress={() => navigation.navigate('ProfileSettings')} style={styles.headerIconButton}>
             <Ionicons name="settings-outline" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
 
@@ -953,10 +953,10 @@ function ProfileScreen({ navigation }: any) {
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Profile</Text>
 
           {/* Right side - DM and Notifications */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', zIndex: 1 }}>
+          <View style={styles.headerRightButtons}>
             <TouchableOpacity 
               onPress={() => navigation.navigate('DM' as never)} 
-              style={{ marginRight: 12 }}
+              style={styles.headerIconButton}
             >
               <View style={{ position: 'relative' }}>
                 <Ionicons name="chatbubble-outline" size={24} color="#ffffff" />
@@ -988,7 +988,7 @@ function ProfileScreen({ navigation }: any) {
             <TouchableOpacity onPress={() => {
               navigation.navigate('Notifications');
               markNotificationsAsRead(); // Mark notifications as read
-            }} style={{ marginRight: 12 }}>
+            }} style={styles.headerIconButton}>
               <View style={{ position: 'relative' }}>
                 <Ionicons name="notifications-outline" size={24} color="#ffffff" />
                 {notificationCount > 0 && (
@@ -1711,7 +1711,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     zIndex: 0,
     top: '50%',
-    transform: [{ translateY: -8 }],
+    transform: [{ translateY: -10 }],
+  },
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 1,
+  },
+  headerIconButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
   settingsIcon: {
     fontSize: 20,

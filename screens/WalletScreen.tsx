@@ -21,6 +21,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { walletService } from '../lib/walletService';
 import { stripeService } from '../lib/stripeService';
 import { challengesService } from '../lib/challengesService';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import { WalletTransaction } from '../types/wallet';
@@ -228,19 +229,34 @@ export default function WalletScreen() {
 
   const handleWithdraw = async () => {
     if (!user) return;
-    
-    // In a real app, you might let the user choose an amount.
-    // For simplicity, we'll withdraw the full balance or a fixed amount for now.
-    // Let's ask the user for confirmation.
-    
+
     if (balance <= 0) {
-      Alert.alert('Insufficient Funds', 'You have no funds to withdraw.');
+      Alert.alert('No Funds', 'You have no balance to withdraw.');
+      return;
+    }
+
+    // Fetch the user's saved PayPal email
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('paypal_email')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile?.paypal_email) {
+      Alert.alert(
+        'PayPal Email Required',
+        'Add your PayPal email in Settings before withdrawing.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to Settings', onPress: () => (navigation as any).navigate('MainTabs', { screen: 'Profile', params: { screen: 'ProfileSettings' } }) },
+        ]
+      );
       return;
     }
 
     Alert.alert(
-      'Withdraw to Card',
-      `Withdraw your full balance of £${balance.toFixed(2)} to your original payment card?`,
+      'Withdraw to PayPal',
+      `Send £${balance.toFixed(2)} to your PayPal account?\n\n${profile.paypal_email}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -249,19 +265,17 @@ export default function WalletScreen() {
             try {
               setLoading(true);
               const result = await walletService.withdrawToCard(user.id, balance);
-              
               setBalance(result.newBalance);
               await loadWalletData();
-              
-              Alert.alert('Success', result.message);
+              Alert.alert('Sent!', result.message);
             } catch (error: any) {
               console.error('Withdrawal error:', error);
-              Alert.alert('Withdrawal Failed', error.message || 'Could not process withdrawal');
+              Alert.alert('Withdrawal Failed', error.message || 'Could not process withdrawal. Please try again.');
             } finally {
               setLoading(false);
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
@@ -277,11 +291,13 @@ export default function WalletScreen() {
         }
         return 'Challenge Investment';
       case 'payout':
-        return 'Challenge Payout';
+        return 'Challenge Winnings';
       case 'refund':
         return 'Refund';
       case 'fee':
         return 'Platform Fee';
+      case 'withdrawal':
+        return 'PayPal Withdrawal';
       default:
         return transaction.type;
     }
@@ -300,6 +316,8 @@ export default function WalletScreen() {
         return 'refresh-circle';
       case 'fee':
         return 'remove-circle';
+      case 'withdrawal':
+        return 'arrow-down-circle';
       default:
         return 'ellipse';
     }

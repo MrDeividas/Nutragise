@@ -2,7 +2,7 @@ import { analyticsService } from './analyticsService';
 import { dailyHabitsService } from './dailyHabitsService';
 import { DailyHabits } from '../types/database';
 import { config, getApiKey } from './config';
-import TimePeriodUtils from './timePeriodUtils';
+import { supabase } from './supabase';
 
 interface AIResponse {
   response: string;
@@ -10,36 +10,46 @@ interface AIResponse {
   dataInsights?: any;
 }
 
+interface HabitStats {
+  avgSleepHours: number | null;
+  avgSleepQuality: number | null;
+  avgWaterIntake: number | null;
+  avgStress: number | null;
+  avgMood: number | null;
+  avgMotivation: number | null;
+  avgEnergy: number | null;
+  totalRunSessions: number;
+  totalRunDistance: number | null;
+  totalGymSessions: number;
+  coldShowerRate: number | null;
+  totalFocusMinutes: number | null;
+  recentReflections: { date: string; wentWell?: string; friction?: string; tweak?: string }[];
+  last7DaysSleep: { date: string; hours: number; quality: number }[];
+  last7DaysStress: { date: string; stress: number; motivation: number }[];
+}
+
 interface UserContext {
   userId: string;
+  displayName: string | null;
   recentHabits: DailyHabits[];
   streaks: any[];
   patterns: any;
   correlations: any;
   completionRate: any;
+  stats: HabitStats;
 }
 
 class AIService {
   private baseUrl: string = config.deepseek.baseUrl;
-
-  constructor() {
-    // API key is managed by config
-  }
 
   /**
    * Generate personalized AI response based on user data
    */
   async generateResponse(userId: string, userMessage: string, conversationContext?: string): Promise<AIResponse> {
     try {
-      // Gather user context (always use recent data, not period-specific)
-      const context = await this.buildUserContext(userId, conversationContext);
-      
-      // Create the prompt for the AI
+      const context = await this.buildUserContext(userId);
       const prompt = this.createPrompt(context, userMessage, conversationContext);
-      
-      // Call DeepSeek API
       const response = await this.callDeepSeekAPI(prompt);
-      
       return this.parseAIResponse(response);
     } catch (error) {
       console.error('Error generating AI response:', error);
@@ -48,91 +58,196 @@ class AIService {
   }
 
   /**
-   * Build comprehensive user context for AI analysis
+   * Build comprehensive user context including real habit values
    */
-  private async buildUserContext(userId: string, conversationContext?: string): Promise<UserContext> {
-    try {
-      // Always use last 30 days for AI context (not period-specific)
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      
-      const recentHabits = await dailyHabitsService.getHabitHistory(userId, 'all', startDate, endDate);
-      
-      // Get current streaks
-      const sleepStreak = await dailyHabitsService.getHabitStreak(userId, 'sleep');
-      const waterStreak = await dailyHabitsService.getHabitStreak(userId, 'water');
-      const runStreak = await dailyHabitsService.getHabitStreak(userId, 'run');
-      const gymStreak = await dailyHabitsService.getHabitStreak(userId, 'gym');
-      const reflectStreak = await dailyHabitsService.getHabitStreak(userId, 'reflect');
-      const coldShowerStreak = await dailyHabitsService.getHabitStreak(userId, 'cold_shower');
-      
-      const streaks = [sleepStreak, waterStreak, runStreak, gymStreak, reflectStreak, coldShowerStreak].filter(Boolean);
-      
-      // Validate streaks to prevent false claims
-      const validStreaks = streaks.filter(streak => streak.current_streak > 0);
-      
-      // Get patterns
-      const sleepPatterns = await analyticsService.calculateWeeklyPatterns(userId, 'sleep', 4);
-      const waterPatterns = await analyticsService.calculateWeeklyPatterns(userId, 'water', 4);
-      
-      // Get correlations
-      const correlations = await analyticsService.generateCorrelationInsights(userId);
-      
-      // Get completion rate (always use week for AI context)
-      const completionRate = await analyticsService.calculateHabitCompletionRate(userId, 'past7');
-      
-      
-      
-      return {
-        userId,
-        recentHabits,
-        streaks: validStreaks, // Only return valid streaks
-        patterns: { sleep: sleepPatterns, water: waterPatterns },
-        correlations,
-        completionRate
-      };
-    } catch (error) {
-      console.error('Error building user context:', error);
-      throw error;
-    }
+  private async buildUserContext(userId: string): Promise<UserContext> {
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const week7Ago = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const [
+      recentHabits,
+      sleepStreak, waterStreak, runStreak, gymStreak, reflectStreak, coldShowerStreak,
+      sleepPatterns, waterPatterns,
+      correlations,
+      completionRate,
+      profileResult,
+    ] = await Promise.allSettled([
+      dailyHabitsService.getHabitHistory(userId, 'all', startDate, endDate),
+      dailyHabitsService.getHabitStreak(userId, 'sleep'),
+      dailyHabitsService.getHabitStreak(userId, 'water'),
+      dailyHabitsService.getHabitStreak(userId, 'run'),
+      dailyHabitsService.getHabitStreak(userId, 'gym'),
+      dailyHabitsService.getHabitStreak(userId, 'reflect'),
+      dailyHabitsService.getHabitStreak(userId, 'cold_shower'),
+      analyticsService.calculateWeeklyPatterns(userId, 'sleep', 4),
+      analyticsService.calculateWeeklyPatterns(userId, 'water', 4),
+      analyticsService.generateCorrelationInsights(userId),
+      analyticsService.calculateHabitCompletionRate(userId, 'past7'),
+      supabase.from('profiles').select('display_name, username').eq('id', userId).single(),
+    ]);
+
+    const habits: DailyHabits[] = recentHabits.status === 'fulfilled' ? recentHabits.value : [];
+    const streaks = [sleepStreak, waterStreak, runStreak, gymStreak, reflectStreak, coldShowerStreak]
+      .filter(r => r.status === 'fulfilled' && r.value?.current_streak > 0)
+      .map(r => (r as PromiseFulfilledResult<any>).value);
+
+    const profile = profileResult.status === 'fulfilled' ? profileResult.value.data : null;
+    const displayName = profile?.display_name || profile?.username || null;
+
+    const stats = this.computeStats(habits, week7Ago);
+
+    return {
+      userId,
+      displayName,
+      recentHabits: habits,
+      streaks,
+      patterns: {
+        sleep: sleepPatterns.status === 'fulfilled' ? sleepPatterns.value : {},
+        water: waterPatterns.status === 'fulfilled' ? waterPatterns.value : {},
+      },
+      correlations: correlations.status === 'fulfilled' ? correlations.value : [],
+      completionRate: completionRate.status === 'fulfilled' ? completionRate.value : {},
+      stats,
+    };
   }
 
   /**
-   * Create a comprehensive prompt for the AI
+   * Compute averages and recent trends from raw habit records
+   */
+  private computeStats(habits: DailyHabits[], week7Ago: string): HabitStats {
+    const avg = (vals: (number | undefined | null)[]): number | null => {
+      const valid = vals.filter((v): v is number => v != null && !isNaN(v));
+      return valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : null;
+    };
+
+    const sleepRecords = habits.filter(h => h.sleep_hours != null);
+    const waterRecords = habits.filter(h => h.water_intake != null);
+    const reflectRecords = habits.filter(h => h.reflect_stress != null || h.reflect_mood != null);
+    const runRecords = habits.filter(h => h.run_day_type === 'active');
+    const gymRecords = habits.filter(h => h.gym_day_type === 'active');
+    const coldShowerRecords = habits.filter(h => h.cold_shower_completed != null);
+    const focusRecords = habits.filter(h => h.focus_completed === true && h.focus_duration != null);
+
+    const last7 = habits.filter(h => h.date >= week7Ago);
+
+    return {
+      avgSleepHours: avg(sleepRecords.map(h => h.sleep_hours)),
+      avgSleepQuality: avg(sleepRecords.map(h => h.sleep_quality)),
+      avgWaterIntake: avg(waterRecords.map(h => h.water_intake)),
+      avgStress: avg(reflectRecords.map(h => h.reflect_stress)),
+      avgMood: avg(reflectRecords.map(h => h.reflect_mood)),
+      avgMotivation: avg(reflectRecords.map(h => h.reflect_motivation)),
+      avgEnergy: avg(reflectRecords.map(h => h.reflect_energy)),
+      totalRunSessions: runRecords.length,
+      totalRunDistance: avg(runRecords.map(h => h.run_distance)) !== null
+        ? runRecords.reduce((s, h) => s + (h.run_distance || 0), 0)
+        : null,
+      totalGymSessions: gymRecords.length,
+      coldShowerRate: coldShowerRecords.length > 0
+        ? Math.round((coldShowerRecords.filter(h => h.cold_shower_completed).length / coldShowerRecords.length) * 100)
+        : null,
+      totalFocusMinutes: focusRecords.length > 0
+        ? focusRecords.reduce((s, h) => s + (h.focus_duration || 0), 0)
+        : null,
+      recentReflections: reflectRecords
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 3)
+        .filter(h => h.reflect_what_went_well || h.reflect_friction || h.reflect_one_tweak)
+        .map(h => ({
+          date: h.date,
+          wentWell: h.reflect_what_went_well,
+          friction: h.reflect_friction,
+          tweak: h.reflect_one_tweak,
+        })),
+      last7DaysSleep: last7
+        .filter(h => h.sleep_hours != null)
+        .map(h => ({ date: h.date, hours: h.sleep_hours!, quality: h.sleep_quality || 0 })),
+      last7DaysStress: last7
+        .filter(h => h.reflect_stress != null || h.reflect_motivation != null)
+        .map(h => ({ date: h.date, stress: h.reflect_stress || 0, motivation: h.reflect_motivation || 0 })),
+    };
+  }
+
+  /**
+   * Build a rich, data-specific prompt for the AI
    */
   private createPrompt(context: UserContext, userMessage: string, conversationContext?: string): string {
-    // Validate completion rate to prevent false claims
-    const completionRate = context.completionRate.overallCompletion || 0;
-    const isValidCompletionRate = completionRate > 0 && completionRate <= 100;
-    
-    const systemPrompt = `You are Neutro, an AI wellness assistant. You help users understand their health data, provide personalized insights, and offer actionable recommendations.
+    const { stats, streaks, patterns, correlations, completionRate, displayName } = context;
+    const completion = completionRate.overallCompletion || 0;
+    const hasEnoughData = completion > 0;
 
-IMPORTANT: Only reference data that is actually available and accurate. If completion rates are 0% or seem incorrect, do not congratulate users on high completion rates.
+    const fmt = (val: number | null, unit = '', fallback = 'no data') =>
+      val != null ? `${val}${unit}` : fallback;
 
-HABIT BUILDING PHILOSOPHY: Always encourage users to tackle ALL core wellness habits (sleep, water, exercise, meditation, reflection, cold showers) but emphasize doing them ONE AT A TIME. Never suggest limiting to just 1-2 habits. Instead, guide them to build each habit systematically, one by one, until they master all core habits for complete wellness.
+    const sleepSection = stats.avgSleepHours != null
+      ? `Sleep (30-day avg): ${fmt(stats.avgSleepHours, 'h')} per night, quality ${fmt(stats.avgSleepQuality, '/10')}
+   Last 7 days: ${stats.last7DaysSleep.map(d => `${d.date}: ${d.hours}h (quality ${d.quality}/10)`).join(' | ') || 'no data'}`
+      : 'Sleep: not tracked yet';
 
-Your responses should be:
-- Friendly and encouraging
-- Data-driven and specific
-- Actionable with clear next steps
-- Under 200 words
-- Focused on wellness and habit building
-- Accurate to the actual data provided
-- Always promote building ALL core habits systematically
+    const waterSection = stats.avgWaterIntake != null
+      ? `Water (30-day avg): ${fmt(stats.avgWaterIntake, ' glasses/day')}`
+      : 'Water: not tracked yet';
 
-Current user data:
-- Recent habits: ${context.recentHabits.length} records in the last 30 days
-- Current streaks: ${context.streaks.length > 0 ? context.streaks.map(s => `${s.habit_type}: ${s.current_streak} days`).join(', ') : 'no active streaks'}
-- Sleep pattern: Best on ${context.patterns.sleep.peakDay || 'insufficient data'}s
-- Water pattern: Best on ${context.patterns.water.peakDay || 'insufficient data'}s
-- Weekly completion rate: ${isValidCompletionRate ? completionRate.toFixed(1) : 'insufficient data'}%
-- Correlations found: ${context.correlations.length} significant relationships
+    const exerciseSection = `Exercise (30 days): ${stats.totalGymSessions} gym sessions, ${stats.totalRunSessions} run/walk sessions${stats.totalRunDistance ? `, ${stats.totalRunDistance}km total distance` : ''}`;
 
+    const wellbeingSection = stats.avgStress != null
+      ? `Wellbeing (30-day avg): stress ${fmt(stats.avgStress, '/10')}, mood ${fmt(stats.avgMood, '/10')}, motivation ${fmt(stats.avgMotivation, '/10')}, energy ${fmt(stats.avgEnergy, '/10')}
+   Last 7 days stress/motivation: ${stats.last7DaysStress.map(d => `${d.date}: stress ${d.stress}, motivation ${d.motivation}`).join(' | ') || 'no data'}`
+      : 'Wellbeing: not tracked yet';
+
+    const coldShowerSection = stats.coldShowerRate != null
+      ? `Cold showers: ${stats.coldShowerRate}% completion rate`
+      : 'Cold showers: not tracked yet';
+
+    const focusSection = stats.totalFocusMinutes != null
+      ? `Focus sessions: ${stats.totalFocusMinutes} minutes total in 30 days`
+      : 'Focus sessions: not tracked yet';
+
+    const reflectionSection = stats.recentReflections.length > 0
+      ? `Recent reflections:\n${stats.recentReflections.map(r =>
+          `   ${r.date}${r.wentWell ? ` — went well: "${r.wentWell}"` : ''}${r.friction ? ` — friction: "${r.friction}"` : ''}${r.tweak ? ` — tweak: "${r.tweak}"` : ''}`
+        ).join('\n')}`
+      : 'Reflections: none yet';
+
+    const streakSection = streaks.length > 0
+      ? `Active streaks: ${streaks.map(s => `${s.habit_type} ${s.current_streak} days`).join(', ')}`
+      : 'No active streaks';
+
+    const correlationSection = correlations.length > 0
+      ? `Correlations found: ${correlations.length} (e.g. ${correlations.slice(0, 2).map((c: any) => c.description || c.type).join(', ')})`
+      : 'Correlations: insufficient data';
+
+    const conversationSection = conversationContext
+      ? `\nRecent conversation:\n${conversationContext}\n`
+      : '';
+
+    return `You are Neutro, an AI wellness coach inside a habit-tracking app. You have access to the user's real health data below.${displayName ? ` The user's name is ${displayName}.` : ''}
+
+RULES:
+- Only reference data points that are actually present. Never invent numbers.
+- Be specific — use the actual values (e.g. "your average sleep is 6.2h" not "you track sleep").
+- Be conversational, warm, and under 200 words.
+- If data is missing for something the user asks about, say so and suggest they start tracking it.
+- Promote building ALL core habits (sleep, water, exercise, meditation, reflection, cold showers) systematically, one at a time.
+
+USER'S REAL DATA (last 30 days):
+${sleepSection}
+${waterSection}
+${exerciseSection}
+${wellbeingSection}
+${coldShowerSection}
+${focusSection}
+${reflectionSection}
+${streakSection}
+Weekly completion rate: ${hasEnoughData ? `${completion.toFixed(1)}%` : 'insufficient data'}
+Best sleep day: ${patterns.sleep?.peakDay || 'insufficient data'}
+Best water day: ${patterns.water?.peakDay || 'insufficient data'}
+${correlationSection}
+${conversationSection}
 User message: "${userMessage}"
 
-Provide a helpful, personalized response based on their data. If completion rate is 0% or insufficient data, focus on getting started with the first core habit, then guide them to systematically add the next ones.`;
-
-    return systemPrompt;
+Respond with specific, data-driven advice using the actual numbers above.`;
   }
 
   /**
@@ -293,37 +408,53 @@ Provide a helpful, personalized response based on their data. If completion rate
   async getQuickInsights(userId: string): Promise<string[]> {
     try {
       const context = await this.buildUserContext(userId);
+      const { stats, streaks, patterns, correlations, completionRate } = context;
       const insights: string[] = [];
-      
-      // Generate insights based on data
-      if (context.streaks.length > 0) {
-        const bestStreak = context.streaks.reduce((max, streak) => 
-          streak.current_streak > max.current_streak ? streak : max
+
+      if (streaks.length > 0) {
+        const best = streaks.reduce((max, s) => s.current_streak > max.current_streak ? s : max);
+        insights.push(`🔥 Your ${best.habit_type} streak is ${best.current_streak} days! Keep it up!`);
+      }
+
+      if (stats.avgSleepHours != null) {
+        if (stats.avgSleepHours < 7) {
+          insights.push(`😴 You're averaging ${stats.avgSleepHours}h sleep — below the 7-9h recommended range. Try moving bedtime 30 min earlier.`);
+        } else {
+          insights.push(`😴 Great sleep discipline — you're averaging ${stats.avgSleepHours}h over the last 30 days.`);
+        }
+      }
+
+      if (stats.avgStress != null && stats.avgMotivation != null) {
+        insights.push(`🧠 Your 30-day avg: stress ${stats.avgStress}/10, motivation ${stats.avgMotivation}/10.`);
+      }
+
+      if (stats.totalGymSessions > 0 || stats.totalRunSessions > 0) {
+        insights.push(`💪 ${stats.totalGymSessions} gym sessions and ${stats.totalRunSessions} runs logged in the last 30 days.`);
+      }
+
+      if (completionRate.overallCompletion > 0) {
+        const rate = completionRate.overallCompletion.toFixed(1);
+        insights.push(completionRate.overallCompletion >= 70
+          ? `📈 You're completing ${rate}% of weekly habits — excellent consistency!`
+          : `💪 Weekly completion at ${rate}% — aim for 70%+ for best results.`
         );
-        insights.push(`🔥 Your ${bestStreak.habit_type} streak is ${bestStreak.current_streak} days! Keep it up!`);
       }
-      
-      if (context.completionRate.overallCompletion > 70) {
-        insights.push(`📈 You're completing ${context.completionRate.overallCompletion.toFixed(1)}% of your weekly habits - excellent consistency!`);
-      } else if (context.completionRate.overallCompletion < 50) {
-        insights.push(`💪 Try to complete at least 70% of your weekly habits for better results. You're currently at ${context.completionRate.overallCompletion.toFixed(1)}%.`);
+
+      if (correlations.length > 0) {
+        insights.push(`🔗 I found ${correlations.length} interesting connections between your habits!`);
       }
-      
-      if (context.patterns.sleep.peakDay) {
-        insights.push(`😴 Your sleep quality peaks on ${context.patterns.sleep.peakDay.charAt(0).toUpperCase() + context.patterns.sleep.peakDay.slice(1)}s.`);
-      }
-      
-      if (context.correlations.length > 0) {
-        insights.push(`🔗 I found ${context.correlations.length} interesting connections between your habits!`);
-      }
-      
-      return insights;
+
+      return insights.length > 0 ? insights : [
+        "Welcome to your complete wellness journey!",
+        "Start tracking your first core habit to unlock personalised insights.",
+        "I'll guide you to build ALL core habits one by one!",
+      ];
     } catch (error) {
       console.error('Error getting quick insights:', error);
       return [
         "Welcome to your complete wellness journey!",
         "Start with your first core habit, then systematically add the rest.",
-        "I'll guide you to build ALL core habits one by one!"
+        "I'll guide you to build ALL core habits one by one!",
       ];
     }
   }

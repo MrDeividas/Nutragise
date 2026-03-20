@@ -21,7 +21,7 @@ export interface DailyPostComment {
 }
 
 class DailyPostInteractionsService {
-  // Toggle like for daily post (same logic as goals)
+  // Toggle like for daily post
   async toggleDailyPostLike(dailyPostId: string): Promise<{ success: boolean; isLiked: boolean }> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -29,13 +29,18 @@ class DailyPostInteractionsService {
         return { success: false, isLiked: false };
       }
 
-      // Check if already liked
-      const { data: existingLike } = await supabase
+      // Check if already liked (PGRST116 = no rows found, which is fine)
+      const { data: existingLike, error: checkError } = await supabase
         .from('goal_likes')
-        .select('*')
+        .select('id')
         .eq('goal_id', dailyPostId)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking daily post like:', checkError);
+        return { success: false, isLiked: false };
+      }
 
       if (existingLike) {
         // Unlike - remove the like
@@ -52,14 +57,13 @@ class DailyPostInteractionsService {
 
         return { success: true, isLiked: false };
       } else {
-        // Like - add the like
+        // Like - upsert to safely handle any duplicate race condition
         const { error } = await supabase
           .from('goal_likes')
-          .insert({
-            goal_id: dailyPostId,
-            user_id: user.id,
-            created_at: new Date().toISOString()
-          });
+          .upsert(
+            { goal_id: dailyPostId, user_id: user.id, created_at: new Date().toISOString() },
+            { onConflict: 'goal_id,user_id', ignoreDuplicates: true }
+          );
 
         if (error) {
           console.error('Error liking daily post:', error);

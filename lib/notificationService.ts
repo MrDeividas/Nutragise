@@ -1,6 +1,30 @@
 import { supabase } from './supabase';
 import { apiCache } from './apiCache';
 
+// Calls the send-push-notification Edge Function.
+// Fire-and-forget — never throws, so it never blocks the caller.
+async function sendPush(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, any> = {}
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const supabaseUrl = (supabase as any).supabaseUrl as string;
+    await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ userId, title, body, data }),
+    });
+  } catch {
+    // Push is non-critical — silently ignore any failure
+  }
+}
+
 export interface Notification {
   id: string;
   user_id: string;
@@ -264,29 +288,36 @@ class NotificationService {
   // Create post like notification
   async createPostLikeNotification(postId: string, fromUserId: string): Promise<boolean> {
     try {
-      // Get post owner
       const { data: post, error: postError } = await supabase
         .from('posts')
         .select('user_id')
         .eq('id', postId)
         .single();
 
-      if (postError || !post) {
-        console.error('Error fetching post:', postError);
-        return false;
-      }
+      if (postError || !post) return false;
+      if (post.user_id === fromUserId) return true;
 
-      // Don't notify yourself
-      if (post.user_id === fromUserId) {
-        return true;
-      }
+      const { data: liker } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', fromUserId)
+        .single();
 
-      return await this.createNotification({
+      const likerName = liker?.display_name || liker?.username || 'Someone';
+
+      const result = await this.createNotification({
         user_id: post.user_id,
         from_user_id: fromUserId,
         notification_type: 'post_like',
         post_id: postId,
       });
+
+      sendPush(post.user_id, '❤️ New Like', `${likerName} liked your post`, {
+        type: 'post_like',
+        postId,
+      });
+
+      return result;
     } catch (error) {
       console.error('Error creating post like notification:', error);
       return false;
@@ -296,30 +327,37 @@ class NotificationService {
   // Create post comment notification
   async createPostCommentNotification(postId: string, commentId: string, fromUserId: string): Promise<boolean> {
     try {
-      // Get post owner
       const { data: post, error: postError } = await supabase
         .from('posts')
         .select('user_id')
         .eq('id', postId)
         .single();
 
-      if (postError || !post) {
-        console.error('Error fetching post:', postError);
-        return false;
-      }
+      if (postError || !post) return false;
+      if (post.user_id === fromUserId) return true;
 
-      // Don't notify yourself
-      if (post.user_id === fromUserId) {
-        return true;
-      }
+      const { data: commenter } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', fromUserId)
+        .single();
 
-      return await this.createNotification({
+      const commenterName = commenter?.display_name || commenter?.username || 'Someone';
+
+      const result = await this.createNotification({
         user_id: post.user_id,
         from_user_id: fromUserId,
         notification_type: 'post_comment',
         post_id: postId,
         comment_id: commentId,
       });
+
+      sendPush(post.user_id, '💬 New Comment', `${commenterName} commented on your post`, {
+        type: 'post_comment',
+        postId,
+      });
+
+      return result;
     } catch (error) {
       console.error('Error creating post comment notification:', error);
       return false;
@@ -348,18 +386,30 @@ class NotificationService {
         return false;
       }
 
-      // Don't notify yourself
-      if (comment.user_id === fromUserId) {
-        return true;
-      }
+      if (comment.user_id === fromUserId) return true;
 
-      return await this.createNotification({
+      const { data: replier } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', fromUserId)
+        .single();
+
+      const replierName = replier?.display_name || replier?.username || 'Someone';
+
+      const result = await this.createNotification({
         user_id: comment.user_id,
         from_user_id: fromUserId,
         notification_type: 'post_reply',
         comment_id: commentId,
         reply_id: replyId,
       });
+
+      sendPush(comment.user_id, '↩️ New Reply', `${replierName} replied to your comment`, {
+        type: 'post_reply',
+        commentId,
+      });
+
+      return result;
     } catch (error) {
       console.error('Error creating post reply notification:', error);
       return false;
@@ -448,16 +498,32 @@ class NotificationService {
     habitTitle: string
   ): Promise<boolean> {
     try {
-      // Don't notify yourself (shouldn't happen, but safety check)
-      if (nudgedUserId === nudgerId) {
-        return true;
-      }
+      if (nudgedUserId === nudgerId) return true;
 
-      return await this.createNotification({
+      // Fetch nudger's display name for the notification text
+      const { data: nudgerProfile } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', nudgerId)
+        .single();
+
+      const nudgerName = nudgerProfile?.display_name || nudgerProfile?.username || 'Your partner';
+
+      const result = await this.createNotification({
         user_id: nudgedUserId,
         from_user_id: nudgerId,
         notification_type: 'habit_nudge',
       });
+
+      // Fire push notification — non-blocking
+      sendPush(
+        nudgedUserId,
+        '👋 Habit Nudge',
+        `${nudgerName} nudged you to complete your ${habitTitle} habit!`,
+        { type: 'nudge', nudgerId }
+      );
+
+      return result;
     } catch (error) {
       console.error('Error creating habit nudge notification:', error);
       return false;

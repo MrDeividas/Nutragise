@@ -405,24 +405,20 @@ class WalletService {
     userId: string,
     amount: number
   ): Promise<{ success: boolean; newBalance: number; refundId: string; message: string }> {
-    // Validate user ID matches authenticated user
     await this.validateUserId(userId);
     try {
-      console.log('💸 Initiating withdrawal to card:', { userId, amount });
-      
-      // Call Edge Function (we import config dynamically to avoid circular deps if any)
-      const { SUPABASE_URL, SUPABASE_ANON_KEY } = await import('@env');
-      
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/withdraw-to-card`, {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/paypal-withdrawal`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY || ''}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          userId,
-          amount,
-        }),
+        body: JSON.stringify({ amount }),
       });
 
       const data = await response.json();
@@ -431,13 +427,10 @@ class WalletService {
         throw new Error(data.error || 'Failed to process withdrawal');
       }
 
-      if (__DEV__) {
-        console.log('Withdrawal processed successfully');
-      }
       return {
         success: true,
         newBalance: data.newBalance,
-        refundId: data.refundId,
+        refundId: data.paypalPayoutId || '',
         message: data.message,
       };
     } catch (error) {

@@ -103,6 +103,8 @@ export interface Profile {
   age?: number;
   completed_competitions?: number;
   won_awards?: number;
+  workout_current_weight?: number | null;
+  workout_target_weight?: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -51,6 +51,7 @@ import { habitInviteService } from '../lib/habitInviteService';
 import { walletService } from '../lib/walletService';
 import AppleHealthKit, { HealthValue, HealthKitPermissions } from 'react-native-health';
 import { habitsService } from '../lib/habitsService';
+import { workoutSplitService } from '../lib/workoutSplitService';
 
 
 
@@ -693,7 +694,7 @@ const WhiteHabitCard = ({
           marginRight: index === totalCards - 1 ? 0 : 12,
           marginVertical: 8,
           shadowColor: whiteCardShadowColor,
-          backgroundColor: isCreateCard ? '#9CA3AF' : cardBackgroundColor,
+          backgroundColor: cardBackgroundColor,
           borderColor: '#E5E7EB',
         },
         !isCreateCard && customHabitsLoading && styles.whiteHabitCardDisabled,
@@ -1507,7 +1508,26 @@ function ActionScreen() {
     selectedTrainingTypes: [] as string[], // multiple selected training types
     customTrainingType: '' // for "Other" option
   });
-  
+  const [nextWorkoutLabel, setNextWorkoutLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showGymModal) {
+      setNextWorkoutLabel(null);
+      return;
+    }
+    if (!user?.id) return;
+    let cancelled = false;
+    workoutSplitService.getNextWorkout(user.id)
+      .then((next) => {
+        if (cancelled) return;
+        setNextWorkoutLabel(next ? (next.day.focus || next.day.day) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setNextWorkoutLabel(null);
+      });
+    return () => { cancelled = true; };
+  }, [showGymModal, user?.id]);
+
   const [sleepQuestionnaire, setSleepQuestionnaire] = useState({
     sleepQuality: 50, // Changed to number for slider
     bedtimeHours: 22, // Default bedtime 22:00
@@ -6714,7 +6734,7 @@ function ActionScreen() {
               { transform: [{ translateY: modalPosition }] }
             ]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Gym Session</Text>
+              <Text style={styles.modalTitle}>Workout</Text>
               <TouchableOpacity onPress={() => setShowGymModal(false)}>
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
@@ -6753,6 +6773,35 @@ function ActionScreen() {
                 ))}
               </View>
             </View>
+
+            {/* Use next workout from My Workout (Goals) - full-width box below */}
+            {nextWorkoutLabel ? (
+              <View style={styles.questionSection}>
+                <TouchableOpacity
+                  style={[
+                    styles.nextWorkoutBox,
+                    gymQuestionnaire.selectedTrainingTypes.length === 1 && gymQuestionnaire.selectedTrainingTypes[0] === nextWorkoutLabel && styles.nextWorkoutBoxSelected
+                  ]}
+                  onPress={() => {
+                    setGymQuestionnaire({
+                      selectedTrainingTypes: [nextWorkoutLabel],
+                      customTrainingType: ''
+                    });
+                  }}
+                >
+                  <Text style={[
+                    styles.nextWorkoutBoxLabel,
+                    gymQuestionnaire.selectedTrainingTypes.length === 1 && gymQuestionnaire.selectedTrainingTypes[0] === nextWorkoutLabel && { color: '#ffffff' }
+                  ]}>Next workout from My Workout</Text>
+                  <Text style={[
+                    styles.nextWorkoutBoxPreview,
+                    gymQuestionnaire.selectedTrainingTypes.length === 1 && gymQuestionnaire.selectedTrainingTypes[0] === nextWorkoutLabel && { color: '#ffffff' }
+                  ]} numberOfLines={1} ellipsizeMode="tail">
+                    {nextWorkoutLabel}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             {/* Custom Training Type Input for "Other" */}
             {gymQuestionnaire.selectedTrainingTypes.includes('Other') && (
@@ -6803,7 +6852,7 @@ function ActionScreen() {
               }}
             >
               <Text style={styles.submitButtonText}>
-                Complete Session
+                Complete Workout
               </Text>
             </TouchableOpacity>
             </Animated.View>
@@ -9435,7 +9484,7 @@ const styles = StyleSheet.create({
   headerStatsRow: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 12,
     gap: 12,
@@ -10603,6 +10652,30 @@ const styles = StyleSheet.create({
   },
   trainingTypeButtonTextSelected: {
     color: '#ffffff',
+  },
+  nextWorkoutBox: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  nextWorkoutBoxSelected: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  nextWorkoutBoxLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#666',
+    marginBottom: 4,
+  },
+  nextWorkoutBoxPreview: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
   },
   starSection: {
     marginBottom: 24,

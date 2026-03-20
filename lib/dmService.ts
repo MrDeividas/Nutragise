@@ -1,6 +1,29 @@
 import { supabase } from './supabase';
 import { Chat, Message, ChatWithProfile, TypingIndicator } from '../types/database';
 
+// Fire-and-forget push helper — mirrors the one in notificationService
+async function sendPush(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, any> = {}
+): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const supabaseUrl = (supabase as any).supabaseUrl as string;
+    await fetch(`${supabaseUrl}/functions/v1/send-push-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ userId, title, body, data }),
+    });
+  } catch {
+    // Push is non-critical
+  }
+}
+
 class DMService {
   // Get or create chat between two users
   async getOrCreateChat(userId1: string, userId2: string): Promise<string | null> {
@@ -222,10 +245,45 @@ class DMService {
         return null;
       }
 
+      // Push notification to the other participant
+      this.notifyRecipient(chatId, senderId, content);
+
       return data;
     } catch (error) {
       console.error('Error in sendMessage:', error);
       return null;
+    }
+  }
+
+  // Sends a push notification to the other person in the chat (fire-and-forget)
+  private async notifyRecipient(chatId: string, senderId: string, content: string): Promise<void> {
+    try {
+      const { data: chat } = await supabase
+        .from('chats')
+        .select('participant_1, participant_2')
+        .eq('id', chatId)
+        .single();
+
+      if (!chat) return;
+
+      const recipientId = chat.participant_1 === senderId ? chat.participant_2 : chat.participant_1;
+
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', senderId)
+        .single();
+
+      const senderName = senderProfile?.display_name || senderProfile?.username || 'Someone';
+      const preview = content.length > 80 ? content.slice(0, 77) + '…' : content;
+
+      sendPush(recipientId, `💬 ${senderName}`, preview, {
+        type: 'dm',
+        chatId,
+        senderId,
+      });
+    } catch {
+      // Non-critical
     }
   }
 

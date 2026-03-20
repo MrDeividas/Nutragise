@@ -10,6 +10,9 @@ interface GesturePhotoCarouselProps {
   onIndexChange: (index: number) => void;
   onPhotoPress?: () => void;
   style?: any;
+  photoWidth?: number;
+  photoHeight?: number;
+  photoSpacing?: number;
 }
 
 export default function GesturePhotoCarousel({ 
@@ -18,7 +21,10 @@ export default function GesturePhotoCarousel({
   currentIndex, 
   onIndexChange, 
   onPhotoPress,
-  style 
+  style,
+  photoWidth = 160,
+  photoHeight = 200,
+  photoSpacing = 12,
 }: GesturePhotoCarouselProps) {
   const flatListRef = useRef<FlatList>(null);
 
@@ -29,9 +35,9 @@ export default function GesturePhotoCarousel({
     const hasCaption = caption && caption.trim() !== '';
     
     return (
-      <View style={styles.photoContainer}>
+      <View style={[styles.photoContainer, { width: photoWidth, marginRight: photoSpacing }]}>
         <TouchableOpacity 
-          style={styles.photoTouchable} 
+          style={[styles.photoTouchable, { width: photoWidth, height: photoHeight }]} 
           onPress={onPhotoPress}
           activeOpacity={0.9}
         >
@@ -42,7 +48,7 @@ export default function GesturePhotoCarousel({
           />
         </TouchableOpacity>
         {hasCaption && (
-          <Text style={styles.caption}>{caption}</Text>
+          <Text style={[styles.caption, { width: photoWidth }]}>{caption}</Text>
         )}
       </View>
     );
@@ -71,14 +77,14 @@ export default function GesturePhotoCarousel({
         style={styles.carousel}
         contentContainerStyle={{ paddingHorizontal: 0 }}
         getItemLayout={(_, index) => ({
-          length: 172,
-          offset: 172 * index,
+          length: photoWidth + photoSpacing,
+          offset: (photoWidth + photoSpacing) * index,
           index,
         })}
         initialScrollIndex={currentIndex}
         removeClippedSubviews={false}
         decelerationRate="fast"
-        snapToInterval={172}
+        snapToInterval={photoWidth + photoSpacing}
         snapToAlignment="start"
       />
     </View>
@@ -98,7 +104,7 @@ const styles = StyleSheet.create({
   },
   photoTouchable: {
     width: 160,
-    height: 200, // 4:5 aspect ratio (160 * 5/4 = 200)
+    height: 200,
     borderRadius: 12,
     overflow: 'hidden',
   },

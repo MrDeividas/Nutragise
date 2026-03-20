@@ -48,9 +48,15 @@ class ChallengesService {
         return cached;
       }
 
+      // Filter on the DB side: only fetch active/upcoming challenges, or recently
+      // ended ones (within 14 days) so the compete screen has a bridge to show.
+      // This prevents the list from growing unboundedly as recurring challenges accumulate.
+      const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
       let query = supabase
         .from('challenges')
         .select('*')
+        .or(`status.in.(active,upcoming),and(status.eq.completed,end_date.gte.${twoWeeksAgo})`)
         .order('created_at', { ascending: false });
 
       if (status) {
@@ -1371,40 +1377,51 @@ class ChallengesService {
   }
 
   /**
-   * Handle recurring challenge logic - create new instances for recurring challenges
+   * Handle recurring challenge logic - create new instances for recurring challenges.
+   * Self-healing: queries ALL recurring instances (including completed ones) to find the
+   * most recent per unique challenge, then fills in any missing weeks up to today.
+   * This fixes broken chains where no active/upcoming instance exists.
    */
   async handleRecurringChallenges(): Promise<void> {
     try {
-      // Get all recurring challenges (including those without next_recurrence set)
-      // Check both 'active' and 'upcoming' status to catch all recurring parents
-      const { data: recurringChallenges, error } = await supabase
+      // Fetch ALL recurring challenges ordered by end_date descending.
+      // Including completed ones is the key fix — previously only active/upcoming
+      // were queried, so once the chain ended it could never restart.
+      const { data: allRecurring, error } = await supabase
         .from('challenges')
         .select('*')
         .eq('is_recurring', true)
-        .in('status', ['active', 'upcoming']);
+        .order('end_date', { ascending: false });
 
       if (error) {
         console.error('Error fetching recurring challenges:', error);
         return;
       }
 
+      // Deduplicate: keep only the most recent instance per unique recurring challenge
+      // (identified by title + entry_fee + schedule).
+      const mostRecent = new Map<string, Challenge>();
+      for (const c of allRecurring || []) {
+        const key = `${c.title}_${c.entry_fee || 0}_${c.recurring_schedule || 'weekly'}`;
+        if (!mostRecent.has(key)) {
+          mostRecent.set(key, c); // First = most recent (sorted by end_date desc)
+        }
+      }
+
       if (__DEV__) {
-        console.log(`🔄 [handleRecurringChallenges] Found ${recurringChallenges?.length || 0} recurring challenges`);
+        console.log(`🔄 [handleRecurringChallenges] Found ${mostRecent.size} unique recurring challenge(s)`);
       }
 
       const now = new Date();
 
-      for (const challenge of recurringChallenges || []) {
-        const schedule = challenge.recurring_schedule || 'weekly'; // Default to weekly for backwards compatibility
-        
+      for (const challenge of mostRecent.values()) {
+        const schedule = challenge.recurring_schedule || 'weekly';
         if (__DEV__) {
           console.log(`  Processing: ${challenge.title} (${schedule})`);
         }
-        
         if (schedule === 'daily') {
           await this.handleDailyRecurringChallenge(challenge, now);
         } else {
-          // Weekly recurring logic (existing)
           await this.handleWeeklyRecurringChallenge(challenge, now);
         }
       }
@@ -1512,71 +1529,58 @@ class ChallengesService {
   }
 
   /**
-   * Handle weekly recurring challenge - create new instance each week
+   * Handle weekly recurring challenge - create new instance each week.
+   * Self-healing: walks forward from the most recent instance's end_date,
+   * creating any missing weeks up to next week. This fixes broken chains
+   * where no instance was created for one or more weeks.
    */
   private async handleWeeklyRecurringChallenge(challenge: Challenge, now: Date): Promise<void> {
     try {
-      const endDate = new Date(challenge.end_date);
-      
-      // Simple: next Monday after the end date
-      // end_date is Sunday 23:59:59, so next day is Monday
-      const nextWeekStart = new Date(endDate);
-      nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday (next day after Sunday)
-      nextWeekStart.setUTCHours(0, 1, 0, 0);
-      
-      // End is 6 days later (Sunday)
-      const nextWeekEnd = new Date(nextWeekStart);
-      nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-      nextWeekEnd.setUTCHours(23, 59, 59, 999);
-      
-      // Check if it's time to create the next instance
-      // Create if:
-      // 1. The current instance has ended OR
-      // 2. It's within 7 days of the next instance starting
-      const shouldCreate = now >= endDate || (nextWeekStart.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000);
-      
-      if (__DEV__) {
-        console.log(`  📊 ${challenge.title}:`, {
-          currentEnd: endDate.toISOString(),
-          nextStart: nextWeekStart.toISOString(),
-          shouldCreate,
-          daysUntilNext: Math.round((nextWeekStart.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
-        });
-      }
-      
-      if (shouldCreate) {
-        // Check if next week's challenge already exists
-        // IMPORTANT: Filter by entry_fee to distinguish free vs paid versions
-        // Also check all statuses, not just active, to catch any existing instances
-        const { data: existingChallenges, error: checkError } = await supabase
+      // Walk forward from the most recent instance, filling any missing weeks.
+      // Cap at 10 iterations (10 weeks max catch-up) to avoid runaway loops.
+      let cursor = new Date(challenge.end_date);
+      const nextWeekCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const MAX_ITERATIONS = 10;
+      let iterations = 0;
+
+      while (iterations < MAX_ITERATIONS) {
+        iterations++;
+
+        // Next instance starts the day after cursor ends
+        const nextStart = new Date(cursor);
+        nextStart.setDate(cursor.getDate() + 1);
+        nextStart.setUTCHours(0, 1, 0, 0);
+
+        // Stop once we've scheduled up to 1 week in the future
+        if (nextStart > nextWeekCutoff) break;
+
+        const nextEnd = new Date(nextStart);
+        nextEnd.setDate(nextStart.getDate() + 6);
+        nextEnd.setUTCHours(23, 59, 59, 999);
+
+        // Check if an instance already exists for this window
+        const { data: existing } = await supabase
           .from('challenges')
-          .select('id, entry_fee, status')
+          .select('id, status')
           .eq('title', challenge.title)
           .eq('is_recurring', true)
-          .eq('entry_fee', challenge.entry_fee || 0) // Match entry_fee to prevent duplicates
-          .gte('start_date', nextWeekStart.toISOString())
-          .lte('end_date', nextWeekEnd.toISOString());
+          .eq('entry_fee', challenge.entry_fee || 0)
+          .gte('start_date', nextStart.toISOString())
+          .lte('start_date', nextEnd.toISOString());
 
-        // Only create if no matching challenge exists for next week
-        // Handle the case where multiple might exist (shouldn't happen, but be safe)
-        const matchingChallenges = (existingChallenges || []).filter(
-          c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
-        );
-
-        if (matchingChallenges.length === 0) {
+        if (!existing || existing.length === 0) {
           if (__DEV__) {
-            console.log(`  ✨ Creating next week's instance for ${challenge.title}`);
+            const weeksAgo = Math.round((now.getTime() - nextStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+            const label = weeksAgo > 0 ? `(catch-up: ${weeksAgo}w ago)` : '(next week)';
+            console.log(`  ✨ Creating missing instance for "${challenge.title}" ${nextStart.toISOString().split('T')[0]} ${label}`);
           }
-          await this.createRecurringInstance(challenge);
-        } else if (matchingChallenges.length > 1) {
-          // Multiple duplicates exist - log warning but don't create another
-          console.warn(`⚠️ Multiple weekly challenge instances found for "${challenge.title}" (entry_fee: ${challenge.entry_fee || 0}): ${matchingChallenges.length} instances`);
-        } else {
-          if (__DEV__) {
-            console.log(`  ℹ️  Next week's instance already exists for ${challenge.title}`);
-          }
+          // Create from a temporary object with the cursor end_date so
+          // createRecurringInstance computes the correct start/end dates
+          await this.createRecurringInstance({ ...challenge, end_date: cursor.toISOString() });
         }
-        // If exactly 1 exists, that's correct - do nothing
+
+        // Advance cursor to the end of the instance we just ensured exists
+        cursor = nextEnd;
       }
     } catch (error) {
       console.error('Error handling weekly recurring challenge:', error);
