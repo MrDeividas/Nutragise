@@ -19,6 +19,7 @@ import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useAuthStore } from '../state/authStore';
 import { socialService } from '../lib/socialService';
 import { challengesService } from '../lib/challengesService';
+import { stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 import { emailService } from '../lib/emailService';
 import { supabase } from '../lib/supabase';
 import ChallengeCard from '../components/ChallengeCard';
@@ -35,6 +36,7 @@ export default function CompeteScreen({ navigation }: any) {
   const { user, initialize, loading } = useAuthStore();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [freeChallenges, setFreeChallenges] = useState<Challenge[]>([]);
+  const [proOnlyChallenges, setProOnlyChallenges] = useState<Challenge[]>([]);
   const [investChallenges, setInvestChallenges] = useState<Challenge[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,6 +52,7 @@ export default function CompeteScreen({ navigation }: any) {
   const [myChallengesExpanded, setMyChallengesExpanded] = useState(false);
   const [privateChallengesExpanded, setPrivateChallengesExpanded] = useState(false);
   const [coreHabitsExpanded, setCoreHabitsExpanded] = useState(true);
+  const [proOnlyExpanded, setProOnlyExpanded] = useState(true);
   const [investExpanded, setInvestExpanded] = useState(true);
   const [freeExpanded, setFreeExpanded] = useState(true);
   
@@ -302,22 +305,22 @@ export default function CompeteScreen({ navigation }: any) {
       
       const deduplicatedChallenges = Array.from(recurringChallengeMap.values());
       
-      // Helper function to identify core habit challenges
+      // Helper: core list uses short names; DB may still have legacy "… Challenge" until migration runs
       const isCoreHabitChallenge = (challenge: Challenge): boolean => {
-        const coreHabitTitles = [
-          'Gym Challenge',
-          'Exercise Challenge',
-          'Goal Update Challenge',
-          'Microlearn Challenge',
-          'Focus Challenge',
-          'Reflection Challenge',
-          'Water Challenge',
-          'Cold Shower Challenge',
-          'Screen Time Challenge',
-          'Sleep Challenge',
-          'Meditation Challenge',
-        ];
-        return coreHabitTitles.includes(challenge.title);
+        const coreHabitTitles = new Set([
+          'Gym',
+          'Exercise',
+          'Goal Update',
+          'Microlearn',
+          'Focus',
+          'Reflection',
+          'Water',
+          'Cold Shower',
+          'Screen Time',
+          'Sleep',
+          'Meditation',
+        ]);
+        return coreHabitTitles.has(stripTrailingChallengeWord(challenge.title));
       };
       
       // Separate core habit challenges
@@ -331,18 +334,21 @@ export default function CompeteScreen({ navigation }: any) {
         end: new Date(c.end_date).toLocaleDateString(),
       })));
       
-      // Separate free and investment challenges from non-core challenges
-      const free = otherChallenges.filter(challenge => !challenge.entry_fee || challenge.entry_fee === 0);
-      const invest = otherChallenges.filter(challenge => challenge.entry_fee && challenge.entry_fee > 0);
+      // Pro-only challenges (any price) → Pro section; paid non-pro → Everyone Can Play; free non-pro → Free to Play
+      const proOnly = otherChallenges.filter(c => c.is_pro_only);
+      const free = otherChallenges.filter(c => !c.is_pro_only && (!c.entry_fee || c.entry_fee === 0));
+      const invest = otherChallenges.filter(c => !c.is_pro_only && c.entry_fee && c.entry_fee > 0);
       
       setChallenges(deduplicatedChallenges);
       setCoreHabitChallenges(coreHabits);
       setFreeChallenges(free);
+      setProOnlyChallenges(proOnly);
       setInvestChallenges(invest);
     } catch (error) {
       console.error('Error loading challenges:', error);
       setChallenges([]);
       setFreeChallenges([]);
+      setProOnlyChallenges([]);
       setInvestChallenges([]);
     } finally {
       setChallengesLoading(false);
@@ -754,7 +760,59 @@ export default function CompeteScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Investment Challenges Section */}
+        {/* Pro Challenges Section */}
+        {proOnlyChallenges.length > 0 && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setProOnlyExpanded(!proOnlyExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="star" size={20} color="#F59E0B" />
+                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  Pro Challenges
+                </Text>
+              </View>
+              <Ionicons
+                name={proOnlyExpanded ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={theme.textSecondary}
+              />
+            </TouchableOpacity>
+            {proOnlyExpanded && (
+              <View style={styles.challengesContent}>
+                {challengesLoading ? (
+                  <View style={styles.challengesLoadingContainer}>
+                    <ActivityIndicator size="large" color="#F59E0B" />
+                  </View>
+                ) : (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    snapToInterval={snapInterval}
+                    snapToAlignment="start"
+                    decelerationRate="fast"
+                    contentContainerStyle={styles.challengesScrollContent}
+                    style={{ overflow: 'visible' }}
+                  >
+                    {proOnlyChallenges.map((challenge) => (
+                      <ChallengeCard
+                        key={challenge.id}
+                        challenge={challenge}
+                        onPress={() => handleChallengePress(challenge)}
+                        isJoined={joinedChallengeIds.has(challenge.id)}
+                        isCompleted={completedChallengeIds.has(challenge.id)}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Paid entry — section title: Everyone Can Play */}
         {investChallenges.length > 0 && (
           <View style={styles.section}>
             <TouchableOpacity 
@@ -763,9 +821,10 @@ export default function CompeteScreen({ navigation }: any) {
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="wallet" size={20} color={theme.primary} />
+                {/* Inclusive “all users” — paid entry, open to non‑Pro */}
+                <Ionicons name="people" size={20} color={theme.primary} />
                 <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                  Invest
+                  Everyone Can Play
                 </Text>
               </View>
               <Ionicons 
@@ -807,16 +866,20 @@ export default function CompeteScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Free Challenges Section */}
+        {/* Free entry (£0) — section title: Free to Play */}
         <View style={styles.section}>
           <TouchableOpacity 
             style={styles.sectionHeader}
             onPress={() => setFreeExpanded(!freeExpanded)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Everyone Can Play
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {/* £0 entry — “free” / no buy‑in */}
+              <Ionicons name="gift-outline" size={20} color="#22C55E" />
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                Free to Play
+              </Text>
+            </View>
             <Ionicons 
               name={freeExpanded ? "chevron-up" : "chevron-down"} 
               size={20} 

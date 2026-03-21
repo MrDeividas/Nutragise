@@ -66,6 +66,19 @@ export interface ChallengeSubmission {
   week_number: number;
   verification_status: 'pending' | 'approved' | 'rejected';
   submission_notes?: string;
+  // Community flagging fields
+  is_flagged?: boolean;
+  flag_count?: number;
+  /** True when the currently-authenticated user has already flagged this submission (populated client-side). */
+  has_flagged_by_me?: boolean;
+}
+
+export interface SubmissionFlag {
+  id: string;
+  submission_id: string;
+  flagged_by: string;
+  reason?: string | null;
+  created_at: string;
 }
 
 export interface ChallengeRequirement {

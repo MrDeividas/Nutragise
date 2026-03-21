@@ -5,12 +5,13 @@ import {
   StyleSheet,
   Modal,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   TextInput,
   FlatList,
   ActivityIndicator,
   Image,
   Alert,
-  Platform
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../state/themeStore';
@@ -162,12 +163,12 @@ export default function InviteFriendModal({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={[styles.dimmedBackground, { backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.6)' }]} />
-        
+      {/* Same pattern as core habit modals (ActionScreen): fade in, static dim backdrop — sheet does not slide up with the overlay */}
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.modalOverlay}>
         <View style={[styles.container, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: theme.border }]}>
           <View style={[styles.header, { borderBottomColor: theme.border }]}>
             <Text style={[styles.title, { color: theme.textPrimary }]}>Invite Partner</Text>
@@ -283,19 +284,19 @@ export default function InviteFriendModal({
             />
           </View>
         </View>
-      </View>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  /** Matches ActionScreen `modalOverlay` — fixed dim; no slide animation on the backdrop */
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  dimmedBackground: {
-    ...StyleSheet.absoluteFillObject,
   },
   container: {
     borderRadius: 24,

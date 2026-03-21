@@ -45,13 +45,15 @@ import { notificationService } from '../lib/notificationService';
 import { challengesService } from '../lib/challengesService';
 import { pointsService } from '../lib/pointsService';
 import { supabase } from '../lib/supabase';
-import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, HabitAccountabilityPartner } from '../types/database';
+import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, HabitAccountabilityPartner, DailyHabits } from '../types/database';
 import InviteFriendModal from '../components/InviteFriendModal';
 import { habitInviteService } from '../lib/habitInviteService';
 import { walletService } from '../lib/walletService';
 import AppleHealthKit, { HealthValue, HealthKitPermissions } from 'react-native-health';
 import { habitsService } from '../lib/habitsService';
 import { workoutSplitService } from '../lib/workoutSplitService';
+import { pillarProgressService } from '../lib/pillarProgressService';
+import { challengePotService } from '../lib/challengePotService';
 
 
 
@@ -61,6 +63,64 @@ const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 const LEVEL_THRESHOLDS = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
 const HABITS_REQUIRING_DETAILS = new Set(['gym', 'run', 'sleep', 'water', 'reflect', 'cold_shower']);
+
+function addDaysToDateString(dateStr: string, deltaDays: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + deltaDays);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Same calendar day as ActionScreen getTodayDateString() (4am rollover). */
+function getAppTodayDateStringForHabits(): string {
+  const now = new Date();
+  const hour = now.getHours();
+  const d = hour < 4 ? new Date(now.getTime() - 24 * 60 * 60 * 1000) : now;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Hours slept from saved daily_habits row (bedtime/wakeup preferred, else sleep_hours). */
+function formatPreviousNightSleepFromRow(h: DailyHabits | null): string {
+  if (!h) return '—';
+  const bh = h.sleep_bedtime_hours;
+  const bm = h.sleep_bedtime_minutes ?? 0;
+  const wh = h.sleep_wakeup_hours;
+  const wm = h.sleep_wakeup_minutes ?? 0;
+  if (bh !== undefined && bh !== null && wh !== undefined && wh !== null) {
+    const bedtimeTotal = bh * 60 + bm;
+    const wakeTimeTotal = wh * 60 + wm;
+    let sleepDuration: number;
+    if (wakeTimeTotal >= bedtimeTotal) {
+      sleepDuration = wakeTimeTotal - bedtimeTotal;
+    } else {
+      sleepDuration = (24 * 60) - bedtimeTotal + wakeTimeTotal;
+    }
+    const hours = Math.floor(sleepDuration / 60);
+    const minutes = sleepDuration % 60;
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h ${minutes}m`;
+  }
+  if (h.sleep_hours != null && Number(h.sleep_hours) > 0) {
+    const sh = Number(h.sleep_hours);
+    if (Number.isFinite(sh)) {
+      const whole = Math.floor(sh);
+      const frac = sh - whole;
+      if (frac > 0.01) {
+        const mins = Math.round(frac * 60);
+        return mins > 0 ? `${whole}h ${mins}m` : `${whole}h`;
+      }
+      return `${whole}h`;
+    }
+  }
+  return '—';
+}
+
 const toRgb = (hex: string) => {
   const sanitized = hex.replace('#', '');
   const expanded = sanitized.length === 3 ? sanitized.split('').map((char) => char + char).join('') : sanitized;
@@ -221,12 +281,6 @@ const formatHabitScheduleDescription = (habit: CustomHabit): string => {
   }
 };
 
-type HabitCardVisualState = {
-  baseProgress: number;
-  progressAnimated: Animated.Value;
-  completed: boolean;
-};
-
 // Helper function to save pillar progress snapshot at start of day
 async function savePillarProgressSnapshot(userId: string, today: string): Promise<void> {
   try {
@@ -237,7 +291,6 @@ async function savePillarProgressSnapshot(userId: string, today: string): Promis
     
     // Only save if we haven't saved today already (new calendar day)
     if (storedDate !== today) {
-      const { pillarProgressService } = await import('../lib/pillarProgressService');
       const progress = await pillarProgressService.getPillarProgress(userId);
       
       await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
@@ -352,14 +405,16 @@ const AnimatedHabitCard = ({
   index,
   totalCards,
   spotlightCardWidth,
-  cardState,
+  isCompleted,
+  /** Green check when completed (including quick-complete); pair with showPendingIndicator for 90% / needs-details */
+  showCompletionCheckmark,
+  progress,
   isDark,
   cardBackgroundColor,
   progressTrackColor,
   progressFillColor,
   subtitleColor,
   showPendingIndicator,
-  progressWidth,
   handleHabitPress,
   handleHabitLongPress,
   cardAnimations,
@@ -367,13 +422,30 @@ const AnimatedHabitCard = ({
   partnerStatus,
   onInvite,
   onRemovePartner,
+  onUncomplete,
   onNudge,
   lastNudgeTime,
   styles
 }: any) => {
+  const showCheck = showCompletionCheckmark !== undefined ? showCompletionCheckmark : isCompleted;
   const anim = cardAnimations[card.key];
   const [timeRemaining, setTimeRemaining] = React.useState<string>('');
   const [canNudge, setCanNudge] = React.useState(true);
+
+  // Mirror WhiteHabitCard exactly: own Animated.Value, animate when `progress` prop changes
+  const [progressAnimated] = React.useState(new Animated.Value(progress));
+  React.useEffect(() => {
+    Animated.timing(progressAnimated, {
+      toValue: progress,
+      duration: 450,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [progress, progressAnimated]);
+  const smoothProgressWidth = progressAnimated.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
   
   React.useEffect(() => {
     if (!lastNudgeTime) {
@@ -427,7 +499,7 @@ const AnimatedHabitCard = ({
             width: spotlightCardWidth,
             marginRight: index === totalCards - 1 ? 0 : 10,
             backgroundColor: cardBackgroundColor,
-            shadowColor: cardState?.completed ? '#065f46' : isDark ? '#000000' : '#94a3b8',
+            shadowColor: isCompleted ? '#065f46' : isDark ? '#000000' : '#94a3b8',
           },
         ]}
       >
@@ -435,7 +507,7 @@ const AnimatedHabitCard = ({
           <View>
             <View style={styles.highlightCardTitleRow}>
               <Text style={[styles.highlightCardTitle, { color: '#ffffff' }]}>{card.title}</Text>
-              {cardState?.completed && (
+              {showCheck && (
                 <Ionicons
                   name="checkmark-circle"
                   size={18}
@@ -454,15 +526,27 @@ const AnimatedHabitCard = ({
             </View>
             <Text style={[styles.highlightCardSubtitle, { color: subtitleColor }]}>{card.subtitle}</Text>
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            {partnership ? (
-              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onRemovePartner(); }}>
-                <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
-              </TouchableOpacity>
-            ) : (
-              <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
-            )}
-          </View>
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              const options: any[] = [
+                { text: 'Edit / Enter details', onPress: () => handleHabitPress(card.habitId) },
+              ];
+              if (partnership) {
+                options.push({ text: `Remove Partner`, style: 'destructive', onPress: () => onRemovePartner() });
+              } else {
+                options.push({ text: 'Invite a Friend', onPress: () => onInvite() });
+              }
+              if (isCompleted) {
+                options.push({ text: 'Uncomplete', style: 'destructive', onPress: () => onUncomplete?.() });
+              }
+              options.push({ text: 'Cancel', style: 'cancel' });
+              Alert.alert(card.title, 'Choose an option', options);
+            }}
+            style={{ padding: 4 }}
+          >
+            <Ionicons name="ellipsis-vertical" size={16} color="rgba(255, 255, 255, 0.65)" />
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor }]}>
@@ -470,7 +554,7 @@ const AnimatedHabitCard = ({
             style={[
               styles.highlightCardProgressFill,
               {
-                width: progressWidth,
+                width: smoothProgressWidth,
                 backgroundColor: progressFillColor,
               },
             ]}
@@ -531,7 +615,7 @@ const AnimatedHabitCard = ({
   );
 };
 
-// Wrapper component for custom habit list items to handle progress animation
+// Wrapper component for custom habit list items
 const CustomHabitListItemWrapper = ({
   card,
   isCompleted,
@@ -549,24 +633,9 @@ const CustomHabitListItemWrapper = ({
   progressTrackColor,
   theme,
   styles,
-  onEdit
+  onEdit,
+  onInfo,
 }: any) => {
-  const [progressAnimated] = useState(new Animated.Value(card.progress ?? 0));
-
-  useEffect(() => {
-    Animated.timing(progressAnimated, {
-      toValue: card.progress ?? 0,
-      duration: 450,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-  }, [card.progress, progressAnimated]);
-
-  const progressWidth = progressAnimated.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
   return (
     <HabitListItem
       card={card}
@@ -583,7 +652,7 @@ const CustomHabitListItemWrapper = ({
       onNudge={onNudge}
       lastNudgeTime={lastNudgeTime}
       showPendingIndicator={false}
-      progressWidth={progressWidth}
+      progress={card.progress ?? 0}
       progressFillColor={progressFillColor}
       progressTrackColor={progressTrackColor}
       theme={theme}
@@ -591,6 +660,7 @@ const CustomHabitListItemWrapper = ({
       backgroundColor="#FFFFFF"
       isDark={false}
       onEdit={onEdit}
+      onInfo={onInfo}
     />
   );
 };
@@ -750,6 +820,8 @@ const WhiteHabitCard = ({
                   ];
                   if (partnership) {
                     options.push({ text: 'Remove Partner', style: 'destructive', onPress: () => onRemovePartner() });
+                  } else {
+                    options.push({ text: 'Invite a Friend', onPress: () => onInvite() });
                   }
                   options.push({ text: 'Cancel', style: 'cancel' });
                   Alert.alert(card.title, 'Choose an option', options);
@@ -1344,6 +1416,9 @@ function ActionScreen() {
   const pendingColorSVRef = useRef<{ s: number; v: number } | null>(null);
   const pendingHueRef = useRef<number | null>(null);
   const isCompletingHabitRef = useRef(false); // Ref to block immediate sorting during completion animation
+  // Ref that always mirrors quickCompletedHabits state — lets syncCompletedHabits read
+  // the latest value without a stale closure (avoids 90% → 100% flicker on store updates).
+  const quickCompletedHabitsRef = useRef<Set<string>>(new Set());
   const [isColorPickerInteracting, setIsColorPickerInteracting] = useState(false);
   const [taskDays, setTaskDays] = useState('Every Day');
   const [selectedTaskDaysOption, setSelectedTaskDaysOption] = useState<string>('specific-days-week');
@@ -1565,6 +1640,8 @@ function ActionScreen() {
   const [habitSchedules, setHabitSchedules] = useState<Record<string, boolean[]>>({});
   const [todayOverrides, setTodayOverrides] = useState<Set<string>>(new Set());
   const [completedHabits, setCompletedHabits] = useState<Set<string>>(new Set());
+  /** Long-press quick complete: bar stops at 90%; only cleared by markHabitCompleted('full') or markHabitUncompleted. NEVER modified by syncCompletedHabits. */
+  const [quickCompletedHabits, setQuickCompletedHabits] = useState<Set<string>>(new Set());
   const [habitToUntick, setHabitToUntick] = useState<string | null>(null);
   const [reflectQuestionnaire, setReflectQuestionnaire] = useState({
     mood: 3,
@@ -1898,8 +1975,8 @@ function ActionScreen() {
       key: 'sleep',
       title: 'Sleep',
       subtitle: 'Last Night',
-      metricLabel: 'Hours',
-      metricValue: '7h 45m',
+      metricLabel: 'Previous',
+      metricValue: '—',
       progress: 0.78,
       accent: '#34D399',
     },
@@ -2005,10 +2082,21 @@ function ActionScreen() {
     },
   ]), [userGoals.length]);
 
-  const [habitCardState, setHabitCardState] = useState<Record<string, HabitCardVisualState>>({});
   const [habitSpotlightCards, setHabitSpotlightCards] = useState(habitSpotlightCardsBase);
   const habitSpotlightCardsRef = useRef(habitSpotlightCardsBase);
+  /** Most-recent logged sleep duration and its date, for sleep habit card (metric row). */
+  const [previousNightSleepDisplay, setPreviousNightSleepDisplay] = useState('—');
+  const [previousNightSleepDate, setPreviousNightSleepDate] = useState<string | null>(null);
   const completionSoundRef = useRef<Audio.Sound | null>(null);
+
+  const mergeSleepCardMetrics = useCallback((c: (typeof habitSpotlightCardsBase)[number]) => {
+    if (c.habitId === 'sleep') {
+      const yesterdayStr = addDaysToDateString(getAppTodayDateStringForHabits(), -1);
+      const label = previousNightSleepDate === yesterdayStr ? 'Yesterday' : 'Previous';
+      return { ...c, metricLabel: label, metricValue: previousNightSleepDisplay };
+    }
+    return c;
+  }, [previousNightSleepDisplay, previousNightSleepDate]);
   
   // Initialize animation values for all cards - must be at top level, unconditionally
   const sleepScale = useSharedValue(1);
@@ -2249,60 +2337,6 @@ function ActionScreen() {
     });
   }, []);
 
-  const habitIdToCardMap = useMemo(() => {
-    const map: Record<string, (typeof habitSpotlightCards)[number]> = {};
-    habitSpotlightCards.forEach(card => {
-      map[card.habitId] = card;
-    });
-    return map;
-  }, [habitSpotlightCards]);
-
-  useEffect(() => {
-    setHabitCardState((prev) => {
-      let changed = false;
-      const nextState: Record<string, HabitCardVisualState> = { ...prev };
-
-      habitSpotlightCards.forEach((card) => {
-        const shouldBeCompleted = completedHabits.has(card.habitId);
-        const existing = nextState[card.key];
-        // Show 5% if not completed (so user can see the color), otherwise use actual progress or 100% if completed
-        const displayProgress = shouldBeCompleted ? 1 : 0.05;
-
-        if (!existing) {
-          const animatedValue = new Animated.Value(displayProgress);
-          nextState[card.key] = {
-            baseProgress: displayProgress,
-            progressAnimated: animatedValue,
-            completed: shouldBeCompleted,
-          };
-          changed = true;
-          return;
-        }
-
-        if (existing.baseProgress !== displayProgress && !shouldBeCompleted) {
-          nextState[card.key] = {
-            ...existing,
-            baseProgress: displayProgress,
-          };
-          // Don't set value directly - let the component animate it
-          changed = true;
-        }
-
-        if (existing.completed !== shouldBeCompleted) {
-          // Don't set value directly - let updateCardCompletionVisual handle the animation
-          nextState[card.key] = {
-            ...existing,
-            baseProgress: displayProgress,
-            completed: shouldBeCompleted,
-          };
-          changed = true;
-        }
-      });
-
-      return changed ? nextState : prev;
-    });
-  }, [habitSpotlightCards, completedHabits]);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -2348,37 +2382,6 @@ function ActionScreen() {
       console.warn('Failed to play completion sound', error);
     }
   }, []);
-
-  const updateCardCompletionVisual = useCallback((habitId: string, completed: boolean, options?: { animate?: boolean }) => {
-    const cardConfig = habitIdToCardMap[habitId];
-    if (!cardConfig) return;
-
-    const { key, progress } = cardConfig;
-    const animate = options?.animate ?? true;
-
-    setHabitCardState((prev) => {
-      const current = prev[key];
-      if (!current) return prev;
-
-      // Show 5% if not completed (so user can see the color), otherwise 100% if completed
-      const displayProgress = completed ? 1 : 0.05;
-      // Don't animate here - let the component handle animation based on baseProgress change
-      // Just update the state, and the component's useEffect will trigger the animation
-
-      if (current.completed === completed && current.baseProgress === displayProgress) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        [key]: {
-          ...current,
-          baseProgress: displayProgress,
-          completed,
-        },
-      };
-    });
-  }, [habitIdToCardMap]);
 
   // Animate card to end of carousel
   // Helper function to sort habits: non-completed first, completed last
@@ -2484,33 +2487,67 @@ function ActionScreen() {
     }
   }, [toggleHabitCompletion, habitCompletions, user, activePartnerships, playCompletionSound]);
 
-  const markHabitCompleted = useCallback((habitId: string, shouldAnimate: boolean = true) => {
+  const markHabitCompleted = useCallback((
+    habitId: string,
+    shouldAnimate: boolean = true,
+    completionMode: 'quick' | 'full' = 'full'
+  ) => {
+    // Upgrading from quick (90%) to full (100%) via modal: only bar/checkmark update, no slide/sound
+    const upgradeToFullOnly =
+      completionMode === 'full' &&
+      completedHabits.has(habitId) &&
+      quickCompletedHabits.has(habitId);
+
+    setQuickCompletedHabits((prev) => {
+      const next = new Set(prev);
+      if (completionMode === 'quick') {
+        next.add(habitId);
+      } else {
+        next.delete(habitId);
+      }
+      return next;
+    });
+
+    if (upgradeToFullOnly) {
+      clearHabitNeedsDetails(habitId);
+      checkAndSyncPartner(habitId, true);
+      return;
+    }
+
     isCompletingHabitRef.current = true; // Block immediate sorting
-    setCompletedHabits(prev => {
+    setCompletedHabits((prev) => {
       if (prev.has(habitId)) return prev;
       const next = new Set(prev);
       next.add(habitId);
       return next;
     });
-    
+
     if (shouldAnimate) {
       playCompletionSound();
-      updateCardCompletionVisual(habitId, true, { animate: true });
-      
-      // Animate card to end after bar fills (450ms)
+      // Quick complete: shorter delay (bar barely needs to fill); modal complete: longer so user sees the full bar
+      const slideDelay = completionMode === 'quick' ? 1200 : 2000;
       setTimeout(() => {
         animateCardToEnd(habitId);
-      }, 500);
-    } else {
-      // Update visual state without animation (for immediate UI feedback)
-      updateCardCompletionVisual(habitId, true, { animate: false });
+      }, slideDelay);
     }
-    
+
     clearHabitNeedsDetails(habitId);
     checkAndSyncPartner(habitId, true);
-  }, [updateCardCompletionVisual, playCompletionSound, clearHabitNeedsDetails, animateCardToEnd, checkAndSyncPartner]);
+  }, [
+    completedHabits,
+    quickCompletedHabits,
+    playCompletionSound,
+    clearHabitNeedsDetails,
+    animateCardToEnd,
+    checkAndSyncPartner,
+  ]);
 
   const markHabitUncompleted = useCallback((habitId: string) => {
+    setQuickCompletedHabits((prev) => {
+      const next = new Set(prev);
+      next.delete(habitId);
+      return next;
+    });
     setCompletedHabits(prev => {
       if (!prev.has(habitId)) return prev;
       const next = new Set(prev);
@@ -2525,11 +2562,10 @@ function ActionScreen() {
       });
       return next;
     });
-    updateCardCompletionVisual(habitId, false, { animate: true });
     clearHabitNeedsDetails(habitId);
 
     checkAndSyncPartner(habitId, false);
-  }, [updateCardCompletionVisual, clearHabitNeedsDetails, sortHabitsByCompletion, checkAndSyncPartner]);
+  }, [clearHabitNeedsDetails, sortHabitsByCompletion, checkAndSyncPartner]);
 
   const persistQuickCompletion = useCallback(async (habitId: string) => {
     const date = getTodayDateString();
@@ -2621,37 +2657,29 @@ function ActionScreen() {
     if (habitId === 'focus') return;
     if (completedHabits.has(habitId)) return;
     
-    // Update UI state immediately (without animation) for instant feedback
-    markHabitCompleted(habitId, false);
+    // Mark as needing details SYNCHRONOUSLY before any async work. This ensures
+    // pendingDataHabits is populated before saveDailyHabits triggers a store update
+    // which fires syncCompletedHabits — otherwise the guard in syncCompletedHabits
+    // sees pendingDataHabits empty and removes the habit from quickCompletedHabits,
+    // causing the bar to jump from 90% → 100%.
+    markHabitNeedsDetails(habitId);
+
+    // Animate immediately (optimistic): bar fills → sound plays → card slides to end
+    // API call runs in parallel; only revert if it fails
+    markHabitCompleted(habitId, true, 'quick');
     
-    // Wait for API call to complete
     const success = await persistQuickCompletion(habitId);
     
-    if (success) {
-      // Only trigger animation and sound AFTER successful save
-      playCompletionSound();
-      updateCardCompletionVisual(habitId, true, { animate: true });
-      
-      // Animate card to end after bar fills (450ms)
-      setTimeout(() => {
-        animateCardToEnd(habitId);
-      }, 500);
-    } else {
-      // Check if habit actually exists in database before uncompleting
-      // For habits like meditation that use trackDailyHabit, the function returns false
-      // if already completed, but we should keep it marked as completed in UI
-      
-      // Don't uncomplete if there's a partner - the sync already happened
+    if (!success) {
+      // Don't revert if there's a partner – sync already happened
       const partnership = Object.values(activePartnerships).find(
         p => p.habit_type === 'core' && p.habit_key === habitId
       );
-      
       if (!partnership) {
-        // Only revert if there's no partner
         markHabitUncompleted(habitId);
       }
     }
-  }, [completedHabits, markHabitCompleted, markHabitUncompleted, persistQuickCompletion, activePartnerships, playCompletionSound, updateCardCompletionVisual, animateCardToEnd]);
+  }, [completedHabits, markHabitCompleted, markHabitUncompleted, markHabitNeedsDetails, persistQuickCompletion, activePartnerships]);
 
   // Automatically sort habits on initial load
   useEffect(() => {
@@ -3048,6 +3076,11 @@ function ActionScreen() {
   );
 
 
+  // Keep ref in sync so syncCompletedHabits can read the latest value without a stale closure
+  useEffect(() => {
+    quickCompletedHabitsRef.current = quickCompletedHabits;
+  }, [quickCompletedHabits]);
+
   // Sync completed habits with existing data
   const syncCompletedHabits = useCallback(async () => {
     const completedSet = new Set<string>();
@@ -3103,8 +3136,13 @@ function ActionScreen() {
         }
       }
     }
-    
-    setCompletedHabits(completedSet);
+
+    // Merge server completions with any optimistic quick-completions (read via ref so this
+    // callback never has a stale closure, and never modifies quickCompletedHabits state).
+    // quickCompletedHabits is ONLY managed by markHabitCompleted / markHabitUncompleted.
+    const mergedCompleted = new Set(completedSet);
+    quickCompletedHabitsRef.current.forEach((id) => mergedCompleted.add(id));
+    setCompletedHabits(mergedCompleted);
   }, [dailyHabits, user, activePartnerships]);
 
   // Load selected habits on mount and sync completed status
@@ -3129,6 +3167,39 @@ function ActionScreen() {
   }, []);
   
   const [currentDate, setCurrentDate] = useState(() => getTodayDateStringHelper());
+
+  const loadPreviousNightSleepDisplay = useCallback(async () => {
+    if (!user?.id) {
+      setPreviousNightSleepDisplay('—');
+      setPreviousNightSleepDate(null);
+      return;
+    }
+    const todayStr = getAppTodayDateStringForHabits();
+    const lookbackStart = addDaysToDateString(todayStr, -30);
+    try {
+      const rows = await dailyHabitsService.getDailyHabitsRange(user.id, lookbackStart, todayStr);
+      const latestSleepRow =
+        rows.find((h) =>
+          (h.sleep_bedtime_hours != null && h.sleep_wakeup_hours != null) ||
+          (h.sleep_hours != null && Number(h.sleep_hours) > 0)
+        ) || null;
+      setPreviousNightSleepDisplay(formatPreviousNightSleepFromRow(latestSleepRow));
+      setPreviousNightSleepDate(latestSleepRow?.date ?? null);
+    } catch {
+      setPreviousNightSleepDisplay('—');
+      setPreviousNightSleepDate(null);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadPreviousNightSleepDisplay();
+  }, [loadPreviousNightSleepDisplay, currentDate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPreviousNightSleepDisplay();
+    }, [loadPreviousNightSleepDisplay])
+  );
   
   // Check for new day and reset order
   useEffect(() => {
@@ -3179,7 +3250,10 @@ function ActionScreen() {
   // Load persisted card order on mount and sort by completion status
   useEffect(() => {
     if (!user || selectedHabits.length === 0) return;
-    
+    // Same guard as "Sort cards whenever completedHabits changes" — don't reorder during
+    // markHabitCompleted → animateCardToEnd delay (card should stay in place until slide runs).
+    if (isCompletingHabitRef.current) return;
+
     let isMounted = true;
     
     (async () => {
@@ -3236,6 +3310,8 @@ function ActionScreen() {
 
   // Filter habitSpotlightCards based on selectedHabits
   useEffect(() => {
+    if (isCompletingHabitRef.current) return;
+
     if (selectedHabits.length > 0) {
       const selectedHabitIdsSet = new Set(selectedHabits);
       const filtered = habitSpotlightCardsBase.filter(card => selectedHabitIdsSet.has(card.habitId));
@@ -3860,7 +3936,8 @@ function ActionScreen() {
   const handleHabitPress = useCallback((habitId: string) => {
     // Check if habit is already completed
     if (completedHabits.has(habitId)) {
-      if (pendingDataHabits.has(habitId)) {
+      // Pending details or long-press quick complete → open form to finish / replace data
+      if (pendingDataHabits.has(habitId) || quickCompletedHabits.has(habitId)) {
         openHabitForm(habitId);
         return;
       }
@@ -3871,7 +3948,7 @@ function ActionScreen() {
     }
 
     openHabitForm(habitId);
-  }, [completedHabits, pendingDataHabits, openHabitForm]);
+  }, [completedHabits, pendingDataHabits, quickCompletedHabits, openHabitForm]);
 
   // Keyboard event listeners for modal positioning
   useEffect(() => {
@@ -4309,7 +4386,6 @@ function ActionScreen() {
         await savePillarProgressSnapshot(user.id, today);
         
         // Process completed challenges (non-blocking)
-        const { challengePotService } = await import('../lib/challengePotService');
         challengePotService.processCompletedChallenges().catch((error) => {
           console.error('Error processing completed challenges:', error);
         });
@@ -4512,7 +4588,6 @@ function ActionScreen() {
             if (!habitExists) {
               console.log(`[Partnership] Habit ${habitId} missing, recreating from snapshot...`);
               try {
-                const { habitsService } = await import('../lib/habitsService');
                 const newHabit = await habitsService.createHabit(user.id, p.habit_snapshot);
                 console.log(`[Partnership] Recreated habit from snapshot: ${newHabit.title} (${newHabit.id})`);
                 
@@ -4946,7 +5021,7 @@ function ActionScreen() {
                     <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>£{walletBalance.toFixed(0)}</Text>
                   </View>
                   <View style={styles.headerStat}>
-                    <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>Points:</Text>
+                    <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>EXP:</Text>
                 <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>{totalPoints}</Text>
                   </View>
                 </Animated.View>
@@ -5062,7 +5137,7 @@ function ActionScreen() {
                     />
                     <Animated.View
                       style={[
-                        styles.levelProgressFloatingPoints,
+                        styles.levelProgressFloatingEXP,
                         {
                           transform: [
                             {
@@ -5154,68 +5229,72 @@ function ActionScreen() {
               contentContainerStyle={styles.highlightCarouselContent}
             >
               {habitSpotlightCards.map((card, index) => {
-                const cardState = habitCardState[card.key];
-                // Check both cardState and completedHabits to determine if card is completed
-                const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
-                const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
-                // Show 5% if not completed (so user can see the color), otherwise use baseProgress
-                const displayProgress = isCompletedCard ? baseProgress : 0.05;
-                const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(displayProgress);
-                const progressWidth = progressAnimatedValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0%', '100%'],
-                });
+                const displayCard = mergeSleepCardMetrics(card);
+                const isCompletedCard = completedHabits.has(displayCard.habitId);
+                const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
+                const displayProgress = !isCompletedCard
+                  ? 0.05
+                  : isQuickComplete
+                    ? 0.9
+                    : 1;
                 const cardBackgroundColor = isDark ? '#1f1f1f' : '#111827';
                 const progressTrackColor = 'rgba(255, 255, 255, 0.15)';
                 // Keep original accent color even when completed
-                const progressFillColor = card.accent;
+                const progressFillColor = displayCard.accent;
                 const subtitleColor = 'rgba(255, 255, 255, 0.65)';
 
-                const showPendingIndicator = pendingDataHabits.has(card.habitId);
+                // Green check whenever completed; alert when quick-complete (90%) or still needs real data
+                const showPendingIndicator =
+                  pendingDataHabits.has(displayCard.habitId) || isQuickComplete;
                     
                     return (
                   <AnimatedHabitCard
-                    key={card.key}
-                    card={card}
+                    key={displayCard.key}
+                    card={displayCard}
                     index={index}
                     totalCards={habitSpotlightCards.length}
                     spotlightCardWidth={spotlightCardWidth}
-                    cardState={cardState}
+                    isCompleted={isCompletedCard}
+                    showCompletionCheckmark={isCompletedCard}
+                    progress={displayProgress}
                     isDark={isDark}
                     cardBackgroundColor={cardBackgroundColor}
                     progressTrackColor={progressTrackColor}
                     progressFillColor={progressFillColor}
                     subtitleColor={subtitleColor}
                     showPendingIndicator={showPendingIndicator}
-                    progressWidth={progressWidth}
                     handleHabitPress={handleHabitPress}
                     handleHabitLongPress={handleHabitLongPress}
                     cardAnimations={cardAnimations}
-                    partnership={activePartnerships[`core_${card.key}`]}
-                    pendingInvite={pendingInvites[`core_${card.key}`]}
-                    partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
-                    onInvite={() => handleInvitePress('core', card.key, card.title)}
+                    partnership={activePartnerships[`core_${displayCard.key}`]}
+                    pendingInvite={pendingInvites[`core_${displayCard.key}`]}
+                    partnerStatus={partnerCompletionStatus[`core_${displayCard.key}`]}
+                    onInvite={() => handleInvitePress('core', displayCard.key, displayCard.title)}
                     onRemovePartner={() => {
-                      const partnership = activePartnerships[`core_${card.key}`];
+                      const partnership = activePartnerships[`core_${displayCard.key}`];
                       if (partnership) {
-                        handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                        handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', displayCard.title);
                       }
                     }}
+                    onUncomplete={() => {
+                      setHabitToUntick(displayCard.habitId);
+                      setShowUntickConfirmation(true);
+                    }}
                     onCancelInvite={() => {
-                      const invite = pendingInvites[`core_${card.key}`];
+                      const invite = pendingInvites[`core_${displayCard.key}`];
                       if (invite) {
-                        handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                        handleCancelInvite(invite.id, invite.partner?.username || 'User', displayCard.title);
                       }
                     }}
                     onNudge={async () => {
-                      const partnership = activePartnerships[`core_${card.key}`];
+                      const partnership = activePartnerships[`core_${displayCard.key}`];
                       if (partnership) {
-                        return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                        return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', displayCard.title);
                       }
                       return null;
                     }}
                     lastNudgeTime={(() => {
-                      const partnership = activePartnerships[`core_${card.key}`];
+                      const partnership = activePartnerships[`core_${displayCard.key}`];
                       return partnership ? lastNudgeTimes[partnership.id] || null : null;
                     })()}
                     styles={styles}
@@ -5227,64 +5306,69 @@ function ActionScreen() {
         ) : (
           <View style={styles.habitListContainer}>
             {(coreHabitsExpanded ? habitSpotlightCards : habitSpotlightCards.slice(0, 3)).map((card, index) => {
-              const cardState = habitCardState[card.key];
-              const isCompletedCard = cardState?.completed || completedHabits.has(card.habitId);
-              const baseProgress = cardState?.baseProgress ?? (isCompletedCard ? 1 : 0.05);
-              const displayProgress = isCompletedCard ? baseProgress : 0.05;
-              const progressAnimatedValue = cardState?.progressAnimated ?? new Animated.Value(displayProgress);
-              const progressWidth = progressAnimatedValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0%', '100%'],
-              });
+              const displayCard = mergeSleepCardMetrics(card);
+              const isCompletedCard = completedHabits.has(displayCard.habitId);
+              const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
+              const displayProgress = !isCompletedCard
+                ? 0.05
+                : isQuickComplete
+                  ? 0.9
+                  : 1;
               const cardBackgroundColor = isDark ? '#1f1f1f' : '#111827';
               const progressTrackColor = 'rgba(255, 255, 255, 0.15)';
-              const progressFillColor = card.accent;
-              const showPendingIndicator = pendingDataHabits.has(card.habitId);
+              const progressFillColor = displayCard.accent;
+              const showPendingIndicator =
+                pendingDataHabits.has(displayCard.habitId) || isQuickComplete;
 
               return (
                 <HabitListItem
-                  key={card.key}
-                  card={card}
-                  cardState={cardState}
+                  key={displayCard.key}
+                  card={displayCard}
+                  cardState={null}
                   isCompleted={isCompletedCard}
-                  partnership={activePartnerships[`core_${card.key}`]}
-                  pendingInvite={pendingInvites[`core_${card.key}`]}
-                  partnerStatus={partnerCompletionStatus[`core_${card.key}`]}
-                  onPress={() => handleHabitPress(card.habitId)}
-                  onLongPress={() => handleHabitLongPress(card.habitId)}
-                  onInvite={() => handleInvitePress('core', card.key, card.title)}
+                  showCompletionCheckmark={isCompletedCard}
+                  partnership={activePartnerships[`core_${displayCard.key}`]}
+                  pendingInvite={pendingInvites[`core_${displayCard.key}`]}
+                  partnerStatus={partnerCompletionStatus[`core_${displayCard.key}`]}
+                  onPress={() => handleHabitPress(displayCard.habitId)}
+                  onLongPress={() => handleHabitLongPress(displayCard.habitId)}
+                  onInvite={() => handleInvitePress('core', displayCard.key, displayCard.title)}
                   onRemovePartner={() => {
-                    const partnership = activePartnerships[`core_${card.key}`];
+                    const partnership = activePartnerships[`core_${displayCard.key}`];
                     if (partnership) {
-                      handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', card.title);
+                      handleRemovePartner(partnership.id, partnership.partner?.username || 'Partner', displayCard.title);
                     }
                   }}
+                  onUncomplete={() => {
+                    setHabitToUntick(displayCard.habitId);
+                    setShowUntickConfirmation(true);
+                  }}
                   onCancelInvite={() => {
-                    const invite = pendingInvites[`core_${card.key}`];
+                    const invite = pendingInvites[`core_${displayCard.key}`];
                     if (invite) {
-                      handleCancelInvite(invite.id, invite.partner?.username || 'User', card.title);
+                      handleCancelInvite(invite.id, invite.partner?.username || 'User', displayCard.title);
                     }
                   }}
                   onNudge={async () => {
-                    const partnership = activePartnerships[`core_${card.key}`];
+                    const partnership = activePartnerships[`core_${displayCard.key}`];
                     if (partnership) {
-                      return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', card.title);
+                      return await handleNudge(partnership.id, partnership.partner?.id || '', partnership.partner?.username || 'Partner', displayCard.title);
                     }
                     return null;
                   }}
                   lastNudgeTime={(() => {
-                    const partnership = activePartnerships[`core_${card.key}`];
+                    const partnership = activePartnerships[`core_${displayCard.key}`];
                     return partnership ? lastNudgeTimes[partnership.id] || null : null;
                   })()}
                   showPendingIndicator={showPendingIndicator}
-                  progressWidth={progressWidth}
+                  progress={displayProgress}
                   progressFillColor={progressFillColor}
                   progressTrackColor={progressTrackColor}
                   theme={theme}
                   styles={styles}
                   backgroundColor={cardBackgroundColor}
                   isDark={isDark}
-                  onInfo={() => handleHabitPress(card.habitId)}
+                  onInfo={() => handleHabitPress(displayCard.habitId)}
                 />
               );
             })}
@@ -5472,6 +5556,10 @@ function ActionScreen() {
                     if (card.habit) {
                       loadHabitForEditing(card.habit);
                     }
+                  }}
+                  onInfo={() => {
+                    setStatsHabit(card.habit || null);
+                    setShowCustomHabitStats(true);
                   }}
                 />
                 );
@@ -6840,9 +6928,10 @@ function ActionScreen() {
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     checkAndSyncPartner('gym', true);
-                    markHabitCompleted('gym'); // Sound plays here when animation starts
                     setShowGymModal(false);
                     setGymQuestionnaire({ selectedTrainingTypes: [], customTrainingType: '' });
+                    // Delay so modal fade-out finishes before the fill + slide animations play
+                    setTimeout(() => markHabitCompleted('gym'), 300);
                   } else {
                     console.error('Failed to save gym data');
                   }
@@ -7248,9 +7337,9 @@ function ActionScreen() {
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     checkAndSyncPartner('sleep', true);
-                    markHabitCompleted('sleep'); // Sound plays here when animation starts
                     setShowSleepModal(false);
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
+                    setTimeout(() => markHabitCompleted('sleep'), 300);
                   } else {
                     console.error('Failed to save sleep data');
                   }
@@ -7366,9 +7455,9 @@ function ActionScreen() {
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
-                    markHabitCompleted('water'); // Sound plays here when animation starts
                     setShowWaterModal(false);
                     setWaterQuestionnaire({ waterIntake: 5, waterGoal: '', waterNotes: '' });
+                    setTimeout(() => markHabitCompleted('water'), 300);
                   } else {
                     console.error('Failed to save water data');
                   }
@@ -7533,9 +7622,9 @@ function ActionScreen() {
                     
                     const success = await useActionStore.getState().saveDailyHabits(habitData);
                     if (success) {
-                      markHabitCompleted('screen_time');
                       setShowScreenTimeModal(false);
                       setScreenTimeQuestionnaire({ hours: 0, minutes: 0 });
+                      setTimeout(() => markHabitCompleted('screen_time'), 300);
                     } else {
                       console.error('Failed to save screen time data');
                     }
@@ -7836,9 +7925,9 @@ function ActionScreen() {
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     checkAndSyncPartner('run', true);
-                    markHabitCompleted('run'); // Sound plays here when animation starts
                     setShowExerciseModal(false);
                     setExerciseQuestionnaire({ selectedSport: '', customSport: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, exerciseNotes: '' });
+                    setTimeout(() => markHabitCompleted('run'), 300);
                   } else {
                     console.error('Failed to save exercise data');
                     const error = useActionStore.getState().dailyHabitsError;
@@ -8181,7 +8270,6 @@ function ActionScreen() {
                           const success = await useActionStore.getState().saveDailyHabits(habitData);
                           if (success) {
                             checkAndSyncPartner('reflect', true);
-                            markHabitCompleted('reflect'); // Sound plays here when animation starts
                             setShowReflectModal(false);
                             setReflectQuestionnaire({ 
                               mood: 3, 
@@ -8193,6 +8281,7 @@ function ActionScreen() {
                               nothingToChange: false, 
                               currentStep: 1 
                             });
+                            setTimeout(() => markHabitCompleted('reflect'), 300);
                           } else {
                             console.error('Failed to save reflect data');
                           }
@@ -8251,8 +8340,8 @@ function ActionScreen() {
                       
                       const success = await useActionStore.getState().saveDailyHabits(habitData);
                       if (success) {
-                        markHabitCompleted('cold_shower'); // Sound plays here when animation starts
                         setShowColdShowerModal(false);
+                        setTimeout(() => markHabitCompleted('cold_shower'), 300);
                       } else {
                         console.error('Failed to save cold shower data');
                       }
@@ -9530,7 +9619,7 @@ const styles = StyleSheet.create({
     height: 8,
     backgroundColor: '#ffffff',
   },
-  levelProgressFloatingPoints: {
+  levelProgressFloatingEXP: {
     position: 'absolute',
     top: 18,
     width: 40,

@@ -45,8 +45,8 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 - Store goals in Supabase DB
 
 ### 4. Challenges System
-- **Free Challenges**: Join without investment
-- **Investment Challenges**: Pay entry fee (£10) to participate
+- **Free to Play** (Compete screen): £0 entry challenges for non‑Pro users
+- **Everyone Can Play** (Compete screen): paid entry (e.g. £10) challenges open to all users
 - Daily recurring challenges (e.g., Daily Smile Challenge)
 - Weekly recurring challenges
 - Challenge requirements and submissions
@@ -212,11 +212,17 @@ npm install
 ```
 
 ### Environment Setup
-Create a `.env` file with your Supabase and Stripe keys:
+1. Copy the example file: `cp .env.example .env`
+2. Edit `.env` and replace placeholders with keys from the [Supabase](https://supabase.com/dashboard) and [Stripe](https://dashboard.stripe.com/apikeys) dashboards (publishable key only for Stripe in the app).
+3. **Never commit `.env`** — it is listed in `.gitignore`. Only `.env.example` (placeholders) belongs in version control.
+4. If API keys were ever committed or shared, **rotate** them in each provider’s dashboard.
+
+Variables:
 ```
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+STRIPE_PUBLISHABLE_KEY=
+DEEPSEEK_API_KEY=   # optional
 ```
 
 ### Run Development Server

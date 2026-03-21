@@ -36,6 +36,8 @@ import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 type UserProfileStackParamList = {
   UserProfile: { userId: string; username: string };
+  Followers: { userId: string; username: string; initialTab?: 'followers' | 'following' };
+  ChatWindow: { chatId: string; otherUserId: string; otherUserName: string; otherUserAvatar?: string };
 };
 
 type Props = NativeStackScreenProps<UserProfileStackParamList, 'UserProfile'>;
@@ -158,7 +160,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       
       // Get level progress
       const progress = pointsService.getLevelProgress(total);
-      setLevelProgress(progress);
+      setLevelProgress({ ...progress, segmentsFilled: 0 });
       setCurrentLevel(progress.currentLevel);
       
       // Load core habits status for the viewed user
@@ -404,16 +406,17 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       const dailyHabits = await dailyHabitsService.getDailyHabits(userId, new Date().toISOString().split('T')[0]);
       
       if (dailyHabits) {
+        const h = dailyHabits as any;
         // Map the daily habits to boolean array for the green progress bar
         setViewedUserDailyHabits([
-          dailyHabits.meditation_completed || false,
-          dailyHabits.microlearn_completed || false,
-          dailyHabits.gym_completed || false,
-          dailyHabits.run_completed || false,
-          dailyHabits.screen_time_completed || false,
-          dailyHabits.water_completed || false,
+          h.meditation_completed || false,
+          h.microlearn_completed || false,
+          !!h.gym_day_type,
+          !!h.run_day_type,
+          h.screen_time_completed || false,
+          !!h.water_intake,
           dailyHabits.focus_completed || false,
-          dailyHabits.update_goal_completed || false
+          h.update_goal_completed || false
         ]);
       } else {
         setViewedUserDailyHabits([false, false, false, false, false, false, false, false]);
@@ -427,8 +430,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const loadViewedUserGoals = async () => {
     try {
       // Fetch goals for the viewed user using the goals store
-      const goals = await fetchGoals(userId);
-      setViewedUserGoals(goals || []);
+      await fetchGoals(userId);
+      setViewedUserGoals(userGoals || []);
     } catch (error) {
       console.error('Error loading viewed user goals:', error);
       setViewedUserGoals([]);
@@ -559,7 +562,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right']}>
       <ScrollView 
         style={[styles.scrollView, { backgroundColor: theme.background }]}
-        contentContainerStyle={{ paddingBottom: 0 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
@@ -630,10 +633,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                   style={styles.profilePicture}
                 />
               ) : (
-                <View style={[styles.profilePicturePlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-                  <Text style={[styles.profilePictureInitial, { color: 'white' }]}>
-                    {profile.username?.charAt(0)?.toUpperCase() || 'U'}
-                  </Text>
+                <View style={[styles.profilePicturePlaceholder, { backgroundColor: '#E5E7EB' }]}>
+                  <Ionicons name="person" size={32} color="#6B7280" />
                 </View>
               )}
             </View>
@@ -642,7 +643,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
               <Text style={[styles.profileDisplayName, { color: theme.textPrimary }]}>
                 @{profile.username}
               </Text>
-                {profile.is_pro && (
+                {(profile as any).is_pro && (
                   <View style={styles.proMicroBadge}>
                     <Ionicons name="star" size={10} color="#FFFFFF" />
                     <Text style={styles.proMicroBadgeText}>PRO</Text>
@@ -658,7 +659,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
               onPress={() => {
                 navigation.navigate('Followers', {
                   userId: userId,
-                  username: profile.username || 'User'
+                  username: profile.username || 'User',
+                  initialTab: 'followers'
                 });
               }}
             >
@@ -702,9 +704,10 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                 <TouchableOpacity 
                   style={styles.expandedProfileItem}
                   onPress={() => {
-                    navigation.navigate('Following', {
+                    navigation.navigate('Followers', {
                       userId: userId,
-                      username: profile.username || 'User'
+                      username: profile.username || 'User',
+                      initialTab: 'following'
                     });
                   }}
                 >
@@ -729,7 +732,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Points</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>EXP</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
                     {totalPoints}
                   </Text>
@@ -908,6 +911,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         <JourneyPreview 
           userId={userId}
           onViewAll={() => setShowFullJourney(true)}
+          emptyStateText="No posts yet."
         />
 
         {/* Progress Bars Section - Only show if stats are visible */}
@@ -1010,130 +1014,6 @@ export default function UserProfileScreen({ navigation, route }: Props) {
             </View>
           </View>
         </View>
-        )}
-
-        {/* Progress Bar - Moved to bottom */}
-        {statsVisible && (
-        <TouchableOpacity 
-          onPress={() => {
-            setShowLevelModal(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-            {/* Main Progress Bar */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-              <View style={[styles.leftBarContainer, { flex: 1, marginHorizontal: 4 }]}>
-                <View style={styles.leftBarBackground}>
-                  {[...Array(20)].map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        {
-                          width: '4.3%',
-                          height: '100%',
-                          backgroundColor: 'white',
-                          marginRight: i === 19 ? 0 : '0.7%',
-                          borderRadius: 2,
-                          transform: [{ skewX: '-18deg' }],
-                        },
-                        (i > 0 && i < 19) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 19 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        (i >= levelProgress.segmentsFilled) && { backgroundColor: theme.background, borderWidth: 1, borderColor: 'white' },
-                      ]}
-                    />
-                  ))}
-                </View>
-              </View>
-              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
-            </View>
-          
-            {/* Green Progress Bar */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-              <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-                <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
-                  {[...Array(8)].map((_, i) => {
-                    const activeSegmentCount = viewedUserDailyHabits.filter(checked => checked).length;
-                    const shouldBeActive = i < activeSegmentCount;
-                    
-                    return (
-                      <View
-                        key={i}
-                        style={[
-                          styles.leftBarSegment,
-                          { 
-                            backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
-                            height: 2.59,
-                            flex: 1,
-                            marginRight: i === 7 ? 0 : 2,
-                            shadowColor: '#10B981',
-                            shadowOffset: { width: 0, height: 0 },
-                            shadowOpacity: shouldBeActive ? 0.6 : 0,
-                            shadowRadius: 3,
-                            elevation: shouldBeActive ? 3 : 0,
-                          },
-                          (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
-                          i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                          i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                          (!shouldBeActive) && { 
-                            backgroundColor: theme.background, 
-                            borderWidth: 0.5, 
-                            borderColor: '#10B981',
-                            shadowColor: 'transparent',
-                            shadowOpacity: 0,
-                            elevation: 0,
-                          },
-                        ]}
-                      />
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-            
-            {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
-              <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-                <View style={styles.leftBarBackground}>
-                  {[...Array(5)].map((_, i) => {
-                    const isCompleted = viewedUserCoreHabits[i];
-                    return (
-                      <View
-                        key={i}
-                        style={[
-                          styles.leftBarSegment,
-                          { 
-                            backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
-                            height: 2.59,
-                            shadowColor: '#E91E63',
-                            shadowOffset: { width: 0, height: 0 },
-                            shadowOpacity: isCompleted ? 0.6 : 0,
-                            shadowRadius: 3,
-                            elevation: isCompleted ? 3 : 0,
-                          },
-                          i === 4 && { marginRight: 0 },
-                          (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                          i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                          i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                          !isCompleted && { 
-                            backgroundColor: theme.background, 
-                            borderWidth: 0.5, 
-                            borderColor: '#E91E63',
-                            shadowColor: 'transparent',
-                            shadowOpacity: 0,
-                            elevation: 0,
-                          },
-                        ]}
-                      />
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
         )}
 
         {/* Tasks Section */}
@@ -1549,6 +1429,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 28,
     height: 28,
+    zIndex: 10,
+    elevation: 2,
   },
   progressBarLabel: {
     position: 'absolute',

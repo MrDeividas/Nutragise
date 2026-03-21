@@ -61,10 +61,10 @@ export default function MicrolearningScreen({ navigation }: any) {
         
         await useActionStore.getState().loadDailyHabits(dateString);
         
-        Alert.alert('Success', 'Microlearn completed! +15 points\n\nCheck the Action page to see it highlighted.');
+        Alert.alert('Success', 'Microlearn completed! +15 EXP\n\nCheck the Action page to see it highlighted.');
         console.log('✅ Microlearn tracked successfully and daily habits reloaded');
       } else {
-        Alert.alert('Info', 'Microlearn already completed today or not eligible for points');
+        Alert.alert('Info', 'Microlearn already completed today or not eligible for EXP');
         console.log('ℹ️ Microlearn tracking returned false');
       }
     } catch (error) {
@@ -298,11 +298,11 @@ export default function MicrolearningScreen({ navigation }: any) {
           onPress={handleCompleteMicrolearn}
         >
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
-            ✓ Complete Microlearn (+15 pts)
+            ✓ Complete Microlearn (+15 EXP)
           </Text>
         </TouchableOpacity>
         <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
-          Click to mark microlearn as complete and award points
+          Click to mark microlearn as complete and award EXP
         </Text>
       </View>
 

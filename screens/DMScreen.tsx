@@ -21,7 +21,7 @@ import { ChatWithProfile } from '../types/database';
 import CustomBackground from '../components/CustomBackground';
 
 export default function DMScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { user } = useAuthStore();
   const { theme } = useTheme();
   
@@ -39,7 +39,7 @@ export default function DMScreen() {
   filterRef.current = filter;
   
   // Debounce ref for search
-  const searchDebounceRef = useRef<NodeJS.Timeout>();
+  const searchDebounceRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Track if chats have been loaded initially
   const chatsLoadedRef = useRef(false);
@@ -270,13 +270,13 @@ export default function DMScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ width: 40 }}>
-            <Ionicons name="arrow-back" size={24} color="#0F172A" />
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Messages</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Messages</Text>
           </View>
           <TouchableOpacity onPress={() => setShowSearch(!showSearch)} style={{ width: 40, alignItems: 'flex-end' }}>
-            <Ionicons name="add" size={28} color="#0F172A" />
+            <Ionicons name="add" size={28} color={theme.textPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -295,39 +295,60 @@ export default function DMScreen() {
           </View>
         )}
 
-        {/* Filter Tabs */}
+        {/* Filter tabs — same pattern as Followers / Following screen */}
         {!showSearch && chats.length > 0 && (
-          <View style={styles.filterContainer}>
+          <View style={[styles.tabRow, { borderBottomColor: theme.border }]}>
             <TouchableOpacity
-              style={[styles.filterTab, filter === 'all' && styles.activeFilter]}
+              style={[styles.tab, filter === 'all' && { borderBottomColor: theme.textPrimary }]}
               onPress={() => {
                 setFilter('all');
                 applyFilter(chats, 'all');
               }}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.filterText, filter === 'all' && styles.activeFilterText]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: filter === 'all' ? theme.textPrimary : theme.textSecondary },
+                  filter === 'all' && styles.tabTextActive,
+                ]}
+              >
                 All
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.filterTab, filter === 'following' && styles.activeFilter]}
+              style={[styles.tab, filter === 'following' && { borderBottomColor: theme.textPrimary }]}
               onPress={() => {
                 setFilter('following');
                 applyFilter(chats, 'following');
               }}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.filterText, filter === 'following' && styles.activeFilterText]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: filter === 'following' ? theme.textPrimary : theme.textSecondary },
+                  filter === 'following' && styles.tabTextActive,
+                ]}
+              >
                 Following
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.filterTab, filter === 'others' && styles.activeFilter]}
+              style={[styles.tab, filter === 'others' && { borderBottomColor: theme.textPrimary }]}
               onPress={() => {
                 setFilter('others');
                 applyFilter(chats, 'others');
               }}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.filterText, filter === 'others' && styles.activeFilterText]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: filter === 'others' ? theme.textPrimary : theme.textSecondary },
+                  filter === 'others' && styles.tabTextActive,
+                ]}
+              >
                 Others
               </Text>
             </TouchableOpacity>
@@ -388,8 +409,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   headerCenter: {
     flex: 1,
@@ -397,9 +419,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#0F172A',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -415,28 +436,26 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
   },
-  filterContainer: {
+  /** Matches FollowersScreen tab row */
+  tabRow: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    gap: 8,
+    borderBottomWidth: 1,
+    marginHorizontal: 24,
+    marginBottom: 8,
   },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  activeFilter: {
-    backgroundColor: '#14b8a6',
+  tabText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
-  filterText: {
-    fontSize: 14,
-    color: '#0F172A',
-  },
-  activeFilterText: {
-    fontWeight: '600',
-    color: '#FFFFFF',
+  tabTextActive: {
+    fontWeight: '700',
   },
   chatItem: {
     flexDirection: 'row',

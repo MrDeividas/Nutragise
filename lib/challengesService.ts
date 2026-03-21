@@ -2134,6 +2134,107 @@ class ChallengesService {
       this.isCheckingEndedChallenges = false;
     }
   }
+
+  // ─── Community Submission Flagging ───────────────────────────────────────
+
+  /**
+   * Flag a submission. Inserts a flag row and increments the denormalised
+   * flag_count / is_flagged columns on challenge_submissions.
+   * RLS prevents users from flagging their own submissions.
+   */
+  async flagSubmission(submissionId: string, userId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error: insertError } = await supabase
+        .from('challenge_submission_flags')
+        .insert({ submission_id: submissionId, flagged_by: userId, reason: reason ?? null });
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          return { success: false, error: 'already_flagged' };
+        }
+        return { success: false, error: insertError.message };
+      }
+
+      // Increment denormalised counters
+      await supabase.rpc('increment_submission_flag_count', { submission_id_param: submissionId });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error flagging submission:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Remove a previously placed flag. Decrements counters and clears
+   * is_flagged if flag_count drops to zero.
+   */
+  async unflagSubmission(submissionId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error: deleteError } = await supabase
+        .from('challenge_submission_flags')
+        .delete()
+        .eq('submission_id', submissionId)
+        .eq('flagged_by', userId);
+
+      if (deleteError) {
+        return { success: false, error: deleteError.message };
+      }
+
+      // Decrement counters
+      await supabase.rpc('decrement_submission_flag_count', { submission_id_param: submissionId });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error unflagging submission:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Fetch all submissions for every participant in a challenge, along with
+   * the current user's flag state for each submission.
+   * Returns a map of userId → submissions[].
+   */
+  async getParticipantSubmissions(
+    challengeId: string,
+    currentUserId: string
+  ): Promise<Record<string, import('../types/challenges').ChallengeSubmission[]>> {
+    try {
+      const { data: submissions, error } = await supabase
+        .from('challenge_submissions')
+        .select('id, challenge_id, user_id, photo_url, submitted_at, submission_date, week_number, verification_status, submission_notes, is_flagged, flag_count')
+        .eq('challenge_id', challengeId)
+        .order('submitted_at', { ascending: false });
+
+      if (error || !submissions) return {};
+
+      // Fetch this user's own flags for the returned submissions in one query
+      const submissionIds = submissions.map((s: any) => s.id);
+      let myFlagSet = new Set<string>();
+      if (submissionIds.length > 0) {
+        const { data: myFlags } = await supabase
+          .from('challenge_submission_flags')
+          .select('submission_id')
+          .eq('flagged_by', currentUserId)
+          .in('submission_id', submissionIds);
+        if (myFlags) {
+          myFlagSet = new Set(myFlags.map((f: any) => f.submission_id));
+        }
+      }
+
+      const result: Record<string, import('../types/challenges').ChallengeSubmission[]> = {};
+      for (const s of submissions) {
+        const enriched = { ...s, has_flagged_by_me: myFlagSet.has(s.id) };
+        if (!result[s.user_id]) result[s.user_id] = [];
+        result[s.user_id].push(enriched);
+      }
+      return result;
+    } catch (error: any) {
+      console.error('Error loading participant submissions:', error);
+      return {};
+    }
+  }
 }
 
 export const challengesService = new ChallengesService();

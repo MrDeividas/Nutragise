@@ -50,6 +50,9 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [participantTodaySubmissions, setParticipantTodaySubmissions] = useState<Set<string>>(new Set());
+  /** All submissions grouped by userId, enriched with has_flagged_by_me */
+  const [participantSubmissions, setParticipantSubmissions] = useState<Record<string, import('../types/challenges').ChallengeSubmission[]>>({});
+  const [flaggingSubmissionId, setFlaggingSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadChallengeDetails();
@@ -66,6 +69,9 @@ export default function ChallengeDetailScreen({ route }: any) {
         await loadParticipantTodaySubmissions(challenge.id);
       };
       refreshProgress();
+    }
+    if (activeTab === 'participants' && prevActiveTab.current !== 'participants' && challenge && user) {
+      loadParticipantSubmissionsData(challenge.id, user.id);
     }
     prevActiveTab.current = activeTab;
   }, [activeTab, challenge?.id, user?.id, isParticipating]);
@@ -126,6 +132,67 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
+  const loadParticipantSubmissionsData = async (cId: string, currentUserId: string) => {
+    const data = await challengesService.getParticipantSubmissions(cId, currentUserId);
+    setParticipantSubmissions(data);
+  };
+
+  const handleFlagSubmission = async (submission: import('../types/challenges').ChallengeSubmission) => {
+    if (!user) return;
+    if (flaggingSubmissionId) return; // already processing
+
+    if (submission.has_flagged_by_me) {
+      // Offer to un-flag
+      Alert.alert(
+        'Remove Flag',
+        'You have already flagged this submission. Do you want to remove your flag?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove Flag',
+            style: 'destructive',
+            onPress: async () => {
+              setFlaggingSubmissionId(submission.id);
+              const result = await challengesService.unflagSubmission(submission.id, user.id);
+              setFlaggingSubmissionId(null);
+              if (result.success) {
+                if (challenge) loadParticipantSubmissionsData(challenge.id, user.id);
+              } else {
+                Alert.alert('Error', 'Could not remove flag. Please try again.');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Flag Submission',
+      'Flag this submission as suspicious? If flagged, it will be sent for admin review when the challenge ends.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Flag',
+          style: 'destructive',
+          onPress: async () => {
+            setFlaggingSubmissionId(submission.id);
+            const result = await challengesService.flagSubmission(submission.id, user.id);
+            setFlaggingSubmissionId(null);
+            if (result.success) {
+              Alert.alert('Flagged', 'This submission has been flagged for admin review.');
+              if (challenge) loadParticipantSubmissionsData(challenge.id, user.id);
+            } else if (result.error === 'already_flagged') {
+              Alert.alert('Already Flagged', 'You have already flagged this submission.');
+            } else {
+              Alert.alert('Error', 'Could not flag submission. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const loadChallengeDetails = async () => {
     try {
       setLoading(true);
@@ -170,8 +237,9 @@ export default function ChallengeDetailScreen({ route }: any) {
         const balance = await walletService.getBalance(user.id);
         setWalletBalance(balance);
         
-        // Load participant today submissions
+        // Load participant today submissions and all submissions for flags
         await loadParticipantTodaySubmissions(challengeData.id);
+        await loadParticipantSubmissionsData(challengeData.id, user.id);
       }
     } catch (error) {
       console.error('Error loading challenge details:', error);
@@ -212,51 +280,67 @@ export default function ChallengeDetailScreen({ route }: any) {
       }
 
       if (isSevenDayChallenge) {
-        // ── HOLD-BASED FLOW (7-day challenges) ──
-        // Step 1: Create SetupIntent — save card, no charge yet
-        const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
-          await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
+        // Prefer wallet balance (same as longer challenges) — only use card hold if short on funds
+        const freshBalance = await walletService.getBalance(user.id);
+        setWalletBalance(freshBalance);
 
-        // Step 2: Show Stripe Setup Sheet (user saves their card)
-        const { error: initError } = await initPaymentSheet({
-          merchantDisplayName: 'NutrApp',
-          setupIntentClientSecret,
-          defaultBillingDetails: {
-            name: user.email?.split('@')[0] || 'User',
-            email: user.email || undefined,
-          },
-          returnURL: 'nutrapp://stripe-redirect',
-        });
+        if (freshBalance >= entryFee) {
+          const { paymentIntentId } =
+            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
+          await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
+          Alert.alert(
+            'Joined!',
+            `£${entryFee.toFixed(2)} moved to escrow from your wallet. It's returned if you complete the challenge, kept if you don't.`
+          );
+        } else {
+          // ── HOLD-BASED FLOW (7-day challenges, insufficient wallet) ──
+          // Step 1: Create SetupIntent — save card, no charge yet
+          const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
+            await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
 
-        if (initError) throw new Error(initError.message);
+          // Step 2: Show Stripe Setup Sheet (user saves their card)
+          const { error: initError } = await initPaymentSheet({
+            merchantDisplayName: 'NutrApp',
+            setupIntentClientSecret,
+            defaultBillingDetails: {
+              name: user.email?.split('@')[0] || 'User',
+              email: user.email || undefined,
+            },
+            returnURL: 'nutrapp://stripe-redirect',
+          });
 
-        const { error: presentError } = await presentPaymentSheet();
+          if (initError) throw new Error(initError.message);
 
-        if (presentError) {
-          if (presentError.code === 'Canceled') return;
-          throw new Error(presentError.message);
+          const { error: presentError } = await presentPaymentSheet();
+
+          if (presentError) {
+            if (presentError.code === 'Canceled') return;
+            throw new Error(presentError.message);
+          }
+
+          // Step 3: Retrieve the saved payment method ID from the SetupIntent
+          // The SetupIntent is confirmed — extract the payment method
+          // We pass setupIntentId and a placeholder paymentMethodId;
+          // the Edge Function authorize-challenge-payments will resolve the PM
+          // from the SetupIntent when the challenge starts.
+          await challengesService.completeHoldChallengeJoin(
+            challenge.id,
+            user.id,
+            setupIntentId,
+            setupIntentId // payment method is resolved server-side at challenge start
+          );
+
+          Alert.alert(
+            'Joined!',
+            `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
+          );
         }
-
-        // Step 3: Retrieve the saved payment method ID from the SetupIntent
-        // The SetupIntent is confirmed — extract the payment method
-        // We pass setupIntentId and a placeholder paymentMethodId;
-        // the Edge Function authorize-challenge-payments will resolve the PM
-        // from the SetupIntent when the challenge starts.
-        await challengesService.completeHoldChallengeJoin(
-          challenge.id,
-          user.id,
-          setupIntentId,
-          setupIntentId // payment method is resolved server-side at challenge start
-        );
-
-        Alert.alert(
-          'Joined!',
-          `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
-        );
       } else {
         // ── PRO USER: LONGER CHALLENGE FLOW ──
         // Check wallet first; if enough, use wallet escrow
-        const hasSufficientBalance = walletBalance >= entryFee;
+        const freshBalanceLong = await walletService.getBalance(user.id);
+        setWalletBalance(freshBalanceLong);
+        const hasSufficientBalance = freshBalanceLong >= entryFee;
 
         if (hasSufficientBalance) {
           const { paymentIntentId } =
@@ -270,7 +354,7 @@ export default function ChallengeDetailScreen({ route }: any) {
           // Pro user, longer challenge, insufficient wallet — prompt to top up
           Alert.alert(
             'Insufficient Balance',
-            `You need £${entryFee.toFixed(2)} in your wallet to join this challenge.\n\nYour balance: £${walletBalance.toFixed(2)}\n\nFor challenges longer than 7 days, please top up your wallet first.`,
+            `You need £${entryFee.toFixed(2)} in your wallet to join this challenge.\n\nYour balance: £${freshBalanceLong.toFixed(2)}\n\nFor challenges longer than 7 days, please top up your wallet first.`,
             [
               { text: 'Add Funds', onPress: () => navigation.navigate('Wallet') },
               { text: 'Cancel', style: 'cancel' },
@@ -612,13 +696,13 @@ export default function ChallengeDetailScreen({ route }: any) {
 
         {/* Challenge Image */}
         <View style={styles.imageContainer}>
-          {challenge.image_url && (
+          {challenge.image_url ? (
             <Image
               source={{ uri: challenge.image_url }}
               style={styles.challengeImage}
               resizeMode="cover"
             />
-          )}
+          ) : null}
         </View>
         
         {/* Stats Card */}
@@ -640,7 +724,7 @@ export default function ChallengeDetailScreen({ route }: any) {
         </View>
 
         {/* Approval Status Banner */}
-        {challenge.approval_status && (
+        {challenge.approval_status ? (
           <View style={[
             styles.approvalBanner,
             {
@@ -701,10 +785,10 @@ export default function ChallengeDetailScreen({ route }: any) {
               </Text>
             </View>
           </View>
-        )}
+        ) : null}
 
         {/* Wallet Balance (if not participating and has entry fee) */}
-        {challenge.entry_fee && challenge.entry_fee > 0 && !isParticipating && (
+        {(challenge.entry_fee ?? 0) > 0 && !isParticipating && (
           <View style={[styles.balanceCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View>
@@ -1008,7 +1092,7 @@ export default function ChallengeDetailScreen({ route }: any) {
           <View style={styles.tabContent}>
             <View style={styles.detailsContainer}>
               {/* Daily Proof Warning (if challenge has entry fee and user is participating) */}
-              {challenge.entry_fee && challenge.entry_fee > 0 && isParticipating && (
+              {(challenge.entry_fee ?? 0) > 0 && isParticipating && (
                 <View style={[styles.warningCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', marginBottom: 16 }]}>
                   <Ionicons name="warning" size={20} color="#F59E0B" />
                   <View style={{ flex: 1, marginLeft: 12 }}>
@@ -1058,9 +1142,11 @@ export default function ChallengeDetailScreen({ route }: any) {
               {challenge.participants && challenge.participants.length > 0 ? (
                 challenge.participants.map((participant, index) => {
                   const hasCompletedToday = participantTodaySubmissions.has(participant.user_id);
+                  const subs = participantSubmissions[participant.user_id] ?? [];
+                  const isOwnRow = participant.user_id === user?.id;
                   return (
-                    <View 
-                      key={participant.id || index} 
+                    <View
+                      key={participant.id || index}
                       style={[styles.participantItem, {
                         backgroundColor: '#FFFFFF',
                         borderColor: '#E5E7EB' as any,
@@ -1069,32 +1155,111 @@ export default function ChallengeDetailScreen({ route }: any) {
                         shadowOpacity: 0.1,
                         shadowRadius: 8,
                         elevation: 3,
+                        flexDirection: 'column',
+                        paddingBottom: subs.length > 0 ? 10 : undefined,
                       }]}
                     >
-                      {/* Avatar */}
-                      {participant.user?.avatar_url ? (
-                        <Image 
-                          source={{ uri: participant.user.avatar_url }} 
-                          style={styles.participantAvatar}
-                        />
-                      ) : (
-                        <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
-                          <Ionicons name="person" size={20} color={theme.textSecondary} />
+                      {/* Top row: avatar + name + completed-today badge */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {participant.user?.avatar_url ? (
+                          <Image
+                            source={{ uri: participant.user.avatar_url }}
+                            style={styles.participantAvatar}
+                          />
+                        ) : (
+                          <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
+                            <Ionicons name="person" size={20} color={theme.textSecondary} />
+                          </View>
+                        )}
+
+                        <View style={styles.participantInfo}>
+                          <Text style={[styles.participantName, { color: theme.textPrimary }]}>
+                            {participant.user?.display_name || participant.user?.username || 'Anonymous'}
+                          </Text>
+                          {subs.length > 0 && (
+                            <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1 }}>
+                              {subs.length} submission{subs.length !== 1 ? 's' : ''}
+                            </Text>
+                          )}
                         </View>
-                      )}
-                      
-                      {/* User Info */}
-                      <View style={styles.participantInfo}>
-                        <Text style={[styles.participantName, { color: theme.textPrimary }]}>
-                          {participant.user?.display_name || participant.user?.username || 'Anonymous'}
-                        </Text>
+
+                        {hasCompletedToday && (
+                          <View style={styles.completedTodayBadge}>
+                            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                            <Text style={styles.completedTodayText}>Today</Text>
+                          </View>
+                        )}
                       </View>
-                      
-                      {/* Completed Today Indicator */}
-                      {hasCompletedToday && (
-                        <View style={styles.completedTodayBadge}>
-                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                          <Text style={styles.completedTodayText}>Completed Today</Text>
+
+                      {/* Submissions list with flag buttons */}
+                      {subs.length > 0 && (
+                        <View style={{ marginTop: 10, gap: 8 }}>
+                          {subs.map((sub) => (
+                            <View
+                              key={sub.id}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                backgroundColor: '#F9FAFB',
+                                borderRadius: 10,
+                                padding: 8,
+                                gap: 8,
+                              }}
+                            >
+                              {/* Photo thumbnail or placeholder */}
+                              {sub.photo_url ? (
+                                <Image
+                                  source={{ uri: sub.photo_url }}
+                                  style={{ width: 48, height: 48, borderRadius: 8 }}
+                                />
+                              ) : (
+                                <View style={{
+                                  width: 48, height: 48, borderRadius: 8,
+                                  backgroundColor: '#E5E7EB',
+                                  alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  <Ionicons name="image-outline" size={20} color={theme.textSecondary} />
+                                </View>
+                              )}
+
+                              {/* Date + status */}
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 12, color: theme.textPrimary, fontWeight: '500' }}>
+                                  {sub.submission_date
+                                    ? new Date(sub.submission_date + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                                    : new Date(sub.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                                  <View style={{
+                                    width: 6, height: 6, borderRadius: 3,
+                                    backgroundColor: sub.verification_status === 'approved' ? '#10B981'
+                                      : sub.verification_status === 'rejected' ? '#EF4444'
+                                      : '#F59E0B',
+                                  }} />
+                                  <Text style={{ fontSize: 11, color: theme.textSecondary, textTransform: 'capitalize' }}>
+                                    {sub.verification_status}
+                                    {sub.is_flagged ? '  ·  Flagged' : ''}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Flag button — hidden for own submissions */}
+                              {!isOwnRow && (
+                                <TouchableOpacity
+                                  onPress={() => handleFlagSubmission(sub)}
+                                  disabled={flaggingSubmissionId === sub.id}
+                                  style={{ padding: 6 }}
+                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                >
+                                  <Ionicons
+                                    name={sub.has_flagged_by_me ? 'flag' : 'flag-outline'}
+                                    size={18}
+                                    color={sub.has_flagged_by_me ? '#F59E0B' : theme.textSecondary}
+                                  />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          ))}
                         </View>
                       )}
                     </View>

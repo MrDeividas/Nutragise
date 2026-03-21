@@ -5,17 +5,17 @@ import { challengePotService } from './challengePotService';
  * Maps habit types to their corresponding challenge titles
  */
 const HABIT_TO_CHALLENGE_MAP: Record<string, string> = {
-  gym: 'Gym Challenge',
-  run: 'Exercise Challenge', // Note: run habit maps to Exercise Challenge
-  update_goal: 'Goal Update Challenge',
-  microlearn: 'Microlearn Challenge',
-  focus: 'Focus Challenge',
-  reflect: 'Reflection Challenge',
-  water: 'Water Challenge',
-  cold_shower: 'Cold Shower Challenge',
-  screen_time: 'Screen Time Challenge',
-  sleep: 'Sleep Challenge',
-  meditation: 'Meditation Challenge',
+  gym: 'Gym',
+  run: 'Exercise', // Note: run habit maps to Exercise
+  update_goal: 'Goal Update',
+  microlearn: 'Microlearn',
+  focus: 'Focus',
+  reflect: 'Reflection',
+  water: 'Water',
+  cold_shower: 'Cold Shower',
+  screen_time: 'Screen Time',
+  sleep: 'Sleep',
+  meditation: 'Meditation',
 };
 
 class HabitChallengeSyncService {
@@ -48,10 +48,12 @@ class HabitChallengeSyncService {
 
       // Find active challenge instance for this week
       // Weekly challenges start on Monday and end on Sunday
+      // DB may use short title ("Gym") or legacy ("Gym Challenge")
+      const legacyTitle = `${challengeTitle} Challenge`;
       const { data: challenges, error } = await supabase
         .from('challenges')
         .select('id, title, start_date, end_date')
-        .eq('title', challengeTitle)
+        .in('title', [challengeTitle, legacyTitle])
         .eq('is_recurring', true)
         .lte('start_date', endOfDay.toISOString())
         .gte('end_date', startOfDay.toISOString())

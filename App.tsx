@@ -88,10 +88,10 @@ function GoalsStack() {
         name="GoalDetail" 
         component={GoalDetailScreen as any}
         options={{
-          animation: 'slide_from_bottom',
+          animation: 'slide_from_right',
           animationDuration: 200,
           gestureEnabled: true,
-          gestureDirection: 'vertical'
+          gestureDirection: 'horizontal'
         }}
       />
       <Stack.Screen 
@@ -128,10 +128,10 @@ function ActionStack() {
           name="GoalDetail" 
           component={GoalDetailScreen as any}
           options={{
-            animation: 'slide_from_bottom',
+            animation: 'slide_from_right',
             animationDuration: 200,
             gestureEnabled: true,
-            gestureDirection: 'vertical'
+            gestureDirection: 'horizontal'
           }}
         />
       </Stack.Navigator>
@@ -192,33 +192,30 @@ function ProfileStack() {
           name="UserProfile" 
           component={UserProfileScreen as any}
           options={{
-            animation: 'slide_from_bottom',
+            animation: 'slide_from_right',
             animationDuration: 200,
             gestureEnabled: true,
-            gestureDirection: 'vertical',
-            presentation: 'modal'
+            gestureDirection: 'horizontal',
           }}
         />
         <Stack.Screen 
-          name="Followers" 
+          name="Followers"
           component={FollowersScreen as any}
           options={{
-            animation: 'slide_from_bottom',
+            animation: 'slide_from_right',
             animationDuration: 200,
             gestureEnabled: true,
-            gestureDirection: 'vertical',
-            presentation: 'modal'
+            gestureDirection: 'horizontal',
           }}
         />
-        <Stack.Screen 
-          name="Following" 
+        <Stack.Screen
+          name="Following"
           component={FollowingScreen as any}
           options={{
-            animation: 'slide_from_bottom',
+            animation: 'slide_from_right',
             animationDuration: 200,
             gestureEnabled: true,
-            gestureDirection: 'vertical',
-            presentation: 'modal'
+            gestureDirection: 'horizontal',
           }}
         />
         <Stack.Screen 
@@ -235,10 +232,10 @@ function ProfileStack() {
           name="GoalDetail" 
           component={GoalDetailScreen as any}
           options={{
-            animation: 'slide_from_bottom',
+            animation: 'slide_from_right',
             animationDuration: 200,
             gestureEnabled: true,
-            gestureDirection: 'vertical'
+            gestureDirection: 'horizontal'
           }}
         />
       </Stack.Navigator>

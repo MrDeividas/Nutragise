@@ -1044,9 +1044,7 @@ function ProfileScreen({ navigation }: any) {
                 />
               ) : (
                 <View style={[styles.profilePicturePlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-                  <Text style={[styles.profilePictureInitial, { color: 'white' }]}>
-                    {user?.username?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
-                  </Text>
+                  <Ionicons name="person" size={32} color="#FFFFFF" />
                 </View>
               )}
             </View>
@@ -1072,10 +1070,8 @@ function ProfileScreen({ navigation }: any) {
                 if (user) {
                   navigation.navigate('Followers', {
                     userId: user.id,
-                    username: user.email || 'User'
-                  }, {
-                    animation: 'slide_from_bottom',
-                    presentation: 'modal'
+                    username: user.username || user.email || 'User',
+                    initialTab: 'followers'
                   });
                 }
               }}
@@ -1122,9 +1118,10 @@ function ProfileScreen({ navigation }: any) {
                 style={styles.expandedProfileItem}
                 onPress={() => {
                   if (user) {
-                    navigation.navigate('Following', {
+                    navigation.navigate('Followers', {
                       userId: user.id,
-                      username: user.email || 'User'
+                      username: user.username || user.email || 'User',
+                      initialTab: 'following'
                     });
                   }
                 }}
@@ -1150,7 +1147,7 @@ function ProfileScreen({ navigation }: any) {
                 </Text>
               </View>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Points</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>EXP</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
                   {totalPoints}
                 </Text>

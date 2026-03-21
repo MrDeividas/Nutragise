@@ -43,9 +43,9 @@ export default function GoalInteractionBar({
         if (user) {
           const success = await trackCoreHabit('share');
           if (success) {
-            Alert.alert('Success', 'Shared! +15 points earned 🎉');
+            Alert.alert('Success', 'Shared! +15 EXP earned 🎉');
           } else {
-            Alert.alert('Already Shared', 'You already shared today! Points are awarded once per day.');
+            Alert.alert('Already Shared', 'You already shared today! EXP is awarded once per day.');
           }
         }
       }

@@ -138,10 +138,10 @@ export default function MeditationScreen({ navigation }: any) {
         
         await useActionStore.getState().loadDailyHabits(dateString);
         
-        Alert.alert('Success', 'Meditation completed! +15 points\n\nCheck the Action page to see it highlighted.');
+        Alert.alert('Success', 'Meditation completed! +15 EXP\n\nCheck the Action page to see it highlighted.');
         console.log('✅ Meditation tracked successfully and daily habits reloaded');
       } else {
-        Alert.alert('Info', 'Meditation already completed today or not eligible for points');
+        Alert.alert('Info', 'Meditation already completed today or not eligible for EXP');
         console.log('ℹ️ Meditation tracking returned false');
       }
     } catch (error) {

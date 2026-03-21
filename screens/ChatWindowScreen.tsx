@@ -35,7 +35,7 @@ export default function ChatWindowScreen() {
   const [inputText, setInputText] = useState('');
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const lastTypingUpdateRef = useRef<number>(0);
@@ -91,12 +91,6 @@ export default function ChatWindowScreen() {
       }, 100);
     });
 
-    // Monitor subscription status
-    const statusInterval = setInterval(() => {
-      const status = messageSubscription.state;
-      setIsConnected(status === 'joined');
-    }, 2000);
-
     const typingSubscription = dmService.subscribeToTyping(chatId, (typingData) => {
       if (typingData.user_id !== user.id) {
         setIsTyping(typingData.is_typing);
@@ -104,25 +98,31 @@ export default function ChatWindowScreen() {
     });
 
     return () => {
-      clearInterval(statusInterval);
       messageSubscription.unsubscribe();
       typingSubscription.unsubscribe();
     };
   }, [chatId, user]);
 
-  // Scroll to bottom when keyboard shows
+  // Scroll to bottom when keyboard shows; track visibility so we don’t add safe-area
+  // bottom inset on top of keyboard padding (that caused a large gap above the keyboard).
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       () => {
+        setKeyboardVisible(true);
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
     );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
 
     return () => {
-      keyboardDidShowListener.remove();
+      show.remove();
+      hide.remove();
     };
   }, []);
 
@@ -312,18 +312,11 @@ export default function ChatWindowScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Connection Status */}
-        {!isConnected && (
-          <View style={{ backgroundColor: '#FFA500', padding: 8, alignItems: 'center' }}>
-            <Text style={{ color: '#fff', fontSize: 12 }}>Connecting to real-time...</Text>
-          </View>
-        )}
-
         {/* Chat Content - Wraps Messages + Input for Android */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+          keyboardVerticalOffset={0}
         >
           {/* Messages */}
           <FlatList
@@ -348,7 +341,11 @@ export default function ChatWindowScreen() {
             styles.inputContainer, 
             { 
               borderTopColor: theme.border,
-              paddingBottom: insets.bottom || 0,
+              // When keyboard is open, only a thin gap; don’t stack home-indicator inset
+              // (that + KAV padding looked like a huge empty band above the keyboard).
+              paddingBottom: keyboardVisible
+                ? 8
+                : Math.max(insets.bottom, 8),
             }
           ]}>
             <TextInput

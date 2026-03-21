@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, Animated, Easing } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -8,6 +8,10 @@ interface HabitListItemProps {
   card: any;
   cardState: any;
   isCompleted: boolean;
+  /** If set, controls checkmark only (defaults to isCompleted). Core quick-complete still shows check; use alert icon via showPendingIndicator. */
+  showCompletionCheckmark?: boolean;
+  /** Called when user chooses "Uncomplete" from the ... menu (core habits only). */
+  onUncomplete?: () => void;
   partnership: any;
   pendingInvite: any;
   partnerStatus: any;
@@ -19,7 +23,8 @@ interface HabitListItemProps {
   onCancelInvite: () => void;
   lastNudgeTime: Date | null;
   showPendingIndicator: boolean;
-  progressWidth: any;
+  /** 0–1 fill level; component animates internally (mirrors WhiteHabitCard) */
+  progress: number;
   progressFillColor: string;
   progressTrackColor: string;
   theme: any;
@@ -30,10 +35,12 @@ interface HabitListItemProps {
   onInfo?: () => void;
 }
 
-const HabitListItem = ({
+const HabitListItem: React.FC<HabitListItemProps> = ({
   card,
   cardState,
   isCompleted,
+  showCompletionCheckmark,
+  onUncomplete,
   partnership,
   pendingInvite,
   partnerStatus,
@@ -45,7 +52,7 @@ const HabitListItem = ({
   onCancelInvite,
   lastNudgeTime,
   showPendingIndicator,
-  progressWidth,
+  progress,
   progressFillColor,
   progressTrackColor,
   theme,
@@ -54,9 +61,25 @@ const HabitListItem = ({
   isDark = false,
   onEdit,
   onInfo
-}: HabitListItemProps) => {
+}) => {
+  const showCheck = showCompletionCheckmark !== undefined ? showCompletionCheckmark : isCompleted;
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [canNudge, setCanNudge] = useState(true);
+
+  // Mirror WhiteHabitCard: own Animated.Value, animate when `progress` prop changes
+  const [progressAnimated] = useState(new Animated.Value(progress));
+  useEffect(() => {
+    Animated.timing(progressAnimated, {
+      toValue: progress,
+      duration: 450,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [progress, progressAnimated]);
+  const animatedWidth = progressAnimated.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
 
   useEffect(() => {
     if (!lastNudgeTime) {
@@ -228,7 +251,7 @@ const HabitListItem = ({
                 <Text style={[styles.habitListItemMetric, { color: metricColor, marginRight: 4 }]}>
                   {card.metricLabel}: {card.metricValue}
                 </Text>
-                {isCompleted && (
+                {showCheck && (
                   <Ionicons
                     name="checkmark-circle"
                     size={16}
@@ -254,36 +277,23 @@ const HabitListItem = ({
                 <TouchableOpacity
                   onPress={(e) => {
                     e.stopPropagation();
-                    if (onEdit && card.habit) {
-                      // Custom habit with edit option
-                      if (partnership) {
-                        Alert.alert(
-                          card.title,
-                          'Choose an option',
-                          [
-                            {
-                              text: 'Edit Habit',
-                              onPress: () => onEdit()
-                            },
-                            {
-                              text: 'Remove Partner',
-                              style: 'destructive',
-                              onPress: () => onRemovePartner()
-                            },
-                            {
-                              text: 'Cancel',
-                              style: 'cancel'
-                            }
-                          ]
-                        );
-                      } else {
-                        // No partnership, just edit
-                        onEdit();
-                      }
-                    } else if (partnership) {
-                      // Core habit with partnership - remove partner
-                      onRemovePartner();
+                    if (!card.habit || !onEdit) return;
+                    const options: any[] = [];
+                    if (onInfo) {
+                      options.push({ text: 'Info', onPress: () => onInfo() });
                     }
+                    options.push({ text: 'Edit Habit', onPress: () => onEdit() });
+                    if (partnership) {
+                      options.push({
+                        text: 'Remove Partner',
+                        style: 'destructive',
+                        onPress: () => onRemovePartner(),
+                      });
+                    } else {
+                      options.push({ text: 'Invite a Friend', onPress: () => onInvite() });
+                    }
+                    options.push({ text: 'Cancel', style: 'cancel' });
+                    Alert.alert(card.title, 'Choose an option', options);
                   }}
                   style={{ padding: 4 }}
                 >
@@ -315,7 +325,7 @@ const HabitListItem = ({
               <Text style={[styles.habitListItemMetric, { color: metricColor, marginRight: 4 }]}>
                 {card.metricLabel}: {card.metricValue}
               </Text>
-              {isCompleted && (
+              {showCheck && (
                 <Ionicons
                   name="checkmark-circle"
                   size={16}
@@ -337,27 +347,31 @@ const HabitListItem = ({
           {/* Right Section - Partnership Controls and Menu */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {renderPartnershipControls()}
-            {(onInfo || partnership) && (
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  if (onInfo) {
-                    // Core habit - show info
-                    onInfo();
-                  } else if (partnership) {
-                    // Core habit with partnership - remove partner
-                    onRemovePartner();
-                  }
-                }}
-                style={{ padding: 4 }}
-              >
-                <Ionicons 
-                  name="ellipsis-vertical" 
-                  size={16} 
-                  color="rgba(255, 255, 255, 0.65)" 
-                />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                const options: any[] = [
+                  { text: 'Edit / Enter details', onPress: () => onInfo?.() ?? onPress() },
+                ];
+                if (partnership) {
+                  options.push({ text: 'Remove Partner', style: 'destructive', onPress: () => onRemovePartner() });
+                } else {
+                  options.push({ text: 'Invite a Friend', onPress: () => onInvite() });
+                }
+                if (isCompleted && onUncomplete) {
+                  options.push({ text: 'Uncomplete', style: 'destructive', onPress: () => onUncomplete() });
+                }
+                options.push({ text: 'Cancel', style: 'cancel' });
+                Alert.alert(card.title, 'Choose an option', options);
+              }}
+              style={{ padding: 4 }}
+            >
+              <Ionicons 
+                name="ellipsis-vertical" 
+                size={16} 
+                color="rgba(255, 255, 255, 0.65)" 
+              />
+            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -368,7 +382,7 @@ const HabitListItem = ({
           style={[
             {
               height: '100%',
-              width: progressWidth,
+              width: animatedWidth,
               backgroundColor: progressFillColor,
               borderRadius: 999,
             },

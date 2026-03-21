@@ -148,7 +148,17 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Has participants — settle payments then send to admin review
+        // Has participants — check whether any submission has been community-flagged.
+        // Flagged challenges go to admin review; unflagged ones auto-approve.
+        const { count: flaggedCount } = await supabase
+          .from('challenge_submissions')
+          .select('id', { count: 'exact', head: true })
+          .eq('challenge_id', challenge.id)
+          .eq('is_flagged', true);
+
+        const hasFlaggedSubmissions = (flaggedCount ?? 0) > 0;
+
+        // Settle payments regardless of flag status (idempotent)
         try {
           const settleResponse = await fetch(
             `${supabaseUrl}/functions/v1/settle-challenge-payments`,
@@ -174,10 +184,11 @@ Deno.serve(async (req) => {
           errors.push({ challengeId: challenge.id, step: 'settle_payments', error: settleErr.message });
         }
 
-        // Mark challenge as pending admin review
+        // Auto-approve if no flags; otherwise queue for admin review
+        const newApprovalStatus = hasFlaggedSubmissions ? 'pending' : 'approved';
         const { error: updateError } = await supabase
           .from('challenges')
-          .update({ approval_status: 'pending', status: 'completed' })
+          .update({ approval_status: newApprovalStatus, status: 'completed' })
           .eq('id', challenge.id);
 
         if (updateError) {
@@ -185,7 +196,11 @@ Deno.serve(async (req) => {
           errors.push({ challengeId: challenge.id, title: challenge.title, error: updateError.message });
         } else {
           successCount++;
-          console.log(`✅ Marked "${challenge.title}" as pending review (${participantCount} participant(s))`);
+          if (hasFlaggedSubmissions) {
+            console.log(`🚩 Marked "${challenge.title}" as pending review (${flaggedCount} flagged submission(s))`);
+          } else {
+            console.log(`✅ Auto-approved "${challenge.title}" (${participantCount} participant(s), no flags)`);
+          }
         }
       } catch (err: any) {
         console.error(`Error processing challenge ${challenge.id}:`, err);

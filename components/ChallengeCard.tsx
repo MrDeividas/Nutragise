@@ -9,52 +9,42 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Challenge, ChallengeCardProps } from '../types/challenges';
 import { useTheme } from '../state/themeStore';
+import { stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 
 const { width } = Dimensions.get('window');
 const horizontalPadding = 24 * 2;
 const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
 
+const CORE_HABIT_TITLES = new Set([
+  'Gym',
+  'Exercise',
+  'Goal Update',
+  'Microlearn',
+  'Focus',
+  'Reflection',
+  'Water',
+  'Cold Shower',
+  'Screen Time',
+  'Sleep',
+  'Meditation',
+]);
+
+function isCoreHabitTitle(title: string): boolean {
+  return CORE_HABIT_TITLES.has(stripTrailingChallengeWord(title));
+}
+
+/** e.g. "23 Mar" */
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
 export default function ChallengeCard({ challenge, onPress, isJoined, isCompleted }: ChallengeCardProps) {
   const { theme, isDark } = useTheme();
 
-  // Check if this is a core habit challenge
-  const isCoreHabitChallenge = () => {
-    const coreHabitTitles = [
-      'Gym Challenge',
-      'Exercise Challenge',
-      'Goal Update Challenge',
-      'Microlearn Challenge',
-      'Focus Challenge',
-      'Reflection Challenge',
-      'Water Challenge',
-      'Cold Shower Challenge',
-      'Screen Time Challenge',
-      'Sleep Challenge',
-      'Meditation Challenge',
-    ];
-    return coreHabitTitles.includes(challenge.title);
-  };
-
-  const isCoreHabit = isCoreHabitChallenge();
-  
-  // Get accent color for core habit challenges (matching ActionScreen)
-  const getCoreHabitAccentColor = (challengeTitle: string): string | null => {
-    const accentMap: Record<string, string> = {
-      'Gym Challenge': '#EF4444',
-      'Exercise Challenge': '#FFEB3B', // run
-      'Goal Update Challenge': '#A78BFA', // update_goal
-      'Microlearn Challenge': '#FB7185',
-      'Focus Challenge': '#F472B6',
-      'Reflection Challenge': '#F59E0B',
-      'Water Challenge': '#60A5FA',
-      'Cold Shower Challenge': '#7DD3FC',
-      'Screen Time Challenge': '#FCD34D',
-      'Sleep Challenge': '#34D399',
-      'Meditation Challenge': '#2DD4BF',
-    };
-    return accentMap[challengeTitle] || null;
-  };
+  const isCoreHabit = isCoreHabitTitle(challenge.title);
 
   const getCategoryColor = (category: string) => {
     switch (category.toLowerCase()) {
@@ -74,27 +64,6 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
         return '#6366F1'; // Indigo
       default:
         return '#6B7280'; // Gray
-    }
-  };
-
-  const getCategoryIcon = (category: string) => {
-    switch (category.toLowerCase()) {
-      case 'fitness':
-        return 'fitness-outline';
-      case 'wellness':
-        return 'heart-outline';
-      case 'nutrition':
-        return 'restaurant-outline';
-      case 'mindfulness':
-        return 'leaf-outline';
-      case 'learning':
-        return 'book-outline';
-      case 'creativity':
-        return 'brush-outline';
-      case 'productivity':
-        return 'checkmark-circle-outline';
-      default:
-        return 'trophy-outline';
     }
   };
 
@@ -118,58 +87,13 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
     return `${weeks} weeks`;
   };
 
-  const formatEntryFee = (fee: number) => {
-    if (fee === 0) return 'Free';
-    return `£${fee}`;
-  };
-
-  // Calculate time until start (for upcoming) or until end (for active)
-  const getTimeRemaining = () => {
-    const now = new Date();
-    const startDate = new Date(challenge.start_date);
-    const endDate = new Date(challenge.end_date);
-    
-    // Set end date to end of day to include the full last day
-    endDate.setHours(23, 59, 59, 999);
-    
-    // Check if challenge is upcoming
-    if (now < startDate) {
-      // Time until start
-      const diffMs = startDate.getTime() - now.getTime();
-      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      
-      if (days > 0) {
-        return `Starts in ${days}d ${hours}h ${minutes}m`;
-      } else if (hours > 0) {
-        return `Starts in ${hours}h ${minutes}m`;
-      } else {
-        return `Starts in ${minutes}m`;
-      }
-    } else {
-      // Time until end (active challenge)
-      const diffMs = endDate.getTime() - now.getTime();
-      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      
-      if (diffMs <= 0) return 'Challenge ended';
-      
-      if (days > 0) {
-        return `${days}d ${hours}h ${minutes}m left`;
-      } else if (hours > 0) {
-        return `${hours}h ${minutes}m left`;
-      } else if (minutes > 0) {
-        return `${minutes}m left`;
-      } else {
-        return 'Less than 1m left';
-      }
-    }
-  };
+  /** e.g. "23 Mar - 30 Mar • 1 week" */
+  const scheduleLine = `${formatShortDate(challenge.start_date)} - ${formatShortDate(challenge.end_date)} • ${formatDuration(challenge.duration_weeks)}`;
 
   const categoryColor = getCategoryColor(challenge.category);
-  const categoryIcon = getCategoryIcon(challenge.category);
+  const categoryLabel = challenge.visibility === 'private'
+    ? 'Private'
+    : challenge.category.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   
   // For core habit challenges, use dark grey color (matching ActionScreen core habit cards)
   // For private challenges, use dark purple, otherwise use category color
@@ -183,23 +107,49 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
       onPress={() => onPress(challenge)}
       activeOpacity={0.8}
     >
-      {/* Blue Section */}
+      {/* Dark band: 50% height (matches top / bottom content split for all challenge types) */}
       <View style={[styles.blueSection, { backgroundColor: sectionColor }]} />
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Pro Star (Top Right) */}
-        {challenge.is_pro_only && (
-          <View style={styles.proStar}>
-            <Ionicons name="star" size={20} color="#F59E0B" />
+        {/* Single row: category + Everyone OR category + Member (Pro) */}
+        <View style={styles.topPillsRow} pointerEvents="none">
+          <View
+            style={[
+              styles.categoryPill,
+              {
+                borderColor: challenge.visibility === 'private' ? 'rgba(75, 0, 130, 0.35)' : `${categoryColor}55`,
+                backgroundColor: challenge.visibility === 'private'
+                  ? 'rgba(75, 0, 130, 0.08)'
+                  : 'rgba(255, 255, 255, 0.96)',
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.pillLabel,
+                styles.categoryPillLabel,
+                { color: challenge.visibility === 'private' ? '#4B0082' : theme.textPrimary },
+              ]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {categoryLabel}
+            </Text>
           </View>
-        )}
+          {challenge.is_pro_only ? (
+            <View style={styles.memberPill}>
+              <Text style={[styles.pillLabel, styles.memberPillText]}>Member</Text>
+            </View>
+          ) : (
+            <View style={styles.everyonePill}>
+              <Text style={[styles.pillLabel, styles.everyonePillText]}>Everyone</Text>
+            </View>
+          )}
+        </View>
         
-        {/* Top Section */}
+        {/* Top half: badges + participants only; title lives in bottom half */}
         <View style={styles.topSection}>
-          <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
-            {challenge.title}
-          </Text>
           <View style={styles.topBadgesRow}>
             {challenge.approval_status === 'pending' ? (
               <View style={styles.pendingBadge}>
@@ -216,52 +166,48 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
               <Ionicons name="checkmark-done-circle" size={14} color="#F59E0B" />
               <Text style={styles.doneText}>Done</Text>
             </View>
-          ) : isJoined ? (
-            <View style={styles.joinedBadge}>
-              <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-              <Text style={styles.joinedText}>Joined</Text>
-            </View>
           ) : null}
           <View style={styles.participantsContainerAction}>
-            <Ionicons name="people" size={14} color={theme.textSecondary} />
-            <Text style={[styles.participantsTextAction, { color: theme.textSecondary }]}>
+            <Ionicons
+              name="people"
+              size={14}
+              color={isJoined ? '#10B981' : theme.textSecondary}
+            />
+            <Text
+              style={[
+                styles.participantsTextAction,
+                { color: isJoined ? '#10B981' : theme.textSecondary },
+              ]}
+            >
               <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
             </Text>
             </View>
           </View>
         </View>
 
-        {/* Bottom Section */}
+        {/* Bottom half: schedule, title, entry/pot */}
         <View style={styles.bottomSection}>
-          <View style={styles.feeContainer}>
-            <View style={styles.feeRow}>
-              <Ionicons name="pricetag-outline" size={14} color="rgba(255,255,255,0.9)" />
-              <Text style={[styles.feeText, { color: 'rgba(255,255,255,0.9)' }]}>
-                {formatEntryFee(challenge.entry_fee)}
-              </Text>
-            </View>
-            <View style={styles.feeRow}>
-              <Ionicons name="cash-outline" size={14} color="rgba(255,255,255,0.9)" />
-              <Text style={[styles.potText, { color: 'rgba(255,255,255,0.9)' }]}>
-                £{(challenge.participant_count || 0) * challenge.entry_fee} pot
-              </Text>
-            </View>
-          </View>
-
-          <Text style={[styles.timeRemaining, { color: 'rgba(255,255,255,0.9)' }]}>
-            {getTimeRemaining()}
+          <Text style={[styles.timeRemaining, styles.bottomSecondaryText]}>
+            {scheduleLine}
           </Text>
 
-          <View style={styles.tagsContainer}>
-            <View style={[styles.tag, { backgroundColor: sectionColor }]}>
-              <Ionicons name={challenge.visibility === 'private' ? 'lock-closed-outline' : categoryIcon} size={12} color="#FFFFFF" />
-              <Text style={styles.tagText}>{challenge.visibility === 'private' ? 'Private' : challenge.category}</Text>
-            </View>
-            <View style={[styles.durationBadge, { backgroundColor: sectionColor }]}>
-              <Text style={styles.durationBadgeText}>
-                {formatDuration(challenge.duration_weeks)}
-              </Text>
-            </View>
+          <View style={styles.bottomTitleWrap}>
+            <Text
+              style={[styles.title, styles.titleInBottom]}
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {challenge.title}
+            </Text>
+          </View>
+
+          <View style={styles.feeContainer}>
+            <Text style={[styles.entryPotText, styles.bottomSecondaryText]}>
+              Entry: £{challenge.entry_fee ?? 0}
+            </Text>
+            <Text style={[styles.entryPotText, styles.bottomSecondaryText]}>
+              Pot: £{(challenge.participant_count || 0) * (challenge.entry_fee ?? 0)}
+            </Text>
           </View>
 
         </View>
@@ -273,7 +219,7 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
 const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
-    height: 220,
+    height: 232,
     borderRadius: 20,
     borderWidth: 1,
     marginRight: 10, // Match habit card spacing
@@ -292,7 +238,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '60%',
+    height: '50%',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     borderTopLeftRadius: 12,
@@ -300,73 +246,133 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    flexDirection: 'column',
     position: 'relative',
     zIndex: 1,
   },
-  topSection: {
-    height: '40%',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  bottomSection: {
-    height: '60%',
-    justifyContent: 'space-between',
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    position: 'relative',
-  },
-  tagsContainer: {
+  topPillsRow: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    zIndex: 9,
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-    marginLeft: 0,
-    paddingLeft: 0,
-    alignItems: 'flex-start',
-    alignSelf: 'flex-start',
-  },
-  tag: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    paddingLeft: 0,
-    paddingRight: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
     gap: 4,
   },
-  tagText: {
-    fontSize: 12,
+  /** Hug text width; cap width so long names ellipsize + second pill still fits */
+  categoryPill: {
+    alignSelf: 'flex-start',
+    flexShrink: 1,
+    maxWidth: '72%',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  categoryPillLabel: {
+    flexShrink: 1,
+  },
+  everyonePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.45)',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  everyonePillText: {
+    color: '#15803D',
+  },
+  memberPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FF1F4F',
+    backgroundColor: 'rgba(255, 31, 79, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  memberPillText: {
+    color: '#FF1F4F',
+    fontWeight: '700',
+    letterSpacing: 0.15,
+  },
+  pillLabel: {
+    fontSize: 10,
     fontWeight: '600',
-    color: '#FFFFFF',
+    letterSpacing: 0.12,
+  },
+  /** Upper half — Pro, Everyone, Free, custom: same 50% as core habit cards */
+  topSection: {
+    height: '50%',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 36,
+    paddingBottom: 6,
+  },
+  /** Date at top, title in middle, Entry/Pot pushed to bottom via marginTop:auto on fee row */
+  bottomSection: {
+    height: '50%',
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'column',
+    position: 'relative',
+  },
+  /** Flex:1 fills the space between date and fee; title is vertically centered inside */
+  bottomTitleWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+    paddingHorizontal: 0,
+  },
+  /** Schedule + Entry/Pot — dimmer so title reads as primary */
+  bottomSecondaryText: {
+    color: 'rgba(255, 255, 255, 0.68)',
+    fontWeight: '600',
   },
   timeRemaining: {
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 0,
   },
   title: {
     fontSize: 15,
     fontWeight: '700',
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: 0,
   },
-  durationBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  durationBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
+  titleInBottom: {
     color: '#FFFFFF',
+    textAlign: 'left',
+    width: '100%',
+    fontWeight: '800',
+    lineHeight: 20,
   },
   topBadgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
   },
   participantsContainerAction: {
     flexDirection: 'row',
@@ -377,20 +383,6 @@ const styles = StyleSheet.create({
   participantsTextAction: {
     fontSize: 12,
     fontWeight: '500',
-  },
-  joinedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  joinedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#10B981',
   },
   doneBadge: {
     flexDirection: 'row',
@@ -439,29 +431,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
+    marginTop: 'auto',
   },
-  feeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  feeText: {
+  entryPotText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  potText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  proStar: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
   },
 });

@@ -65,6 +65,9 @@ class PillarProgressService {
         .insert(records); // Use INSERT instead of UPSERT to avoid overwriting
 
       if (error) {
+        if (error.code === '42501') {
+          return true; // RLS prevents inserting for other users — safe to ignore
+        }
         console.error('Error initializing user pillars:', error);
         return false;
       }

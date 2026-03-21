@@ -903,7 +903,7 @@ class DailyHabitsService {
         habitsToSync.push('gym');
       }
 
-      // Run (Exercise Challenge)
+      // Run (Exercise)
       if (habitData.run_day_type === 'active' || habitData.run_activity_type) {
         habitsToSync.push('run');
       }

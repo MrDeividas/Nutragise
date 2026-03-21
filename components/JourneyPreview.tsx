@@ -22,9 +22,14 @@ const { width } = Dimensions.get('window');
 interface JourneyPreviewProps {
   userId: string;
   onViewAll: () => void;
+  emptyStateText?: string;
 }
 
-export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProps) {
+export default function JourneyPreview({
+  userId,
+  onViewAll,
+  emptyStateText = 'Start your journey by posting your first daily update!',
+}: JourneyPreviewProps) {
   const [recentDays, setRecentDays] = useState<DailyPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
@@ -89,7 +94,7 @@ export default function JourneyPreview({ userId, onViewAll }: JourneyPreviewProp
           <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
         <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-          Start your journey by posting your first daily update!
+          {emptyStateText}
         </Text>
       </View>
     );

@@ -117,7 +117,7 @@ export default function MeditationPlayerScreen({ route, navigation }: Meditation
         
         Alert.alert(
           'Success',
-          'Meditation completed! +15 points\n\nCheck the Action page to see it highlighted.',
+          'Meditation completed! +15 EXP\n\nCheck the Action page to see it highlighted.',
           [
             {
               text: 'OK',
@@ -126,7 +126,7 @@ export default function MeditationPlayerScreen({ route, navigation }: Meditation
           ]
         );
       } else {
-        Alert.alert('Info', 'Meditation already completed today or not eligible for points');
+        Alert.alert('Info', 'Meditation already completed today or not eligible for EXP');
         setIsCompleting(false);
       }
     } catch (error) {

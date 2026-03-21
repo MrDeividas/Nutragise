@@ -209,6 +209,12 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   const [workoutBodyCurrentWeight, setWorkoutBodyCurrentWeight] = useState<string>('');
   const [workoutBodyTargetWeight, setWorkoutBodyTargetWeight] = useState<string>('');
   const [weightGoalsEditing, setWeightGoalsEditing] = useState(false);
+  const [weightGoalsHistory, setWeightGoalsHistory] = useState<Array<{
+    id: string;
+    current_weight: number | null;
+    target_weight: number | null;
+    created_at: string;
+  }>>([]);
 
   // Only fetch on first load, not on every focus
   useEffect(() => {
@@ -239,6 +245,20 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
       }
     })();
   }, [user?.id, activeTab]);
+
+  // Load weight history only while editing (not shown on the default summary view)
+  useEffect(() => {
+    if (!user?.id || activeTab !== 'workout' || !weightGoalsEditing) return;
+    (async () => {
+      const { data } = await supabase
+        .from('workout_weight_history')
+        .select('id, current_weight, target_weight, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(8);
+      setWeightGoalsHistory(data || []);
+    })();
+  }, [user?.id, activeTab, weightGoalsEditing]);
 
   // Reload split when screen comes into focus (e.g., after selecting a split)
   useFocusEffect(
@@ -633,6 +653,8 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
         <ScrollView 
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={{ paddingBottom: bottomNavPadding }}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={handleRefresh} />
@@ -762,22 +784,154 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                       />
                     </View>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.weightGoalSaveButton, { backgroundColor: theme.primary }]}
-                    onPress={async () => {
+
+                  <View style={styles.weightGoalActionRow}>
+                    <TouchableOpacity
+                      style={[styles.weightGoalExitButton, { borderColor: theme.border }]}
+                      activeOpacity={0.8}
+                      onPress={async () => {
+                        Keyboard.dismiss();
+                        if (!user?.id) {
+                          setWeightGoalsEditing(false);
+                          return;
+                        }
+                        const { data } = await supabase
+                          .from('profiles')
+                          .select('workout_current_weight, workout_target_weight')
+                          .eq('id', user.id)
+                          .single();
+                        if (data) {
+                          setWorkoutBodyCurrentWeight(
+                            data.workout_current_weight != null ? String(data.workout_current_weight) : ''
+                          );
+                          setWorkoutBodyTargetWeight(
+                            data.workout_target_weight != null ? String(data.workout_target_weight) : ''
+                          );
+                        }
+                        setWeightGoalsEditing(false);
+                      }}
+                    >
+                      <Text style={[styles.weightGoalExitButtonText, { color: theme.textPrimary }]}>Exit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.weightGoalSaveButtonFlex, { backgroundColor: theme.primary }]}
+                      activeOpacity={0.8}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={async () => {
                       if (!user?.id) return;
                       const currentNum = parseFloat(workoutBodyCurrentWeight);
                       const targetNum = parseFloat(workoutBodyTargetWeight);
-                      await supabase.from('profiles').update({
-                        workout_current_weight: Number.isFinite(currentNum) ? currentNum : null,
-                        workout_target_weight: Number.isFinite(targetNum) ? targetNum : null,
+                      const currentWeight = Number.isFinite(currentNum) ? currentNum : null;
+                      const targetWeight = Number.isFinite(targetNum) ? targetNum : null;
+
+                      const { error: updateError } = await supabase.from('profiles').update({
+                        workout_current_weight: currentWeight,
+                        workout_target_weight: targetWeight,
                         updated_at: new Date().toISOString(),
                       }).eq('id', user.id);
+
+                      if (updateError) {
+                        console.error('Weight goals profile update:', updateError);
+                        Alert.alert(
+                          'Save failed',
+                          updateError.message ||
+                            'Could not save your weight goals. If this mentions permission or RLS, run the migration allow_profiles_self_update_workout_weights.sql in Supabase.'
+                        );
+                        return;
+                      }
+
+                      let historyInsertError: string | null = null;
+                      if (currentWeight != null || targetWeight != null) {
+                        const { error: historyError } = await supabase
+                          .from('workout_weight_history')
+                          .insert({
+                            user_id: user.id,
+                            current_weight: currentWeight,
+                            target_weight: targetWeight,
+                          });
+                        if (historyError) {
+                          console.error('workout_weight_history insert:', historyError);
+                          historyInsertError = historyError.message;
+                        }
+                      }
+
+                      const { data: historyData } = await supabase
+                        .from('workout_weight_history')
+                        .select('id, current_weight, target_weight, created_at')
+                        .eq('user_id', user.id)
+                        .order('created_at', { ascending: false })
+                        .limit(8);
+                      setWeightGoalsHistory(historyData || []);
+
+                      Keyboard.dismiss();
                       setWeightGoalsEditing(false);
+                      Alert.alert(
+                        'Saved',
+                        historyInsertError
+                          ? `Weight goals updated. History note: ${historyInsertError}`
+                          : 'Weight goals updated.'
+                      );
                     }}
                   >
                     <Text style={styles.weightGoalSaveButtonText}>Save</Text>
                   </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.weightHistorySection}>
+                    <Text style={[styles.weightGoalLabel, { color: theme.textSecondary, marginBottom: 6 }]}>
+                      History
+                    </Text>
+                    {weightGoalsHistory.length === 0 ? (
+                      <Text style={[styles.weightGoalValue, { color: theme.textSecondary }]}>No entries yet.</Text>
+                    ) : (
+                      weightGoalsHistory.map((entry) => (
+                        <View key={entry.id} style={styles.weightHistoryRow}>
+                          <View style={styles.weightHistoryLeft}>
+                            <Text style={[styles.weightHistoryValue, { color: theme.textPrimary }]}>
+                              {entry.current_weight != null ? `${entry.current_weight}kg` : '—'} {'->'}{' '}
+                              {entry.target_weight != null ? `${entry.target_weight}kg` : '—'}
+                              <Text style={[styles.weightHistoryDate, { color: theme.textSecondary }]}>
+                                {' · '}
+                                {new Date(entry.created_at).toLocaleDateString()}
+                              </Text>
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.weightHistoryRemove}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => {
+                              if (!user?.id) return;
+                              Alert.alert(
+                                'Remove entry',
+                                'Delete this history row?',
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Remove',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      const { error } = await supabase
+                                        .from('workout_weight_history')
+                                        .delete()
+                                        .eq('id', entry.id)
+                                        .eq('user_id', user.id);
+                                      if (error) {
+                                        Alert.alert('Could not remove', error.message);
+                                        return;
+                                      }
+                                      setWeightGoalsHistory((prev) => prev.filter((h) => h.id !== entry.id));
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                          >
+                            <Text style={styles.weightHistoryRemoveText}>Remove</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))
+                    )}
+                  </View>
                 </>
               ) : (
                 <View style={styles.weightGoalsRow}>
@@ -1815,10 +1969,67 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  weightGoalActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 14,
+  },
+  weightGoalExitButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  weightGoalExitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  weightGoalSaveButtonFlex: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   weightGoalSaveButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  weightHistorySection: {
+    marginTop: 10,
+  },
+  weightHistoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    gap: 8,
+  },
+  weightHistoryLeft: {
+    flex: 1,
+    flexShrink: 1,
+  },
+  weightHistoryDate: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  weightHistoryValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  weightHistoryRemove: {
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  weightHistoryRemoveText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#DC2626',
   },
   muscleGroupContainer: {
     gap: 8,
