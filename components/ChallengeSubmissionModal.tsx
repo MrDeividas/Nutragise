@@ -6,15 +6,55 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Image,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../state/themeStore';
+import { useAuthStore } from '../state/authStore';
+import { supabase } from '../lib/supabase';
 import { Challenge, ChallengeSubmissionModalProps } from '../types/challenges';
+import { getChallengeDisplayTitle, challengeAllowsGalleryProofUpload } from '../lib/challengeTitleUtils';
+import CustomCamera from './CustomCamera';
+
+/** Upload a local image URI to Supabase Storage and return the public URL. */
+async function uploadProofPhoto(localUri: string, userId: string, challengeId: string): Promise<string> {
+  const ext = localUri.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const mime = ext === 'png' ? 'image/png' : ext === 'heic' ? 'image/heic' : 'image/jpeg';
+  const fileName = `proof_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const filePath = `${userId}/challenge-proofs/${challengeId}/${fileName}`;
+
+  const formData = new FormData();
+  formData.append('file', { uri: localUri, type: mime, name: fileName } as any);
+
+  const { data, error } = await supabase.storage
+    .from('users')
+    .upload(filePath, formData, { contentType: mime, upsert: false });
+
+  if (error) {
+    throw new Error(`Photo upload failed: ${error.message}`);
+  }
+
+  const { data: urlData } = supabase.storage.from('users').getPublicUrl(data.path);
+  return urlData.publicUrl;
+}
+
+/** Gallery only — Compatible helps HEIC/orientation from the library. */
+function proofLibraryPickerOptions(): ImagePicker.ImagePickerOptions {
+  const opts: ImagePicker.ImagePickerOptions = {
+    allowsEditing: false,
+    quality: 0.92,
+  };
+  if (Platform.OS === 'ios') {
+    opts.preferredAssetRepresentationMode =
+      ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible;
+  }
+  return opts;
+}
 
 export default function ChallengeSubmissionModal({
   visible,
@@ -25,6 +65,8 @@ export default function ChallengeSubmissionModal({
   existingSubmission,
 }: ChallengeSubmissionModalProps) {
   const { theme } = useTheme();
+  const { user } = useAuthStore();
+  const allowsGalleryProof = challengeAllowsGalleryProofUpload(challenge.title);
   const [selectedImage, setSelectedImage] = useState<string | null>(
     existingSubmission?.photo_url || null
   );
@@ -32,8 +74,16 @@ export default function ChallengeSubmissionModal({
     existingSubmission?.submission_notes || ''
   );
   const [uploading, setUploading] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
 
   const handleImagePicker = async () => {
+    if (!allowsGalleryProof) {
+      Alert.alert(
+        'Camera only',
+        'This challenge requires a live photo taken with the camera. Gallery uploads are not allowed.',
+      );
+      return;
+    }
     try {
       // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -44,9 +94,8 @@ export default function ChallengeSubmissionModal({
 
       // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
+        ...proofLibraryPickerOptions(),
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -59,28 +108,7 @@ export default function ChallengeSubmissionModal({
   };
 
   const handleCameraCapture = async () => {
-    try {
-      // Request permissions
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please allow camera access to take photos.');
-        return;
-      }
-
-      // Launch camera
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: false,
-        quality: 0.8,
-        presentationStyle: 'fullScreen',
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setSelectedImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error capturing image:', error);
-      Alert.alert('Error', 'Failed to capture image. Please try again.');
-    }
+    setShowCamera(true);
   };
 
   const handleSubmit = async () => {
@@ -91,22 +119,30 @@ export default function ChallengeSubmissionModal({
 
     try {
       setUploading(true);
-      
-      // TODO: Upload image to Supabase Storage
-      // For now, we'll use the local URI
-      const photoUrl = selectedImage;
-      
+
+      let photoUrl = selectedImage;
+
+      // If this is a local file URI (not already a remote URL), upload it to storage
+      if (selectedImage.startsWith('file://') || selectedImage.startsWith('/')) {
+        if (!user || !challenge) {
+          Alert.alert('Error', 'Unable to upload photo. Please try again.');
+          return;
+        }
+        photoUrl = await uploadProofPhoto(selectedImage, user.id, challenge.id);
+      }
+
       await onSubmit(photoUrl, submissionNotes.trim() || undefined);
       onClose();
     } catch (error) {
       console.error('Error submitting proof:', error);
-      Alert.alert('Error', 'Failed to submit proof. Please try again.');
+      Alert.alert('Error', 'Failed to submit proof. Please check your connection and try again.');
     } finally {
       setUploading(false);
     }
   };
 
   const handleClose = () => {
+    setShowCamera(false);
     setSelectedImage(existingSubmission?.photo_url || null);
     setSubmissionNotes(existingSubmission?.submission_notes || '');
     onClose();
@@ -142,6 +178,20 @@ export default function ChallengeSubmissionModal({
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
+      <Modal
+        visible={showCamera}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowCamera(false)}
+      >
+        <CustomCamera
+          onPhotoTaken={(uri) => {
+            setSelectedImage(uri);
+            setShowCamera(false);
+          }}
+          onClose={() => setShowCamera(false)}
+        />
+      </Modal>
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
@@ -149,7 +199,7 @@ export default function ChallengeSubmissionModal({
             <Ionicons name="close" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            Submit Proof
+            {existingSubmission ? 'Replace Photo' : 'Submit Proof'}
           </Text>
           <View style={{ width: 40 }} />
         </View>
@@ -158,7 +208,7 @@ export default function ChallengeSubmissionModal({
           {/* Challenge Info */}
           <View style={styles.challengeInfo}>
             <Text style={[styles.challengeTitle, { color: theme.textPrimary }]}>
-              {challenge.title}
+              {getChallengeDisplayTitle(challenge.title)}
             </Text>
             <Text style={[styles.weekInfo, { color: theme.textSecondary }]}>
               Week {weekNumber} Submission
@@ -168,27 +218,43 @@ export default function ChallengeSubmissionModal({
           {/* Photo Section */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Upload Photo Proof
+              Take a photo for proof
             </Text>
             <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-              Take a photo or select from your gallery as proof of completing this week's requirements.
+              {existingSubmission
+                ? allowsGalleryProof
+                  ? "Pick a new photo or screenshot to replace today's submission. Your old proof will be overwritten."
+                  : "Take a new live photo with the camera to replace today's submission. Your old proof will be overwritten."
+                : allowsGalleryProof
+                  ? 'Take a photo or choose a screenshot from your gallery as proof for this challenge.'
+                  : 'Use the camera to take a live photo as proof. Gallery uploads are not allowed for this challenge.'}
             </Text>
 
             {selectedImage ? (
               <View style={styles.imageContainer}>
-                <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+                <Image
+                  source={{ uri: selectedImage }}
+                  style={styles.selectedImage}
+                  contentFit="contain"
+                  transition={0}
+                  recyclingKey={selectedImage}
+                />
                 <TouchableOpacity
                   style={styles.changeImageButton}
                   onPress={() => {
-                    Alert.alert(
-                      'Change Photo',
-                      'How would you like to change the photo?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Camera', onPress: handleCameraCapture },
-                        { text: 'Gallery', onPress: handleImagePicker },
-                      ]
-                    );
+                    if (allowsGalleryProof) {
+                      Alert.alert(
+                        'Change Photo',
+                        'How would you like to change the photo?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Camera', onPress: handleCameraCapture },
+                          { text: 'Gallery', onPress: handleImagePicker },
+                        ]
+                      );
+                    } else {
+                      void handleCameraCapture();
+                    }
                   }}
                 >
                   <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
@@ -203,19 +269,25 @@ export default function ChallengeSubmissionModal({
                 </Text>
                 <View style={styles.imageButtons}>
                   <TouchableOpacity
-                    style={[styles.imageButton, { backgroundColor: categoryColor }]}
+                    style={[
+                      styles.imageButton,
+                      { backgroundColor: categoryColor },
+                      { flex: 1, justifyContent: 'center' },
+                    ]}
                     onPress={handleCameraCapture}
                   >
                     <Ionicons name="camera" size={20} color="#FFFFFF" />
-                    <Text style={styles.imageButtonText}>Take Photo</Text>
+                    <Text style={styles.imageButtonText}>Take live photo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.imageButton, { backgroundColor: theme.textSecondary }]}
-                    onPress={handleImagePicker}
-                  >
-                    <Ionicons name="images-outline" size={20} color="#FFFFFF" />
-                    <Text style={styles.imageButtonText}>Choose from Gallery</Text>
-                  </TouchableOpacity>
+                  {allowsGalleryProof && (
+                    <TouchableOpacity
+                      style={[styles.imageButton, { backgroundColor: theme.textSecondary, flex: 1, justifyContent: 'center' }]}
+                      onPress={handleImagePicker}
+                    >
+                      <Ionicons name="images-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.imageButtonText}>Gallery / screenshot</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             )}

@@ -9,11 +9,14 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Modal,
+  Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useStripe } from '@stripe/stripe-react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { challengesService } from '../lib/challengesService';
@@ -21,19 +24,80 @@ import { walletService } from '../lib/walletService';
 import { challengePotService } from '../lib/challengePotService';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
-import { ChallengeWithDetails, ChallengeProgress, getChallengeWeekNumber, getCurrentWeekForRecurringChallenge, isRecurringChallenge } from '../types/challenges';
+import {
+  ChallengeWithDetails,
+  ChallengeProgress,
+  ChallengeSubmission,
+  getChallengeWeekNumber,
+  getCurrentWeekForRecurringChallenge,
+  isRecurringChallenge,
+} from '../types/challenges';
 import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
 import UpgradeToProModal from '../components/UpgradeToProModal';
+import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero } from '../lib/challengeTitleUtils';
+import { localDeviceCalendarYmd } from '../lib/timeService';
 
-const { width } = Dimensions.get('window');
+const { width, height: windowHeight } = Dimensions.get('window');
+
+/** Prefer today's proof with a photo; else most recent submission that has a photo. */
+function getParticipantPreviewSubmission(subs: ChallengeSubmission[]): ChallengeSubmission | null {
+  const todayStr = localDeviceCalendarYmd();
+  const todaySub = subs.find((s) => {
+    const d = s.submission_date || s.submitted_at?.split('T')?.[0];
+    return d === todayStr && s.photo_url;
+  });
+  if (todaySub) return todaySub;
+  const withPhoto = subs
+    .filter((s) => s.photo_url)
+    .sort((a, b) => {
+      const da = a.submission_date || a.submitted_at.slice(0, 10);
+      const db = b.submission_date || b.submitted_at.slice(0, 10);
+      return db.localeCompare(da);
+    });
+  return withPhoto[0] ?? null;
+}
+
+function submissionCalendarDate(s: ChallengeSubmission): string | null {
+  const raw = s.submission_date || s.submitted_at?.split('T')?.[0];
+  if (!raw || !/^\d{4}-\d{2}-\d{2}/.test(raw)) return null;
+  return raw.slice(0, 10);
+}
+
+/** Distinct calendar days with a submission, within challenge [startStr, endStr] inclusive (YYYY-MM-DD). */
+function countDistinctSubmissionDaysInRange(
+  subs: ChallengeSubmission[],
+  startStr: string,
+  endStr: string
+): number {
+  const set = new Set<string>();
+  for (const s of subs) {
+    const d = submissionCalendarDate(s);
+    if (d && d >= startStr && d <= endStr) set.add(d);
+  }
+  return set.size;
+}
+
+function upsertSubmissionByDate(
+  subs: ChallengeSubmission[],
+  nextSubmission: ChallengeSubmission
+): ChallengeSubmission[] {
+  const nextDate = submissionCalendarDate(nextSubmission);
+  const filtered = nextDate
+    ? subs.filter((s) => submissionCalendarDate(s) !== nextDate)
+    : subs.filter((s) => s.id !== nextSubmission.id);
+
+  return [nextSubmission, ...filtered].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+}
 
 export default function ChallengeDetailScreen({ route }: any) {
   const navigation = useNavigation() as any;
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { user } = useAuthStore();
-  const { challengeId } = route.params;
+  /** Support both param names; avoid crash if params missing briefly */
+  const challengeId = route.params?.challengeId ?? route.params?.id;
   const { initPaymentSheet, presentPaymentSheet, collectBankAccountForSetup } = useStripe();
   
   const [challenge, setChallenge] = useState<ChallengeWithDetails | null>(null);
@@ -51,8 +115,14 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [participantTodaySubmissions, setParticipantTodaySubmissions] = useState<Set<string>>(new Set());
   /** All submissions grouped by userId, enriched with has_flagged_by_me */
-  const [participantSubmissions, setParticipantSubmissions] = useState<Record<string, import('../types/challenges').ChallengeSubmission[]>>({});
+  const [participantSubmissions, setParticipantSubmissions] = useState<Record<string, ChallengeSubmission[]>>({});
   const [flaggingSubmissionId, setFlaggingSubmissionId] = useState<string | null>(null);
+  /** Submission currently being previewed full-screen (null = closed) */
+  const [previewedSubmission, setPreviewedSubmission] = useState<ChallengeSubmission | null>(null);
+  /** Existing submission to pre-load when replacing today's photo */
+  const [replacingSubmission, setReplacingSubmission] = useState<ChallengeSubmission | null>(null);
+  /** 1-indexed day selected in the participants day picker */
+  const [selectedParticipantDay, setSelectedParticipantDay] = useState<number>(1);
 
   useEffect(() => {
     loadChallengeDetails();
@@ -72,6 +142,7 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
     if (activeTab === 'participants' && prevActiveTab.current !== 'participants' && challenge && user) {
       loadParticipantSubmissionsData(challenge.id, user.id);
+      setSelectedParticipantDay(getCurrentChallengeDay());
     }
     prevActiveTab.current = activeTab;
   }, [activeTab, challenge?.id, user?.id, isParticipating]);
@@ -104,9 +175,8 @@ export default function ChallengeDetailScreen({ route }: any) {
   const loadParticipantTodaySubmissions = async (challengeId: string) => {
     if (!challengeId) return;
     
-    const today = new Date();
-    const todayDateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
+    const todayDateString = localDeviceCalendarYmd();
+
     // Query all submissions for this challenge from today using submission_date
     const { data: submissions, error } = await supabase
       .from('challenge_submissions')
@@ -137,7 +207,7 @@ export default function ChallengeDetailScreen({ route }: any) {
     setParticipantSubmissions(data);
   };
 
-  const handleFlagSubmission = async (submission: import('../types/challenges').ChallengeSubmission) => {
+  const handleFlagSubmission = async (submission: ChallengeSubmission) => {
     if (!user) return;
     if (flaggingSubmissionId) return; // already processing
 
@@ -193,94 +263,164 @@ export default function ChallengeDetailScreen({ route }: any) {
     );
   };
 
-  const loadChallengeDetails = async () => {
+  /**
+   * Load participation / progress / wallet / pot / submissions after the main challenge row.
+   * Runs async so a slow or stuck secondary request never blocks the "Loading challenge details…" screen.
+   */
+  const loadSecondaryChallengeDetails = async (
+    challengeData: ChallengeWithDetails,
+    cId: string,
+    userId: string
+  ) => {
     try {
-      setLoading(true);
-      const challengeData = await challengesService.getChallengeById(challengeId);
-      setChallenge(challengeData);
-      
-      if (challengeData && user) {
-        const isParticipatingCheck = await challengesService.isUserParticipating(challengeId, user.id);
-        setIsParticipating(isParticipatingCheck);
-        
-        if (isParticipatingCheck) {
-          const progressData = await challengesService.getChallengeProgress(challengeData.id, user.id);
-          
+      const isParticipatingCheck = await challengesService.isUserParticipating(cId, userId);
+      setIsParticipating(isParticipatingCheck);
+
+      if (isParticipatingCheck) {
+        try {
+          const progressData = await challengesService.getChallengeProgress(challengeData.id, userId);
           if (__DEV__) {
             console.log('📊 Loaded progress data for challenge:', {
               challengeId: challengeData.id,
               challengeTitle: challengeData.title,
               isRecurring: isRecurringChallenge(challengeData),
-              totalSubmissions: progressData ? Object.values(progressData.submissions_by_week).flat().length : 0,
+              totalSubmissions: progressData
+                ? Object.values(progressData.submissions_by_week).flat().length
+                : 0,
               submissionsByWeek: progressData?.submissions_by_week,
-              allSubmissions: progressData ? Object.values(progressData.submissions_by_week).flat().map(s => ({
-                id: s.id,
-                week_number: s.week_number,
-                submitted_at: s.submitted_at,
-                photo_url: s.photo_url,
-                verification_status: s.verification_status,
-                date: new Date(s.submitted_at).toDateString(),
-              })) : [],
+              allSubmissions: progressData
+                ? Object.values(progressData.submissions_by_week).flat().map((s) => ({
+                    id: s.id,
+                    week_number: s.week_number,
+                    submitted_at: s.submitted_at,
+                    photo_url: s.photo_url,
+                    verification_status: s.verification_status,
+                    date: new Date(s.submitted_at).toDateString(),
+                  }))
+                : [],
             });
           }
-          
           setProgress(progressData);
+        } catch (e) {
+          console.error('Error loading challenge progress:', e);
         }
+      }
 
-        // Load pot status if challenge has entry fee
-        if (challengeData.entry_fee && challengeData.entry_fee > 0) {
-          const pot = await challengePotService.getPotStatus(challengeId);
+      if (challengeData.entry_fee && challengeData.entry_fee > 0) {
+        try {
+          const pot = await challengePotService.getPotStatus(cId);
           setPotStatus(pot);
+        } catch (e) {
+          console.error('Error loading pot status:', e);
         }
+      }
 
-        // Load user's wallet balance
-        const balance = await walletService.getBalance(user.id);
+      try {
+        const balance = await walletService.getBalance(userId);
         setWalletBalance(balance);
-        
-        // Load participant today submissions and all submissions for flags
+      } catch (e) {
+        console.error('Error loading wallet balance:', e);
+      }
+
+      try {
         await loadParticipantTodaySubmissions(challengeData.id);
-        await loadParticipantSubmissionsData(challengeData.id, user.id);
+      } catch (e) {
+        console.error('Error loading today submissions:', e);
+      }
+
+      try {
+        await loadParticipantSubmissionsData(challengeData.id, userId);
+      } catch (e) {
+        console.error('Error loading participant submissions:', e);
+      }
+    } catch (error) {
+      console.error('Secondary challenge details load failed:', error);
+    }
+  };
+
+  const loadChallengeDetails = async () => {
+    if (!challengeId) {
+      setChallenge(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const challengeData = await challengesService.getChallengeById(challengeId);
+      setChallenge(challengeData);
+
+      if (challengeData && user) {
+        void loadSecondaryChallengeDetails(challengeData, challengeId, user.id);
       }
     } catch (error) {
       console.error('Error loading challenge details:', error);
       Alert.alert('Error', 'Failed to load challenge details');
+      setChallenge(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleJoinChallenge = async () => {
+  /** 7-day paid join when wallet is short: card hold (SetupIntent + sheet). */
+  const runSevenDayCardHoldJoin = async () => {
     if (!user || !challenge) return;
+    try {
+      setJoining(true);
+      const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
+        await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
 
-    // Block pro-only challenges for free users
-    if (challenge.is_pro_only && !userProfile?.is_pro) {
-      setShowUpgradeModal(true);
-      return;
-    }
+      const { error: initError } = await initPaymentSheet({
+        merchantDisplayName: 'NutrApp',
+        setupIntentClientSecret,
+        defaultBillingDetails: {
+          name: user.email?.split('@')[0] || 'User',
+          email: user.email || undefined,
+        },
+        returnURL: 'nutrapp://stripe-redirect',
+      });
 
-    // Block challenges longer than 7 days for free users
-    if (!userProfile?.is_pro && (challenge.duration_weeks || 1) > 1) {
-      setShowUpgradeModal(true);
-      return;
+      if (initError) throw new Error(initError.message);
+
+      const { error: presentError } = await presentPaymentSheet();
+
+      if (presentError) {
+        if (presentError.code === 'Canceled') return;
+        throw new Error(presentError.message);
+      }
+
+      await challengesService.completeHoldChallengeJoin(
+        challenge.id,
+        user.id,
+        setupIntentId,
+        setupIntentId
+      );
+
+      Alert.alert(
+        'Joined!',
+        `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
+      );
+      setIsParticipating(true);
+      await loadChallengeDetails();
+    } catch (error: any) {
+      console.error('❌ [ChallengeDetailScreen] Card hold join error:', error);
+      Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+    } finally {
+      setJoining(false);
     }
+  };
+
+  const executePaidChallengeJoin = async () => {
+    if (!user || !challenge) return;
 
     const entryFee = challenge.entry_fee || 0;
     const isSevenDayChallenge = (challenge.duration_weeks || 1) <= 1;
+    const feeLabel = `£${entryFee.toFixed(2)}`;
 
     try {
       setJoining(true);
 
-      if (entryFee <= 0) {
-        // Free challenge — join immediately, no payment
-        await challengesService.completeChallengeJoin(challenge.id, user.id, null);
-        Alert.alert('Joined!', 'You have joined the challenge. Good luck!');
-        setIsParticipating(true);
-        await loadChallengeDetails();
-        return;
-      }
-
       if (isSevenDayChallenge) {
-        // Prefer wallet balance (same as longer challenges) — only use card hold if short on funds
         const freshBalance = await walletService.getBalance(user.id);
         setWalletBalance(freshBalance);
 
@@ -290,54 +430,23 @@ export default function ChallengeDetailScreen({ route }: any) {
           await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
           Alert.alert(
             'Joined!',
-            `£${entryFee.toFixed(2)} moved to escrow from your wallet. It's returned if you complete the challenge, kept if you don't.`
+            `${feeLabel} moved to escrow from your wallet. It's returned if you complete the challenge, kept if you don't.`
           );
         } else {
-          // ── HOLD-BASED FLOW (7-day challenges, insufficient wallet) ──
-          // Step 1: Create SetupIntent — save card, no charge yet
-          const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
-            await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
-
-          // Step 2: Show Stripe Setup Sheet (user saves their card)
-          const { error: initError } = await initPaymentSheet({
-            merchantDisplayName: 'NutrApp',
-            setupIntentClientSecret,
-            defaultBillingDetails: {
-              name: user.email?.split('@')[0] || 'User',
-              email: user.email || undefined,
-            },
-            returnURL: 'nutrapp://stripe-redirect',
-          });
-
-          if (initError) throw new Error(initError.message);
-
-          const { error: presentError } = await presentPaymentSheet();
-
-          if (presentError) {
-            if (presentError.code === 'Canceled') return;
-            throw new Error(presentError.message);
-          }
-
-          // Step 3: Retrieve the saved payment method ID from the SetupIntent
-          // The SetupIntent is confirmed — extract the payment method
-          // We pass setupIntentId and a placeholder paymentMethodId;
-          // the Edge Function authorize-challenge-payments will resolve the PM
-          // from the SetupIntent when the challenge starts.
-          await challengesService.completeHoldChallengeJoin(
-            challenge.id,
-            user.id,
-            setupIntentId,
-            setupIntentId // payment method is resolved server-side at challenge start
-          );
-
+          setJoining(false);
+          const shortBy = Math.max(0, entryFee - freshBalance);
           Alert.alert(
-            'Joined!',
-            `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
+            'Not enough wallet balance',
+            `You need ${feeLabel} to pay from your wallet. Your balance is £${freshBalance.toFixed(2)} (about £${shortBy.toFixed(2)} short).\n\nTop up your wallet first, or continue with a card hold (no charge until the challenge starts).`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Top up', onPress: () => navigation.navigate('Wallet') },
+              { text: 'Use card hold', onPress: () => void runSevenDayCardHoldJoin() },
+            ]
           );
+          return;
         }
       } else {
-        // ── PRO USER: LONGER CHALLENGE FLOW ──
-        // Check wallet first; if enough, use wallet escrow
         const freshBalanceLong = await walletService.getBalance(user.id);
         setWalletBalance(freshBalanceLong);
         const hasSufficientBalance = freshBalanceLong >= entryFee;
@@ -348,16 +457,16 @@ export default function ChallengeDetailScreen({ route }: any) {
           await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
           Alert.alert(
             'Joined!',
-            `£${entryFee.toFixed(2)} moved to escrow. It's returned if you complete the challenge, kept if you don't.`
+            `${feeLabel} moved to escrow. It's returned if you complete the challenge, kept if you don't.`
           );
         } else {
-          // Pro user, longer challenge, insufficient wallet — prompt to top up
+          setJoining(false);
           Alert.alert(
-            'Insufficient Balance',
-            `You need £${entryFee.toFixed(2)} in your wallet to join this challenge.\n\nYour balance: £${freshBalanceLong.toFixed(2)}\n\nFor challenges longer than 7 days, please top up your wallet first.`,
+            'Not enough wallet balance',
+            `You need ${feeLabel} in your wallet to join this challenge.\n\nYour balance: £${freshBalanceLong.toFixed(2)}\n\nTop up your wallet, then join again.`,
             [
-              { text: 'Add Funds', onPress: () => navigation.navigate('Wallet') },
               { text: 'Cancel', style: 'cancel' },
+              { text: 'Top up', onPress: () => navigation.navigate('Wallet') },
             ]
           );
           return;
@@ -374,13 +483,60 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
+  const handleJoinChallenge = async () => {
+    if (!user || !challenge) return;
+
+    if (challenge.is_pro_only && !userProfile?.is_pro) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    if (!userProfile?.is_pro && (challenge.duration_weeks || 1) > 1) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    const entryFee = challenge.entry_fee || 0;
+    const isSevenDayChallenge = (challenge.duration_weeks || 1) <= 1;
+
+    if (entryFee <= 0) {
+      try {
+        setJoining(true);
+        await challengesService.completeChallengeJoin(challenge.id, user.id, null);
+        Alert.alert('Joined!', 'You have joined the challenge. Good luck!');
+        setIsParticipating(true);
+        await loadChallengeDetails();
+      } catch (error: any) {
+        console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
+        Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+      } finally {
+        setJoining(false);
+      }
+      return;
+    }
+
+    const feeLabel = `£${entryFee.toFixed(2)}`;
+    const titleName = getChallengeDisplayTitle(challenge.title);
+    const payExplain = isSevenDayChallenge
+      ? `Entry is ${feeLabel}. If your wallet has enough, we'll take it from there. If not, you can top up—or use a card hold (nothing charged until the challenge starts).`
+      : `Entry is ${feeLabel}, paid from your in-app wallet. You need at least ${feeLabel} available—top up first if you're short.`;
+
+    Alert.alert(
+      'Challenge entry',
+      `You're joining "${titleName}".\n\n${payExplain}\n\nThat amount is your stake: complete the challenge rules to get it back; otherwise it goes to the pot.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Continue', onPress: () => void executePaidChallengeJoin() },
+      ]
+    );
+  };
+
   const handleUploadPhoto = () => {
     if (!challenge) return;
-    
-    // Check if challenge has started
+
     const now = new Date();
     const startDate = new Date(challenge.start_date);
-    
+
     if (now < startDate) {
       Alert.alert(
         'Challenge Not Started',
@@ -389,27 +545,64 @@ export default function ChallengeDetailScreen({ route }: any) {
       );
       return;
     }
-    
-    // Check if user has already submitted today
-    const hasSubmitted = hasTodaysSubmission();
-    
-    if (__DEV__) {
-      console.log('📤 Upload button clicked:', {
-        hasSubmittedToday: hasSubmitted,
-        challengeId: challenge.id,
-        challengeTitle: challenge.title,
-      });
-    }
-    
-    if (hasSubmitted) {
+
+    const startYmd = challenge.start_date.split('T')[0].slice(0, 10);
+    const endYmd = challenge.end_date.split('T')[0].slice(0, 10);
+    const todayYmd = localDeviceCalendarYmd();
+    if (todayYmd < startYmd || todayYmd > endYmd) {
       Alert.alert(
-        'Already Submitted',
-        'You have already submitted a photo today. You can only submit once per day.',
-        [{ text: 'OK' }]
+        'Cannot add proof',
+        'You can only take a photo while the challenge is running. Past challenge days cannot be added or changed.',
+        [{ text: 'OK' }],
       );
       return;
     }
-    
+    const challengeEndMoment = new Date(challenge.end_date);
+    challengeEndMoment.setHours(23, 59, 59, 999);
+    if (now > challengeEndMoment) {
+      Alert.alert(
+        'Challenge ended',
+        'This challenge is over. You can no longer add or change proof.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
+    const challengeDays = getChallengeDays();
+    if (activeTab === 'participants' && challengeDays.length > 0) {
+      const sel = challengeDays.find((d) => d.dayNumber === selectedParticipantDay);
+      if (!sel?.isToday) {
+        Alert.alert(
+          'Today only',
+          'You can only take a photo for today. In Participants, select the day labelled Today, or switch to About, Schedule, or Details.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+    }
+
+    const todaySub = getTodaysSubmission();
+
+    if (todaySub) {
+      // Already submitted today — offer to replace
+      Alert.alert(
+        'Replace today\'s photo?',
+        'You\'ve already submitted a proof photo today. You can replace it with a new one.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Replace Photo',
+            onPress: () => {
+              setReplacingSubmission(todaySub);
+              setShowSubmissionModal(true);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    setReplacingSubmission(null);
     setShowSubmissionModal(true);
   };
 
@@ -461,7 +654,7 @@ export default function ChallengeDetailScreen({ route }: any) {
       if (__DEV__) {
         console.log('📸 Submitting photo:', {
           challengeId: challenge.id,
-          challengeTitle: challenge.title,
+          challengeTitle: getChallengeDisplayTitle(challenge.title),
           isRecurring: isRecurringChallenge(challenge),
           weekNumber,
           userId: user.id,
@@ -480,23 +673,61 @@ export default function ChallengeDetailScreen({ route }: any) {
         if (__DEV__) {
           console.log('✅ Photo submitted successfully');
         }
-        
+
+        const submittedAt = new Date().toISOString();
+        const proofDayYmd = localDeviceCalendarYmd();
+        const optimisticSubmission: ChallengeSubmission = {
+          id: replacingSubmission?.id ?? `temp-${submittedAt}`,
+          challenge_id: challenge.id,
+          user_id: user.id,
+          photo_url: photoUrl,
+          submitted_at: submittedAt,
+          submission_date: proofDayYmd,
+          week_number: weekNumber,
+          verification_status: 'pending',
+          submission_notes: notes,
+          is_flagged: false,
+          flag_count: 0,
+          has_flagged_by_me: false,
+        };
+
+        // Update the current user's row immediately so Participants/Today reflects the upload right away.
+        setParticipantSubmissions((prev) => ({
+          ...prev,
+          [user.id]: upsertSubmissionByDate(prev[user.id] ?? [], optimisticSubmission),
+        }));
+        setParticipantTodaySubmissions((prev) => {
+          const next = new Set(prev);
+          next.add(user.id);
+          return next;
+        });
+        setProgress((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            submissions_by_week: {
+              ...prev.submissions_by_week,
+              [weekNumber]: upsertSubmissionByDate(
+                prev.submissions_by_week[weekNumber] ?? [],
+                optimisticSubmission
+              ),
+            },
+          };
+        });
+
         // Close the submission modal
         setShowSubmissionModal(false);
-        
-        // Small delay to ensure database has updated
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        if (__DEV__) {
-          console.log('🔄 Reloading challenge details after submission...');
-        }
-        
-        // Reload entire challenge details (this will fetch fresh progress and participant data)
-        await loadChallengeDetails();
-        
-        if (__DEV__) {
-          console.log('✅ Challenge details reloaded, checking submission status...');
-        }
+
+        // Fetch the canonical server state right after the optimistic update.
+        const [freshChallenge, freshProgress] = await Promise.all([
+          challengesService.getChallengeById(challenge.id),
+          challengesService.getChallengeProgress(challenge.id, user.id),
+          loadParticipantTodaySubmissions(challenge.id),
+          loadParticipantSubmissionsData(challenge.id, user.id),
+        ]);
+
+        setChallenge(freshChallenge);
+        setProgress(freshProgress);
         
         Alert.alert('Success', 'Photo submitted successfully!');
       } else {
@@ -509,58 +740,19 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
-  const hasTodaysSubmission = () => {
-    if (!progress || !challenge) return false;
-    
-    const today = new Date();
-    const todayDateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    // Check all submissions across all weeks
+  const getTodaysSubmission = (): ChallengeSubmission | null => {
+    if (!progress || !challenge) return null;
+    const todayDateString = localDeviceCalendarYmd();
     const allSubmissions = Object.values(progress.submissions_by_week).flat();
-    
-    const hasSubmission = allSubmissions.some(sub => {
-      // Use submission_date if available, otherwise fall back to submitted_at date
-      if (sub.submission_date) {
-        return sub.submission_date === todayDateString;
-      }
-      // Fallback: extract date from submitted_at
-      const subDate = new Date(sub.submitted_at);
-      const subDateString = subDate.toISOString().split('T')[0];
-      return subDateString === todayDateString;
-    });
-    
-    if (__DEV__) {
-      console.log('🔍 Checking today\'s submission:', {
-        todayDateString,
-        hasSubmission,
-        totalSubmissions: allSubmissions.length,
-        submissionDates: allSubmissions.map(s => s.submission_date || new Date(s.submitted_at).toISOString().split('T')[0]),
-      });
-    }
-    
-    return hasSubmission;
+    return allSubmissions.find((sub) => {
+      const d = sub.submission_date
+        ? sub.submission_date
+        : localDeviceCalendarYmd(new Date(sub.submitted_at));
+      return d === todayDateString;
+    }) ?? null;
   };
 
-  const getCategoryColor = (category: string) => {
-    switch (category.toLowerCase()) {
-      case 'fitness':
-        return '#10B981';
-      case 'wellness':
-        return '#8B5CF6';
-      case 'nutrition':
-        return '#F59E0B';
-      case 'mindfulness':
-        return '#06B6D4';
-      case 'learning':
-        return '#EF4444';
-      case 'creativity':
-        return '#EC4899';
-      case 'productivity':
-        return '#6366F1';
-      default:
-        return '#6B7280';
-    }
-  };
+  const hasTodaysSubmission = () => getTodaysSubmission() !== null;
 
   const formatDuration = (weeks: number) => {
     // Calculate actual duration in days
@@ -585,6 +777,42 @@ export default function ChallengeDetailScreen({ route }: any) {
   const formatEntryFee = (fee: number) => {
     if (fee === 0) return 'Free';
     return `£${fee}`;
+  };
+
+  /** Returns the list of calendar days for the challenge (YYYY-MM-DD strings, newest first available). */
+  const getChallengeDays = (): { dayNumber: number; dateStr: string; label: string; isPast: boolean; isToday: boolean }[] => {
+    if (!challenge) return [];
+    const start = new Date(challenge.start_date);
+    const end = new Date(challenge.end_date);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const days: { dayNumber: number; dateStr: string; label: string; isPast: boolean; isToday: boolean }[] = [];
+    const cur = new Date(start);
+    let dayNum = 1;
+    while (cur <= end) {
+      const dateStr = cur.toISOString().split('T')[0];
+      const isToday = dateStr === todayStr;
+      const isPast = cur < today && !isToday;
+      days.push({
+        dayNumber: dayNum,
+        dateStr,
+        label: isToday ? 'Today' : `Day ${dayNum}`,
+        isPast,
+        isToday,
+      });
+      cur.setDate(cur.getDate() + 1);
+      dayNum++;
+    }
+    return days;
+  };
+
+  /** Returns the current challenge day number (1-indexed), clamped to [1, totalDays]. */
+  const getCurrentChallengeDay = (): number => {
+    if (!challenge) return 1;
+    const start = new Date(challenge.start_date);
+    const today = new Date();
+    const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(1, Math.min(diff + 1, getChallengeDays().length));
   };
 
   const getTimeRemaining = () => {
@@ -666,41 +894,49 @@ export default function ChallengeDetailScreen({ route }: any) {
     );
   }
 
-  const categoryColor = getCategoryColor(challenge.category);
+  /** #RRGGBBAA-style tint from brand primary for soft fills (e.g. banners, day chip area). */
+  const primarySoftBg =
+    theme.primary.startsWith('#') && theme.primary.length === 7 ? `${theme.primary}1A` : `${theme.primary}33`;
 
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
+        {/* Header — back, date + title centre, spacer for balance */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
-        <View style={{ width: 40 }} />
-      </View>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <View style={styles.headerCenterColumn}>
+            <Text style={[styles.headerDateRange, { color: theme.textSecondary }]} numberOfLines={1}>
+              {formatDateRange()}
+            </Text>
+            <Text
+              style={[styles.headerChallengeTitle, { color: theme.textPrimary }]}
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {getChallengeDisplayTitle(challenge.title)}
+            </Text>
+          </View>
+          <View style={styles.headerRightSpacer} />
+        </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Date Range */}
-        <View style={styles.dateContainer}>
-          <Text style={[styles.dateRange, { color: theme.textSecondary }]}>
-            {formatDateRange()}
-          </Text>
-        </View>
-
-        {/* Challenge Title */}
-        <View style={styles.titleContainer}>
-          <Text style={[styles.challengeTitle, { color: theme.textPrimary }]}>
-            {challenge.title}
-          </Text>
-        </View>
-
         {/* Challenge Image */}
         <View style={styles.imageContainer}>
-          {challenge.image_url ? (
-            <Image
+          {isCuratedGymChallengeForCardHero(challenge.title, challenge.is_user_created) ? (
+            <ExpoImage
+              source={require('../assets/challenge-cards/gym.png')}
+              style={styles.challengeImage}
+              contentFit="cover"
+              contentPosition="top"
+            />
+          ) : challenge.image_url ? (
+            <ExpoImage
               source={{ uri: challenge.image_url }}
               style={styles.challengeImage}
-              resizeMode="cover"
+              contentFit="cover"
+              contentPosition="top"
             />
           ) : null}
         </View>
@@ -731,12 +967,12 @@ export default function ChallengeDetailScreen({ route }: any) {
               backgroundColor: challenge.approval_status === 'pending' 
                 ? 'rgba(245, 158, 11, 0.1)' 
                 : challenge.approval_status === 'approved'
-                ? 'rgba(16, 185, 129, 0.1)'
+                ? primarySoftBg
                 : 'rgba(239, 68, 68, 0.1)',
               borderColor: challenge.approval_status === 'pending'
                 ? '#F59E0B'
                 : challenge.approval_status === 'approved'
-                ? '#10B981'
+                ? theme.primary
                 : '#EF4444',
             }
           ]}>
@@ -753,7 +989,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                 challenge.approval_status === 'pending'
                   ? '#F59E0B'
                   : challenge.approval_status === 'approved'
-                  ? '#10B981'
+                  ? theme.primary
                   : '#EF4444'
               }
             />
@@ -764,7 +1000,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   color: challenge.approval_status === 'pending'
                     ? '#F59E0B'
                     : challenge.approval_status === 'approved'
-                    ? '#10B981'
+                    ? theme.primary
                     : '#EF4444',
                 }
               ]}>
@@ -801,7 +1037,7 @@ export default function ChallengeDetailScreen({ route }: any) {
               </View>
               <TouchableOpacity 
                 onPress={() => navigation.navigate('Wallet')}
-                style={[styles.addFundsButton, { backgroundColor: '#10B981' }]}
+                style={[styles.addFundsButton, { backgroundColor: theme.primary }]}
               >
                 <Text style={styles.addFundsButtonText}>Add Funds</Text>
               </TouchableOpacity>
@@ -817,11 +1053,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'about' ? theme.textPrimary : theme.textSecondary }
+              { color: activeTab === 'about' ? theme.primary : theme.textSecondary }
             ]}>
               About
             </Text>
-            {activeTab === 'about' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
+            {activeTab === 'about' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -830,11 +1066,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'schedule' ? theme.textPrimary : theme.textSecondary }
+              { color: activeTab === 'schedule' ? theme.primary : theme.textSecondary }
             ]}>
               Schedule
             </Text>
-            {activeTab === 'schedule' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
+            {activeTab === 'schedule' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -843,11 +1079,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'details' ? theme.textPrimary : theme.textSecondary }
+              { color: activeTab === 'details' ? theme.primary : theme.textSecondary }
             ]}>
               Details
             </Text>
-            {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
+            {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -856,11 +1092,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'participants' ? theme.textPrimary : theme.textSecondary }
+              { color: activeTab === 'participants' ? theme.primary : theme.textSecondary }
             ]}>
               Participants
             </Text>
-            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
+            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
           </TouchableOpacity>
         </View>
 
@@ -870,7 +1106,7 @@ export default function ChallengeDetailScreen({ route }: any) {
             {/* Challenge Info */}
             <View style={styles.challengeInfo}>
               {/* Category Tag */}
-              <View style={[styles.categoryTag, { backgroundColor: categoryColor }]}>
+              <View style={[styles.categoryTag, { backgroundColor: theme.primary }]}>
                 <Text style={styles.categoryText}>{challenge.category}</Text>
               </View>
 
@@ -902,9 +1138,9 @@ export default function ChallengeDetailScreen({ route }: any) {
               </View>
 
               {/* Time Remaining */}
-              <View style={[styles.daysRemainingContainer, { backgroundColor: `${categoryColor}20` }]}>
-                <Ionicons name="calendar-outline" size={16} color={categoryColor} />
-                <Text style={[styles.daysRemainingText, { color: categoryColor }]}>
+              <View style={[styles.daysRemainingContainer, { backgroundColor: primarySoftBg }]}>
+                <Ionicons name="calendar-outline" size={16} color={theme.primary} />
+                <Text style={[styles.daysRemainingText, { color: theme.primary }]}>
                   {(() => {
                     const timeRemaining = getTimeRemaining();
                     if (timeRemaining.ended) {
@@ -937,7 +1173,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                 Hosted by
               </Text>
               <View style={[styles.hostContainer, { backgroundColor: theme.cardBackground }]}>
-                <View style={[styles.hostAvatar, { backgroundColor: categoryColor }]}>
+                <View style={[styles.hostAvatar, { backgroundColor: theme.primary }]}>
                   <Ionicons name="person" size={24} color="#FFFFFF" />
                 </View>
                 <View style={styles.hostInfo}>
@@ -1069,7 +1305,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                             </Text>
                           </View>
                           {hasSubmission && (
-                            <View style={[styles.submissionCheck, { backgroundColor: categoryColor }]}>
+                            <View style={[styles.submissionCheck, { backgroundColor: theme.primary }]}>
                               <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                             </View>
                           )}
@@ -1093,13 +1329,13 @@ export default function ChallengeDetailScreen({ route }: any) {
             <View style={styles.detailsContainer}>
               {/* Daily Proof Warning (if challenge has entry fee and user is participating) */}
               {(challenge.entry_fee ?? 0) > 0 && isParticipating && (
-                <View style={[styles.warningCard, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', marginBottom: 16 }]}>
-                  <Ionicons name="warning" size={20} color="#F59E0B" />
+                <View style={[styles.warningCard, { backgroundColor: primarySoftBg, borderColor: theme.primary, marginBottom: 16 }]}>
+                  <Ionicons name="warning" size={20} color={theme.primary} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.warningTitle, { color: '#92400E' }]}>
+                    <Text style={[styles.warningTitle, { color: theme.textPrimary }]}>
                       Daily Proof Required
                     </Text>
-                    <Text style={[styles.warningText, { color: '#92400E' }]}>
+                    <Text style={[styles.warningText, { color: theme.textSecondary }]}>
                       Submit proof every day to avoid forfeiting your £{challenge.entry_fee.toFixed(2)} investment. Missing any day will result in loss of your share.
                     </Text>
                   </View>
@@ -1111,7 +1347,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   How to Win
                 </Text>
                 <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                  Complete all daily activities for the entire challenge duration. Each day you must complete the required 10k steps and upload verification proof. Missing any day will disqualify you from winning the pot.
+                  Complete all daily activities for the entire challenge duration. Each day you must complete the required 10k steps and take a verification photo. Missing any day will disqualify you from winning the pot.
                 </Text>
               </View>
 
@@ -1120,7 +1356,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   How to Verify
                 </Text>
                 <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                  Upload a photo of your step counter or fitness app showing 10,000+ steps each day. Photos must be clear and show the date. You can upload one verification photo per day during the challenge period.
+                  Take a photo of your step counter or fitness app showing 10,000+ steps each day. Photos must be clear and show the date. You can submit one verification photo per day during the challenge period.
                 </Text>
               </View>
 
@@ -1138,12 +1374,81 @@ export default function ChallengeDetailScreen({ route }: any) {
 
         {activeTab === 'participants' && (
           <View style={styles.tabContent}>
+            {/* Day picker */}
+            {getChallengeDays().length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8, flexDirection: 'row' }}
+              >
+                {getChallengeDays().map((d) => {
+                  const isSelected = d.dayNumber === selectedParticipantDay;
+                  const isFuture = !d.isPast && !d.isToday;
+                  return (
+                    <TouchableOpacity
+                      key={d.dateStr}
+                      onPress={() => !isFuture && setSelectedParticipantDay(d.dayNumber)}
+                      activeOpacity={isFuture ? 1 : 0.75}
+                      style={[
+                        styles.dayChip,
+                        isSelected
+                          ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                          : { backgroundColor: theme.cardBackground, borderColor: theme.border },
+                        isFuture && { opacity: 0.4 },
+                      ]}
+                    >
+                      <Text style={[styles.dayChipText, { color: isSelected ? '#FFFFFF' : theme.textPrimary }]}>
+                        {d.label}
+                      </Text>
+                      {d.isToday && !isSelected && (
+                        <View style={[styles.dayChipDot, { backgroundColor: theme.primary }]} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
             <View style={styles.participantsContainer}>
               {challenge.participants && challenge.participants.length > 0 ? (
-                challenge.participants.map((participant, index) => {
-                  const hasCompletedToday = participantTodaySubmissions.has(participant.user_id);
-                  const subs = participantSubmissions[participant.user_id] ?? [];
+                (() => {
+                  const days = getChallengeDays();
+                  const selectedDayObj = days.find((d) => d.dayNumber === selectedParticipantDay);
+                  const selectedDateStr = selectedDayObj?.dateStr ?? '';
+                  const totalChallengeDays = Math.max(1, days.length);
+                  const startStr = challenge.start_date?.split('T')[0] ?? '';
+                  const endStr = challenge.end_date?.split('T')[0] ?? '';
+
+                  return challenge.participants.map((participant, index) => {
                   const isOwnRow = participant.user_id === user?.id;
+                  const sharedSubs = participantSubmissions[participant.user_id] ?? [];
+                  const ownProgressSubs = isOwnRow && progress
+                    ? Object.values(progress.submissions_by_week).flat()
+                    : [];
+                  const subs = sharedSubs.length > 0 ? sharedSubs : ownProgressSubs;
+                  const submittedDaysCount = countDistinctSubmissionDaysInRange(subs, startStr, endStr);
+
+                  // Find the submission for the selected day specifically
+                  const matchedDaySubmission = subs.find((s) => {
+                    const d = submissionCalendarDate(s);
+                    return d === selectedDateStr;
+                  }) ?? null;
+                  const todayOwnSubmission =
+                    isOwnRow && selectedDayObj?.isToday ? getTodaysSubmission() : null;
+                  const daySubmission = matchedDaySubmission ?? todayOwnSubmission;
+
+                  // Only show the proof for the currently selected day.
+                  const previewSub = daySubmission;
+                  const previewUri = previewSub?.photo_url ?? null;
+                  const hasDaySubmission = daySubmission !== null;
+                  const hasSubmittedOnDay = selectedDayObj?.isToday
+                    ? participantTodaySubmissions.has(participant.user_id) || daySubmission !== null
+                    : daySubmission !== null;
+                  const isFlagged = daySubmission?.is_flagged ?? false;
+                  const selectedIsFuture = selectedDayObj
+                    ? !selectedDayObj.isPast && !selectedDayObj.isToday
+                    : false;
+
                   return (
                     <View
                       key={participant.id || index}
@@ -1155,116 +1460,132 @@ export default function ChallengeDetailScreen({ route }: any) {
                         shadowOpacity: 0.1,
                         shadowRadius: 8,
                         elevation: 3,
-                        flexDirection: 'column',
-                        paddingBottom: subs.length > 0 ? 10 : undefined,
+                        flexDirection: 'row',
+                        alignItems: 'center',
                       }]}
                     >
-                      {/* Top row: avatar + name + completed-today badge */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {participant.user?.avatar_url ? (
-                          <Image
-                            source={{ uri: participant.user.avatar_url }}
-                            style={styles.participantAvatar}
-                          />
-                        ) : (
-                          <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
-                            <Ionicons name="person" size={20} color={theme.textSecondary} />
-                          </View>
-                        )}
+                      {/* Profile avatar */}
+                      {participant.user?.avatar_url ? (
+                        <Image
+                          source={{ uri: participant.user.avatar_url }}
+                          style={styles.participantAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
+                          <Ionicons name="person" size={20} color={theme.textSecondary} />
+                        </View>
+                      )}
 
-                        <View style={styles.participantInfo}>
-                          <Text style={[styles.participantName, { color: theme.textPrimary }]}>
+                      {/* Name + progress (X/Y) + day-submission badge */}
+                      <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
+                          <Text
+                            style={[styles.participantName, { color: theme.textPrimary, flex: 1, minWidth: 0 }]}
+                            numberOfLines={1}
+                          >
                             {participant.user?.display_name || participant.user?.username || 'Anonymous'}
                           </Text>
-                          {subs.length > 0 && (
-                            <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1 }}>
-                              {subs.length} submission{subs.length !== 1 ? 's' : ''}
-                            </Text>
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: '700',
+                              color: theme.textSecondary,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {submittedDaysCount}/{totalChallengeDays}
+                          </Text>
+                          {hasSubmittedOnDay && (
+                            <View style={styles.completedTodayBadge}>
+                              <Ionicons name="checkmark-circle" size={15} color={theme.primary} />
+                              <Text style={[styles.completedTodayText, { color: theme.primary }]}>
+                                {selectedDayObj?.isToday ? 'Today' : '✓'}
+                              </Text>
+                            </View>
                           )}
                         </View>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            marginTop: 4,
+                            fontWeight: '600',
+                            color: selectedIsFuture
+                              ? theme.textSecondary
+                              : hasSubmittedOnDay
+                                ? theme.primary
+                                : theme.textSecondary,
+                          }}
+                        >
+                          {selectedIsFuture
+                            ? 'Upcoming day'
+                            : hasSubmittedOnDay
+                              ? 'Submitted'
+                              : 'Not submitted'}
+                        </Text>
+                      </View>
 
-                        {hasCompletedToday && (
-                          <View style={styles.completedTodayBadge}>
-                            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                            <Text style={styles.completedTodayText}>Today</Text>
+                      {/* Proof thumbnail with flag badge overlay */}
+                      <View style={{ position: 'relative' }}>
+                        {previewUri ? (
+                          <TouchableOpacity
+                            onPress={() => previewSub && setPreviewedSubmission(previewSub)}
+                            activeOpacity={0.8}
+                            style={styles.participantProofThumbWrap}
+                          >
+                            <Image
+                              source={{ uri: previewUri }}
+                              style={styles.participantProofThumb}
+                            />
+                            <View style={styles.participantProofThumbOverlay}>
+                              <Ionicons name="eye" size={14} color="#FFFFFF" />
+                            </View>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            onPress={() => previewSub && setPreviewedSubmission(previewSub)}
+                            activeOpacity={hasDaySubmission ? 0.8 : 1}
+                            disabled={!hasDaySubmission}
+                            style={[styles.participantProofThumbWrap, styles.participantProofThumbEmpty]}
+                          >
+                            <Ionicons
+                              name={hasDaySubmission ? 'image-outline' : 'camera-outline'}
+                              size={20}
+                              color={hasDaySubmission ? theme.textSecondary : '#D1D5DB'}
+                            />
+                            <Text style={{ fontSize: 9, color: hasDaySubmission ? theme.textSecondary : '#D1D5DB', marginTop: 2 }}>
+                              {hasDaySubmission ? 'No photo' : 'None yet'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        {/* Red flag badge for the selected day's submission */}
+                        {isFlagged && (
+                          <View style={styles.participantFlagBadge} pointerEvents="none">
+                            <Ionicons name="flag" size={9} color="#FFFFFF" />
                           </View>
                         )}
                       </View>
 
-                      {/* Submissions list with flag buttons */}
-                      {subs.length > 0 && (
-                        <View style={{ marginTop: 10, gap: 8 }}>
-                          {subs.map((sub) => (
-                            <View
-                              key={sub.id}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                backgroundColor: '#F9FAFB',
-                                borderRadius: 10,
-                                padding: 8,
-                                gap: 8,
-                              }}
-                            >
-                              {/* Photo thumbnail or placeholder */}
-                              {sub.photo_url ? (
-                                <Image
-                                  source={{ uri: sub.photo_url }}
-                                  style={{ width: 48, height: 48, borderRadius: 8 }}
-                                />
-                              ) : (
-                                <View style={{
-                                  width: 48, height: 48, borderRadius: 8,
-                                  backgroundColor: '#E5E7EB',
-                                  alignItems: 'center', justifyContent: 'center',
-                                }}>
-                                  <Ionicons name="image-outline" size={20} color={theme.textSecondary} />
-                                </View>
-                              )}
-
-                              {/* Date + status */}
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 12, color: theme.textPrimary, fontWeight: '500' }}>
-                                  {sub.submission_date
-                                    ? new Date(sub.submission_date + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                                    : new Date(sub.submitted_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                </Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                                  <View style={{
-                                    width: 6, height: 6, borderRadius: 3,
-                                    backgroundColor: sub.verification_status === 'approved' ? '#10B981'
-                                      : sub.verification_status === 'rejected' ? '#EF4444'
-                                      : '#F59E0B',
-                                  }} />
-                                  <Text style={{ fontSize: 11, color: theme.textSecondary, textTransform: 'capitalize' }}>
-                                    {sub.verification_status}
-                                    {sub.is_flagged ? '  ·  Flagged' : ''}
-                                  </Text>
-                                </View>
-                              </View>
-
-                              {/* Flag button — hidden for own submissions */}
-                              {!isOwnRow && (
-                                <TouchableOpacity
-                                  onPress={() => handleFlagSubmission(sub)}
-                                  disabled={flaggingSubmissionId === sub.id}
-                                  style={{ padding: 6 }}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                >
-                                  <Ionicons
-                                    name={sub.has_flagged_by_me ? 'flag' : 'flag-outline'}
-                                    size={18}
-                                    color={sub.has_flagged_by_me ? '#F59E0B' : theme.textSecondary}
-                                  />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          ))}
-                        </View>
+                      {/* Flag / unflag button — only for other users */}
+                      {!isOwnRow && daySubmission && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            if (daySubmission) handleFlagSubmission(daySubmission);
+                          }}
+                          disabled={!!flaggingSubmissionId}
+                          style={styles.participantFlagBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons
+                            name={daySubmission.has_flagged_by_me ? 'flag' : 'flag-outline'}
+                            size={18}
+                            color={daySubmission.has_flagged_by_me ? '#F59E0B' : theme.textSecondary}
+                          />
+                        </TouchableOpacity>
                       )}
                     </View>
                   );
-                })
+                });
+                })()
               ) : (
                 <View style={styles.emptyParticipants}>
                   <Ionicons name="people-outline" size={48} color={theme.textSecondary} />
@@ -1286,38 +1607,77 @@ export default function ChallengeDetailScreen({ route }: any) {
             const startDate = new Date(challenge.start_date);
             const hasStarted = now >= startDate;
             const hasSubmittedToday = hasTodaysSubmission();
-            
+            const startYmd = challenge.start_date.split('T')[0].slice(0, 10);
+            const endYmd = challenge.end_date.split('T')[0].slice(0, 10);
+            const todayYmd = localDeviceCalendarYmd();
+            const outsideChallengeCalendar = todayYmd < startYmd || todayYmd > endYmd;
+            const challengeEndMoment = new Date(challenge.end_date);
+            challengeEndMoment.setHours(23, 59, 59, 999);
+            const uploadLocked =
+              !hasStarted || outsideChallengeCalendar || now > challengeEndMoment;
+            const dayList = getChallengeDays();
+            const selectedDayForPicker = dayList.find((d) => d.dayNumber === selectedParticipantDay);
+            const participantsDayLocksCamera =
+              activeTab === 'participants' &&
+              dayList.length > 0 &&
+              !(selectedDayForPicker?.isToday ?? false);
+            const photoActionLocked = uploadLocked || participantsDayLocksCamera;
+
             return (
-              <TouchableOpacity
-                style={[
-                  styles.actionButton, 
-                  { 
-                    backgroundColor: hasSubmittedToday ? '#10B981' : (hasStarted ? categoryColor : theme.textSecondary),
-                    opacity: hasSubmittedToday || !hasStarted ? 0.8 : 1
-                  }
-                ]}
-                onPress={handleUploadPhoto}
-                disabled={!hasStarted || hasSubmittedToday}
-              >
-                {hasSubmittedToday ? (
-                  <>
-                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                    <Text style={styles.actionButtonText}>Done</Text>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
-                    <Text style={styles.actionButtonText}>
-                      {hasStarted ? 'Upload Photo' : 'Challenge Not Started'}
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    {
+                      backgroundColor:
+                        hasSubmittedToday || (hasStarted && !photoActionLocked)
+                          ? theme.primary
+                          : theme.textSecondary,
+                      opacity: hasSubmittedToday ? 1 : photoActionLocked ? 0.6 : 1,
+                    },
+                  ]}
+                  onPress={handleUploadPhoto}
+                  disabled={photoActionLocked}
+                >
+                  {hasSubmittedToday ? (
+                    <>
+                      <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                      <Text style={styles.actionButtonText}>Submitted ✓</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.actionButtonText}>
+                        {!hasStarted
+                          ? 'Challenge Not Started'
+                          : uploadLocked
+                            ? 'Uploads closed'
+                            : participantsDayLocksCamera
+                              ? 'Select Today to take a photo'
+                              : 'Take a photo'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {/* Replace link — only shown when already submitted today */}
+                {hasSubmittedToday && hasStarted && !photoActionLocked && (
+                  <TouchableOpacity
+                    onPress={handleUploadPhoto}
+                    style={{ alignItems: 'center', marginTop: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>
+                      ↻  Replace today's photo
                     </Text>
-                  </>
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+              </>
             );
           })()
         ) : (
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: categoryColor }]}
+            style={[styles.actionButton, { backgroundColor: theme.primary }]}
             onPress={handleJoinChallenge}
             disabled={joining}
           >
@@ -1338,9 +1698,105 @@ export default function ChallengeDetailScreen({ route }: any) {
         visible={showSubmissionModal}
         challenge={challenge}
         weekNumber={selectedWeek}
-        onClose={() => setShowSubmissionModal(false)}
+        existingSubmission={replacingSubmission ?? undefined}
+        onClose={() => {
+          setShowSubmissionModal(false);
+          setReplacingSubmission(null);
+        }}
         onSubmit={handleSubmitPhoto}
       />
+
+      {/* Full-screen proof viewer */}
+      <Modal
+        visible={previewedSubmission != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewedSubmission(null)}
+      >
+        {previewedSubmission && (() => {
+          const isOwnSub = previewedSubmission.user_id === user?.id;
+          const alreadyFlagged = previewedSubmission.has_flagged_by_me ?? false;
+          const subDateStr = previewedSubmission.submission_date
+            ? new Date(previewedSubmission.submission_date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+            : new Date(previewedSubmission.submitted_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+          return (
+            <View style={styles.participantPhotoModalRoot}>
+              {/* Header bar */}
+              <View style={[styles.participantPhotoModalHeader, { paddingTop: insets.top + 8 }]}>
+                <View style={{ flex: 1, justifyContent: 'flex-start' }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600', lineHeight: 30 }}>
+                    {subDateStr}
+                  </Text>
+                </View>
+                {!isOwnSub && (
+                  <TouchableOpacity
+                    onPress={async () => {
+                      await handleFlagSubmission(previewedSubmission);
+                      // Refresh the previewedSubmission flag state after action
+                      setPreviewedSubmission(null);
+                    }}
+                    disabled={!!flaggingSubmissionId}
+                    style={styles.participantPhotoModalFlagBtn}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={alreadyFlagged ? 'flag' : 'flag-outline'}
+                      size={22}
+                      color={alreadyFlagged ? '#F59E0B' : '#FFFFFF'}
+                    />
+                    <Text style={{ color: alreadyFlagged ? '#F59E0B' : '#FFFFFF', fontSize: 11, marginTop: 2 }}>
+                      {alreadyFlagged ? 'Flagged' : 'Flag'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => setPreviewedSubmission(null)}
+                  style={{ padding: 4, marginLeft: 12, alignSelf: 'flex-start' }}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons name="close-circle" size={30} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+              {previewedSubmission.is_flagged && (
+                <Text
+                  style={{
+                    color: '#F59E0B',
+                    fontSize: 12,
+                    fontWeight: '600',
+                    paddingHorizontal: 16,
+                    paddingBottom: 8,
+                  }}
+                >
+                  Flagged
+                </Text>
+              )}
+
+              {/* Photo */}
+              <Pressable
+                style={styles.participantPhotoModalImageArea}
+                onPress={() => setPreviewedSubmission(null)}
+              >
+                {previewedSubmission.photo_url ? (
+                  <Image
+                    source={{ uri: previewedSubmission.photo_url }}
+                    style={[styles.participantPhotoModalImage, { height: windowHeight * 0.65 }]}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={{ alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="image-outline" size={64} color="rgba(255,255,255,0.3)" />
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>No photo uploaded</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              <Text style={[styles.participantPhotoModalHint, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                Tap photo or close to dismiss
+              </Text>
+            </View>
+          );
+        })()}
+      </Modal>
       </SafeAreaView>
     </CustomBackground>
   );
@@ -1355,8 +1811,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
+  },
+  headerCenterColumn: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  headerDateRange: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  headerChallengeTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 2,
+    lineHeight: 22,
+  },
+  headerRightSpacer: {
+    width: 40,
   },
   backButton: {
     padding: 4,
@@ -1535,26 +2013,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 12,
-  },
-  titleContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 2,
-    paddingBottom: 10,
-  },
-  challengeTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  dateContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 2,
-  },
-  dateRange: {
-    fontSize: 12,
-    textAlign: 'center',
-    fontWeight: '500',
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -1802,23 +2260,113 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  participantInfo: {
+  participantTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  participantNameBlock: {
     flex: 1,
     marginLeft: 12,
+    minWidth: 0,
+  },
+  participantNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    gap: 6,
+  },
+  participantNameTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   participantName: {
     fontSize: 16,
     fontWeight: '500',
   },
+  participantProofThumbWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginLeft: 10,
+    flexShrink: 0,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  participantProofThumb: {
+    width: 60,
+    height: 60,
+  },
+  participantProofThumbOverlay: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 6,
+    padding: 2,
+  },
+  participantProofThumbEmpty: {
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  participantFlagBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  participantFlagBtn: {
+    marginLeft: 8,
+    padding: 4,
+    flexShrink: 0,
+  },
+  participantPhotoModalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.93)',
+  },
+  participantPhotoModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  participantPhotoModalFlagBtn: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  participantPhotoModalImageArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  participantPhotoModalImage: {
+    width: width - 32,
+  },
+  participantPhotoModalHint: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.45)',
+    paddingTop: 8,
+  },
   completedTodayBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexShrink: 0,
   },
   completedTodayText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#10B981',
   },
   statusBadge: {
     width: 28,
@@ -1835,5 +2383,24 @@ const styles = StyleSheet.create({
   emptyParticipantsText: {
     fontSize: 16,
     marginTop: 12,
+  },
+  dayChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  dayChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dayChipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });

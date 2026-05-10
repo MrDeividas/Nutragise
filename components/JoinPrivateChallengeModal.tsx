@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { Challenge } from '../types/challenges';
 import { challengesService } from '../lib/challengesService';
+import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
 
 interface Props {
   visible: boolean;
@@ -182,7 +183,7 @@ export default function JoinPrivateChallengeModal({ visible, onClose, onSubmit }
                         {/* Challenge Details */}
                         <View style={[styles.challengeCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
                           <Text style={[styles.challengeTitle, { color: theme.textPrimary }]}>
-                            {challenge.title}
+                            {getChallengeDisplayTitle(challenge.title)}
                           </Text>
                           <Text style={[styles.challengeDescription, { color: theme.textSecondary }]}>
                             {challenge.description}

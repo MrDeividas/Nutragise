@@ -51,13 +51,33 @@ export default function ParticipantReviewCard({
     }
   };
 
+  const hasFlaggedSubmissions = participant.submissions.some((s) => s.is_flagged);
+  const flagCount = participant.submissions.filter((s) => s.is_flagged).length;
+
   return (
     <>
       <TouchableOpacity
-        style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.cardBackground,
+            borderColor: hasFlaggedSubmissions ? '#EF4444' : theme.border,
+            borderWidth: hasFlaggedSubmissions ? 1.5 : 1,
+          },
+        ]}
         onPress={() => onViewSubmissions(participant)}
         activeOpacity={0.8}
       >
+        {/* Flagged warning banner */}
+        {hasFlaggedSubmissions && (
+          <View style={styles.flagWarningBanner}>
+            <Ionicons name="flag" size={14} color="#FFFFFF" />
+            <Text style={styles.flagWarningText}>
+              {flagCount} flagged submission{flagCount !== 1 ? 's' : ''} — requires review
+            </Text>
+          </View>
+        )}
+
         <View style={styles.header}>
           <View style={styles.userInfo}>
             {participant.user.avatar_url ? (
@@ -188,14 +208,29 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 16,
+    overflow: 'hidden',
     marginBottom: 12,
+  },
+  flagWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  flagWarningText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   userInfo: {
     flexDirection: 'row',
@@ -251,6 +286,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     marginBottom: 12,
+    paddingHorizontal: 16,
   },
   stat: {
     flexDirection: 'row',
@@ -271,6 +307,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginTop: 8,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   invalidateButtonText: {
     fontSize: 14,

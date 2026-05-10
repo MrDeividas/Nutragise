@@ -20,6 +20,8 @@ import {
   getCurrentWeekForRecurringChallenge,
   getCurrentRecurringPeriod,
 } from '../types/challenges';
+import { isRetiredPublicChallengeTitle } from './challengeTitleUtils';
+import { localDeviceCalendarYmd } from './timeService';
 
 class ChallengesService {
   /**
@@ -148,6 +150,9 @@ class ChallengesService {
       }
 
       for (const challenge of challenges) {
+        if (isRetiredPublicChallengeTitle(challenge.title)) {
+          continue;
+        }
         // Skip if we've already seen this challenge ID (duplicate prevention)
         if (seenChallengeIds.has(challenge.id)) {
           // Duplicate challenge IDs are silently skipped (filtering is working correctly)
@@ -889,8 +894,9 @@ class ChallengesService {
         throw error;
       }
 
-      const challenges = (data?.map((item: any) => item.challenge).filter(Boolean) || []) as unknown as Challenge[];
-      
+      let challenges = (data?.map((item: any) => item.challenge).filter(Boolean) || []) as unknown as Challenge[];
+      challenges = challenges.filter((c) => !isRetiredPublicChallengeTitle(c.title));
+
       if (challenges.length === 0) {
         return [];
       }
@@ -951,7 +957,22 @@ class ChallengesService {
       // Check if challenge has started
       const now = new Date();
       const startDate = new Date(challenge.start_date);
-      
+      const startYmd = String(challenge.start_date).split('T')[0].slice(0, 10);
+      const endYmd = String(challenge.end_date).split('T')[0].slice(0, 10);
+      const proofDayYmd = localDeviceCalendarYmd();
+
+      if (proofDayYmd < startYmd || proofDayYmd > endYmd) {
+        throw new Error(
+          'You can only submit proof on a day the challenge is running. Past challenge days cannot be added or changed.'
+        );
+      }
+
+      const challengeEndMoment = new Date(challenge.end_date);
+      challengeEndMoment.setHours(23, 59, 59, 999);
+      if (now > challengeEndMoment) {
+        throw new Error('This challenge has ended. You can no longer upload proof.');
+      }
+
       if (now < startDate) {
         throw new Error('This challenge has not started yet. You cannot submit photos until the challenge begins.');
       }
@@ -1010,22 +1031,19 @@ class ChallengesService {
 
       // Check if submission already exists for TODAY using submission_date
       // The unique constraint on (challenge_id, user_id, submission_date) will prevent duplicates
-      const todayDate = new Date();
-      const todayDateString = todayDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-      
       const { data: todaySubmission } = await supabase
         .from('challenge_submissions')
         .select('id, submitted_at, submission_date')
         .eq('challenge_id', challengeId)
         .eq('user_id', userId)
-        .eq('submission_date', todayDateString)
+        .eq('submission_date', proofDayYmd)
         .maybeSingle();
       
       if (__DEV__) {
         console.log('🔍 Checking for today\'s submission:', {
           challengeId,
           userId,
-          todayDateString,
+          proofDayYmd,
           hasTodaySubmission: !!todaySubmission,
           todaySubmission: todaySubmission ? {
             id: todaySubmission.id,
@@ -1096,7 +1114,7 @@ class ChallengesService {
             week_number: weekNumber,
             submission_notes: submissionNotes,
             verification_status: isAutomatic ? 'approved' : 'pending',
-            submission_date: todayDateString, // Set submission_date for unique constraint
+            submission_date: proofDayYmd, // Set submission_date for unique constraint
           })
           .select('*')
           .single();
@@ -1119,14 +1137,11 @@ class ChallengesService {
       }
 
       // Track daily proof for pot system (if challenge has entry fee)
-      const today = new Date();
-      const dateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-      
       try {
         await challengePotService.trackDailyProof(
           challengeId,
           userId,
-          dateString,
+          proofDayYmd,
           true,
           submissionId
         );
@@ -1479,7 +1494,7 @@ class ChallengesService {
       
       // If multiple exist, log and keep only the first one (we'll deduplicate in getChallenges)
       if (matchingTodayChallenges.length > 1) {
-        console.warn(`⚠️ Multiple Daily Smile Challenge instances found for today: ${matchingTodayChallenges.length} instances`);
+        console.warn(`⚠️ Multiple daily recurring challenge instances found for today (${challenge.title}): ${matchingTodayChallenges.length} instances`);
       }
       
       const todayChallenge = matchingTodayChallenges[0];
@@ -1520,7 +1535,7 @@ class ChallengesService {
         if (matchingExisting.length === 0) {
           await this.createDailyRecurringInstance(challenge, nextDayStart, nextDayEnd);
         } else if (matchingExisting.length > 1) {
-          console.warn(`⚠️ Multiple Daily Smile Challenge instances found for tomorrow: ${matchingExisting.length} instances`);
+          console.warn(`⚠️ Multiple daily recurring challenge instances found for tomorrow (${challenge.title}): ${matchingExisting.length} instances`);
         }
       }
     } catch (error) {
@@ -2053,6 +2068,82 @@ class ChallengesService {
   private isCheckingEndedChallenges = false;
 
   /**
+   * For every active participant in a completed challenge, recalculate their
+   * completion percentage based on actual days submitted vs total challenge days,
+   * then mark them 'completed' (100 %) or 'failed' (< 100 %) accordingly.
+   *
+   * This must be called before distributePot so the winner filter is accurate.
+   */
+  private async finaliseParticipantStatuses(challengeId: string): Promise<void> {
+    try {
+      // Get challenge dates so we know the total number of required days
+      const { data: challengeData, error: cErr } = await supabase
+        .from('challenges')
+        .select('start_date, end_date')
+        .eq('id', challengeId)
+        .single();
+
+      if (cErr || !challengeData) {
+        console.error(`finaliseParticipantStatuses: cannot load challenge ${challengeId}`, cErr);
+        return;
+      }
+
+      const startDate = new Date(challengeData.start_date);
+      const endDate = new Date(challengeData.end_date);
+      // Total days inclusive (e.g. start = end → 1 day)
+      const totalDays = Math.max(
+        1,
+        Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+      );
+
+      // Get all still-active participants (completed ones are already correct)
+      const { data: participants, error: pErr } = await supabase
+        .from('challenge_participants')
+        .select('id, user_id, status')
+        .eq('challenge_id', challengeId)
+        .in('status', ['active', 'completed']);
+
+      if (pErr || !participants) {
+        console.error(`finaliseParticipantStatuses: cannot load participants`, pErr);
+        return;
+      }
+
+      for (const p of participants) {
+        // Count distinct submission_date values for this participant
+        const { count, error: sErr } = await supabase
+          .from('challenge_submissions')
+          .select('submission_date', { count: 'exact', head: true })
+          .eq('challenge_id', challengeId)
+          .eq('user_id', p.user_id)
+          .not('submission_date', 'is', null);
+
+        if (sErr) {
+          console.error(`finaliseParticipantStatuses: error counting submissions for ${p.user_id}`, sErr);
+          continue;
+        }
+
+        const submittedDays = count ?? 0;
+        const pct = Math.min(100, Math.round((submittedDays / totalDays) * 100));
+        const newStatus = pct >= 100 ? 'completed' : 'failed';
+
+        if (p.status !== newStatus || pct !== 100) {
+          await supabase
+            .from('challenge_participants')
+            .update({ completion_percentage: pct, status: newStatus })
+            .eq('id', p.id);
+        }
+      }
+
+      if (__DEV__) {
+        console.log(`✅ finaliseParticipantStatuses: processed ${participants.length} participants for challenge ${challengeId} (totalDays=${totalDays})`);
+      }
+    } catch (err) {
+      console.error('Error in finaliseParticipantStatuses:', err);
+      // Non-fatal — distributePot will still run
+    }
+  }
+
+  /**
    * Mark challenge as pending review when it ends
    */
   async markChallengeAsPendingReview(challengeId: string): Promise<void> {
@@ -2114,19 +2205,67 @@ class ChallengesService {
       }
 
 
-      let successCount = 0;
-      // Update each challenge to pending review
       for (const challenge of endedChallenges) {
         try {
-          await this.markChallengeAsPendingReview(challenge.id);
-          successCount++;
-        } catch (error) {
-          console.error(`Error updating challenge ${challenge.id} (${challenge.title}):`, error);
-          // Continue with other challenges
-        }
-      }
+          // Check whether any submission in this challenge has been flagged
+          const { data: flaggedRows, error: flagError } = await supabase
+            .from('challenge_submissions')
+            .select('id')
+            .eq('challenge_id', challenge.id)
+            .eq('is_flagged', true)
+            .limit(1);
 
-      if (successCount > 0) {
+          if (flagError) {
+            console.error(`Error checking flags for challenge ${challenge.id}:`, flagError);
+            // Fall back to manual review so nothing slips through
+            await this.markChallengeAsPendingReview(challenge.id);
+            continue;
+          }
+
+          const hasFlaggedSubmissions = (flaggedRows?.length ?? 0) > 0;
+
+          // Always finalise participant statuses first (marks non-completers as 'failed')
+          await this.finaliseParticipantStatuses(challenge.id);
+
+          if (hasFlaggedSubmissions) {
+            // Flagged submissions present → send to admin review
+            if (__DEV__) {
+              console.log(`⚠️ Challenge ${challenge.id} (${challenge.title}) has flagged submissions — routing to admin review`);
+            }
+            await this.markChallengeAsPendingReview(challenge.id);
+          } else {
+            // No flags → auto-approve and distribute immediately
+            if (__DEV__) {
+              console.log(`✅ Challenge ${challenge.id} (${challenge.title}) has no flags — auto-approving`);
+            }
+            const { error: approveError } = await supabase
+              .from('challenges')
+              .update({
+                approval_status: 'approved',
+                status: 'completed',
+                reviewed_at: new Date().toISOString(),
+                admin_notes: 'Auto-approved: no flagged submissions',
+              })
+              .eq('id', challenge.id);
+
+            if (approveError) {
+              console.error(`Error auto-approving challenge ${challenge.id}:`, approveError);
+              // Fall back to pending so admin can handle it
+              await this.markChallengeAsPendingReview(challenge.id);
+              continue;
+            }
+
+            // Distribute pot to winners (free challenges skipped inside distributePot)
+            try {
+              await challengePotService.distributePot(challenge.id, true);
+            } catch (distErr) {
+              console.error(`Error distributing pot for auto-approved challenge ${challenge.id}:`, distErr);
+              // Challenge is already approved in DB — pot distribution can be retried by processCompletedChallenges
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing ended challenge ${challenge.id} (${challenge.title}):`, error);
+        }
       }
     } catch (error) {
       console.error('Error in checkAndUpdateEndedChallenges:', error);

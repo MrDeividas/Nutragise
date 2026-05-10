@@ -1547,7 +1547,8 @@ function ActionScreen() {
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
-  const [completedChallengeIds, setCompletedChallengeIds] = useState<Set<string>>(new Set());
+  /** Challenge IDs where the user submitted proof for the current calendar day (for Done badge on cards) */
+  const [challengeSubmittedTodayIds, setChallengeSubmittedTodayIds] = useState<Set<string>>(new Set());
   const [loadingChallenges, setLoadingChallenges] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const headerGreetingOpacity = useRef(new Animated.Value(0)).current;
@@ -4475,25 +4476,21 @@ function ActionScreen() {
 
       setMyActiveChallenges(relevant);
 
-      // Check completion status for each challenge
-      const completedIds = new Set<string>();
+      // Done badge = submitted today (resets each day), not whole-challenge completion
+      const submittedToday = new Set<string>();
       if (user?.id && relevant.length > 0) {
         const challengeIds = relevant.map(c => c.id);
-        const { data: participations } = await supabase
-          .from('challenge_participants')
-          .select('challenge_id, status')
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data: rows } = await supabase
+          .from('challenge_submissions')
+          .select('challenge_id')
           .eq('user_id', user.id)
+          .eq('submission_date', todayStr)
           .in('challenge_id', challengeIds);
 
-        if (participations) {
-          participations.forEach(p => {
-            if (p.status === 'completed') {
-              completedIds.add(p.challenge_id);
-            }
-          });
-        }
+        rows?.forEach((r) => submittedToday.add(r.challenge_id));
       }
-      setCompletedChallengeIds(completedIds);
+      setChallengeSubmittedTodayIds(submittedToday);
     } catch (error) {
       console.error('Error loading active challenges:', error);
       setMyActiveChallenges([]);
@@ -5608,16 +5605,7 @@ function ActionScreen() {
               decelerationRate="fast"
             >
               {myActiveChallenges.map((challenge) => {
-                const startDate = new Date(challenge.start_date);
-                const endDate = new Date(challenge.end_date);
-                endDate.setHours(23, 59, 59, 999);
-                
-                const now = new Date();
-                const isActiveChallenge = now >= startDate && now <= endDate;
-                const isCompleted = completedChallengeIds.has(challenge.id);
-                
-                // Show "Active" if challenge is active and user hasn't completed it (hasn't uploaded proof)
-                const showActive = isActiveChallenge && !isCompleted;
+                const doneForToday = challengeSubmittedTodayIds.has(challenge.id);
 
                 return (
                   <ChallengeCard
@@ -5625,7 +5613,7 @@ function ActionScreen() {
                     challenge={challenge}
                   onPress={() => (navigation as any).navigate('ChallengeDetail', { challengeId: challenge.id })}
                     isJoined={true}
-                    isCompleted={isCompleted}
+                    isCompleted={doneForToday}
                   />
               );
             })}

@@ -41,13 +41,20 @@ import { Achievement } from '../types/database';
 
 const { width } = Dimensions.get('window');
 
+interface LeaderboardPreviewUser {
+  id: string;
+  username: string;
+  points: number;
+  rank: number;
+}
+
 
 function ProfileScreen({ navigation }: any) {
   const { user, signOut } = useAuthStore();
   const bottomNavPadding = useBottomNavPadding();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
   const { theme, isDark } = useTheme();
-  const { segmentChecked, getActiveSegmentCount, coreHabitsCompleted, loadCoreHabitsStatus } = useActionStore();
+  const { getActiveSegmentCount, loadCoreHabitsStatus } = useActionStore();
   const [userProfile, setUserProfile] = useState<any>(null);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const animatedHeight = useRef(new Animated.Value(0)).current;
@@ -100,6 +107,8 @@ function ProfileScreen({ navigation }: any) {
     wins: 0,
     losses: 0
   });
+  const [activeChallengeTitles, setActiveChallengeTitles] = useState<string[]>([]);
+  const [leaderboardNeighbors, setLeaderboardNeighbors] = useState<LeaderboardPreviewUser[]>([]);
   const [totalPoints, setTotalPoints] = useState(0);
   const [socialCounts, setSocialCounts] = useState({
     followers: 0,
@@ -210,6 +219,102 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
+  const loadActiveChallengesCount = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('challenge_participants')
+        .select(`
+          challenge_id,
+          challenges!inner (
+            id,
+            title,
+            status,
+            start_date,
+            end_date
+          )
+        `)
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .eq('challenges.status', 'active');
+
+      if (!error) {
+        const now = new Date();
+        const uniqueCurrentChallengeIds = new Set<string>();
+        const currentChallengeTitles: string[] = [];
+
+        (data || []).forEach((participant: any) => {
+          const challenge = participant?.challenges;
+          if (!challenge?.id) return;
+
+          const startDate = challenge.start_date ? new Date(challenge.start_date) : null;
+          const endDate = challenge.end_date ? new Date(challenge.end_date) : null;
+
+          const hasStarted = !startDate || now >= startDate;
+          const notEnded = !endDate || now <= endDate;
+
+          if (hasStarted && notEnded && !uniqueCurrentChallengeIds.has(challenge.id)) {
+            uniqueCurrentChallengeIds.add(challenge.id);
+            if (challenge.title) {
+              currentChallengeTitles.push(challenge.title);
+            }
+          }
+        });
+
+        setActiveChallengeTitles(currentChallengeTitles);
+      }
+    } catch (error) {
+      // Error loading active challenges count
+    }
+  };
+
+  const loadLeaderboardPreview = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data: profiles, error } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .not('username', 'is', null);
+
+      if (error || !profiles || profiles.length === 0) {
+        setLeaderboardNeighbors([]);
+        return;
+      }
+
+      const usersWithPoints = await Promise.all(
+        profiles.map(async (profile: any) => {
+          const points = await pointsService.getTotalPoints(profile.id);
+          return {
+            id: profile.id,
+            username: profile.username || 'Unknown',
+            points: points || 0,
+          };
+        })
+      );
+
+      const sortedUsers: LeaderboardPreviewUser[] = usersWithPoints
+        .sort((a, b) => b.points - a.points)
+        .map((entry, index) => ({
+          ...entry,
+          rank: index + 1,
+        }));
+
+      const currentUserIndex = sortedUsers.findIndex((entry) => entry.id === user.id);
+      if (currentUserIndex === -1) {
+        setLeaderboardNeighbors([]);
+        return;
+      }
+
+      const start = Math.max(0, currentUserIndex - 1);
+      const end = Math.min(sortedUsers.length, currentUserIndex + 2);
+      setLeaderboardNeighbors(sortedUsers.slice(start, end));
+    } catch (error) {
+      setLeaderboardNeighbors([]);
+    }
+  };
+
   const loadProfileData = async () => {
     try {
       const savedProfileData = await AsyncStorage.getItem('profileData');
@@ -258,6 +363,8 @@ function ProfileScreen({ navigation }: any) {
         
         // Load challenge stats (wins and losses)
         await loadChallengeStats();
+        await loadActiveChallengesCount();
+        await loadLeaderboardPreview();
         
         fetchRecentActivity();
       }
@@ -340,7 +447,9 @@ function ProfileScreen({ navigation }: any) {
         fetchRecentActivity(),
         fetchHighlights(),
         user ? fetchGoals(user.id) : Promise.resolve(),
-        user ? loadChallengeStats() : Promise.resolve()
+        user ? loadChallengeStats() : Promise.resolve(),
+        user ? loadActiveChallengesCount() : Promise.resolve(),
+        user ? loadLeaderboardPreview() : Promise.resolve()
       ]);
     } catch (error) {
       // Error during refresh
@@ -514,6 +623,8 @@ function ProfileScreen({ navigation }: any) {
       loadPillarProgress();
       fetchRecentActivity();
       fetchHighlights();
+      loadActiveChallengesCount();
+      loadLeaderboardPreview();
     }, [user])
   );
 
@@ -1509,110 +1620,67 @@ function ProfileScreen({ navigation }: any) {
           <View style={styles.bigTasksRowBoxes}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.leaderboardLabel, { color: theme.textSecondary }]}>Leaderboard</Text>
-              <View style={styles.leaderboardCompetitionBox} />
+              <View style={[styles.leaderboardCompetitionBox, styles.leaderboardBox]}>
+                {leaderboardNeighbors.length > 0 ? (
+                  leaderboardNeighbors.map((entry) => {
+                    const isCurrentUser = entry.id === user?.id;
+                    return (
+                      <View
+                        key={entry.id}
+                        style={[
+                          styles.leaderboardRow,
+                          isCurrentUser && { backgroundColor: 'rgba(18, 148, 144, 0.08)' }
+                        ]}
+                      >
+                        <Text style={[styles.leaderboardRankText, { color: theme.textSecondary }]}>
+                          #{entry.rank}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.leaderboardUserText,
+                            { color: isCurrentUser ? theme.textPrimary : theme.textSecondary }
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {entry.username}
+                          {isCurrentUser ? ' (You)' : ''}
+                        </Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={[styles.challengesSubtext, { color: theme.textSecondary }]}>
+                    Leaderboard unavailable
+                  </Text>
+                )}
+              </View>
             </View>
             <View style={{ flex: 1, marginLeft: 16 }}>
-              <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Competitions</Text>
-              <View style={styles.leaderboardCompetitionBox} />
+              <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Challenges</Text>
+              <View style={[styles.leaderboardCompetitionBox, styles.challengesBox]}>
+                {activeChallengeTitles.length > 0 ? (
+                  activeChallengeTitles.slice(0, 4).map((title, index) => (
+                    <View key={`${title}-${index}`} style={styles.challengeItem}>
+                      <Text style={styles.bulletPoint}>•</Text>
+                      <Text
+                        style={[styles.challengeText, { color: theme.textSecondary }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {title}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={[styles.challengesSubtext, { color: theme.textSecondary }]}>
+                    No active challenges
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
         </View>
 
-        {/* Progress Bar - Moved to bottom */}
-        <TouchableOpacity 
-          onPress={() => {
-            setShowLevelModal(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <View style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', marginHorizontal: 24, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 12, minHeight: 20, height: 45 }}> 
-          {/* Green Progress Bar - Now first */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <View style={[styles.leftBarContainer, { flex: 0.85, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={[styles.leftBarBackground, { flexDirection: 'row' }]}>
-                {[...Array(8)].map((_, i) => {
-                  // Get the count of checked segments from action screen
-                  const activeSegmentCount = segmentChecked.filter(checked => checked).length;
-                  
-                  // Only light up the first N segments based on how many are checked
-                  const shouldBeActive = i < activeSegmentCount;
-                  
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: shouldBeActive ? '#10B981' : theme.cardBackground, 
-                          height: 2.59,
-                          flex: 1,
-                          marginRight: i === 7 ? 0 : 2,
-                          shadowColor: '#10B981',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: shouldBeActive ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: shouldBeActive ? 3 : 0,
-                        },
-                        (i === 1 || i === 2 || i === 3 || i === 4 || i === 5 || i === 6) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 7 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        (!shouldBeActive) && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#10B981',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-          
-          {/* Pink Progress Bar - Core Habits (Like, Comment, Share, Update Goal, Bonus) */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 2 }}>
-            <View style={[styles.leftBarContainer, { flex: 0.8, marginHorizontal: 4, alignSelf: 'center' }]}>
-              <View style={styles.leftBarBackground}>
-                {[...Array(5)].map((_, i) => {
-                  const isCompleted = coreHabitsCompleted[i];
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.leftBarSegment,
-                        { 
-                          backgroundColor: isCompleted ? '#E91E63' : theme.cardBackground, 
-                          height: 2.59,
-                          shadowColor: '#E91E63',
-                          shadowOffset: { width: 0, height: 0 },
-                          shadowOpacity: isCompleted ? 0.6 : 0,
-                          shadowRadius: 3,
-                          elevation: isCompleted ? 3 : 0,
-                        },
-                        i === 4 && { marginRight: 0 },
-                        (i === 1 || i === 2 || i === 3) && { borderRadius: 0 },
-                        i === 0 && { borderTopRightRadius: 0, borderBottomRightRadius: 0, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-                        i === 4 && { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-                        !isCompleted && { 
-                          backgroundColor: theme.background, 
-                          borderWidth: 0.5, 
-                          borderColor: '#E91E63',
-                          shadowColor: 'transparent',
-                          shadowOpacity: 0,
-                          elevation: 0,
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        </View>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* Create Post Modal */}
@@ -2323,6 +2391,48 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     minHeight: 120,
+  },
+  leaderboardBox: {
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 6,
+  },
+  leaderboardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  leaderboardRankText: {
+    fontSize: 12,
+    fontWeight: '600',
+    width: 30,
+  },
+  leaderboardUserText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  challengesBox: {
+    justifyContent: 'center',
+  },
+  challengesSubtext: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  challengeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+    gap: 8,
+  },
+  challengeText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
   activityAchievementsRow: {
     flexDirection: 'row',

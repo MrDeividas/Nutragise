@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Challenge } from '../types/challenges';
 import { useTheme } from '../state/themeStore';
+import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
 
 interface PendingChallengeCardProps {
   challenge: Challenge;
@@ -35,7 +36,7 @@ export default function PendingChallengeCard({ challenge, onPress }: PendingChal
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
-            {challenge.title}
+            {getChallengeDisplayTitle(challenge.title)}
           </Text>
           <View style={styles.badgeContainer}>
             <View style={[styles.pendingBadge, { backgroundColor: '#F59E0B20' }]}>

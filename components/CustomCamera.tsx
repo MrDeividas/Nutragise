@@ -70,6 +70,7 @@ export default function CustomCamera({ onPhotoTaken, onClose }: CustomCameraProp
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
         exif: false,
+        mirror: facing === 'front',
       });
 
       if (photo?.uri) {
@@ -88,6 +89,9 @@ export default function CustomCamera({ onPhotoTaken, onClose }: CustomCameraProp
         ref={cameraRef}
         style={styles.camera}
         facing={facing}
+        mirror={facing === 'front'}
+        zoom={0}
+        isPinchToZoomEnabled={false}
       >
         {/* Top Bar */}
         <View style={styles.topBar}>
@@ -122,11 +126,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    justifyContent: 'center',
   },
   camera: {
-    flex: 1,
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    height: SCREEN_WIDTH * (4 / 3),
+    alignSelf: 'center',
   },
   permissionContainer: {
     flex: 1,

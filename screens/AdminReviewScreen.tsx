@@ -25,6 +25,7 @@ import PendingChallengeCard from '../components/PendingChallengeCard';
 import ParticipantReviewCard from '../components/ParticipantReviewCard';
 import CustomBackground from '../components/CustomBackground';
 import { useBottomNavPadding } from '../components/CustomTabBar';
+import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
 
 type ViewMode = 'list' | 'detail';
 
@@ -356,7 +357,7 @@ export default function AdminReviewScreen() {
             <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-            {selectedChallenge.challenge.title}
+            {getChallengeDisplayTitle(selectedChallenge.challenge.title)}
           </Text>
           <View style={{ width: 40 }} />
         </View>
@@ -502,7 +503,18 @@ export default function AdminReviewScreen() {
                 <ScrollView style={styles.submissionsList}>
                   {selectedParticipant?.submissions.map((submission) => (
                     <View key={submission.id} style={[styles.submissionItem, { borderColor: theme.border }]}>
-                      <Image source={{ uri: submission.photo_url }} style={styles.submissionImage} />
+                      {submission.photo_url ? (
+                        <Image source={{ uri: submission.photo_url }} style={styles.submissionImage} />
+                      ) : (
+                        <View
+                          style={[
+                            styles.submissionImage,
+                            { backgroundColor: theme.borderSecondary, alignItems: 'center', justifyContent: 'center' },
+                          ]}
+                        >
+                          <Ionicons name="image-outline" size={28} color={theme.textSecondary} />
+                        </View>
+                      )}
                       <View style={styles.submissionInfo}>
                         <Text style={[styles.submissionDate, { color: theme.textSecondary }]}>
                           {new Date(submission.submitted_at).toLocaleDateString()}

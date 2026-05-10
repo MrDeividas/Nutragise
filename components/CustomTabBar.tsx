@@ -104,7 +104,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
                 {route.name === 'Profile' ? (
                   <View style={[
                     styles.profileAvatarContainer,
-                    isFocused && styles.profileAvatarContainerFocused
+                    isFocused && { borderColor: theme.primary, borderWidth: 2 }
                   ]}>
                     {user?.avatar_url ? (
                       <Image 
@@ -258,10 +258,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
-  },
-  profileAvatarContainerFocused: {
-    borderColor: '#10B981',
-    borderWidth: 2,
   },
   profileAvatar: {
     width: '100%',

@@ -6,15 +6,81 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Challenge, ChallengeCardProps } from '../types/challenges';
 import { useTheme } from '../state/themeStore';
-import { stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
+import {
+  stripTrailingChallengeWord,
+  getChallengeDisplayTitle,
+  normalizeHeroRegistryKey,
+  normalizedChallengeHeroLookupKey,
+} from '../lib/challengeTitleUtils';
 
 const { width } = Dimensions.get('window');
 const horizontalPadding = 24 * 2;
 const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
+
+/** Core-habit cards with full-bleed hero art */
+const CHALLENGE_HERO_IMAGES: Record<string, number> = {
+  Gym: require('../assets/challenge-cards/gym.png'),
+  Exercise: require('../assets/challenge-cards/exercise.png'),
+  Sleep: require('../assets/challenge-cards/sleep.png'),
+  'Goal Update': require('../assets/challenge-cards/goal_update.png'),
+  Microlearn: require('../assets/challenge-cards/microlearn.png'),
+  Focus: require('../assets/challenge-cards/focus.png'),
+  Reflection: require('../assets/challenge-cards/reflection.png'),
+  Water: require('../assets/challenge-cards/water.png'),
+  'Drinking Water': require('../assets/challenge-cards/water.png'),
+  'Cold Shower': require('../assets/challenge-cards/cold_shower.png'),
+  Meditation: require('../assets/challenge-cards/meditation.png'),
+  'Screen Time': require('../assets/challenge-cards/screen_time.png'),
+  '6AM Club': require('../assets/challenge-cards/six_am_club.png'),
+  '6am Club': require('../assets/challenge-cards/six_am_club.png'),
+  '6am club': require('../assets/challenge-cards/six_am_club.png'),
+  'No Junk Food': require('../assets/challenge-cards/no_junk_food.png'),
+  'Reduce Social Media': require('../assets/challenge-cards/reduce_social_media.png'),
+  'Daily Sweat': require('../assets/challenge-cards/daily_sweat.png'),
+  '100 Press Ups': require('../assets/challenge-cards/100_press_ups.png'),
+  '100 Squats': require('../assets/challenge-cards/100_squats.png'),
+  'Mobility Every Day': require('../assets/challenge-cards/mobility_every_day.png'),
+  'Deep Work': require('../assets/challenge-cards/deep_work.png'),
+  '15k Steps': require('../assets/challenge-cards/15k_steps.png'),
+  '15K Steps': require('../assets/challenge-cards/15k_steps.png'),
+  '15k Steps Daily': require('../assets/challenge-cards/15k_steps.png'),
+  '15K Steps Daily': require('../assets/challenge-cards/15k_steps.png'),
+  '10k Steps': require('../assets/challenge-cards/10k_steps.png'),
+  '10K Steps': require('../assets/challenge-cards/10k_steps.png'),
+  '10k Steps Daily': require('../assets/challenge-cards/10k_steps.png'),
+  '10K Steps Daily': require('../assets/challenge-cards/10k_steps.png'),
+  '10k Steps Free': require('../assets/challenge-cards/10k_steps.png'),
+  '10K Steps Free': require('../assets/challenge-cards/10k_steps.png'),
+  'Make Your Bed': require('../assets/challenge-cards/make_your_bed.png'),
+  Gratitude: require('../assets/challenge-cards/gratitude.png'),
+  'Go Outside': require('../assets/challenge-cards/go_outside.png'),
+  'Spread Positivity': require('../assets/challenge-cards/spread_positivity.png'),
+  'Accountability Starter': require('../assets/challenge-cards/accountability_starter.png'),
+  '7AM Wake Up': require('../assets/challenge-cards/7am_wake_up.png'),
+  '7am Wake Up': require('../assets/challenge-cards/7am_wake_up.png'),
+  'Journal 1 Thought': require('../assets/challenge-cards/journal_1_thought.png'),
+  'Gym Warrior Free': require('../assets/challenge-cards/gym_warrior_free.png'),
+  'Gym Warrior': require('../assets/challenge-cards/gym_warrior_free.png'),
+  'Free Gym Warrior': require('../assets/challenge-cards/gym_warrior_free.png'),
+  'Be Happy': require('../assets/challenge-cards/be_happy.png'),
+};
+
+/** Case-insensitive hero lookup; fixes "Gym Warriror" typo in DB titles. */
+const HERO_IMAGE_BY_NORMALIZED_KEY: Record<string, number> = (() => {
+  const m: Record<string, number> = {};
+  for (const [label, src] of Object.entries(CHALLENGE_HERO_IMAGES)) {
+    m[normalizeHeroRegistryKey(label)] = src;
+  }
+  return m;
+})();
+
+/** User-created challenges (create flow) always use this art instead of title-matched heroes. */
+const CUSTOM_USER_CHALLENGE_HERO = require('../assets/challenge-cards/custom_challenge.png');
 
 const CORE_HABIT_TITLES = new Set([
   'Gym',
@@ -45,6 +111,9 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
   const { theme, isDark } = useTheme();
 
   const isCoreHabit = isCoreHabitTitle(challenge.title);
+  const heroImageSource = challenge.is_user_created
+    ? CUSTOM_USER_CHALLENGE_HERO
+    : HERO_IMAGE_BY_NORMALIZED_KEY[normalizedChallengeHeroLookupKey(challenge.title)];
 
   const getCategoryColor = (category: string) => {
     switch (category.toLowerCase()) {
@@ -101,19 +170,38 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
     ? '#4B0082' 
     : (isCoreHabit ? (isDark ? '#1f1f1f' : '#111827') : categoryColor);
 
+  /** On full-bleed hero art, muted grey vanishes on light artwork (e.g. Sleep). Use dark slate, not theme.textPrimary (can be light in dark theme). */
+  const participantIconColor = isJoined
+    ? '#10B981'
+    : heroImageSource != null
+      ? '#111827'
+      : theme.textSecondary;
+  const participantNumberColor = participantIconColor;
+
   return (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}
       onPress={() => onPress(challenge)}
       activeOpacity={0.8}
     >
-      {/* Dark band: 50% height (matches top / bottom content split for all challenge types) */}
+      {heroImageSource != null ? (
+        <View style={styles.cardHeroImageWrap} pointerEvents="none">
+          <Image
+            source={heroImageSource}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            contentPosition="top center"
+            transition={0}
+          />
+        </View>
+      ) : null}
+      {/* Coloured band: 40% height — sits above hero image; top ~60% shows photo + pills/badges */}
       <View style={[styles.blueSection, { backgroundColor: sectionColor }]} />
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Single row: category + Everyone OR category + Member (Pro) */}
-        <View style={styles.topPillsRow} pointerEvents="none">
+        {/* Category on top row; Everyone / Member stacked below */}
+        <View style={styles.topPillsColumn} pointerEvents="none">
           <View
             style={[
               styles.categoryPill,
@@ -148,9 +236,22 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
           )}
         </View>
         
+        {/* "Done today" badge — top-right, same pill style as Pending/Rejected */}
+        {isCompleted && (
+          <View style={styles.doneBadge} pointerEvents="none">
+            <Ionicons name="checkmark-done-circle" size={14} color="#F59E0B" />
+            <Text style={styles.doneText}>Done</Text>
+          </View>
+        )}
+
         {/* Top half: badges + participants only; title lives in bottom half */}
         <View style={styles.topSection}>
-          <View style={styles.topBadgesRow}>
+          <View
+            style={[
+              styles.topBadgesRow,
+              heroImageSource != null && styles.topBadgesRowWithHero,
+            ]}
+          >
             {challenge.approval_status === 'pending' ? (
               <View style={styles.pendingBadge}>
                 <Ionicons name="time-outline" size={14} color="#F59E0B" />
@@ -161,22 +262,13 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
                 <Ionicons name="close-circle" size={14} color="#EF4444" />
                 <Text style={styles.rejectedText}>Rejected</Text>
               </View>
-            ) : isCompleted ? (
-            <View style={styles.doneBadge}>
-              <Ionicons name="checkmark-done-circle" size={14} color="#F59E0B" />
-              <Text style={styles.doneText}>Done</Text>
-            </View>
-          ) : null}
+            ) : null}
           <View style={styles.participantsContainerAction}>
-            <Ionicons
-              name="people"
-              size={14}
-              color={isJoined ? '#10B981' : theme.textSecondary}
-            />
+            <Ionicons name="people" size={14} color={participantIconColor} />
             <Text
               style={[
                 styles.participantsTextAction,
-                { color: isJoined ? '#10B981' : theme.textSecondary },
+                { color: participantNumberColor },
               ]}
             >
               <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
@@ -197,7 +289,7 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
               numberOfLines={2}
               ellipsizeMode="tail"
             >
-              {challenge.title}
+              {getChallengeDisplayTitle(challenge.title)}
             </Text>
           </View>
 
@@ -233,12 +325,20 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  /** Full-card bleed; cover fills rect (may crop). Bottom 40% is covered by blueSection. */
+  cardHeroImageWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+    overflow: 'hidden',
+    borderRadius: 20,
+  },
   blueSection: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: '50%',
+    height: '40%',
+    zIndex: 1,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     borderTopLeftRadius: 12,
@@ -248,17 +348,16 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'column',
     position: 'relative',
-    zIndex: 1,
+    zIndex: 2,
   },
-  topPillsRow: {
+  topPillsColumn: {
     position: 'absolute',
     top: 8,
     left: 8,
     right: 8,
     zIndex: 9,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     gap: 4,
   },
   /** Hug text width; cap width so long names ellipsize + second pill still fits */
@@ -320,17 +419,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.12,
   },
-  /** Upper half — Pro, Everyone, Free, custom: same 50% as core habit cards */
+  /** Top ~60% — extra paddingTop clears stacked category + Everyone/Member pills */
   topSection: {
-    height: '50%',
+    height: '60%',
     justifyContent: 'flex-end',
     paddingHorizontal: 16,
-    paddingTop: 36,
+    paddingTop: 52,
     paddingBottom: 6,
   },
-  /** Date at top, title in middle, Entry/Pot pushed to bottom via marginTop:auto on fee row */
+  /** Bottom 40% — date, title, Entry/Pot (marginTop:auto on fee row) */
   bottomSection: {
-    height: '50%',
+    height: '40%',
     paddingTop: 8,
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -374,6 +473,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
   },
+  /** Hero cards: lift row above Image layer (no background — icon + count only, like before) */
+  topBadgesRowWithHero: {
+    zIndex: 12,
+    elevation: 10,
+  },
   participantsContainerAction: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -385,6 +489,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   doneBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,

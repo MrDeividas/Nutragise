@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Clipboard } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { Challenge } from '../types/challenges';
+import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
 
 interface Props {
   challenges: Challenge[];
@@ -57,7 +58,7 @@ export default function MyChallengesSection({ challenges, onEdit, onDelete }: Pr
               <View style={styles.cardHeader}>
                 <View style={styles.cardTitleRow}>
                   <Text style={[styles.cardTitle, { color: theme.textPrimary }]} numberOfLines={1}>
-                    {challenge.title}
+                    {getChallengeDisplayTitle(challenge.title)}
                   </Text>
                   <View
                     style={[
@@ -162,7 +163,7 @@ export default function MyChallengesSection({ challenges, onEdit, onDelete }: Pr
 
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: '#EF444420' }]}
-                  onPress={() => handleDelete(challenge.id, challenge.title)}
+                  onPress={() => handleDelete(challenge.id, getChallengeDisplayTitle(challenge.title))}
                 >
                   <Ionicons name="trash-outline" size={18} color="#EF4444" />
                   <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>

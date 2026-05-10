@@ -19,7 +19,11 @@ import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useAuthStore } from '../state/authStore';
 import { socialService } from '../lib/socialService';
 import { challengesService } from '../lib/challengesService';
-import { stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
+import {
+  stripTrailingChallengeWord,
+  sortCoreHabitChallengesByDisplayOrder,
+  sortProOnlyChallengesByDisplayOrder,
+} from '../lib/challengeTitleUtils';
 import { emailService } from '../lib/emailService';
 import { supabase } from '../lib/supabase';
 import ChallengeCard from '../components/ChallengeCard';
@@ -323,8 +327,10 @@ export default function CompeteScreen({ navigation }: any) {
         return coreHabitTitles.has(stripTrailingChallengeWord(challenge.title));
       };
       
-      // Separate core habit challenges
-      const coreHabits = deduplicatedChallenges.filter(isCoreHabitChallenge);
+      // Separate core habit challenges (Gym → Exercise → Sleep first, then rest)
+      const coreHabits = sortCoreHabitChallengesByDisplayOrder(
+        deduplicatedChallenges.filter(isCoreHabitChallenge)
+      );
       const otherChallenges = deduplicatedChallenges.filter(challenge => !isCoreHabitChallenge(challenge));
       
       console.log(`✅ Core Habit Challenges: ${coreHabits.length}`, coreHabits.map(c => ({
@@ -335,7 +341,9 @@ export default function CompeteScreen({ navigation }: any) {
       })));
       
       // Pro-only challenges (any price) → Pro section; paid non-pro → Everyone Can Play; free non-pro → Free to Play
-      const proOnly = otherChallenges.filter(c => c.is_pro_only);
+      const proOnly = sortProOnlyChallengesByDisplayOrder(
+        otherChallenges.filter(c => c.is_pro_only)
+      );
       const free = otherChallenges.filter(c => !c.is_pro_only && (!c.entry_fee || c.entry_fee === 0));
       const invest = otherChallenges.filter(c => !c.is_pro_only && c.entry_fee && c.entry_fee > 0);
       

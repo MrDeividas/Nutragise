@@ -47,7 +47,7 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 ### 4. Challenges System
 - **Free to Play** (Compete screen): £0 entry challenges for non‑Pro users
 - **Everyone Can Play** (Compete screen): paid entry (e.g. £10) challenges open to all users
-- Daily recurring challenges (e.g., Daily Smile Challenge)
+- Daily recurring challenges (e.g., Be Happy)
 - Weekly recurring challenges
 - Challenge requirements and submissions
 - Participant tracking and leaderboards

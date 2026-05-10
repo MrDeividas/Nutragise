@@ -25,6 +25,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import { WalletTransaction } from '../types/wallet';
+import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
 
 export default function WalletScreen() {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -65,7 +66,7 @@ export default function WalletScreen() {
             try {
               const challenge = await challengesService.getChallengeById(challengeId);
               if (challenge) {
-                namesMap[challengeId] = challenge.title;
+                namesMap[challengeId] = getChallengeDisplayTitle(challenge.title);
               }
             } catch (error) {
               console.error(`Error fetching challenge ${challengeId}:`, error);

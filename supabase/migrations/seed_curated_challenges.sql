@@ -1,4 +1,4 @@
--- Seed 16 curated weekly challenges (8 available to all users + 8 pro-only), each with £10 entry fee.
+-- Seed 15 curated weekly challenges (7 available to all users + 8 pro-only), each with £10 entry fee.
 -- Idempotent: uses ON CONFLICT DO NOTHING on title so re-running is safe.
 -- challenge_requirements are also guarded with ON CONFLICT DO NOTHING.
 -- Assumes a UNIQUE constraint exists on challenges(title); if not, the
@@ -45,7 +45,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 2. Daily Walk Proof (7/7)
+  -- 2. Spread Positivity (7/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -53,9 +53,9 @@ BEGIN
     is_recurring, recurring_schedule, next_recurrence,
     is_pro_only, visibility
   ) VALUES (
-    'Daily Walk Proof',
-    'Step outside and move. A daily walk clears your head, boosts energy, and proves that consistent small actions create lasting change.',
-    'fitness', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
+    'Spread Positivity',
+    'Each day, spread something genuinely positive in the real world or online. Examples: post something kind or uplifting on social media; share an encouraging story, reel, or comment; send a supportive message to a friend or family member; compliment someone; check in on someone who might need it; or do another clear act of goodwill toward another person. Your requirement is to take a photo that shows what you did—for instance your post or story on screen (you can blur or crop private details), your kind DM or text conversation, or a photo of the moment if everyone pictured is okay with it. Upload that picture each day as proof. Seven days of proof are required to pass.',
+    'wellness', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
     true, 'weekly', v_next_rec, false, 'public'
   )
   ON CONFLICT (title) DO NOTHING
@@ -63,33 +63,11 @@ BEGIN
 
   IF v_id IS NOT NULL THEN
     INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
-    VALUES (v_id, 'Post a photo or screenshot proving your walk each day — 7 days required to pass.', 'weekly', 7, 1)
+    VALUES (v_id, 'Each day, take a photo that shows you spreading positivity—such as a kind social post or story, a supportive message to a friend or someone else, or another clear positive act—and upload it. 7 days required to pass.', 'weekly', 7, 1)
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 3. Healthy Choice Challenge (7/7)
-  v_id := NULL;
-  INSERT INTO challenges (
-    title, description, category, duration_weeks, entry_fee,
-    verification_type, start_date, end_date, created_by, status,
-    is_recurring, recurring_schedule, next_recurrence,
-    is_pro_only, visibility
-  ) VALUES (
-    'Healthy Choice',
-    'One mindful food decision a day. Whether it''s skipping the snack or choosing water over soda, small nutritional wins add up fast.',
-    'nutrition', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
-    true, 'weekly', v_next_rec, false, 'public'
-  )
-  ON CONFLICT (title) DO NOTHING
-  RETURNING id INTO v_id;
-
-  IF v_id IS NOT NULL THEN
-    INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
-    VALUES (v_id, 'Post a photo of your healthy meal or choice each day — 7 days required to pass.', 'weekly', 7, 1)
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- 4. Journal 1 Thought (7/7)
+  -- 3. Journal 1 Thought (7/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -111,7 +89,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 5. Gratitude Challenge (7/7)
+  -- 4. Gratitude Challenge (7/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -120,7 +98,7 @@ BEGIN
     is_pro_only, visibility
   ) VALUES (
     'Gratitude',
-    'Name one thing you''re grateful for every day. Training your brain to notice the good is one of the most powerful habits you can build.',
+    'Name one thing you''re grateful for every day. Training your brain to notice the good is one of the most powerful habits you can build. Requirement: write it on a piece of paper, take a photo of what you wrote, and upload that picture as your daily proof.',
     'mindfulness', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
     true, 'weekly', v_next_rec, false, 'public'
   )
@@ -129,11 +107,11 @@ BEGIN
 
   IF v_id IS NOT NULL THEN
     INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
-    VALUES (v_id, 'Post a photo or note showing your daily gratitude — 7 days required to pass.', 'weekly', 7, 1)
+    VALUES (v_id, 'Write one thing you''re grateful for on paper each day, photograph it, and upload the photo — 7 days required to pass.', 'weekly', 7, 1)
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 6. Go Outside Challenge (7/7)
+  -- 5. Go Outside Challenge (7/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -155,7 +133,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 7. Accountability Starter (5/7)
+  -- 6. Accountability Starter (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -177,7 +155,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 8. 7AM Wake Up Challenge (5/7)
+  -- 7. 7AM Wake Up Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -203,7 +181,7 @@ BEGIN
   -- PRO CHALLENGES
   -- ────────────────────────────────────────────────────────────────
 
-  -- 9. 6AM Club Challenge (5/7)
+  -- 8. 6AM Club Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -222,6 +200,28 @@ BEGIN
   IF v_id IS NOT NULL THEN
     INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
     VALUES (v_id, 'Post a screenshot of your phone clock showing 6:00 AM or earlier — at least 5 days out of 7 required to pass.', 'weekly', 5, 1)
+    ON CONFLICT DO NOTHING;
+  END IF;
+
+  -- 9. No Junk Food Challenge (7/7)
+  v_id := NULL;
+  INSERT INTO challenges (
+    title, description, category, duration_weeks, entry_fee,
+    verification_type, start_date, end_date, created_by, status,
+    is_recurring, recurring_schedule, next_recurrence,
+    is_pro_only, visibility
+  ) VALUES (
+    'No Junk Food',
+    'Seven days of clean eating. No processed junk, no excuses. Document your meals and show your discipline one photo at a time.',
+    'nutrition', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
+    true, 'weekly', v_next_rec, true, 'public'
+  )
+  ON CONFLICT (title) DO NOTHING
+  RETURNING id INTO v_id;
+
+  IF v_id IS NOT NULL THEN
+    INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
+    VALUES (v_id, 'Post a photo of every meal showing no junk food — 7 days required to pass.', 'weekly', 7, 1)
     ON CONFLICT DO NOTHING;
   END IF;
 
@@ -247,29 +247,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 11. No Junk Food Challenge (7/7)
-  v_id := NULL;
-  INSERT INTO challenges (
-    title, description, category, duration_weeks, entry_fee,
-    verification_type, start_date, end_date, created_by, status,
-    is_recurring, recurring_schedule, next_recurrence,
-    is_pro_only, visibility
-  ) VALUES (
-    'No Junk Food',
-    'Seven days of clean eating. No processed junk, no excuses. Document your meals and show your discipline one photo at a time.',
-    'nutrition', 1, 10, 'photo', v_start, v_end, v_admin_id, 'upcoming',
-    true, 'weekly', v_next_rec, true, 'public'
-  )
-  ON CONFLICT (title) DO NOTHING
-  RETURNING id INTO v_id;
-
-  IF v_id IS NOT NULL THEN
-    INSERT INTO challenge_requirements (challenge_id, requirement_text, frequency, target_count, requirement_order)
-    VALUES (v_id, 'Post a photo of every meal showing no junk food — 7 days required to pass.', 'weekly', 7, 1)
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  -- 12. Daily Sweat Challenge (5/7)
+  -- 11. Daily Sweat Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -291,7 +269,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 13. 100 Press Ups Challenge (5/7)
+  -- 12. 100 Press Ups Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -313,7 +291,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 14. 100 Squats Challenge (5/7)
+  -- 13. 100 Squats Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -335,7 +313,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 15. Mobility Every Day Challenge (4/7)
+  -- 14. Mobility Every Day Challenge (4/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
@@ -357,7 +335,7 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 
-  -- 16. Deep Work Challenge (5/7)
+  -- 15. Deep Work Challenge (5/7)
   v_id := NULL;
   INSERT INTO challenges (
     title, description, category, duration_weeks, entry_fee,
