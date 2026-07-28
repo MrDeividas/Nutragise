@@ -742,87 +742,6 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           )}
         </View>
 
-        {/* Activity and Highlights Section — hidden when both are empty */}
-        {(recentActivity.length > 0 || highlights.length > 0) && (
-        <View style={styles.keepTrackSection}>
-          <View style={styles.activityAchievementsRow}>
-            {recentActivity.length > 0 && (
-            <View style={{ flex: 1 }}>
-              <View style={[
-                styles.activityBox,
-                {
-                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
-                }
-              ]}>
-                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
-                <ScrollView 
-                  style={{ flex: 1, width: '100%' }}
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {recentActivity.map((item, index) => (
-                    <View key={index} style={styles.activityItem}>
-                      <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
-                        {item.iconType === 'fa5' ? (
-                          <FontAwesome5 name={item.icon} size={14} color={item.color} />
-                        ) : (
-                          <Ionicons name={item.icon as any} size={16} color={item.color} />
-                        )}
-                      </View>
-                      <Text 
-                        style={[styles.activityText, { color: theme.textSecondary }]} 
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                      >
-                        {item.label}
-                      </Text>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-            )}
-            {highlights.length > 0 && (
-            <View style={{ flex: 2, marginLeft: recentActivity.length > 0 ? 16 : 0 }}>
-              <View style={[
-                styles.achievementsBox,
-                {
-                  height: 72 + (Math.min(highlights.length, 4) * 32),
-                }
-              ]}>
-                <View style={styles.achievementsHeader}>
-                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
-                </View>
-                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
-                  {highlights.slice(0, 4).map((highlight, index) => (
-                    <View key={highlight.id} style={styles.achievementItem}>
-                      <Text style={styles.bulletPoint}>•</Text>
-                      <Text
-                        style={[styles.achievementText, { color: theme.textSecondary }]}
-                        numberOfLines={2}
-                      >
-                        {highlight.text}
-                      </Text>
-                      {highlight.photo_url && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            setSelectedPhotoUrl(highlight.photo_url);
-                            setShowPhotoModal(true);
-                          }}
-                          style={styles.photoIconButton}
-                        >
-                          <Ionicons name="image" size={22} color={theme.primary} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </View>
-            )}
-          </View>
-        </View>
-        )}
 
         {/* Goals Section */}
         <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
@@ -905,8 +824,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
 
         {/* Progress Bars Section - Only show if stats are visible */}
         {statsVisible && (
-        <View style={styles.keepTrackSection}>
-          <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border, marginTop: 20 }]}>
+        <View style={[styles.keepTrackSection, styles.profileSectionSpacing]}>
+          <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
             <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
                 <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
@@ -1005,19 +924,109 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         </View>
         )}
 
-        {/* Tasks Section */}
-        <View style={styles.keepTrackSection}>
+        {/* Tasks Section — match Posts→Overall gap when Overall is hidden */}
+        <View style={[styles.keepTrackSection, !statsVisible && styles.profileSectionSpacing]}>
           <View style={styles.bigTasksRowBoxes}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.leaderboardLabel, { color: theme.textSecondary }]}>Leaderboard</Text>
-              <View style={styles.leaderboardCompetitionBox} />
+              <View style={[styles.leaderboardCompetitionBox, styles.emptyStatBox]}>
+                <Text style={[styles.emptyStatText, { color: theme.textSecondary }]}>
+                  Yet to be ranked
+                </Text>
+              </View>
             </View>
             <View style={{ flex: 1, marginLeft: 16 }}>
-              <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Competitions</Text>
-              <View style={styles.leaderboardCompetitionBox} />
+              <Text style={[styles.competitionsLabel, { color: theme.textSecondary }]}>Challenges</Text>
+              <View style={[styles.leaderboardCompetitionBox, styles.emptyStatBox]}>
+                <Text style={[styles.emptyStatText, { color: theme.textSecondary }]}>
+                  Not part of any challenges
+                </Text>
+              </View>
             </View>
           </View>
         </View>
+
+        {/* Activity and Highlights Section — hidden when both are empty */}
+        {(recentActivity.length > 0 || highlights.length > 0) && (
+        <View style={styles.keepTrackSection}>
+          <View style={styles.activityAchievementsRow}>
+            {recentActivity.length > 0 && (
+            <View style={{ flex: 1 }}>
+              <View style={[
+                styles.activityBox,
+                {
+                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
+                }
+              ]}>
+                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
+                <ScrollView 
+                  style={{ flex: 1, width: '100%' }}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {recentActivity.map((item, index) => (
+                    <View key={index} style={styles.activityItem}>
+                      <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
+                        {item.iconType === 'fa5' ? (
+                          <FontAwesome5 name={item.icon} size={14} color={item.color} />
+                        ) : (
+                          <Ionicons name={item.icon as any} size={16} color={item.color} />
+                        )}
+                      </View>
+                      <Text 
+                        style={[styles.activityText, { color: theme.textSecondary }]} 
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {item.label}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+            )}
+            {highlights.length > 0 && (
+            <View style={{ flex: 2, marginLeft: recentActivity.length > 0 ? 16 : 0 }}>
+              <View style={[
+                styles.achievementsBox,
+                {
+                  height: 72 + (Math.min(highlights.length, 4) * 32),
+                }
+              ]}>
+                <View style={styles.achievementsHeader}>
+                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
+                </View>
+                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                  {highlights.slice(0, 4).map((highlight, index) => (
+                    <View key={highlight.id} style={styles.achievementItem}>
+                      <Text style={styles.bulletPoint}>•</Text>
+                      <Text
+                        style={[styles.achievementText, { color: theme.textSecondary }]}
+                        numberOfLines={2}
+                      >
+                        {highlight.text}
+                      </Text>
+                      {highlight.photo_url && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedPhotoUrl(highlight.photo_url);
+                            setShowPhotoModal(true);
+                          }}
+                          style={styles.photoIconButton}
+                        >
+                          <Ionicons name="image" size={22} color={theme.primary} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+            )}
+          </View>
+        </View>
+        )}
       </ScrollView>
 
       {/* Full Journey Modal */}
@@ -1306,6 +1315,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     marginBottom: 20,
   },
+  profileSectionSpacing: {
+    marginTop: 20,
+  },
   keepTrackHeader: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
@@ -1470,6 +1482,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     minHeight: 120,
+  },
+  emptyStatBox: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStatText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   // Activity and Highlights Styles
   activityAchievementsRow: {

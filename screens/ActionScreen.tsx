@@ -56,6 +56,11 @@ import { habitsService } from '../lib/habitsService';
 import { workoutSplitService } from '../lib/workoutSplitService';
 import { pillarProgressService } from '../lib/pillarProgressService';
 import { challengePotService } from '../lib/challengePotService';
+import {
+  computeHabitCardMetrics,
+  parseWaterTargetLiters,
+  type HabitCardMetric,
+} from '../lib/habitCardMetrics';
 
 // Soft-load HealthKit — missing native module must not crash the Action tab on TestFlight
 let AppleHealthKit: any = null;
@@ -1622,8 +1627,8 @@ function ActionScreen() {
     sleepNotes: ''
   });  
   const [waterQuestionnaire, setWaterQuestionnaire] = useState({
-    waterIntake: 5, // Changed to number for slider, default 2.25 liters (5 * 0.45)
-    waterGoal: '',
+    waterIntake: 5, // slider 0-10 → liters via * 0.45
+    waterTargetLiters: '', // numeric string, saved to water_goal
     waterNotes: ''
   });
   
@@ -1985,7 +1990,7 @@ function ActionScreen() {
       key: 'sleep',
       title: 'Sleep',
       subtitle: 'Last Night',
-      metricLabel: 'Previous',
+      metricLabel: '7-day',
       metricValue: '—',
       progress: 0.78,
       accent: '#34D399',
@@ -1995,8 +2000,8 @@ function ActionScreen() {
       key: 'workout',
       title: 'Workout',
       subtitle: '24 Dec',
-      metricLabel: 'Goals',
-      metricValue: '4 / 6',
+      metricLabel: 'Last session',
+      metricValue: '—',
       progress: 0.65,
       accent: '#EF4444',
     },
@@ -2005,8 +2010,8 @@ function ActionScreen() {
       key: 'exercise',
       title: 'Exercise',
       subtitle: 'Times Left',
-      metricLabel: 'Timer',
-      metricValue: '17:04:16',
+      metricLabel: 'Last',
+      metricValue: '—',
       progress: 0.4,
       accent: '#FFEB3B',
     },
@@ -2015,8 +2020,8 @@ function ActionScreen() {
       key: 'meditation',
       title: 'Meditation',
       subtitle: 'Today',
-      metricLabel: 'Minutes',
-      metricValue: '12',
+      metricLabel: 'Streak',
+      metricValue: '0',
       progress: 0.48,
       accent: '#2DD4BF',
     },
@@ -2025,8 +2030,8 @@ function ActionScreen() {
       key: 'update_goal',
       title: 'Update Goal',
       subtitle: 'Weekly',
-      metricLabel: 'Goals',
-      metricValue: String(userGoals.length || 0),
+      metricLabel: 'Due',
+      metricValue: '0 this week',
       progress: 0.85,
       accent: '#A78BFA',
     },
@@ -2035,8 +2040,8 @@ function ActionScreen() {
       key: 'microlearn',
       title: 'Microlearn',
       subtitle: 'Lessons',
-      metricLabel: 'Completed',
-      metricValue: '3 / 5',
+      metricLabel: 'Streak',
+      metricValue: '0',
       progress: 0.6,
       accent: '#FB7185',
     },
@@ -2045,8 +2050,8 @@ function ActionScreen() {
       key: 'focus',
       title: 'Focus',
       subtitle: 'Daily Progress',
-      metricLabel: 'Today',
-      metricValue: '33%',
+      metricLabel: 'This week',
+      metricValue: '0',
       progress: 0.33,
       accent: '#F472B6',
     },
@@ -2055,8 +2060,8 @@ function ActionScreen() {
       key: 'reflect',
       title: 'Reflect',
       subtitle: 'Entry Today',
-      metricLabel: 'Prompts',
-      metricValue: '2 / 3',
+      metricLabel: 'Streak',
+      metricValue: '0',
       progress: 0.5,
       accent: '#F59E0B',
     },
@@ -2065,8 +2070,8 @@ function ActionScreen() {
       key: 'water',
       title: 'Water',
       subtitle: 'Hydration',
-      metricLabel: 'Glasses',
-      metricValue: '6 / 8',
+      metricLabel: 'Target',
+      metricValue: '—',
       progress: 0.75,
       accent: '#60A5FA',
     },
@@ -2075,8 +2080,8 @@ function ActionScreen() {
       key: 'cold_shower',
       title: 'Cold Shower',
       subtitle: 'Streak',
-      metricLabel: 'Days',
-      metricValue: '5-day',
+      metricLabel: 'Last',
+      metricValue: '—',
       progress: 0.9,
       accent: '#7DD3FC',
     },
@@ -2085,28 +2090,24 @@ function ActionScreen() {
       key: 'screen_time',
       title: 'Screen Time',
       subtitle: 'Limit',
-      metricLabel: 'Today',
-      metricValue: '1h 20m',
+      metricLabel: 'Last logged',
+      metricValue: '—',
       progress: 0.4,
       accent: '#FCD34D',
     },
-  ]), [userGoals.length]);
+  ]), []);
 
   const [habitSpotlightCards, setHabitSpotlightCards] = useState(habitSpotlightCardsBase);
   const habitSpotlightCardsRef = useRef(habitSpotlightCardsBase);
-  /** Most-recent logged sleep duration and its date, for sleep habit card (metric row). */
-  const [previousNightSleepDisplay, setPreviousNightSleepDisplay] = useState('—');
-  const [previousNightSleepDate, setPreviousNightSleepDate] = useState<string | null>(null);
+  /** Live metric overrides for core habit cards (below Invite friend). */
+  const [liveHabitMetrics, setLiveHabitMetrics] = useState<Record<string, HabitCardMetric>>({});
   const completionSoundRef = useRef<Audio.Sound | null>(null);
 
-  const mergeSleepCardMetrics = useCallback((c: (typeof habitSpotlightCardsBase)[number]) => {
-    if (c.habitId === 'sleep') {
-      const yesterdayStr = addDaysToDateString(getAppTodayDateStringForHabits(), -1);
-      const label = previousNightSleepDate === yesterdayStr ? 'Yesterday' : 'Previous';
-      return { ...c, metricLabel: label, metricValue: previousNightSleepDisplay };
-    }
-    return c;
-  }, [previousNightSleepDisplay, previousNightSleepDate]);
+  const mergeHabitCardMetrics = useCallback((c: (typeof habitSpotlightCardsBase)[number]) => {
+    const live = liveHabitMetrics[c.habitId];
+    if (!live) return c;
+    return { ...c, metricLabel: live.metricLabel, metricValue: live.metricValue };
+  }, [liveHabitMetrics]);
   
   // Initialize animation values for all cards - must be at top level, unconditionally
   const sleepScale = useSharedValue(1);
@@ -3139,37 +3140,27 @@ function ActionScreen() {
   
   const [currentDate, setCurrentDate] = useState(() => getTodayDateStringHelper());
 
-  const loadPreviousNightSleepDisplay = useCallback(async () => {
+  const loadLiveHabitCardMetrics = useCallback(async () => {
     if (!user?.id) {
-      setPreviousNightSleepDisplay('—');
-      setPreviousNightSleepDate(null);
+      setLiveHabitMetrics({});
       return;
     }
-    const todayStr = getAppTodayDateStringForHabits();
-    const lookbackStart = addDaysToDateString(todayStr, -30);
     try {
-      const rows = await dailyHabitsService.getDailyHabitsRange(user.id, lookbackStart, todayStr);
-      const latestSleepRow =
-        rows.find((h) =>
-          (h.sleep_bedtime_hours != null && h.sleep_wakeup_hours != null) ||
-          (h.sleep_hours != null && Number(h.sleep_hours) > 0)
-        ) || null;
-      setPreviousNightSleepDisplay(formatPreviousNightSleepFromRow(latestSleepRow));
-      setPreviousNightSleepDate(latestSleepRow?.date ?? null);
+      const metrics = await computeHabitCardMetrics(user.id, userGoals || []);
+      setLiveHabitMetrics(metrics);
     } catch {
-      setPreviousNightSleepDisplay('—');
-      setPreviousNightSleepDate(null);
+      // Keep previous metrics on failure
     }
-  }, [user?.id]);
+  }, [user?.id, userGoals]);
 
   useEffect(() => {
-    loadPreviousNightSleepDisplay();
-  }, [loadPreviousNightSleepDisplay, currentDate]);
+    loadLiveHabitCardMetrics();
+  }, [loadLiveHabitCardMetrics, currentDate, dailyHabits]);
 
   useFocusEffect(
     useCallback(() => {
-      loadPreviousNightSleepDisplay();
-    }, [loadPreviousNightSleepDisplay])
+      loadLiveHabitCardMetrics();
+    }, [loadLiveHabitCardMetrics])
   );
   
   // Check for new day and reset order
@@ -3742,7 +3733,7 @@ function ActionScreen() {
     );
   }, [editingHabitId, deleteCustomHabit, loadCustomHabits, customHabitsDate, todayDate, user]);
 
-  const openHabitForm = useCallback((habitId: string) => {
+  const openHabitForm = useCallback(async (habitId: string) => {
     const { dailyHabits } = useActionStore.getState();
     switch (habitId) {
       case 'meditation':
@@ -3787,19 +3778,43 @@ function ActionScreen() {
         setShowSleepModal(true);
         return;
 
-      case 'water':
-        if (dailyHabits && dailyHabits.water_intake) {
-          setWaterQuestionnaire({
-            waterIntake: dailyHabits.water_intake || 16,
-            waterGoal: dailyHabits.water_goal || '',
-            waterNotes: dailyHabits.water_notes || ''
-          });
-        } else {
-          setWaterQuestionnaire({ waterIntake: 16, waterGoal: '', waterNotes: '' });
+      case 'water': {
+        let target = parseWaterTargetLiters(dailyHabits?.water_goal) || '';
+        if (!target && user?.id) {
+          try {
+            const todayStr = getAppTodayDateStringForHabits();
+            const rows = await dailyHabitsService.getDailyHabitsRange(
+              user.id,
+              addDaysToDateString(todayStr, -45),
+              todayStr
+            );
+            let bestDate = '';
+            for (const row of rows) {
+              const parsed = parseWaterTargetLiters(row.water_goal);
+              if (parsed && row.date >= bestDate) {
+                bestDate = row.date;
+                target = parsed;
+              }
+            }
+          } catch {
+            // ignore
+          }
         }
+        // Slider is 0-10; stored water_intake is liters — map back if present
+        const storedLiters = dailyHabits?.water_intake;
+        const sliderVal =
+          storedLiters != null && storedLiters > 0
+            ? Math.min(10, Math.max(0, Math.round(Number(storedLiters) / 0.45)))
+            : 5;
+        setWaterQuestionnaire({
+          waterIntake: sliderVal,
+          waterTargetLiters: target,
+          waterNotes: dailyHabits?.water_notes || '',
+        });
         modalPosition.setValue(0);
         setShowWaterModal(true);
         return;
+      }
 
       case 'run':
         if (dailyHabits && (dailyHabits.run_day_type || dailyHabits.run_activity_type)) {
@@ -3896,7 +3911,7 @@ function ActionScreen() {
       default:
         return;
     }
-  }, [navigation, modalPosition]);
+  }, [navigation, modalPosition, dailyHabits, user?.id, loadLiveHabitCardMetrics]);
 
   // Handle habit press from the new ring
   const handleHabitPress = useCallback((habitId: string) => {
@@ -5158,7 +5173,7 @@ function ActionScreen() {
               contentContainerStyle={styles.highlightCarouselContent}
             >
               {habitSpotlightCards.map((card, index) => {
-                const displayCard = mergeSleepCardMetrics(card);
+                const displayCard = mergeHabitCardMetrics(card);
                 const isCompletedCard = completedHabits.has(displayCard.habitId);
                 const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
                 const displayProgress = !isCompletedCard
@@ -5235,7 +5250,7 @@ function ActionScreen() {
         ) : (
           <View style={styles.habitListContainer}>
             {(coreHabitsExpanded ? habitSpotlightCards : habitSpotlightCards.slice(0, 3)).map((card, index) => {
-              const displayCard = mergeSleepCardMetrics(card);
+              const displayCard = mergeHabitCardMetrics(card);
               const isCompletedCard = completedHabits.has(displayCard.habitId);
               const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
               const displayProgress = !isCompletedCard
@@ -7334,6 +7349,33 @@ function ActionScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Daily water target (liters) */}
+            <View style={styles.questionSection}>
+              <Text style={styles.questionText}>Daily water target</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TextInput
+                  style={[styles.customInput, { flex: 1, marginBottom: 0 }]}
+                  placeholder="e.g. 2.5"
+                  value={waterQuestionnaire.waterTargetLiters}
+                  onChangeText={(text) => {
+                    const cleaned = text.replace(/[^0-9.]/g, '');
+                    const parts = cleaned.split('.');
+                    const normalized =
+                      parts.length > 2
+                        ? `${parts[0]}.${parts.slice(1).join('')}`
+                        : cleaned;
+                    setWaterQuestionnaire((prev) => ({
+                      ...prev,
+                      waterTargetLiters: normalized,
+                    }));
+                  }}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor="#999"
+                />
+                <Text style={{ fontSize: 18, fontWeight: '700', color: '#333', paddingRight: 4 }}>L</Text>
+              </View>
+            </View>
+
             {/* Water Intake Slider */}
             <View style={styles.questionSection}>
               <Text style={styles.questionText}>How much water did you drink today?</Text>
@@ -7357,30 +7399,6 @@ function ActionScreen() {
               </View>
             </View>
 
-            {/* Water Goal */}
-            <View style={styles.questionSection}>
-              <Text style={styles.questionText}>Did you meet your water goal?</Text>
-              <View style={styles.otherOptionsContainer}>
-                {['Yes', 'Almost', 'No'].map((goal) => (
-                  <TouchableOpacity
-                    key={goal}
-                    style={[
-                      styles.otherOptionButton,
-                      waterQuestionnaire.waterGoal === goal && styles.otherOptionButtonSelected
-                    ]}
-                    onPress={() => setWaterQuestionnaire(prev => ({ ...prev, waterGoal: goal }))}
-                  >
-                    <Text style={[
-                      styles.otherOptionButtonText,
-                      waterQuestionnaire.waterGoal === goal && styles.otherOptionButtonTextSelected
-                    ]}>
-                      {goal}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
             {/* Water Notes */}
             <View style={styles.questionSection}>
               <Text style={styles.questionText}>Any notes? (optional)</Text>
@@ -7398,25 +7416,27 @@ function ActionScreen() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                !waterQuestionnaire.waterGoal && styles.submitButtonDisabled
+                !parseWaterTargetLiters(waterQuestionnaire.waterTargetLiters) && styles.submitButtonDisabled
               ]}
-              disabled={!waterQuestionnaire.waterGoal}
+              disabled={!parseWaterTargetLiters(waterQuestionnaire.waterTargetLiters)}
               onPress={async () => {
                 try {
+                  const target = parseWaterTargetLiters(waterQuestionnaire.waterTargetLiters);
+                  if (!target) return;
                   const date = getTodayDateString();
                   const habitData = {
                     date,
-                    water_intake: Math.round(waterQuestionnaire.waterIntake * 0.45), // Convert slider value (0-10) to liters (0-4.5L) and round to integer
-                    water_goal: waterQuestionnaire.waterGoal,
+                    water_intake: Math.round(waterQuestionnaire.waterIntake * 0.45 * 10) / 10,
+                    water_goal: target,
                     water_notes: waterQuestionnaire.waterNotes,
                   };
                   
                   const success = await useActionStore.getState().saveDailyHabits(habitData);
                   if (success) {
                     setShowWaterModal(false);
-                    setWaterQuestionnaire({ waterIntake: 5, waterGoal: '', waterNotes: '' });
+                    setWaterQuestionnaire({ waterIntake: 5, waterTargetLiters: target, waterNotes: '' });
                     setTimeout(() => markHabitCompleted('water'), 300);
-                  } else {
+                    loadLiveHabitCardMetrics();
                   }
                 } catch {}
               }}

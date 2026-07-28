@@ -6,7 +6,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
@@ -19,6 +18,16 @@ import { initializeAI } from './lib/config';
 import { pushNotificationService } from './lib/pushNotificationService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
+
+// Soft-load Stripe — Expo Go has no Stripe native module and will blank otherwise
+let StripeProvider: React.ComponentType<{ publishableKey: string; children?: React.ReactNode }> = ({
+  children,
+}) => <>{children}</>;
+try {
+  StripeProvider = require('@stripe/stripe-react-native').StripeProvider;
+} catch (e) {
+  console.warn('Stripe native module unavailable (Expo Go):', e);
+}
 
 // Core screens (loaded immediately)
 import SignInScreen from './screens/SignInScreen';

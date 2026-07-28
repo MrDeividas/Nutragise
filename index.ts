@@ -1,17 +1,29 @@
 import 'react-native-gesture-handler';
 
 import React, { Component, useEffect, useState } from 'react';
-import { ErrorUtils, ScrollView, Text, View, StyleSheet } from 'react-native';
+import { ScrollView, Text, View, StyleSheet } from 'react-native';
 import { registerRootComponent } from 'expo';
 
 /**
  * Capture fatal JS errors and React render failures.
- * Without an ErrorBoundary, production builds blank to a white screen when a
- * child throws during render — Expo Updates used to SIGABRT instead.
+ * Do NOT import ErrorUtils from 'react-native' — in Expo Go / early Hermes
+ * boot it is undefined and crashes with:
+ *   TypeError: Cannot read property 'getGlobalHandler' of undefined
  */
 type ErrorListener = (message: string) => void;
 const errorListeners = new Set<ErrorListener>();
 let capturedStartupError: string | null = null;
+let previousHandler: ((error: any, isFatal?: boolean) => void) | null = null;
+
+type RNErrorUtils = {
+  getGlobalHandler?: () => ((error: any, isFatal?: boolean) => void) | undefined;
+  setGlobalHandler?: (handler: (error: any, isFatal?: boolean) => void) => void;
+};
+
+function getErrorUtils(): RNErrorUtils | null {
+  const g = globalThis as typeof globalThis & { ErrorUtils?: RNErrorUtils };
+  return g.ErrorUtils ?? null;
+}
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {
@@ -26,10 +38,15 @@ function publishError(message: string) {
   console.error('🚨 Startup/fatal error:\n', message);
 }
 
-const previousHandler = ErrorUtils.getGlobalHandler?.();
-
 function installFatalErrorHandler() {
-  ErrorUtils.setGlobalHandler?.((error, isFatal) => {
+  const errorUtils = getErrorUtils();
+  if (!errorUtils?.setGlobalHandler) return;
+
+  if (!previousHandler && typeof errorUtils.getGlobalHandler === 'function') {
+    previousHandler = errorUtils.getGlobalHandler() ?? null;
+  }
+
+  errorUtils.setGlobalHandler((error, isFatal) => {
     const message = formatError(error);
     publishError(message);
     if (!isFatal && typeof previousHandler === 'function') {
@@ -38,10 +55,10 @@ function installFatalErrorHandler() {
   });
 }
 
-installFatalErrorHandler();
-
 let AppComponent: React.ComponentType;
 try {
+  // Install after gesture-handler / RN imports so ErrorUtils exists when possible
+  installFatalErrorHandler();
   AppComponent = require('./App').default;
 } catch (error) {
   publishError(formatError(error));
@@ -52,6 +69,7 @@ try {
   };
 }
 
+// Re-install after App load / next ticks — native may replace the handler
 installFatalErrorHandler();
 setTimeout(installFatalErrorHandler, 0);
 setTimeout(installFatalErrorHandler, 500);
@@ -101,8 +119,11 @@ class AppErrorBoundary extends Component<
 
 function Root() {
   const [error, setError] = useState<string | null>(capturedStartupError);
+  const [booted, setBooted] = useState(false);
 
   useEffect(() => {
+    installFatalErrorHandler();
+    setBooted(true);
     const listener: ErrorListener = (message) => setError(message);
     errorListeners.add(listener);
     if (capturedStartupError) setError(capturedStartupError);
@@ -116,6 +137,14 @@ function Root() {
     return React.createElement(StartupErrorScreen, { message: displayError });
   }
 
+  if (!booted) {
+    return React.createElement(
+      View,
+      { style: styles.bootRoot },
+      React.createElement(Text, { style: styles.bootText }, 'Starting Nutrapp…')
+    );
+  }
+
   return React.createElement(
     AppErrorBoundary,
     null,
@@ -126,6 +155,17 @@ function Root() {
 registerRootComponent(Root);
 
 const styles = StyleSheet.create({
+  bootRoot: {
+    flex: 1,
+    backgroundColor: '#FCFAF9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bootText: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '600',
+  },
   errorRoot: {
     flex: 1,
     backgroundColor: '#FEF2F2',

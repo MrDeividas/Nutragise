@@ -8,9 +8,10 @@ import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useNotificationsStore } from '../state/notificationsStore';
 
-const TAB_BAR_HEIGHT = 64;
-const PILL_PADDING = 6;
+const TAB_BAR_HEIGHT = 56;
+const PILL_PADDING = 4;
 const INDICATOR_INSET = 4;
+const SIDE_INSET = 28;
 
 /** Left-to-right order the tabs appear in, independent of navigator registration order. */
 const DISPLAY_ORDER = ['Action', 'Discover', 'Goals', 'Community', 'Insights', 'Profile'];
@@ -170,12 +171,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
             >
               <Animated.View style={{ transform: [{ scale }] }}>
                 {route.name === 'Profile' ? (
-                  <View
-                    style={[
-                      styles.profileAvatarContainer,
-                      isFocused && { borderColor: theme.primary, borderWidth: 2 },
-                    ]}
-                  >
+                  <View style={styles.profileAvatarContainer}>
                     {user?.avatar_url ? (
                       <Image source={{ uri: user.avatar_url }} style={styles.profileAvatar} />
                     ) : (
@@ -226,14 +222,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 12,
+    paddingHorizontal: SIDE_INSET,
     backgroundColor: 'transparent',
   },
   pillContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     height: TAB_BAR_HEIGHT,
-    borderRadius: 20,
+    borderRadius: 18,
     paddingHorizontal: PILL_PADDING,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -250,7 +246,7 @@ const styles = StyleSheet.create({
     left: PILL_PADDING + INDICATOR_INSET,
     top: PILL_PADDING,
     bottom: PILL_PADDING,
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',

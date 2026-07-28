@@ -130,26 +130,25 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
             <Ionicons name="close" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
-
-        {/* Stats Section */}
-        {stats && (
-          <View style={styles.statsContainer}>
-            <StatItem icon="calendar-outline" value={stats.totalDays} label="Days" />
-            <View style={styles.statDivider} />
-            <StatItem icon="images-outline" value={stats.totalPhotos} label="Photos" />
-            <View style={styles.statDivider} />
-            <StatItem icon="checkmark-circle-outline" value={stats.totalHabits} label="Habits" />
-            <View style={styles.statDivider} />
-            <StatItem icon="trending-up-outline" value={stats.averagePhotosPerDay} label="Avg/Day" />
-          </View>
-        )}
         
-        {/* Journey Content */}
+        {/* Journey Content — stats scroll with the list */}
         <ScrollView
           style={styles.journeyScroll}
           contentContainerStyle={styles.journeyScrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {stats && (
+            <View style={styles.statsContainer}>
+              <StatItem icon="calendar-outline" value={stats.totalDays} label="Days" />
+              <View style={styles.statDivider} />
+              <StatItem icon="images-outline" value={stats.totalPhotos} label="Photos" />
+              <View style={styles.statDivider} />
+              <StatItem icon="checkmark-circle-outline" value={stats.totalHabits} label="Habits" />
+              <View style={styles.statDivider} />
+              <StatItem icon="trending-up-outline" value={stats.averagePhotosPerDay} label="Avg/Day" />
+            </View>
+          )}
+
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#10B981" />

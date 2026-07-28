@@ -1231,105 +1231,6 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
 
-        {/* Activity and Highlights Section */}
-        <View style={styles.keepTrackSection}>
-          <View style={styles.activityAchievementsRow}>
-            <View style={{ flex: 1 }}>
-              <View style={[
-                styles.activityBox,
-                recentActivity.length > 0 ? {
-                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
-                } : {
-                  height: 88, // Empty state height
-                }
-              ]}>
-                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
-                <ScrollView 
-                  style={{ flex: 1, width: '100%' }}
-                  nestedScrollEnabled={true}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {recentActivity.length > 0 ? (
-                    recentActivity.map((item, index) => (
-                      <View key={index} style={styles.activityItem}>
-                        <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
-                          {item.iconType === 'fa5' ? (
-                            <FontAwesome5 name={item.icon} size={14} color={item.color} />
-                          ) : (
-                            <Ionicons name={item.icon as any} size={16} color={item.color} />
-                          )}
-                        </View>
-                        <Text 
-                          style={[styles.activityText, { color: theme.textSecondary }]} 
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {item.label}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
-                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            </View>
-            <View style={{ flex: 2, marginLeft: 16 }}>
-              <View style={[
-                styles.achievementsBox,
-                highlights.length > 0 && {
-                  height: 72 + (Math.min(highlights.length, 4) * 32),
-                }
-              ]}>
-                <View style={styles.achievementsHeader}>
-                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
-                  <TouchableOpacity
-                    onPress={() => setShowAchievementModal(true)}
-                    style={styles.addAchievementButton}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="add" size={24} color={theme.textPrimary} />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
-                  {highlights.length > 0 ? (
-                    highlights.slice(0, 4).map((highlight, index) => (
-                      <View key={highlight.id} style={styles.achievementItem}>
-                        <Text style={styles.bulletPoint}>•</Text>
-                        <Text
-                          style={[styles.achievementText, { color: theme.textSecondary }]}
-                          numberOfLines={2}
-                        >
-                          {highlight.text}
-                        </Text>
-                        {highlight.photo_url && (
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedPhotoUrl(highlight.photo_url);
-                              setShowPhotoModal(true);
-                            }}
-                            style={styles.photoIconButton}
-                          >
-                            <Ionicons name="image" size={22} color={theme.primary} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ))
-                  ) : (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
-                      <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
-                        No highlights yet
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
         {/* Goals Section */}
         <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
           <TouchableOpacity 
@@ -1608,7 +1509,7 @@ function ProfileScreen({ navigation }: any) {
                   })
                 ) : (
                   <Text style={[styles.challengesSubtext, { color: theme.textSecondary }]}>
-                    Leaderboard unavailable
+                    Yet to be ranked
                   </Text>
                 )}
               </View>
@@ -1631,9 +1532,108 @@ function ProfileScreen({ navigation }: any) {
                   ))
                 ) : (
                   <Text style={[styles.challengesSubtext, { color: theme.textSecondary }]}>
-                    No active challenges
+                    Not part of any challenges
                   </Text>
                 )}
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Activity and Highlights Section */}
+        <View style={styles.keepTrackSection}>
+          <View style={styles.activityAchievementsRow}>
+            <View style={{ flex: 1 }}>
+              <View style={[
+                styles.activityBox,
+                recentActivity.length > 0 ? {
+                  height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
+                } : {
+                  height: 88, // Empty state height
+                }
+              ]}>
+                <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
+                <ScrollView 
+                  style={{ flex: 1, width: '100%' }}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map((item, index) => (
+                      <View key={index} style={styles.activityItem}>
+                        <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
+                          {item.iconType === 'fa5' ? (
+                            <FontAwesome5 name={item.icon} size={14} color={item.color} />
+                          ) : (
+                            <Ionicons name={item.icon as any} size={16} color={item.color} />
+                          )}
+                        </View>
+                        <Text 
+                          style={[styles.activityText, { color: theme.textSecondary }]} 
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+            <View style={{ flex: 2, marginLeft: 16 }}>
+              <View style={[
+                styles.achievementsBox,
+                highlights.length > 0 && {
+                  height: 72 + (Math.min(highlights.length, 4) * 32),
+                }
+              ]}>
+                <View style={styles.achievementsHeader}>
+                  <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowAchievementModal(true)}
+                    style={styles.addAchievementButton}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={24} color={theme.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+                  {highlights.length > 0 ? (
+                    highlights.slice(0, 4).map((highlight, index) => (
+                      <View key={highlight.id} style={styles.achievementItem}>
+                        <Text style={styles.bulletPoint}>•</Text>
+                        <Text
+                          style={[styles.achievementText, { color: theme.textSecondary }]}
+                          numberOfLines={2}
+                        >
+                          {highlight.text}
+                        </Text>
+                        {highlight.photo_url && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedPhotoUrl(highlight.photo_url);
+                              setShowPhotoModal(true);
+                            }}
+                            style={styles.photoIconButton}
+                          >
+                            <Ionicons name="image" size={22} color={theme.primary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+                      <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
+                        No highlights yet
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
           </View>

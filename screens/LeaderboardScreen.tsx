@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
   Image,
@@ -13,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
+import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { pointsService } from '../lib/pointsService';
 import CustomBackground from '../components/CustomBackground';
@@ -26,8 +26,15 @@ interface LeaderboardUser {
   avatar_url?: string;
 }
 
+function getInitials(username: string) {
+  const parts = username.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return username.slice(0, 2).toUpperCase() || '?';
+}
+
 export default function LeaderboardScreen({ navigation }: any) {
   const { theme } = useTheme();
+  const { user } = useAuthStore();
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,8 +53,7 @@ export default function LeaderboardScreen({ navigation }: any) {
   const loadLeaderboard = async () => {
     try {
       setLoading(true);
-      
-      // Fetch all users with profiles
+
       const { data: users, error: usersError } = await supabase
         .from('profiles')
         .select('id, username, avatar_url')
@@ -59,64 +65,60 @@ export default function LeaderboardScreen({ navigation }: any) {
         setLoading(false);
         return;
       }
-      
+
       if (!users || users.length === 0) {
         setLeaderboardData([]);
         setLoading(false);
         return;
       }
 
-      // Fetch points for each user
       const today = new Date();
       const todayStr = today.toISOString().split('T')[0];
-      
+
       const lastWeek = new Date(today);
       lastWeek.setDate(today.getDate() - 7);
       const lastWeekStr = lastWeek.toISOString().split('T')[0];
-      
+
       const lastMonth = new Date(today);
       lastMonth.setDate(today.getDate() - 30);
       const lastMonthStr = lastMonth.toISOString().split('T')[0];
 
       const usersWithPoints = await Promise.all(
-        users.map(async (user) => {
+        users.map(async (profileUser) => {
           try {
             let points = 0;
-            
+
             if (leaderboardPeriod === 'daily') {
-              // Get today's points
-              const todayPoints = await pointsService.getTodaysPoints(user.id);
+              const todayPoints = await pointsService.getTodaysPoints(profileUser.id);
               points = todayPoints?.total || 0;
             } else if (leaderboardPeriod === 'weekly') {
-              points = await pointsService.getPointsBetweenDates(user.id, lastWeekStr, todayStr);
+              points = await pointsService.getPointsBetweenDates(profileUser.id, lastWeekStr, todayStr);
             } else if (leaderboardPeriod === 'monthly') {
-              points = await pointsService.getPointsBetweenDates(user.id, lastMonthStr, todayStr);
+              points = await pointsService.getPointsBetweenDates(profileUser.id, lastMonthStr, todayStr);
             }
 
             return {
-              id: user.id,
-              username: user.username || 'Unknown',
+              id: profileUser.id,
+              username: profileUser.username || 'Unknown',
               points,
-              avatar_url: user.avatar_url,
+              avatar_url: profileUser.avatar_url,
             };
           } catch (err) {
-            console.error(`Error fetching points for user ${user.id}:`, err);
+            console.error(`Error fetching points for user ${profileUser.id}:`, err);
             return {
-              id: user.id,
-              username: user.username || 'Unknown',
+              id: profileUser.id,
+              username: profileUser.username || 'Unknown',
               points: 0,
-              avatar_url: user.avatar_url,
+              avatar_url: profileUser.avatar_url,
             };
           }
         })
       );
 
-      // Filter out users with 0 points and sort by points
       const sortedUsers = usersWithPoints
-        // .filter(user => user.points > 0) // Show all users even with 0 points to ensure current user sees themselves
         .sort((a, b) => b.points - a.points)
-        .map((user, index) => ({
-          ...user,
+        .map((profileUser, index) => ({
+          ...profileUser,
           rank: index + 1,
         }));
 
@@ -129,96 +131,105 @@ export default function LeaderboardScreen({ navigation }: any) {
     }
   };
 
-  const renderLeaderboardItem = ({ item, index }: { item: LeaderboardUser; index: number }) => (
-    <View style={[styles.leaderboardItem, { 
-      backgroundColor: '#FFFFFF',
-      borderColor: '#E5E7EB',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-      elevation: 3,
-    }]}>
-      <View style={styles.rankContainer}>
-        <Text style={[styles.rankText, { color: theme.textPrimary }]}>
-          #{item.rank}
-        </Text>
-      </View>
-      
-      {/* Avatar */}
-      {item.avatar_url ? (
-        <Image 
-          source={{ uri: item.avatar_url }} 
-          style={styles.avatar}
-        />
-      ) : (
-        <View style={[styles.avatar, { backgroundColor: '#F3F4F6' }]}>
-          <Ionicons name="person" size={20} color={theme.textSecondary} />
-        </View>
-      )}
-      
-      <View style={styles.userInfo}>
-        <View style={styles.userNameRow}>
-          <Text style={[styles.userName, { color: theme.textPrimary }]}>
-            {item.username}
-          </Text>
-          {item.rank <= 3 && (
-            <View style={[styles.medalContainer, { backgroundColor: item.rank === 1 ? '#FFD700' : item.rank === 2 ? '#C0C0C0' : '#CD7F32' }]}>
-              <Ionicons name="medal" size={12} color="#ffffff" />
-            </View>
-          )}
-        </View>
-      </View>
-      
-      <View style={styles.pointsContainer}>
-        <Text style={[styles.pointsText, { color: theme.textPrimary }]}>
-          {item.points.toLocaleString()} <Text style={[styles.pointsLabel, { color: theme.textSecondary }]}>pts</Text>
-        </Text>
-      </View>
-    </View>
-  );
+  const renderLeaderboardItem = (item: LeaderboardUser) => {
+    const isCurrentUser = !!user && item.id === user.id;
 
-  const renderLeaderboardTab = (period: 'daily' | 'weekly' | 'monthly', label: string) => (
-    <TouchableOpacity
-      style={[
-        styles.leaderboardTab,
-        leaderboardPeriod === period && styles.leaderboardTabActive
-      ]}
-      onPress={() => setLeaderboardPeriod(period)}
-    >
-      <Text style={[
-        styles.leaderboardTabText,
-        { color: leaderboardPeriod === period ? theme.primary : theme.textSecondary }
-      ]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+    return (
+      <View
+        style={[
+          styles.leaderboardItem,
+          isCurrentUser
+            ? {
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                borderColor: theme.primary,
+                borderWidth: 1.5,
+              }
+            : {
+                backgroundColor: '#FFFFFF',
+                borderColor: '#EEF0F3',
+                borderWidth: 1,
+              },
+        ]}
+      >
+        <Text style={[styles.rankText, { color: theme.textPrimary }]}>{item.rank}</Text>
+
+        {item.avatar_url ? (
+          <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
+        ) : (
+          <View style={[styles.avatar, styles.avatarPlaceholder]}>
+            <Text style={styles.avatarInitials}>{getInitials(item.username)}</Text>
+          </View>
+        )}
+
+        <View style={styles.userInfo}>
+          <Text
+            style={[
+              styles.userName,
+              { color: isCurrentUser ? theme.primary : theme.textPrimary },
+            ]}
+            numberOfLines={1}
+          >
+            {isCurrentUser ? 'YOU' : item.username}
+          </Text>
+        </View>
+
+        <Text
+          style={[
+            styles.pointsText,
+            { color: isCurrentUser ? theme.primary : theme.textPrimary },
+          ]}
+        >
+          {item.points.toLocaleString()}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderLeaderboardTab = (period: 'daily' | 'weekly' | 'monthly', label: string) => {
+    const active = leaderboardPeriod === period;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.leaderboardTab,
+          active
+            ? { backgroundColor: theme.primary }
+            : { backgroundColor: '#F1F3F5' },
+        ]}
+        onPress={() => setLeaderboardPeriod(period)}
+        activeOpacity={0.8}
+      >
+        <Text
+          style={[
+            styles.leaderboardTabText,
+            { color: active ? '#FFFFFF' : '#6B7280' },
+          ]}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const listUsers = leaderboardData.length > 3 ? leaderboardData.slice(3) : [];
 
   return (
     <CustomBackground>
       <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top']}>
-        {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="close" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            Leaderboard
-          </Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Leaderboard</Text>
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Content */}
         <View style={[styles.content, { backgroundColor: 'transparent' }]}>
-          {/* Leaderboard Tabs */}
           <View style={styles.leaderboardTabs}>
             {renderLeaderboardTab('daily', 'Daily')}
             {renderLeaderboardTab('weekly', 'Weekly')}
             {renderLeaderboardTab('monthly', 'Monthly')}
           </View>
 
-          {/* Leaderboard Content */}
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={theme.primary} />
@@ -243,24 +254,25 @@ export default function LeaderboardScreen({ navigation }: any) {
                 />
               }
             >
-              {/* Podium for Top 3 (Show even if fewer than 3 users) */}
-              {leaderboardData.length > 0 && (
-                <Podium
-                  users={[
-                    leaderboardData[1] || null, // 2nd place (left)
-                    leaderboardData[0] || null, // 1st place (center)
-                    leaderboardData[2] || null, // 3rd place (right)
-                  ]}
-                />
-              )}
+              <Podium
+                users={[
+                  leaderboardData[1] || null,
+                  leaderboardData[0] || null,
+                  leaderboardData[2] || null,
+                ]}
+                currentUserId={user?.id}
+              />
 
-              {/* List for positions 4+ */}
-              {leaderboardData.length > 3 && (
+              {listUsers.length > 0 && (
                 <View style={styles.listContainer}>
-                  {leaderboardData.slice(3).map((item) => (
-                    <View key={item.id}>
-                      {renderLeaderboardItem({ item, index: item.rank - 1 })}
-                    </View>
+                  <View style={styles.listHeader}>
+                    <Text style={[styles.listHeaderText, styles.listHeaderRank]}>#</Text>
+                    <Text style={[styles.listHeaderText, styles.listHeaderPlayer]}>PLAYER</Text>
+                    <Text style={[styles.listHeaderText, styles.listHeaderPoints]}>POINTS</Text>
+                  </View>
+
+                  {listUsers.map((item) => (
+                    <View key={item.id}>{renderLeaderboardItem(item)}</View>
                   ))}
                 </View>
               )}
@@ -300,75 +312,100 @@ const styles = StyleSheet.create({
   },
   leaderboardTabs: {
     flexDirection: 'row',
-    marginBottom: 16,
-    paddingHorizontal: 28,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+    gap: 8,
   },
   leaderboardTab: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 8,
-  },
-  leaderboardTabActive: {
-    // No background, just text color change
+    borderRadius: 999,
   },
   leaderboardTabText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   leaderboardScrollView: {
     flex: 1,
   },
   leaderboardContentContainer: {
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
   listContainer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  listHeaderText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 0.6,
+  },
+  listHeaderRank: {
+    width: 28,
+  },
+  listHeaderPlayer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  listHeaderPoints: {
+    textAlign: 'right',
+    minWidth: 64,
   },
   leaderboardItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     marginBottom: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  rankContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   rankText: {
-    fontSize: 16,
-    fontWeight: '600',
+    width: 28,
+    fontSize: 18,
+    fontWeight: '800',
   },
   avatar: {
     width: 40,
     height: 40,
-    borderRadius: 8,
+    borderRadius: 10,
+    marginRight: 10,
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#EEF2F7',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  medalContainer: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 6,
+  avatarInitials: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
   },
   userInfo: {
     flex: 1,
-    marginLeft: 12,
-  },
-  userNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginRight: 8,
   },
   userName: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  pointsText: {
+    fontSize: 15,
+    fontWeight: '800',
+    minWidth: 48,
+    textAlign: 'right',
   },
   loadingContainer: {
     padding: 40,
@@ -383,16 +420,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  pointsContainer: {
-    alignItems: 'flex-end',
-  },
-  pointsText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  pointsLabel: {
-    fontSize: 14,
-    fontWeight: '400',
   },
 });

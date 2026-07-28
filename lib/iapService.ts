@@ -1,27 +1,29 @@
 /**
  * IAP Service — RevenueCat wrapper
  *
- * Single source of truth for Pro subscription purchases on iOS (Apple IAP) and
- * Android (Google Play Billing). The RevenueCat webhook
- * (supabase/functions/revenuecat-webhook) keeps `profiles.is_pro` in sync;
- * client code here only triggers the purchase / restore flow and refreshes
- * the local profile after a successful transaction.
- *
- * Required env (loaded via react-native-dotenv / @env):
- *   REVENUECAT_IOS_API_KEY      — Apple public SDK key from RevenueCat
- *   REVENUECAT_ANDROID_API_KEY  — Google public SDK key from RevenueCat
+ * Soft-loads react-native-purchases so Expo Go / missing native binaries
+ * don't blank the whole app at import time.
  */
 
 import { Platform } from 'react-native';
-import Purchases, {
-  CustomerInfo,
-  PurchasesOffering,
-  PurchasesPackage,
-  LOG_LEVEL,
-} from 'react-native-purchases';
 import { env } from './env';
 
 export const PRO_ENTITLEMENT_ID = 'pro';
+
+type CustomerInfo = any;
+type PurchasesOffering = any;
+type PurchasesPackage = any;
+
+let Purchases: any = null;
+let LOG_LEVEL: any = { WARN: 2 };
+
+try {
+  const mod = require('react-native-purchases');
+  Purchases = mod.default ?? mod;
+  if (mod.LOG_LEVEL) LOG_LEVEL = mod.LOG_LEVEL;
+} catch (e) {
+  console.warn('react-native-purchases unavailable (Expo Go / missing native module):', e);
+}
 
 export type PurchaseOutcome =
   | { status: 'success'; customerInfo: CustomerInfo }
@@ -38,6 +40,10 @@ class IAPService {
    */
   configure(): boolean {
     if (this.configured) return true;
+    if (!Purchases) {
+      console.warn('RevenueCat: native module missing — Pro purchases unavailable in this build.');
+      return false;
+    }
 
     const apiKey =
       Platform.OS === 'ios'

@@ -103,7 +103,7 @@ const { width, height } = Dimensions.get('window');
 
 interface CommunityScreenProps {
   navigation?: {
-    navigate: (screen: string) => void;
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
   };
 }
 
@@ -549,19 +549,23 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     }
   };
 
+  const openUserProfile = useCallback((profile: Profile) => {
+    if (!profile?.id || !navigation?.navigate) return;
+    setShowSearchModal(false);
+    navigation.navigate('UserProfile', {
+      userId: profile.id,
+      username: profile.username || profile.display_name || 'user',
+    });
+  }, [navigation]);
+
   const renderUser = useCallback(({ item }: { item: Profile }) => {
     const isFollowingUser = followingStatus.get(item.id) || false;
     
     return (
       <TouchableOpacity
         style={[styles.userItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
-        onPress={() => {
-          // Navigate to user profile - you'll need to add this navigation
-          // navigation.navigate('UserProfile', {
-          //   userId: item.id,
-          //   username: item.username,
-          // });
-        }}
+        onPress={() => openUserProfile(item)}
+        activeOpacity={0.7}
       >
         {/* Profile Picture Section */}
         <View style={styles.profilePictureSection}>
@@ -584,7 +588,10 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
             </Text>
             {user && user.id !== item.id && (
               <TouchableOpacity
-                onPress={() => handleFollow(item.id)}
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  handleFollow(item.id);
+                }}
                 disabled={followingUsers.has(item.id)}
                 style={[
                   styles.smallFollowButton, 
@@ -620,7 +627,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
         </View>
       </TouchableOpacity>
     );
-  }, [followingStatus, followerCounts, theme, handleFollow]);
+  }, [followingStatus, followerCounts, theme, handleFollow, followingUsers, user, openUserProfile]);
 
   const renderGoal = ({ item }: { item: any }) => {
     return (
@@ -1618,10 +1625,8 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
                       <View key={user.id} style={[styles.suggestedUserCard, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
                         <TouchableOpacity
                           style={styles.suggestedUserContent}
-                          onPress={() => {
-                            // Navigate to user profile
-                            // navigation.navigate('UserProfile', { userId: user.id });
-                          }}
+                          onPress={() => openUserProfile(user)}
+                          activeOpacity={0.7}
                         >
                           {/* Profile Picture */}
                           <View style={styles.suggestedUserAvatar}>

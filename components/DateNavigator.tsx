@@ -170,127 +170,158 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
     setPickerVisible(false);
   };
 
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
   return (
-    <View style={styles.container}>
-      <View style={styles.dateNavigation}>
-        <TouchableOpacity
-          style={[styles.navButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
-          onPress={goToPreviousDay}
-        >
-          <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
-        </TouchableOpacity>
+    <View style={styles.wrapper}>
+      <TouchableOpacity
+        style={styles.historyHeader}
+        onPress={() => setHistoryExpanded((v) => !v)}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.historyTitle, { color: theme.textPrimary }]}>History</Text>
+        <Ionicons
+          name={historyExpanded ? 'chevron-up' : 'chevron-down'}
+          size={20}
+          color={theme.textSecondary}
+        />
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.dateDisplay, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
-          onPress={() => setPickerVisible(true)}
-        >
-          <Text style={[styles.dateText, { color: theme.textPrimary }]}>
-            {formatDisplayDate(selectedDate)}
-          </Text>
-          <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
+      {historyExpanded && (
+        <View
           style={[
-            styles.navButton, 
-            { 
-              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
-              opacity: isToday(selectedDate) ? 0.5 : 1
-            }
+            styles.container,
+            {
+              backgroundColor: isDark ? theme.cardBackground : '#FFFFFF',
+              borderColor: isDark ? theme.borderSecondary : '#E5E7EB',
+            },
           ]}
-          onPress={goToNextDay}
-          disabled={isToday(selectedDate)}
         >
-          <Ionicons name="chevron-forward" size={20} color={theme.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
-            {/* Scheduled Habits Summary */}
-      <View style={styles.summarySection}>
-        <Text style={[styles.summaryTitle, { color: theme.textPrimary }]}>
-          Today's Scheduled Habits Summary - {formatDisplayDate(selectedDate)}
-        </Text>
-        
-        {/* Always render the habits list structure to prevent jitter */}
-        <View style={styles.habitsList}>
-          {[
-            { type: 'sleep', label: 'Sleep', icon: 'moon', hasData: !!selectedDateHabits?.sleep_hours },
-            { type: 'water', label: 'Water', icon: 'water', hasData: !!selectedDateHabits?.water_intake },
-            { type: 'run', label: 'Run', icon: 'walk', hasData: !!selectedDateHabits?.run_day_type },
-            { type: 'gym', label: 'Gym', icon: 'barbell', hasData: !!selectedDateHabits?.gym_day_type },
-            { type: 'reflect', label: 'Reflect', icon: 'sparkles', hasData: !!selectedDateHabits?.reflect_mood },
-            { type: 'cold_shower', label: 'Cold Shower', icon: 'snow', hasData: !!selectedDateHabits?.cold_shower_completed },
-            { type: 'focus', label: 'Focus', icon: 'flash', hasData: !!(selectedDateHabits?.focus_completed || selectedDateHabits?.focus_duration) },
-            { type: 'meditation', label: 'Meditation', icon: 'leaf', hasData: !!pointsData?.meditation_completed },
-            { type: 'microlearn', label: 'Microlearn', icon: 'book', hasData: !!pointsData?.microlearn_completed },
-            { type: 'screen_time', label: 'Screen Time', icon: 'phone-portrait', hasData: !!pointsData?.screen_time_completed }
-          ].map((habit) => (
+          <View style={styles.dateNavigation}>
             <TouchableOpacity
-              key={habit.type}
-              style={[
-                styles.habitRow,
-                loadingSelectedDate && styles.habitRowLoading,
-                { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F3F4F6' }
-              ]}
-              onPress={() => !loadingSelectedDate && onHabitPress(habit.type, selectedDateHabits)}
-              activeOpacity={loadingSelectedDate ? 1 : 0.7}
-              disabled={loadingSelectedDate}
+              style={[styles.navButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
+              onPress={goToPreviousDay}
             >
-              <View style={[
-                styles.habitIcon, 
-                { 
-                  backgroundColor: habit.hasData 
-                    ? 'rgba(16,185,129,0.15)' 
-                    : theme.cardBackground,
-                  opacity: loadingSelectedDate ? 0.5 : 1
-                }
-              ]}>
-                <Ionicons 
-                  name={habit.icon as any} 
-                  size={16} 
-                  color={habit.hasData ? '#10B981' : theme.textSecondary} 
-                />
-              </View>
-              <Text style={[
-                styles.habitLabel, 
-                { 
-                  color: theme.textPrimary,
-                  opacity: loadingSelectedDate ? 0.5 : 1
-                }
-              ]}>
-                {habit.label}
-              </Text>
-              <Text style={[
-                styles.habitStatus, 
-                { 
-                  color: habit.hasData ? '#10B981' : theme.textSecondary,
-                  opacity: loadingSelectedDate ? 0.5 : 1
-                }
-              ]}>
-                {loadingSelectedDate 
-                  ? 'Loading...' 
-                  : (habit.hasData ? 'Recorded' : 'Not recorded')
-                }
-              </Text>
-              <Ionicons 
-                name="chevron-forward" 
-                size={16} 
-                color={theme.textSecondary} 
-                style={[styles.chevron, { opacity: loadingSelectedDate ? 0.3 : 1 }]} 
-              />
+              <Ionicons name="chevron-back" size={20} color={theme.textPrimary} />
             </TouchableOpacity>
-          ))}
-        </View>
-        
-        {/* Show empty state only when not loading and no data */}
-        {!loadingSelectedDate && !selectedDateHabits && (
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No data for this date yet</Text>
-            <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>Tap any habit to view details</Text>
+
+            <TouchableOpacity
+              style={[styles.dateDisplay, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6' }]}
+              onPress={() => setPickerVisible(true)}
+            >
+              <Text style={[styles.dateText, { color: theme.textPrimary }]}>
+                {formatDisplayDate(selectedDate)}
+              </Text>
+              <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.navButton,
+                {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
+                  opacity: isToday(selectedDate) ? 0.5 : 1,
+                },
+              ]}
+              onPress={goToNextDay}
+              disabled={isToday(selectedDate)}
+            >
+              <Ionicons name="chevron-forward" size={20} color={theme.textPrimary} />
+            </TouchableOpacity>
           </View>
-        )}
-      </View>
+
+          <View style={styles.summarySection}>
+            <Text style={[styles.summaryTitle, { color: theme.textSecondary }]}>
+              {formatDisplayDate(selectedDate)}
+            </Text>
+
+            <View style={styles.habitsList}>
+              {[
+                { type: 'sleep', label: 'Sleep', icon: 'moon', hasData: !!selectedDateHabits?.sleep_hours },
+                { type: 'water', label: 'Water', icon: 'water', hasData: !!selectedDateHabits?.water_intake },
+                { type: 'run', label: 'Run', icon: 'walk', hasData: !!selectedDateHabits?.run_day_type },
+                { type: 'gym', label: 'Gym', icon: 'barbell', hasData: !!selectedDateHabits?.gym_day_type },
+                { type: 'reflect', label: 'Reflect', icon: 'sparkles', hasData: !!selectedDateHabits?.reflect_mood },
+                { type: 'cold_shower', label: 'Cold Shower', icon: 'snow', hasData: !!selectedDateHabits?.cold_shower_completed },
+                { type: 'focus', label: 'Focus', icon: 'flash', hasData: !!(selectedDateHabits?.focus_completed || selectedDateHabits?.focus_duration) },
+                { type: 'meditation', label: 'Meditation', icon: 'leaf', hasData: !!pointsData?.meditation_completed },
+                { type: 'microlearn', label: 'Microlearn', icon: 'book', hasData: !!pointsData?.microlearn_completed },
+                { type: 'screen_time', label: 'Screen Time', icon: 'phone-portrait', hasData: !!pointsData?.screen_time_completed },
+              ].map((habit) => (
+                <TouchableOpacity
+                  key={habit.type}
+                  style={[
+                    styles.habitRow,
+                    loadingSelectedDate && styles.habitRowLoading,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F3F4F6' },
+                  ]}
+                  onPress={() => !loadingSelectedDate && onHabitPress(habit.type, selectedDateHabits)}
+                  activeOpacity={loadingSelectedDate ? 1 : 0.7}
+                  disabled={loadingSelectedDate}
+                >
+                  <View
+                    style={[
+                      styles.habitIcon,
+                      {
+                        backgroundColor: habit.hasData
+                          ? 'rgba(16,185,129,0.15)'
+                          : theme.cardBackground,
+                        opacity: loadingSelectedDate ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={habit.icon as any}
+                      size={16}
+                      color={habit.hasData ? '#10B981' : theme.textSecondary}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.habitLabel,
+                      {
+                        color: theme.textPrimary,
+                        opacity: loadingSelectedDate ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    {habit.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.habitStatus,
+                      {
+                        color: habit.hasData ? '#10B981' : theme.textSecondary,
+                        opacity: loadingSelectedDate ? 0.5 : 1,
+                      },
+                    ]}
+                  >
+                    {loadingSelectedDate
+                      ? 'Loading...'
+                      : habit.hasData
+                        ? 'Recorded'
+                        : 'Not recorded'}
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={theme.textSecondary}
+                    style={[styles.chevron, { opacity: loadingSelectedDate ? 0.3 : 1 }]}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {!loadingSelectedDate && !selectedDateHabits && (
+              <View style={styles.emptyState}>
+                <Ionicons name="calendar-outline" size={24} color={theme.textSecondary} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>No data for this date yet</Text>
+                <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>Tap any habit to view details</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
 
 
@@ -362,12 +393,25 @@ export default function DateNavigator({ selectedDate, onDateChange, onViewHistor
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
     marginBottom: 20,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    paddingBottom: 0,
+  },
+  historyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  container: {
+    marginTop: 8,
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    marginTop: 8,
     backgroundColor: '#FFFFFF',
     borderColor: '#E5E7EB',
     shadowColor: '#000',
