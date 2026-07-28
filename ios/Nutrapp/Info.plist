@@ -65,7 +65,7 @@
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Nutrapp needs access to your photo library so you can upload progress photos.</string>
     <key>RCTNewArchEnabled</key>
-    <false/>
+    <true/>
     <key>UIBackgroundModes</key>
     <array>
       <string>fetch</string>
