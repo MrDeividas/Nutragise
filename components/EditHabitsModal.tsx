@@ -9,8 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { dailyHabitsService } from '../lib/dailyHabitsService';

@@ -12,8 +12,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useSocialStore } from '../state/socialStore';
@@ -743,16 +742,16 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           )}
         </View>
 
-        {/* Activity and Highlights Section */}
+        {/* Activity and Highlights Section — hidden when both are empty */}
+        {(recentActivity.length > 0 || highlights.length > 0) && (
         <View style={styles.keepTrackSection}>
           <View style={styles.activityAchievementsRow}>
+            {recentActivity.length > 0 && (
             <View style={{ flex: 1 }}>
               <View style={[
                 styles.activityBox,
-                recentActivity.length > 0 ? {
+                {
                   height: 64 + (Math.min(recentActivity.length, 4) * 38) - (Math.min(recentActivity.length, 4) > 0 ? 10 : 0),
-                } : {
-                  height: 88,
                 }
               ]}>
                 <Text style={[styles.activityLabel, { color: theme.textPrimary, marginBottom: 8 }]}>Activity</Text>
@@ -761,37 +760,33 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                   nestedScrollEnabled={true}
                   showsVerticalScrollIndicator={false}
                 >
-                  {recentActivity.length > 0 ? (
-                    recentActivity.map((item, index) => (
-                      <View key={index} style={styles.activityItem}>
-                        <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
-                          {item.iconType === 'fa5' ? (
-                            <FontAwesome5 name={item.icon} size={14} color={item.color} />
-                          ) : (
-                            <Ionicons name={item.icon as any} size={16} color={item.color} />
-                          )}
-                        </View>
-                        <Text 
-                          style={[styles.activityText, { color: theme.textSecondary }]} 
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {item.label}
-                        </Text>
+                  {recentActivity.map((item, index) => (
+                    <View key={index} style={styles.activityItem}>
+                      <View style={[styles.activityIconContainer, { backgroundColor: item.color + '20' }]}>
+                        {item.iconType === 'fa5' ? (
+                          <FontAwesome5 name={item.icon} size={14} color={item.color} />
+                        ) : (
+                          <Ionicons name={item.icon as any} size={16} color={item.color} />
+                        )}
                       </View>
-                    ))
-                  ) : (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
-                       <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>No activity yet</Text>
+                      <Text 
+                        style={[styles.activityText, { color: theme.textSecondary }]} 
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {item.label}
+                      </Text>
                     </View>
-                  )}
+                  ))}
                 </ScrollView>
               </View>
             </View>
-            <View style={{ flex: 2, marginLeft: 16 }}>
+            )}
+            {highlights.length > 0 && (
+            <View style={{ flex: 2, marginLeft: recentActivity.length > 0 ? 16 : 0 }}>
               <View style={[
                 styles.achievementsBox,
-                highlights.length > 0 && {
+                {
                   height: 72 + (Math.min(highlights.length, 4) * 32),
                 }
               ]}>
@@ -799,41 +794,35 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                   <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Highlights</Text>
                 </View>
                 <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
-                  {highlights.length > 0 ? (
-                    highlights.slice(0, 4).map((highlight, index) => (
-                      <View key={highlight.id} style={styles.achievementItem}>
-                        <Text style={styles.bulletPoint}>•</Text>
-                        <Text
-                          style={[styles.achievementText, { color: theme.textSecondary }]}
-                          numberOfLines={2}
-                        >
-                          {highlight.text}
-                        </Text>
-                        {highlight.photo_url && (
-                          <TouchableOpacity
-                            onPress={() => {
-                              setSelectedPhotoUrl(highlight.photo_url);
-                              setShowPhotoModal(true);
-                            }}
-                            style={styles.photoIconButton}
-                          >
-                            <Ionicons name="image" size={22} color={theme.primary} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ))
-                  ) : (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
-                      <Text style={{ fontSize: 11, color: theme.textSecondary, textAlign: 'center' }}>
-                        No highlights yet
+                  {highlights.slice(0, 4).map((highlight, index) => (
+                    <View key={highlight.id} style={styles.achievementItem}>
+                      <Text style={styles.bulletPoint}>•</Text>
+                      <Text
+                        style={[styles.achievementText, { color: theme.textSecondary }]}
+                        numberOfLines={2}
+                      >
+                        {highlight.text}
                       </Text>
+                      {highlight.photo_url && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedPhotoUrl(highlight.photo_url);
+                            setShowPhotoModal(true);
+                          }}
+                          style={styles.photoIconButton}
+                        >
+                          <Ionicons name="image" size={22} color={theme.primary} />
+                        </TouchableOpacity>
+                      )}
                     </View>
-                  )}
+                  ))}
                 </View>
               </View>
             </View>
+            )}
           </View>
         </View>
+        )}
 
         {/* Goals Section */}
         <View style={[styles.keepTrackSection, { marginTop: 8 }]}>

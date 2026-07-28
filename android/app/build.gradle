@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.nutrapp'
+    namespace 'com.nutragise.app'
     defaultConfig {
-        applicationId 'com.anonymous.nutrapp'
+        applicationId 'com.nutragise.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

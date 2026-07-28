@@ -19,14 +19,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
 import CreatePostModal from '../components/CreatePostModal';
 import { progressService } from '../lib/progressService';
 import { useTheme } from '../state/themeStore';
 import { useSocialStore } from '../state/socialStore';
 import { useActionStore } from '../state/actionStore';
+import { useNotificationsStore } from '../state/notificationsStore';
+import { notificationService } from '../lib/notificationService';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
 import { pointsService } from '../lib/pointsService';
@@ -114,7 +115,7 @@ function ProfileScreen({ navigation }: any) {
     followers: 0,
     following: 0
   });
-  const [notificationCount, setNotificationCount] = useState(0);
+  const notificationCount = useNotificationsStore((s) => s.unreadCount);
   const [dmUnreadCount, setDmUnreadCount] = useState(0);
   const profileCardAnimation = useRef(new Animated.Value(0)).current;
   
@@ -438,7 +439,6 @@ function ProfileScreen({ navigation }: any) {
       await Promise.all([
         loadProfileData(),
         fetchUserPoints(),
-        fetchNotificationCount(),
         loadDmUnreadCount(),
         fetchGoalProgress(),
         checkTodaysCheckIns(),
@@ -476,50 +476,7 @@ function ProfileScreen({ navigation }: any) {
     }
   };
 
-  const fetchNotificationCount = async () => {
-    if (!user) return;
-
-    try {
-      // Get the last time notifications were viewed
-      const lastViewed = await AsyncStorage.getItem('lastNotificationsViewed');
-      const lastViewedDate = lastViewed ? new Date(lastViewed) : new Date(0);
-      
-      // Fetch recent followers (last 7 days) as notifications
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const { data, error } = await supabase
-        .from('followers')
-        .select('follower_id, created_at')
-        .eq('following_id', user.id)
-        .gte('created_at', sevenDaysAgo.toISOString());
-
-      if (error) {
-        // Error fetching notification count
-        setNotificationCount(0);
-        return;
-      }
-
-      // Only count notifications that are newer than the last viewed time
-      const unreadNotifications = data?.filter(follower => 
-        new Date(follower.created_at) > lastViewedDate
-      ) || [];
-
-      setNotificationCount(unreadNotifications.length);
-    } catch (error) {
-      // Error fetching notification count
-      setNotificationCount(0);
-    }
-  };
-
-  const markNotificationsAsRead = async () => {
-    try {
-      await AsyncStorage.setItem('lastNotificationsViewed', new Date().toISOString());
-      setNotificationCount(0);
-    } catch (error) {
-      // Error marking notifications as read
-    }
-  };
+  
 
   const loadDmUnreadCount = async () => {
     if (user) {
@@ -615,7 +572,6 @@ function ProfileScreen({ navigation }: any) {
     React.useCallback(() => {
       loadProfileData();
       fetchUserPoints();
-      fetchNotificationCount();
       loadDmUnreadCount();
       fetchGoalProgress();
       checkTodaysCheckIns();
@@ -634,7 +590,6 @@ function ProfileScreen({ navigation }: any) {
       // Only refresh critical data on navigation focus
       loadProfileData();
       fetchUserPoints();
-      fetchNotificationCount();
       fetchRecentActivity();
       fetchHighlights();
     });
@@ -1096,9 +1051,12 @@ function ProfileScreen({ navigation }: any) {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => {
+            <TouchableOpacity onPress={async () => {
+              if (user && notificationCount > 0) {
+                await notificationService.markAllAsRead(user.id);
+                useNotificationsStore.getState().clearCount();
+              }
               navigation.navigate('Notifications');
-              markNotificationsAsRead(); // Mark notifications as read
             }} style={styles.headerIconButton}>
               <View style={{ position: 'relative' }}>
                 <Ionicons name="notifications-outline" size={24} color="#ffffff" />

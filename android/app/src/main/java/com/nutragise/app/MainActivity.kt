@@ -1,4 +1,4 @@
-package com.anonymous.nutrapp
+package com.nutragise.app
 
 import android.os.Build
 import android.os.Bundle

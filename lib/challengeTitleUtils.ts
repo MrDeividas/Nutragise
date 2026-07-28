@@ -67,20 +67,20 @@ export function isRetiredPublicChallengeTitle(title: string): boolean {
 
 /**
  * Order for Core Habits section on the Challenge (Compete) screen.
- * Gym → Exercise → Sleep first, then the rest.
+ * Gym → Focus → Exercise → Meditation → Sleep first, then the rest.
  */
 export const CORE_HABIT_CHALLENGE_DISPLAY_ORDER: readonly string[] = [
   'Gym',
+  'Focus',
   'Exercise',
+  'Meditation',
   'Sleep',
   'Goal Update',
   'Microlearn',
-  'Focus',
   'Reflection',
   'Water',
   'Cold Shower',
   'Screen Time',
-  'Meditation',
 ];
 
 export function sortCoreHabitChallengesByDisplayOrder<T extends { title: string }>(
@@ -100,13 +100,26 @@ export function sortCoreHabitChallengesByDisplayOrder<T extends { title: string 
 }
 
 /**
- * Pro-only curated challenges on the Compete screen (matches seed order; No Junk Food before Reduce Social Media).
+ * Pro-only curated challenges on the Compete screen.
+ * Normalized to lowercase for case-insensitive matching.
  */
+const PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED: readonly string[] = [
+  'daily sweat',
+  '6am club',
+  '15k steps daily',
+  '15k steps',
+  'reduce social media',
+  '100 press ups',
+  '100 squats',
+  'mobility every day',
+  'deep work',
+];
+
 export const PRO_ONLY_CHALLENGE_DISPLAY_ORDER: readonly string[] = [
-  '6AM Club',
-  'No Junk Food',
-  'Reduce Social Media',
   'Daily Sweat',
+  '6AM Club',
+  '15k Steps Daily',
+  'Reduce Social Media',
   '100 Press Ups',
   '100 Squats',
   'Mobility Every Day',
@@ -116,12 +129,11 @@ export const PRO_ONLY_CHALLENGE_DISPLAY_ORDER: readonly string[] = [
 export function sortProOnlyChallengesByDisplayOrder<T extends { title: string }>(
   challenges: T[]
 ): T[] {
-  const order = PRO_ONLY_CHALLENGE_DISPLAY_ORDER;
   return [...challenges].sort((a, b) => {
-    const aKey = stripTrailingChallengeWord(a.title);
-    const bKey = stripTrailingChallengeWord(b.title);
-    const ai = order.indexOf(aKey);
-    const bi = order.indexOf(bKey);
+    const aKey = stripTrailingChallengeWord(a.title).toLowerCase();
+    const bKey = stripTrailingChallengeWord(b.title).toLowerCase();
+    const ai = PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED.indexOf(aKey);
+    const bi = PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED.indexOf(bKey);
     const aRank = ai === -1 ? 999 : ai;
     const bRank = bi === -1 ? 999 : bi;
     if (aRank !== bRank) return aRank - bRank;

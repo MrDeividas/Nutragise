@@ -9,7 +9,7 @@ import CustomBackground from '../components/CustomBackground';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 
 import { supabase } from '../lib/supabase';
-import { stripeService } from '../lib/stripeService';
+import { iapService } from '../lib/iapService';
 import { adminService } from '../lib/adminService';
 
 export default function ProfileSettingsScreen() {
@@ -133,27 +133,48 @@ export default function ProfileSettingsScreen() {
     );
   };
 
-  // Handle subscription management
   const handleManageSubscription = async () => {
     if (!user) return;
 
     try {
-      // Get customer portal URL from Stripe
-      const portalUrl = await stripeService.getCustomerPortalUrl(user.id);
-      
-      // Open Customer Portal in browser
-      const supported = await Linking.canOpenURL(portalUrl);
+      if (user?.id) await iapService.logIn(user.id);
+      const url = await iapService.getManagementUrl();
+      if (!url) {
+        Alert.alert('Subscription', 'Manage your subscription from the device store settings.');
+        return;
+      }
+
+      const supported = await Linking.canOpenURL(url);
       if (supported) {
-        await Linking.openURL(portalUrl);
+        await Linking.openURL(url);
       } else {
         Alert.alert('Error', 'Cannot open subscription management page');
       }
     } catch (error: any) {
-      console.error('Error opening customer portal:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to open subscription management. Please try again.'
-      );
+      console.error('Error opening subscription management:', error);
+      Alert.alert('Error', error?.message || 'Failed to open subscription management.');
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    try {
+      if (user?.id) await iapService.logIn(user.id);
+      const result = await iapService.restorePurchases();
+
+      if (result.status === 'error') {
+        Alert.alert('Restore Failed', result.message);
+        return;
+      }
+
+      if (result.status === 'success' && iapService.hasProEntitlement(result.customerInfo)) {
+        Alert.alert('Pro Restored', 'Your Pro subscription has been restored.');
+        loadUserProfile();
+      } else {
+        Alert.alert('No Purchases Found', 'We could not find an active Pro subscription on this account.');
+      }
+    } catch (error: any) {
+      console.error('Error restoring purchases:', error);
+      Alert.alert('Restore Failed', error?.message || 'Could not restore purchases.');
     }
   };
 
@@ -556,11 +577,54 @@ export default function ProfileSettingsScreen() {
         <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
           <Text style={[styles.optionText, { color: theme.primary }]}>Notification Preferences</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Privacy Settings</Text>
+        <TouchableOpacity 
+          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={() => {
+            Linking.openURL('https://www.nutragise.com/privacy-policy');
+          }}
+        >
+          <Text style={[styles.optionText, { color: theme.primary }]}>Privacy Policy</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Delete Account</Text>
+        <TouchableOpacity 
+          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={() => {
+            Linking.openURL('https://www.nutragise.com/terms');
+          }}
+        >
+          <Text style={[styles.optionText, { color: theme.primary }]}>Terms of Service</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={handleRestorePurchases}
+        >
+          <Text style={[styles.optionText, { color: theme.primary }]}>Restore Purchases</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
+          onPress={() => {
+            Alert.alert(
+              'Delete Account',
+              'Are you sure you want to delete your account? This action cannot be undone and will erase all your data.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Delete', 
+                  style: 'destructive',
+                  onPress: async () => {
+                    const { error } = await supabase.rpc('delete_user');
+                    if (error) {
+                      Alert.alert('Error', 'Failed to delete account. Please contact support.');
+                    } else {
+                      await signOut();
+                    }
+                  }
+                }
+              ]
+            );
+          }}
+        >
+          <Text style={[styles.optionText, { color: '#d32f2f' }]}>Delete Account</Text>
         </TouchableOpacity>
         
         {/* Admin Review - Admin Users Only */}

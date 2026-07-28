@@ -36,12 +36,15 @@ import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
 import CreatePostModal from '../components/CreatePostModal';
 import NewGoalModal from '../components/NewGoalModal';
+import NewReminderModal from '../components/NewReminderModal';
+import { useRemindersStore } from '../state/remindersStore';
 import LevelInfoModal from '../components/LevelInfoModal';
 import ChallengeCard from '../components/ChallengeCard';
 import { Challenge } from '../types/challenges';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
+import { useNotificationsStore } from '../state/notificationsStore';
 import { challengesService } from '../lib/challengesService';
 import { pointsService } from '../lib/pointsService';
 import { supabase } from '../lib/supabase';
@@ -297,9 +300,7 @@ async function savePillarProgressSnapshot(userId: string, today: string): Promis
       await AsyncStorage.setItem(startOfDayDateKey, today);
     } else {
     }
-  } catch (error) {
-    console.error('Error saving pillar progress snapshot:', error);
-  }
+  } catch {}
 }
 
 // Helper function to check if a date is before today
@@ -1309,6 +1310,7 @@ function ActionScreen() {
   const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { goals: userGoals, fetchGoals, loading } = useGoalsStore();
+  const { reminders, toggleReminder, fetchReminders, deleteReminder } = useRemindersStore();
   const {
     selectedDate,
     setSelectedDate,
@@ -1352,9 +1354,7 @@ function ActionScreen() {
             setHabitViewMode(stored as 'carousel' | 'list');
           }
         }
-      } catch (error) {
-        console.warn('Failed to load view mode preference:', error);
-      }
+      } catch {}
     };
     
     loadViewModePreference();
@@ -1368,9 +1368,7 @@ function ActionScreen() {
         if (user?.id) {
           await AsyncStorage.setItem(`habit_view_mode_${user.id}`, newMode);
         }
-      } catch (error) {
-        console.warn('Failed to save view mode preference:', error);
-      }
+      } catch {}
     };
     savePreference();
   }, [user?.id]);
@@ -1465,10 +1463,11 @@ function ActionScreen() {
   const customHabitCategories = useMemo(
     () => [
       { key: 'custom', label: 'Create', icon: 'checkmark' },
-      { key: 'wellbeing', label: 'Wellbeing', icon: 'heart' },
-      { key: 'nutrition', label: 'Nutrition', icon: 'restaurant' },
       { key: 'time', label: 'Schedule', icon: 'time' },
       { key: 'avoid', label: 'Avoid', icon: 'ban' },
+      // Wellbeing and nutrition are unreleased, so they stay after the usable categories
+      { key: 'wellbeing', label: 'Wellbeing', icon: 'heart' },
+      { key: 'nutrition', label: 'Nutrition', icon: 'restaurant' },
     ],
     []
   );
@@ -1544,8 +1543,9 @@ function ActionScreen() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [showNewGoalModal, setShowNewGoalModal] = useState(false);
+  const [showNewReminderModal, setShowNewReminderModal] = useState(false);
   const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const unreadNotificationCount = useNotificationsStore((s) => s.unreadCount);
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
   /** Challenge IDs where the user submitted proof for the current calendar day (for Done badge on cards) */
   const [challengeSubmittedTodayIds, setChallengeSubmittedTodayIds] = useState<Set<string>>(new Set());
@@ -2154,9 +2154,7 @@ function ActionScreen() {
         const order = cards.map(card => card.habitId);
         await AsyncStorage.setItem(`habit_card_order_${user.id}`, JSON.stringify(order));
       }
-    } catch (error) {
-      console.warn('Failed to save card order:', error);
-    }
+    } catch {}
   }, [user]);
 
   // Load card order from AsyncStorage
@@ -2168,9 +2166,7 @@ function ActionScreen() {
           return JSON.parse(stored);
         }
       }
-    } catch (error) {
-      console.warn('Failed to load card order:', error);
-    }
+    } catch {}
     return null;
   }, [user]);
 
@@ -2181,9 +2177,7 @@ function ActionScreen() {
         const order = habits.map(h => h.id);
         await AsyncStorage.setItem(`custom_habit_order_${user.id}`, JSON.stringify(order));
       }
-    } catch (error) {
-      console.warn('Failed to save custom habit order:', error);
-    }
+    } catch {}
   }, [user]);
 
   // Load custom habit order
@@ -2195,9 +2189,7 @@ function ActionScreen() {
           return JSON.parse(stored);
         }
       }
-    } catch (error) {
-      console.warn('Failed to load custom habit order:', error);
-    }
+    } catch {}
     return null;
   }, [user]);
 
@@ -2359,9 +2351,7 @@ function ActionScreen() {
         } else {
           await sound.unloadAsync();
         }
-      } catch (error) {
-        console.warn('Failed to load completion sound', error);
-      }
+      } catch {}
     })();
 
     return () => {
@@ -2379,9 +2369,7 @@ function ActionScreen() {
       if (!sound) return;
       // Use playFromPositionAsync for immediate playback without delay
       await sound.playFromPositionAsync(0);
-    } catch (error) {
-      console.warn('Failed to play completion sound', error);
-    }
+    } catch {}
   }, []);
 
   // Animate card to end of carousel
@@ -2461,9 +2449,7 @@ function ActionScreen() {
     if (partnership) {
       try {
         await habitInviteService.updatePartnerProgress(partnership.id, user.id, getTodayDateString(), completed);
-      } catch (error) {
-        console.error(`[Partner Sync] ❌ Failed to update progress for ${habitKey}:`, error);
-      }
+      } catch {}
     }
   }, [user, activePartnerships]);
 
@@ -2636,7 +2622,6 @@ function ActionScreen() {
           }
           break;
         default:
-          console.warn('Quick completion not implemented for', habitId);
           success = false;
       }
 
@@ -2646,9 +2631,7 @@ function ActionScreen() {
         await fetchUserPoints();
         return true;
       }
-    } catch (error) {
-      console.error('Error saving quick completion for', habitId, error);
-    }
+    } catch {}
 
     return false;
   }, [user, markHabitNeedsDetails, fetchUserPoints, checkAndSyncPartner]);
@@ -2731,7 +2714,6 @@ function ActionScreen() {
           });
           setReorderableCustomHabits(sortedCustomHabits);
         } catch (error) {
-          console.warn('Failed to load saved order for reorder modal:', error);
           // Fallback: filter current cards to only selected habits
           const selectedHabitIdsSet = new Set(selectedHabits);
           const filteredCards = habitSpotlightCards.filter(card => selectedHabitIdsSet.has(card.habitId));
@@ -2816,7 +2798,6 @@ function ActionScreen() {
         setHabitSchedules(schedules);
       }
     } catch (error) {
-      console.error('Error adding habit:', error);
       Alert.alert('Error', 'Failed to add habit. Please try again.');
     }
   }, [user, selectedHabits, habitSpotlightCardsBase, habitSchedules]);
@@ -2868,7 +2849,6 @@ function ActionScreen() {
                 setHabitSchedules(schedules);
               }
             } catch (error) {
-              console.error('Error removing habit:', error);
               Alert.alert('Error', 'Failed to remove habit. Please try again.');
             }
           }
@@ -3014,23 +2994,7 @@ function ActionScreen() {
     }).start();
   }, [levelProgress, progressFillAnim, progressPointsAnim]);
 
-  // Load unread notification count
-  const loadUnreadNotificationCount = async () => {
-    if (!user) return;
-    try {
-      const count = await notificationService.getUnreadCount(user.id);
-      setUnreadNotificationCount(count);
-    } catch (error) {
-      console.error('Error loading unread notification count:', error);
-    }
-  };
-
-  // Load notification count when component mounts and when user changes
-  useEffect(() => {
-    if (user) {
-      loadUnreadNotificationCount();
-    }
-  }, [user]);
+  
 
   // Check onboarding status
   const checkOnboardingStatus = useCallback(async () => {
@@ -3052,15 +3016,12 @@ function ActionScreen() {
         setOnboardingIncomplete(isIncomplete);
         setOnboardingLastStep(data.onboarding_last_step || null);
       } else if (error) {
-        console.error('❌ Error checking onboarding status:', error);
         // If query fails, still try to show reminder if we have user
         // This handles edge cases where profile might not exist yet
         setOnboardingIncomplete(false);
         setOnboardingLastStep(null);
       }
-    } catch (error) {
-      console.error('❌ Error checking onboarding status:', error);
-    }
+    } catch {}
   }, [user]);
 
   // Check onboarding status on mount and when user changes
@@ -3234,9 +3195,7 @@ function ActionScreen() {
             const sorted = sortHabitsByCompletion(initialCards, completedHabits);
             setHabitSpotlightCards(sorted);
             habitSpotlightCardsRef.current = sorted;
-          } catch (error) {
-            console.warn('Failed to reset order on new day:', error);
-          }
+          } catch {}
         })();
       }
     };
@@ -3292,7 +3251,6 @@ function ActionScreen() {
           habitSpotlightCardsRef.current = sorted;
         }
       } catch (error) {
-        console.warn('Failed to load card order:', error);
         // Fallback: filter and sort by completion
         if (isMounted) {
           const selectedHabitIdsSet = new Set(selectedHabits);
@@ -3337,7 +3295,6 @@ function ActionScreen() {
           setHabitSpotlightCards(sorted);
           habitSpotlightCardsRef.current = sorted;
         } catch (error) {
-          console.warn('Failed to filter cards by selected habits:', error);
           // Fallback: just filter and sort by completion
           const sorted = sortHabitsByCompletion(filtered, completedHabits);
           setHabitSpotlightCards(sorted);
@@ -3392,7 +3349,6 @@ function ActionScreen() {
         syncCompletedHabits();
       }
     } catch (error) {
-      console.error('Error loading habits:', error);
       // On error, fall back to default habits
       setSelectedHabits(DEFAULT_HABITS);
     }
@@ -4094,9 +4050,7 @@ function ActionScreen() {
       
       // Cache for 2 minutes
       apiCache.set(cacheKey, progressData, 2 * 60 * 1000);
-    } catch (error) {
-      console.error('Error fetching goal progress:', error);
-    }
+    } catch {}
   }, [user, userGoals]);
 
   async function fetchUserPoints() {
@@ -4109,7 +4063,6 @@ function ActionScreen() {
       setTotalPoints(total);
       setLevelProgress(progress);
     } catch (error) {
-      console.error('Error fetching user points:', error);
       setTotalPoints(0);
     }
   }
@@ -4249,7 +4202,6 @@ function ActionScreen() {
           
           resolve();
         } catch (error) {
-          console.error('Error checking overdue goals:', error);
           resolve();
         }
       }, 100); // Increased delay to 100ms to ensure UI renders first
@@ -4332,7 +4284,6 @@ function ActionScreen() {
         checkedInByDay
       }, 60 * 1000);
     } catch (error) {
-      console.error('Error fetching check-ins for week:', error);
       // Fallback to individual calls if batch fails
       for (const goal of userGoals) {
         if (!goal.completed) {
@@ -4367,6 +4318,7 @@ function ActionScreen() {
       try {
         await Promise.all([
           fetchGoals(user.id),
+          fetchReminders(),
           checkTodaysCheckIns(),
           checkForOverdueGoals(),
           fetchUserPoints()
@@ -4388,11 +4340,9 @@ function ActionScreen() {
         
         // Process completed challenges (non-blocking)
         challengePotService.processCompletedChallenges().catch((error) => {
-          console.error('Error processing completed challenges:', error);
         });
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
-          console.error('Error initializing ActionScreen data:', error);
         }
       }
     };
@@ -4492,7 +4442,6 @@ function ActionScreen() {
       }
       setChallengeSubmittedTodayIds(submittedToday);
     } catch (error) {
-      console.error('Error loading active challenges:', error);
       setMyActiveChallenges([]);
     } finally {
       setLoadingChallenges(false);
@@ -4509,9 +4458,7 @@ function ActionScreen() {
     try {
       const balance = await walletService.getBalance(user.id);
       setWalletBalance(balance);
-    } catch (error) {
-      console.error('Error loading wallet balance:', error);
-    }
+    } catch {}
   }, [user]);
 
   const loadPendingInvites = useCallback(async () => {
@@ -4529,22 +4476,10 @@ function ActionScreen() {
         const key = invite.habit_type === 'core' ? `core_${invite.habit_key}` : `custom_${habitId}`;
         invitesMap[key] = invite;
         
-        console.log('[loadPendingInvites] Mapped invite:', {
-          habit_type: invite.habit_type,
-          inviter_habit_id: invite.inviter_habit_id,
-          custom_habit_id: invite.custom_habit_id,
-          habitId,
-          key,
-          invitee: invite.partner?.username
-        });
       }
       
       setPendingInvites(invitesMap);
-      console.log('[ActionScreen] Loaded pending invites keys:', Object.keys(invitesMap));
-      console.log('[ActionScreen] Total pending invites:', invites.length);
-    } catch (error) {
-      console.error('Error loading pending invites:', error);
-    }
+    } catch {}
   }, [user]);
 
   const loadActivePartnerships = useCallback(async () => {
@@ -4566,15 +4501,6 @@ function ActionScreen() {
           // Fallback to custom_habit_id for backwards compatibility
           if (!habitId) habitId = p.custom_habit_id;
           
-          console.log(`[Partnership] Custom habit partnership:`, {
-            partnershipId: p.id,
-            isInviter,
-            inviter_habit_id: p.inviter_habit_id,
-            invitee_habit_id: p.invitee_habit_id,
-            custom_habit_id: p.custom_habit_id,
-            finalHabitId: habitId,
-            hasSnapshot: !!p.habit_snapshot
-          });
           
           // Auto-recreate habit from snapshot if it doesn't exist
           if (habitId && p.habit_snapshot) {
@@ -4583,10 +4509,8 @@ function ActionScreen() {
             const habitExists = customHabits.some(h => h.id === habitId);
             
             if (!habitExists) {
-              console.log(`[Partnership] Habit ${habitId} missing, recreating from snapshot...`);
               try {
                 const newHabit = await habitsService.createHabit(user.id, p.habit_snapshot);
-                console.log(`[Partnership] Recreated habit from snapshot: ${newHabit.title} (${newHabit.id})`);
                 
                 // Update the partnership with the new habit ID
                 const updateField = isInviter ? 'inviter_habit_id' : 'invitee_habit_id';
@@ -4600,7 +4524,6 @@ function ActionScreen() {
                 // Reload custom habits to show the recreated habit
                 await useActionStore.getState().loadCustomHabits(getTodayDateString());
               } catch (error) {
-                console.error('[Partnership] Error recreating habit from snapshot:', error);
                 continue; // Skip this partnership if recreation fails
               }
             }
@@ -4608,7 +4531,6 @@ function ActionScreen() {
           
           // Skip this partnership if the habit doesn't exist (was deleted)
           if (!habitId) {
-            console.log(`[Partnership] Skipping partnership ${p.id} - no habit ID found`);
             continue;
           }
         }
@@ -4639,19 +4561,11 @@ function ActionScreen() {
       
       // Fetch last nudge times for all partnerships (only nudges sent by current user)
       const nudgeTimes = await habitInviteService.getLastNudgeTimes(partnershipIds, user.id);
-      console.log('[ActionScreen] Loaded partnerships:', {
-        count: partnerships.length,
-        partnershipMap: Object.keys(partnershipMap),
-        completionMap: Object.keys(completionMap),
-        nudgeTimes
-      });
       
       setActivePartnerships(partnershipMap);
       setPartnerCompletionStatus(completionMap);
       setLastNudgeTimes(nudgeTimes);
-    } catch (error) {
-      console.error('Error loading partnerships:', error);
-    }
+    } catch {}
   }, [user]);
 
   // Set up real-time subscription for partner progress updates
@@ -4776,7 +4690,6 @@ function ActionScreen() {
                 Alert.alert('Error', 'Failed to cancel invite. Please try again.');
               }
             } catch (error) {
-              console.error('Error cancelling invite:', error);
               Alert.alert('Error', 'Failed to cancel invite. Please try again.');
             }
           }
@@ -4817,26 +4730,21 @@ function ActionScreen() {
   const handleNudge = useCallback(async (partnershipId: string, partnerId: string, partnerName: string, habitTitle: string): Promise<Date | null> => {
     if (!user) return null;
 
-    console.log('[Nudge] Sending nudge for partnership:', partnershipId);
     const result = await habitInviteService.sendNudge(partnershipId, user.id, partnerId, habitTitle);
     
     if (result.success) {
       const nudgeTime = new Date();
-      console.log('[Nudge] Nudge successful, setting time:', nudgeTime);
       setLastNudgeTimes(prev => {
         const updated = { ...prev, [partnershipId]: nudgeTime };
-        console.log('[Nudge] Updated lastNudgeTimes:', updated);
         return updated;
       });
       // No alert - user can see the countdown timer update
       return nudgeTime;
     } else {
-      console.log('[Nudge] Nudge failed:', result.message);
       
       // If nudge failed due to cooldown, fetch and display the last nudge time (sent by this user)
       const lastNudgeTime = await habitInviteService.getLastNudgeTime(partnershipId, user.id);
       if (lastNudgeTime) {
-        console.log('[Nudge] Fetched existing nudge time:', lastNudgeTime);
         setLastNudgeTimes(prev => ({ ...prev, [partnershipId]: lastNudgeTime }));
       }
       
@@ -4887,6 +4795,21 @@ function ActionScreen() {
     
     setShowCreatePostModal(true);
   }, []);
+
+  const handleDeleteReminder = useCallback((reminderId: string, title: string) => {
+    Alert.alert(
+      'Remove Reminder',
+      `Remove "${title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => deleteReminder(reminderId),
+        },
+      ]
+    );
+  }, [deleteReminder]);
 
 
   function getTodayDateString(): string {
@@ -5044,7 +4967,7 @@ function ActionScreen() {
                 // Mark all notifications as read when clicking the bell
                 if (user && unreadNotificationCount > 0) {
                   await notificationService.markAllAsRead(user.id);
-                  setUnreadNotificationCount(0);
+                  useNotificationsStore.getState().clearCount();
                 }
                 (navigation as any).navigate('Notifications');
               }}
@@ -5632,10 +5555,9 @@ function ActionScreen() {
           <View key={`checkins-${refreshTrigger}`} style={styles.todaysCheckinsContainer}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Reminders</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
-                // TODO: Implement add reminder functionality
-                Alert.alert('Add Reminder', 'Coming soon');
+                setShowNewReminderModal(true);
               }}
               activeOpacity={0.7}
             >
@@ -5696,7 +5618,52 @@ function ActionScreen() {
                 });
               }}
               styles={styles}
+              hideEmptyState={reminders.some((r) => !r.completed)}
             />
+
+            {/* Custom Reminders */}
+            {reminders.filter(r => !r.completed).map((reminder) => (
+              <View
+                key={reminder.id}
+                style={[styles.checkinItem, { borderBottomWidth: 1, borderBottomColor: theme.borderSecondary }]}
+              >
+                <TouchableOpacity
+                  onPress={() => toggleReminder(reminder.id)}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: theme.borderSecondary,
+                    backgroundColor: 'transparent',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 8,
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                />
+                <TouchableOpacity
+                  style={styles.reminderTapArea}
+                  onPress={() => handleDeleteReminder(reminder.id, reminder.title)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Reminder: ${reminder.title}`}
+                >
+                  <Text style={[styles.reminderDash, { color: theme.textSecondary }]}>–</Text>
+                  <View style={styles.checkinItemContent}>
+                    <Text style={[styles.checkinItemTitle, { color: theme.textPrimary }]}>{reminder.title}</Text>
+                    {reminder.hasNotification && reminder.time && (
+                      <Text style={[styles.checkinItemCategory, { color: theme.textSecondary }]}>
+                        {new Date(reminder.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    )}
+                  </View>
+                  {reminder.hasNotification && (
+                    <Ionicons name="notifications-outline" size={16} color={theme.primary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -6921,11 +6888,8 @@ function ActionScreen() {
                     // Delay so modal fade-out finishes before the fill + slide animations play
                     setTimeout(() => markHabitCompleted('gym'), 300);
                   } else {
-                    console.error('Failed to save gym data');
                   }
-                } catch (error) {
-                  console.error('Error saving gym data:', error);
-                }
+                } catch {}
               }}
             >
               <Text style={styles.submitButtonText}>
@@ -7329,11 +7293,8 @@ function ActionScreen() {
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
                     setTimeout(() => markHabitCompleted('sleep'), 300);
                   } else {
-                    console.error('Failed to save sleep data');
                   }
-                } catch (error) {
-                  console.error('Error saving sleep data:', error);
-                }
+                } catch {}
               }}            >
               <Text style={styles.submitButtonText}>
                 {useActionStore.getState().dailyHabitsLoading ? 'Saving...' : 'Complete Sleep Log'}
@@ -7447,11 +7408,8 @@ function ActionScreen() {
                     setWaterQuestionnaire({ waterIntake: 5, waterGoal: '', waterNotes: '' });
                     setTimeout(() => markHabitCompleted('water'), 300);
                   } else {
-                    console.error('Failed to save water data');
                   }
-                } catch (error) {
-                  console.error('Error saving water data:', error);
-                }
+                } catch {}
               }}
             >
               <Text style={styles.submitButtonText}>Complete Water Log</Text>
@@ -7614,11 +7572,8 @@ function ActionScreen() {
                       setScreenTimeQuestionnaire({ hours: 0, minutes: 0 });
                       setTimeout(() => markHabitCompleted('screen_time'), 300);
                     } else {
-                      console.error('Failed to save screen time data');
                     }
-                  } catch (error) {
-                    console.error('Error saving screen time data:', error);
-                  }
+                  } catch {}
                 }}
               >
                 <Text style={styles.submitButtonText}>Complete Screen Time Log</Text>
@@ -7917,13 +7872,9 @@ function ActionScreen() {
                     setExerciseQuestionnaire({ selectedSport: '', customSport: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, exerciseNotes: '' });
                     setTimeout(() => markHabitCompleted('run'), 300);
                   } else {
-                    console.error('Failed to save exercise data');
                     const error = useActionStore.getState().dailyHabitsError;
-                    console.error('Error details:', error);
                   }
-                } catch (error) {
-                  console.error('Error saving exercise data:', error);
-                }
+                } catch {}
               }}
             >
               <Text style={styles.submitButtonText}>
@@ -8271,11 +8222,8 @@ function ActionScreen() {
                             });
                             setTimeout(() => markHabitCompleted('reflect'), 300);
                           } else {
-                            console.error('Failed to save reflect data');
                           }
-                        } catch (error) {
-                          console.error('Error saving reflect data:', error);
-                        }
+                        } catch {}
                       }}
                     >
                       <Text style={styles.submitButtonText}>Complete</Text>
@@ -8331,11 +8279,8 @@ function ActionScreen() {
                         setShowColdShowerModal(false);
                         setTimeout(() => markHabitCompleted('cold_shower'), 300);
                       } else {
-                        console.error('Failed to save cold shower data');
                       }
-                    } catch (error) {
-                      console.error('Error saving cold shower data:', error);
-                    }
+                    } catch {}
                   }}
                 >
                   <Text style={styles.submitButtonText}>Yes</Text>
@@ -8392,9 +8337,7 @@ function ActionScreen() {
                         try {
                           const date = getTodayDateString();
                           await useActionStore.getState().clearHabitForDate(date, habitToUntick);
-                        } catch (e) {
-                          console.warn('Failed to clear habit data:', e);
-                        }
+                        } catch {}
                       }
 
                       await fetchUserPoints();
@@ -8724,9 +8667,7 @@ function ActionScreen() {
               setSelectedHabits(updatedHabits);
               setHabitSchedules(updatedSchedules);
             }
-          } catch (error) {
-            console.error('Error refreshing habits:', error);
-          }
+          } catch {}
         }}
       />
 
@@ -8889,6 +8830,11 @@ function ActionScreen() {
         habit={statsHabit}
         userId={user?.id}
         theme={theme}
+      />
+
+      <NewReminderModal
+        visible={showNewReminderModal}
+        onClose={() => setShowNewReminderModal(false)}
       />
 
       </SafeAreaView>
@@ -10314,6 +10260,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  reminderDash: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginRight: 8,
+    lineHeight: 22,
+  },
   categoryIcon: {
     width: 32,
     height: 32,
@@ -10335,6 +10287,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   checkinItemRight: {
+    alignItems: 'center',
+  },
+  reminderTapArea: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   checkinStatus: {

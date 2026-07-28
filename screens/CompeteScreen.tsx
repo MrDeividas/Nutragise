@@ -777,7 +777,7 @@ export default function CompeteScreen({ navigation }: any) {
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="star" size={20} color="#F59E0B" />
+                <Ionicons name="star" size={20} color={theme.primary} />
                 <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Pro Challenges
                 </Text>
@@ -792,7 +792,7 @@ export default function CompeteScreen({ navigation }: any) {
               <View style={styles.challengesContent}>
                 {challengesLoading ? (
                   <View style={styles.challengesLoadingContainer}>
-                    <ActivityIndicator size="large" color="#F59E0B" />
+                    <ActivityIndicator size="large" color={theme.primary} />
                   </View>
                 ) : (
                   <ScrollView
@@ -846,7 +846,7 @@ export default function CompeteScreen({ navigation }: any) {
             <View style={styles.challengesContent}>
               {challengesLoading ? (
                 <View style={styles.challengesLoadingContainer}>
-                  <ActivityIndicator size="large" color="#10B981" />
+                  <ActivityIndicator size="large" color={theme.primary} />
                 </View>
               ) : (
                 <ScrollView
@@ -882,8 +882,7 @@ export default function CompeteScreen({ navigation }: any) {
             activeOpacity={0.7}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {/* £0 entry — “free” / no buy‑in */}
-              <Ionicons name="gift-outline" size={20} color="#22C55E" />
+              <Ionicons name="play-circle-outline" size={20} color={theme.primary} />
               <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                 Free to Play
               </Text>
@@ -899,7 +898,7 @@ export default function CompeteScreen({ navigation }: any) {
           <View style={styles.challengesContent}>
             {challengesLoading ? (
               <View style={styles.challengesLoadingContainer}>
-                <ActivityIndicator size="large" color="#EA580C" />
+                <ActivityIndicator size="large" color={theme.primary} />
               </View>
             ) : freeChallenges.length === 0 ? (
               <View style={styles.emptyChallengesContainer}>

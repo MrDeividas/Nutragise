@@ -152,32 +152,6 @@ export default function SignUpScreen({ navigation }: any) {
           // Social Auth Options
           <View style={styles.form}>
             <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: '#000', borderColor: '#000' }]}
-              onPress={handleGoogleSignUp}
-            >
-              <Ionicons name="logo-google" size={24} color="#fff" />
-              <Text style={[styles.socialButtonText, { color: '#fff' }]}>
-                Continue with Google
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: '#000' }]}
-              onPress={handleAppleSignUp}
-            >
-              <Ionicons name="logo-apple" size={24} color="#fff" />
-              <Text style={[styles.socialButtonText, { color: '#fff' }]}>
-                Continue with Apple
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.borderSecondary }]} />
-              <Text style={[styles.dividerText, { color: theme.textSecondary }]}>or</Text>
-              <View style={[styles.dividerLine, { backgroundColor: theme.borderSecondary }]} />
-            </View>
-
-            <TouchableOpacity
               style={[styles.socialButton, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}
               onPress={() => setAuthMethod('email')}
             >

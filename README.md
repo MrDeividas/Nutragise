@@ -189,12 +189,19 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 - `insightService` - Insights and reflections
 
 ### Environment Variables
-- `SUPABASE_URL` - Supabase project URL
-- `SUPABASE_ANON_KEY` - Supabase anonymous key
-- `STRIPE_PUBLISHABLE_KEY` - Stripe publishable key
-- `STRIPE_SECRET_KEY` - Stripe secret key (backend)
-- `STRIPE_WEBHOOK_SECRET` - Stripe webhook secret
-- `DEEPSEEK_API_KEY` - AI insights API key
+
+App (`.env`):
+- `SUPABASE_URL` — Supabase project URL
+- `SUPABASE_ANON_KEY` — Supabase anonymous key
+- `STRIPE_PUBLISHABLE_KEY` — Stripe publishable key (wallet / challenges only)
+- `REVENUECAT_IOS_API_KEY` — RevenueCat iOS public SDK key (Pro via Apple IAP)
+- `REVENUECAT_ANDROID_API_KEY` — RevenueCat Android public SDK key (Pro via Google Play)
+- `DEEPSEEK_API_KEY` — AI insights API key
+
+Supabase Edge Function secrets (set in Dashboard → Edge Functions → Secrets):
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY` — wallet deposits + challenge payments
+- `REVENUECAT_WEBHOOK_AUTH` — shared secret expected in the RevenueCat webhook Authorization header
 
 ---
 
@@ -213,7 +220,7 @@ npm install
 
 ### Environment Setup
 1. Copy the example file: `cp .env.example .env`
-2. Edit `.env` and replace placeholders with keys from the [Supabase](https://supabase.com/dashboard) and [Stripe](https://dashboard.stripe.com/apikeys) dashboards (publishable key only for Stripe in the app).
+2. Edit `.env` and replace placeholders with keys from the **Application** Supabase project ([dashboard](https://supabase.com/dashboard/project/gtnjrauujrzkesaulius) → Settings → API) and [Stripe](https://dashboard.stripe.com/apikeys) (publishable key only in the app).
 3. **Never commit `.env`** — it is listed in `.gitignore`. Only `.env.example` (placeholders) belongs in version control.
 4. If API keys were ever committed or shared, **rotate** them in each provider’s dashboard.
 

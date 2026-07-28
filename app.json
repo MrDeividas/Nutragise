@@ -16,9 +16,11 @@
       "supportsTablet": true,
       "statusBarStyle": "dark",
       "statusBarBackgroundColor": "#ffffff",
-      "bundleIdentifier": "com.anonymous.nutrapp",
-      "merchantIdentifier": "merchant.com.anonymous.nutrapp",
+      "bundleIdentifier": "com.nutragise.app",
+      "merchantIdentifier": "merchant.com.nutragise.app",
+      "buildNumber": "1",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "We need access to your health data to automatically track your sleep, steps, and exercise habits.",
         "NSHealthUpdateUsageDescription": "We need permission to save your health data.",
         "UIBackgroundModes": [
@@ -36,7 +38,19 @@
         "backgroundColor": "#ffffff"
       },
       "softwareKeyboardLayoutMode": "resize",
-      "package": "com.anonymous.nutrapp"
+      "package": "com.nutragise.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,11 +60,56 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#6C47FF",
+          "icon": "./assets/notification-icon.png",
+          "color": "#111111",
           "sounds": []
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Nutrapp needs access to your camera so you can take progress photos for your challenges.",
+          "microphonePermission": "Nutrapp needs access to your microphone to record video."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nutrapp needs access to your photo library so you can upload progress photos."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Nutrapp needs access to your photo library to save and upload photos.",
+          "savePhotosPermission": "Nutrapp needs access to your photo library to save photos.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.nutragise.app",
+          "enableGooglePay": false
+        }
+      ],
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "Nutrapp needs access to your health data to automatically track your sleep, steps, and exercise habits.",
+          "healthUpdatePermission": "Nutrapp needs permission to save your health data."
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9e8404c1-7a71-40b3-a796-f53fde11b798"
+      }
+    },
+    "owner": "deividasg1",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/9e8404c1-7a71-40b3-a796-f53fde11b798"
+    }
   }
 }

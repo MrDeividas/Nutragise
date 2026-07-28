@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { DailyHabits } from '../types/database';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';

@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { useNotificationsStore } from '../state/notificationsStore';
 
 // Show notifications even when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -129,11 +130,10 @@ class PushNotificationService {
    * Returns a cleanup function — call it in useEffect cleanup.
    */
   setupListeners(onTap: (data: Record<string, any>) => void): () => void {
-    // Fired when a notification arrives while the app is in the foreground
     this.notificationListener = Notifications.addNotificationReceivedListener(
       (notification) => {
-        // Foreground notifications are shown automatically via setNotificationHandler above
         console.log('🔔 Notification received:', notification.request.content.title);
+        useNotificationsStore.getState().refresh();
       }
     );
 
@@ -172,6 +172,17 @@ class PushNotificationService {
       content: { title, body, data, sound: true },
       trigger,
     });
+  }
+
+  /**
+   * Cancel a single scheduled local notification by id.
+   */
+  async cancelScheduledNotification(notificationId: string): Promise<void> {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+    } catch (error) {
+      console.warn('Failed to cancel scheduled notification:', error);
+    }
   }
 
   /**

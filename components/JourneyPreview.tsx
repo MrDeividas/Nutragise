@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
-import { formatJourneyDate, calculateDayNumber } from '../lib/timeService';
+import { formatJourneyDate, formatDate, calculateDayNumber } from '../lib/timeService';
 import { supabase } from '../lib/supabase';
 import GesturePhotoCarousel from './GesturePhotoCarousel';
 
@@ -192,13 +192,15 @@ function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreview
         ) : (
           // Show placeholder if no photos
           <View style={[styles.singlePhotoThumbnail, { 
-            backgroundColor: 'rgba(128, 128, 128, 0.2)', 
+            backgroundColor: '#F3F4F6',
+            borderWidth: 1,
+            borderColor: '#E5E7EB',
             justifyContent: 'center',
             alignItems: 'center',
             width: Math.floor((width - 104) / 4),
             height: Math.floor((width - 104) / 4),
           }]}>
-            <Ionicons name="image-outline" size={24} color="rgba(255, 255, 255, 0.5)" />
+            <Ionicons name="image-outline" size={24} color="#9CA3AF" />
           </View>
         )}
       </View>
@@ -245,6 +247,7 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
   }));
 
   const completedHabits = habitsList.filter(h => h.value).length;
+  const photos = Array.isArray(day.photos) ? day.photos : [];
 
   return (
     <Modal
@@ -262,30 +265,46 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
         <View style={styles.modalWrapper}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={[styles.headerTitle, { color: '#ffffff' }]}>
-              Day {dayNumber}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={28} color="#ffffff" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Day {dayNumber}</Text>
+              <Text style={styles.headerSubtitle}>{formatDate(day.date)}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
+              <Ionicons name="close" size={20} color="#6B7280" />
             </TouchableOpacity>
           </View>
 
+          {/* Summary strip */}
+          <View style={styles.summaryStrip}>
+            <View style={styles.summaryItem}>
+              <Ionicons name="images-outline" size={16} color="#10B981" />
+              <Text style={styles.summaryText}>
+                {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
+              </Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryItem}>
+              <Ionicons name="checkmark-circle-outline" size={16} color="#10B981" />
+              <Text style={styles.summaryText}>{completedHabits}/8 habits</Text>
+            </View>
+          </View>
+
           <ScrollView 
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
             style={styles.scrollView}
           >
             {/* Photos */}
-            {day.photos && Array.isArray(day.photos) && day.photos.length > 0 && (
+            {photos.length > 0 && (
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-                  Progress Photos ({day.photos.length})
-                </Text>
+                <Text style={styles.sectionTitle}>Progress Photos</Text>
                 <View style={styles.photoCarouselContainer}>
                   <GesturePhotoCarousel 
-                    photos={day.photos}
+                    photos={photos}
                     currentIndex={currentPhotoIndex}
                     onIndexChange={setCurrentPhotoIndex}
+                    photoWidth={190}
+                    photoHeight={240}
                   />
                 </View>
               </View>
@@ -293,25 +312,35 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
 
             {/* Daily Habits */}
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-                Daily Habits ({completedHabits}/8)
-              </Text>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Daily Habits</Text>
+                <Text style={styles.sectionCount}>{completedHabits}/8</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${(completedHabits / 8) * 100}%` }]} />
+              </View>
               <View style={styles.habitsGrid}>
                 {habitsList.map((habit) => (
                   <View 
                     key={habit.key} 
                     style={[
                       styles.habitItemCompact,
-                      { backgroundColor: habit.value ? 'rgba(16, 185, 129, 0.1)' : 'rgba(128, 128, 128, 0.1)' }
+                      habit.value ? styles.habitItemDone : styles.habitItemTodo,
                     ]}
                   >
                     <View style={[
                       styles.habitCheckbox, 
-                      { backgroundColor: habit.value ? '#10B981' : 'rgba(128, 128, 128, 0.3)' }
+                      { backgroundColor: habit.value ? '#10B981' : '#E5E7EB' }
                     ]}>
-                      {habit.value && <Ionicons name="checkmark" size={12} color="#ffffff" />}
+                      {habit.value && <Ionicons name="checkmark" size={11} color="#FFFFFF" />}
                     </View>
-                    <Text style={[styles.habitTextCompact, { color: '#ffffff' }]}>
+                    <Text
+                      style={[
+                        styles.habitTextCompact,
+                        { color: habit.value ? '#1F2937' : '#9CA3AF' },
+                      ]}
+                      numberOfLines={1}
+                    >
                       {habit.label}
                     </Text>
                   </View>
@@ -319,18 +348,14 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
               </View>
             </View>
 
-            {/* Mood & Energy - Not available in DailyPost type, so hiding this section */}
-
             {/* Captions */}
             {day.captions && day.captions.length > 0 && (
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-                  Notes ({day.captions.length})
-                </Text>
+                <Text style={styles.sectionTitle}>Notes</Text>
                 {day.captions.map((caption, index) => (
-                  <Text key={index} style={[styles.sectionContent, { color: '#ffffff', marginBottom: 8 }]}>
-                    {caption}
-                  </Text>
+                  <View key={index} style={styles.noteCard}>
+                    <Text style={styles.noteText}>{caption}</Text>
+                  </View>
                 ))}
               </View>
             )}
@@ -421,7 +446,7 @@ const styles = StyleSheet.create({
   // Modal Styles
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -434,139 +459,166 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   modalWrapper: {
-    width: '90%',
+    width: '92%',
     maxWidth: 500,
-    maxHeight: '80%',
-    backgroundColor: 'rgba(50, 50, 50, 1)',
-    borderRadius: 20,
+    maxHeight: '85%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 12,
     overflow: 'hidden',
-    minHeight: 300,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
+    color: '#1F2937',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    marginTop: 2,
   },
   closeButton: {
-    padding: 4,
-  },
-  scrollView: {
-    maxHeight: 600,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
-  content: {
-    flex: 1,
-  },
-  levelCard: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  section: {
-    marginTop: 12,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  sectionContent: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  habitItemCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
-    borderRadius: 8,
-    minWidth: '45%',
-    flex: 0,
-  },
-  habitCheckbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  habitTextCompact: {
+  summaryStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: 20,
+    marginBottom: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+    gap: 12,
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  summaryText: {
     fontSize: 13,
-    flex: 1,
+    fontWeight: '600',
+    color: '#047857',
   },
-  modalSection: {
-    marginBottom: 20,
+  summaryDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(16, 185, 129, 0.25)',
   },
-  modalSectionTitle: {
-    fontSize: 18,
+  scrollView: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+  section: {
+    marginTop: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 10,
+  },
+  sectionCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+    marginBottom: 10,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F3F4F6',
+    overflow: 'hidden',
     marginBottom: 12,
   },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
   photoCarouselContainer: {
-    height: 300,
     width: '100%',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
   },
   habitsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  habitItem: {
+  habitItemCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    minWidth: '47%',
-  },
-  habitLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  moodEnergyContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  moodEnergyItem: {
-    flex: 1,
-    padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    borderWidth: 1,
+    width: '48%',
   },
-  moodEnergyLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+  habitItemDone: {
+    backgroundColor: '#F0FDF4',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  habitItemTodo: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+  },
+  habitCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitTextCompact: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  noteCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginBottom: 8,
   },
-  ratingStars: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  captionText: {
+  noteText: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
+    color: '#374151',
   },
 });

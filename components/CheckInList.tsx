@@ -16,6 +16,7 @@ interface CheckInListProps {
   onCheckInPress: (goal: any, dayOfWeek: number) => void;
   onGoalPress: (goal: any, onCheckInDeleted: () => void) => void;
   styles: any;
+  hideEmptyState?: boolean;
 }
 
 function CheckInList({
@@ -29,7 +30,8 @@ function CheckInList({
   user,
   onCheckInPress,
   onGoalPress,
-  styles
+  styles,
+  hideEmptyState = false,
 }: CheckInListProps) {
   
   // Helper functions moved from ActionScreen
@@ -215,6 +217,10 @@ function CheckInList({
     );
   }
   
+  if (hideEmptyState) {
+    return null;
+  }
+
   return (
     <View style={styles.noCheckinsContainer}>
       <Ionicons name="calendar-outline" size={24} color={theme.textSecondary} />

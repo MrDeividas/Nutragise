@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 import { emailService } from '../lib/emailService';
+import { iapService } from '../lib/iapService';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
 
 interface AuthStore extends AuthState {
@@ -54,7 +55,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           email: session.user.email!,
           created_at: session.user.created_at
         };
-        
+
+        iapService.logIn(session.user.id).catch(() => {});
+
         set({
           user: userToSet,
           session,
@@ -90,6 +93,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             });
           }
 
+          iapService.logIn(session.user.id).catch(() => {});
+
           set({
             user: userData || {
               id: session.user.id,
@@ -99,6 +104,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             session
           });
         } else {
+          iapService.logOut().catch(() => {});
           set({ user: null, session: null });
         }
       });
@@ -169,6 +175,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           console.log('✅ Profile created successfully');
         }
 
+        iapService.logIn(user.id).catch(() => {});
+
         // Update the store immediately with the new user
         set({
           user: {
@@ -214,6 +222,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           .eq('id', signInData.user.id)
           .single();
 
+        iapService.logIn(signInData.user.id).catch(() => {});
+
         // Set user state immediately
         set({
           user: userData || {
@@ -233,6 +243,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
+    await iapService.logOut().catch(() => {});
     set({ user: null, session: null });
     
     // Note: actionStore will be cleared by the component that uses it

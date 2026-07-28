@@ -22,8 +22,7 @@ import {
   UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import { Goal, DailyHabits } from '../types/database';
@@ -133,7 +132,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [youMayLikeUsers, setYouMayLikeUsers] = useState<Profile[]>([]);
   const [communityStats, setCommunityStats] = useState({ habitsToday: 0, activeChallenges: 0 });
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  
   const [followerCounts, setFollowerCounts] = useState<Map<string, number>>(new Map());
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [goalInteractionData, setGoalInteractionData] = useState<{[goalId: string]: { likes: number; comments: number; isLiked: boolean }}>({});
@@ -176,8 +175,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     if (user) {
       loadExploreGoals();
       fetchSuggestedUsers(user.id);
-      loadUnreadNotificationCount();
-      // Sync user data to ensure email is properly set
       syncAllUserData();
     } else {
       // Clear explore goals when user logs out
@@ -186,12 +183,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     }
   }, [user, selectedCategory]);
 
-  // Refresh notification count when component mounts
-  useEffect(() => {
-    if (user) {
-      loadUnreadNotificationCount();
-    }
-  }, [user]);
+  
 
   // Reset photo index when daily posts change to ensure most recent photo is shown first
   useEffect(() => {
@@ -879,15 +871,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     }
   };
 
-  const loadUnreadNotificationCount = async () => {
-    if (!user) return;
-    try {
-      const count = await notificationService.getUnreadCount(user.id);
-      setUnreadNotificationCount(count);
-    } catch (error) {
-      console.error('Error loading unread notification count:', error);
-    }
-  };
+  
 
   const loadExplorePosts = async (userIds: string[], profileMap: Map<string, any>, dailyHabitsMap: Map<string, any>) => {
     try {
@@ -1307,7 +1291,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
       await Promise.all([
         loadExploreGoals(),
         loadAllPosts(),
-        loadUnreadNotificationCount()
       ]);
     } catch (error) {
       console.error('Error refreshing data:', error);

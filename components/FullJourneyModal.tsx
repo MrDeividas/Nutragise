@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +31,7 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
-  const theme = useTheme();
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (visible) {
@@ -113,53 +114,54 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={[styles.modalContainer, { backgroundColor: 'rgba(20, 19, 19, 0.95)' }]} edges={['left', 'right']}>
+      <SafeAreaView style={styles.modalContainer} edges={['left', 'right']}>
+        <StatusBar barStyle="dark-content" />
         {/* Header */}
-        <View style={[styles.modalHeader, { borderBottomColor: 'rgba(255, 255, 255, 0.2)' }]}>
-          <Text style={[styles.modalTitle, { color: '#ffffff' }]}>Journey</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#ffffff" />
+        <View style={styles.modalHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.modalTitle}>Journey</Text>
+            {stats?.totalDays > 0 && (
+              <Text style={styles.modalSubtitle}>
+                {stats.totalDays} {stats.totalDays === 1 ? 'day' : 'days'} logged
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
+            <Ionicons name="close" size={20} color="#6B7280" />
           </TouchableOpacity>
         </View>
 
         {/* Stats Section */}
         {stats && (
-          <View style={[styles.statsContainer, { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)' }]}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: '#14b8a6' }]}>{stats.totalDays}</Text>
-              <Text style={[styles.statLabel, { color: '#ffffff' }]}>Days</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: '#14b8a6' }]}>{stats.totalPhotos}</Text>
-              <Text style={[styles.statLabel, { color: '#ffffff' }]}>Photos</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: '#14b8a6' }]}>{stats.totalHabits}</Text>
-              <Text style={[styles.statLabel, { color: '#ffffff' }]}>Habits</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: '#14b8a6' }]}>{stats.averagePhotosPerDay}</Text>
-              <Text style={[styles.statLabel, { color: '#ffffff' }]}>Avg/Day</Text>
-            </View>
+          <View style={styles.statsContainer}>
+            <StatItem icon="calendar-outline" value={stats.totalDays} label="Days" />
+            <View style={styles.statDivider} />
+            <StatItem icon="images-outline" value={stats.totalPhotos} label="Photos" />
+            <View style={styles.statDivider} />
+            <StatItem icon="checkmark-circle-outline" value={stats.totalHabits} label="Habits" />
+            <View style={styles.statDivider} />
+            <StatItem icon="trending-up-outline" value={stats.averagePhotosPerDay} label="Avg/Day" />
           </View>
         )}
         
         {/* Journey Content */}
-        <ScrollView style={styles.journeyScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.journeyScroll}
+          contentContainerStyle={styles.journeyScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
-              <Text style={[styles.loadingText, { color: '#ffffff' }]}>
-                Loading your journey...
-              </Text>
+              <ActivityIndicator size="large" color="#10B981" />
+              <Text style={styles.loadingText}>Loading your journey...</Text>
             </View>
           ) : allDays.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={64} color="#ffffff" />
-              <Text style={[styles.emptyTitle, { color: '#ffffff' }]}>
-                No Journey Yet
-              </Text>
-              <Text style={[styles.emptyText, { color: '#ffffff' }]}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="calendar-outline" size={40} color="#10B981" />
+              </View>
+              <Text style={styles.emptyTitle}>No Journey Yet</Text>
+              <Text style={styles.emptyText}>
                 Start your wellness journey by posting your first daily update!
               </Text>
             </View>
@@ -184,6 +186,16 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
   );
 }
 
+function StatItem({ icon, value, label }: { icon: string; value: number | string; label: string }) {
+  return (
+    <View style={styles.statItem}>
+      <Ionicons name={icon as any} size={16} color="#10B981" />
+      <Text style={styles.statNumber}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
 interface JourneyDayCardProps {
   day: DailyPost;
   dayNumber: number;
@@ -192,66 +204,62 @@ interface JourneyDayCardProps {
   readOnly?: boolean;
 }
 
+const HABIT_META: Record<string, { icon: string; label: string }> = {
+  microlearn: { icon: 'book-outline', label: 'Microlearn' },
+  meditation: { icon: 'leaf-outline', label: 'Meditation' },
+  water: { icon: 'water-outline', label: 'Water' },
+  run: { icon: 'walk-outline', label: 'Run' },
+  gym: { icon: 'barbell-outline', label: 'Gym' },
+  coldshower: { icon: 'snow-outline', label: 'Cold Shower' },
+  cold_shower: { icon: 'snow-outline', label: 'Cold Shower' },
+  sleep: { icon: 'moon-outline', label: 'Sleep' },
+  reflect: { icon: 'create-outline', label: 'Reflect' },
+};
+
 function JourneyDayCard({ day, dayNumber, theme, onDelete, readOnly = false }: JourneyDayCardProps) {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
-  // Get habit icons
-  const getHabitIcon = (habit: string) => {
-    switch (habit.toLowerCase()) {
-      case 'microlearn':
-        return 'book-outline';
-      case 'meditation':
-        return 'leaf-outline';
-      case 'water':
-        return 'water-outline';
-      case 'run':
-        return 'walk-outline';
-      case 'gym':
-        return 'barbell-outline';
-      case 'coldshower':
-        return 'snow-outline';
-      default:
-        return 'checkmark-circle-outline';
-    }
-  };
+  const getHabitMeta = (habit: string) =>
+    HABIT_META[habit.toLowerCase()] ?? {
+      icon: 'checkmark-circle-outline',
+      label: habit.replace(/_/g, ' '),
+    };
 
   return (
-    <View style={[styles.dayCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)' }]}>
+    <View style={styles.dayCard}>
       {/* Day Header */}
       <View style={styles.dayHeader}>
         <View style={styles.dayInfo}>
-          <Text style={[styles.dayNumber, { color: '#14b8a6' }]}>Day {dayNumber}</Text>
-          <Text style={[styles.dayDate, { color: '#ffffff' }]}>
-            {formatDate(day.date)} • {day.post_count} posts
+          <View style={styles.dayBadge}>
+            <Text style={styles.dayBadgeText}>Day {dayNumber}</Text>
+          </View>
+          <Text style={styles.dayDate}>
+            {formatDate(day.date)} • {day.post_count} {day.post_count === 1 ? 'post' : 'posts'}
           </Text>
         </View>
-        
-        <View style={styles.dayActions}>
-          {/* Habit Summary */}
-          <View style={styles.habitSummary}>
-            {day.habits_completed.map((habit, index) => (
-              <Ionicons 
-                key={index}
-                name={getHabitIcon(habit) as any}
-                size={16}
-                color="#14b8a6"
-                style={styles.habitIcon}
-              />
-            ))}
-            <Text style={[styles.habitCount, { color: '#ffffff' }]}>
-              {day.total_habits} habits
-            </Text>
-          </View>
-          
-          {/* Delete Button - Only show if not read-only */}
-          {!readOnly && (
-            <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-            </TouchableOpacity>
-          )}
-        </View>
+
+        {!readOnly && (
+          <TouchableOpacity onPress={onDelete} style={styles.deleteButton} activeOpacity={0.7}>
+            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+          </TouchableOpacity>
+        )}
       </View>
-      
+
+      {/* Habit Summary */}
+      {day.total_habits > 0 && (
+        <View style={styles.habitSummary}>
+          {day.habits_completed.map((habit, index) => {
+            const meta = getHabitMeta(habit);
+            return (
+              <View key={index} style={styles.habitChip}>
+                <Ionicons name={meta.icon as any} size={13} color="#047857" />
+                <Text style={styles.habitChipText}>{meta.label}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* Photo Gallery */}
       {day.photos.length > 0 && (
         <View style={styles.photoSection}>
@@ -259,16 +267,16 @@ function JourneyDayCard({ day, dayNumber, theme, onDelete, readOnly = false }: J
             photos={day.photos}
             currentIndex={currentPhotoIndex}
             onIndexChange={setCurrentPhotoIndex}
+            photoWidth={170}
+            photoHeight={210}
           />
         </View>
       )}
-      
+
       {/* Captions */}
       {day.captions.length > 0 && (
         <View style={styles.captionSection}>
-          <Text style={[styles.captionText, { color: '#ffffff' }]}>
-            {day.captions.join(' • ')}
-          </Text>
+          <Text style={styles.captionText}>{day.captions.join(' • ')}</Text>
         </View>
       )}
     </View>
@@ -278,81 +286,133 @@ function JourneyDayCard({ day, dayNumber, theme, onDelete, readOnly = false }: J
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
+    backgroundColor: '#FCFAF9',
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 60,
-    paddingBottom: 12,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    marginTop: 2,
   },
   closeButton: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 16,
-    borderRadius: 12,
+    marginTop: 16,
+    marginBottom: 4,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   statItem: {
+    flex: 1,
     alignItems: 'center',
+    gap: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: '#F3F4F6',
   },
   statNumber: {
     fontSize: 20,
     fontWeight: '700',
+    color: '#1F2937',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
-    marginTop: 2,
+    color: '#9CA3AF',
   },
   journeyScroll: {
     flex: 1,
     paddingHorizontal: 16,
   },
+  journeyScrollContent: {
+    paddingTop: 8,
+    paddingBottom: 32,
+  },
   loadingContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 80,
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16,
+    fontSize: 15,
+    color: '#6B7280',
   },
   emptyContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+  },
+  emptyIconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    marginTop: 16,
+    fontWeight: '700',
+    color: '#1F2937',
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
+    color: '#6B7280',
     marginTop: 8,
     paddingHorizontal: 32,
   },
   dayCard: {
     marginVertical: 8,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   dayHeader: {
     flexDirection: 'row',
@@ -362,49 +422,76 @@ const styles = StyleSheet.create({
   },
   dayInfo: {
     flex: 1,
+    gap: 6,
   },
-  dayActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  dayBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  dayNumber: {
-    fontSize: 18,
+  dayBadgeText: {
+    fontSize: 14,
     fontWeight: '700',
+    color: '#047857',
   },
   dayDate: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    marginTop: 2,
+    color: '#9CA3AF',
   },
   habitSummary: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  habitChip: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  habitIcon: {
-    marginRight: 2,
-  },
-  habitCount: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
+  habitChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#047857',
+    textTransform: 'capitalize',
   },
   photoSection: {
     marginBottom: 12,
   },
   captionSection: {
-    paddingTop: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   captionText: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
+    color: '#374151',
   },
   deleteButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: '#FECACA',
   },
 });

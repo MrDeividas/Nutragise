@@ -333,12 +333,15 @@ class AdminService {
           .eq('id', challengeId)
           .single();
 
+        const title = challenge?.title || 'Challenge';
         for (const participant of participants) {
-          // Note: Not using goal_id as it has foreign key constraint to goals table, not challenges
-          await notificationService.createNotification({
-            user_id: participant.user_id,
-            notification_type: 'challenge_approved',
-          });
+          await notificationService.createNotification(
+            {
+              user_id: participant.user_id,
+              notification_type: 'challenge_approved',
+            },
+            { title: '🏆 Challenge Approved', body: `Your "${title}" challenge was approved! Check your wallet.` }
+          );
         }
       }
 
@@ -383,12 +386,13 @@ class AdminService {
         throw updateError;
       }
 
-      // Create notification for the invalidated user
-      // Note: Not using goal_id as it has foreign key constraint to goals table, not challenges
-      await notificationService.createNotification({
-        user_id: userId,
-        notification_type: 'submission_invalidated',
-      });
+      await notificationService.createNotification(
+        {
+          user_id: userId,
+          notification_type: 'submission_invalidated',
+        },
+        { title: '⚠️ Submission Invalidated', body: 'One of your challenge submissions was invalidated.' }
+      );
 
       console.log('✅ User submission invalidated:', { challengeId, userId, reason });
       return true;
@@ -454,12 +458,16 @@ class AdminService {
         .eq('is_invalid', false);
 
       if (participants) {
+        const { data: ch } = await supabase.from('challenges').select('title').eq('id', challengeId).single();
+        const chTitle = ch?.title || 'Challenge';
         for (const participant of participants) {
-          // Note: Not using goal_id as it has foreign key constraint to goals table, not challenges
-          await notificationService.createNotification({
-            user_id: participant.user_id,
-            notification_type: 'challenge_approved',
-          });
+          await notificationService.createNotification(
+            {
+              user_id: participant.user_id,
+              notification_type: 'challenge_approved',
+            },
+            { title: '🏆 Challenge Approved', body: `Your "${chTitle}" challenge was approved! Check your wallet.` }
+          );
         }
       }
 
@@ -537,12 +545,16 @@ class AdminService {
         .eq('challenge_id', challengeId);
 
       if (participants) {
+        const { data: ch } = await supabase.from('challenges').select('title').eq('id', challengeId).single();
+        const chTitle = ch?.title || 'Challenge';
         for (const participant of participants) {
-          // Note: Not using goal_id as it has foreign key constraint to goals table, not challenges
-          await notificationService.createNotification({
-            user_id: participant.user_id,
-            notification_type: 'challenge_rejected',
-          });
+          await notificationService.createNotification(
+            {
+              user_id: participant.user_id,
+              notification_type: 'challenge_rejected',
+            },
+            { title: '❌ Challenge Rejected', body: `Your "${chTitle}" challenge was not approved.` }
+          );
         }
       }
 

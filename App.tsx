@@ -10,8 +10,10 @@ import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { useAuthStore } from './state/authStore';
 import { useTheme } from './state/themeStore';
-import { supabase } from './lib/supabase';
+import { useNotificationsStore } from './state/notificationsStore';
+import { supabase, supabaseConfigError } from './lib/supabase';
 import { stripeService } from './lib/stripeService';
+import { iapService } from './lib/iapService';
 import { challengesService } from './lib/challengesService';
 import { initializeAI } from './lib/config';
 import { pushNotificationService } from './lib/pushNotificationService';
@@ -535,19 +537,26 @@ export default function App() {
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   useEffect(() => {
+    if (supabaseConfigError) return;
     initialize();
     initializeAI();
-    // Check and update ended challenges to pending review status
+    iapService.configure();
     challengesService.checkAndUpdateEndedChallenges().catch(error => {
       console.error('Error checking ended challenges:', error);
     });
   }, []);
 
+  // Subscribe to realtime notifications when user logs in
+  useEffect(() => {
+    if (supabaseConfigError || !user) return;
+    useNotificationsStore.getState().subscribe(user.id);
+    return () => { useNotificationsStore.getState().unsubscribe(); };
+  }, [user?.id]);
+
   // Register push notifications when user logs in, clean up on logout
   useEffect(() => {
-    if (!user) return;
+    if (supabaseConfigError || !user) return;
 
-    // Initialise (request permission + save token to DB)
     pushNotificationService.initialize(user.id);
 
     // Handle notification taps — navigate to the relevant screen
@@ -576,6 +585,7 @@ export default function App() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (supabaseConfigError) return;
     // Check if user has completed onboarding
     const checkOnboarding = async () => {
       if (user) {
@@ -606,6 +616,19 @@ export default function App() {
     
     checkOnboarding();
   }, [user]);
+
+  if (supabaseConfigError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: '#FFFFFF', paddingHorizontal: 24 }]}>
+        <Text style={[styles.loadingText, { color: '#111827', fontWeight: '700', marginBottom: 8 }]}>
+          Configuration error
+        </Text>
+        <Text style={{ color: '#4B5563', textAlign: 'center', lineHeight: 22 }}>
+          {supabaseConfigError}
+        </Text>
+      </View>
+    );
+  }
 
   if (loading || (user && onboardingComplete === null)) {
     return (

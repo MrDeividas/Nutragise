@@ -1,35 +1,41 @@
-import { createClient } from '@supabase/supabase-js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@env';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { env, getMissingRequiredEnv } from './env';
 
-// Debug: Log what we're getting from @env
-console.log('🔍 Environment variables check:');
-console.log('SUPABASE_URL:', SUPABASE_URL ? `${SUPABASE_URL.substring(0, 20)}...` : 'undefined');
-console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.substring(0, 20)}...` : 'undefined');
+const supabaseUrl = env.supabaseUrl;
+const supabaseAnonKey = env.supabaseAnonKey;
 
-// Validate environment variables
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  const missingVars = [];
-  if (!SUPABASE_URL) missingVars.push('SUPABASE_URL');
-  if (!SUPABASE_ANON_KEY) missingVars.push('SUPABASE_ANON_KEY');
-  
-  console.error('❌ Missing environment variables:', missingVars);
-  console.error('💡 Make sure:');
-  console.error('   1. .env file exists in the root directory');
-  console.error('   2. Variables are named exactly: SUPABASE_URL and SUPABASE_ANON_KEY');
-  console.error('   3. No spaces around the = sign (e.g., SUPABASE_URL=https://...)');
-  console.error('   4. Metro bundler cache is cleared (npm start -- --reset-cache)');
-  
-  throw new Error(
-    `Missing required environment variables: ${missingVars.join(', ')}\n` +
-    `Please check your .env file in the root directory.\n` +
-    `After updating .env, restart with: npm start -- --reset-cache`
-  );
+export const supabaseConfigError: string | null = (() => {
+  const missing = getMissingRequiredEnv();
+  if (missing.length > 0) {
+    return (
+      `Missing required configuration: ${missing.join(', ')}. ` +
+      'Rebuild with EAS production environment variables set.'
+    );
+  }
+  const placeholder =
+    /your_.*key|YOUR_.*KEY|placeholder|changeme/i.test(supabaseAnonKey) ||
+    supabaseAnonKey.length < 20;
+  if (placeholder || !(supabaseAnonKey.startsWith('eyJ') || supabaseAnonKey.startsWith('sb_'))) {
+    return 'SUPABASE_ANON_KEY is invalid. Use the anon public key from Supabase → Settings → API.';
+  }
+  return null;
+})();
+
+if (supabaseConfigError) {
+  console.error('❌ Supabase config error:', supabaseConfigError);
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
+// Always create a client so imports don't crash the native shell.
+// Calls will fail until env is fixed — App shows a config error screen.
+export const supabase: SupabaseClient = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey ||
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder',
+  {
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      },
     },
-  },
-}); 
+  }
+);

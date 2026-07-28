@@ -1,5 +1,5 @@
 // Configuration for API keys and environment variables
-import { DEEPSEEK_API_KEY, STRIPE_PUBLISHABLE_KEY } from '@env';
+import { env } from './env';
 export const config = {
   // DeepSeek API Configuration
   deepseek: {
@@ -12,7 +12,7 @@ export const config = {
   
   // Stripe Configuration
   stripe: {
-    publishableKey: STRIPE_PUBLISHABLE_KEY || '',
+    publishableKey: env.stripePublishableKey || '',
   },
   
   // App Configuration
@@ -52,8 +52,8 @@ export const setApiKey = (apiKey: string): void => {
 // Initialize with the provided API key from environment variables
 export const initializeAI = (): void => {
   try {
-    if (DEEPSEEK_API_KEY) {
-      setApiKey(DEEPSEEK_API_KEY);
+    if (env.deepseekApiKey) {
+      setApiKey(env.deepseekApiKey);
       console.log('✅ DeepSeek API key loaded from environment variables');
     } else {
       console.warn('⚠️ DEEPSEEK_API_KEY not found in environment variables');

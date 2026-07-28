@@ -67,23 +67,21 @@ export interface Notification {
 }
 
 class NotificationService {
-  // Create a notification
-  async createNotification(data: {
-    user_id: string;
-    from_user_id?: string;
-    notification_type: string;
-    post_id?: string;
-    comment_id?: string;
-    reply_id?: string;
-    goal_id?: string;
-    habit_type?: string; // e.g. 'custom' or core habit key
-  }): Promise<boolean> {
+  async createNotification(
+    data: {
+      user_id: string;
+      from_user_id?: string;
+      notification_type: string;
+      post_id?: string;
+      comment_id?: string;
+      reply_id?: string;
+      goal_id?: string;
+      habit_type?: string;
+    },
+    push?: { title: string; body: string; extras?: Record<string, any> }
+  ): Promise<boolean> {
     try {
-      // Filter out undefined fields before inserting
       const insertData: any = { ...data };
-      
-      // Note: habit_type is now used to store the habit display name for habit invites
-      // Keep it in the insert data so it's saved to the database
 
       const { error } = await supabase
         .from('notifications')
@@ -94,8 +92,14 @@ class NotificationService {
         return false;
       }
 
-      // Invalidate notifications cache
       apiCache.delete(apiCache.generateKey('notifications', data.user_id));
+
+      if (push) {
+        sendPush(data.user_id, push.title, push.body, {
+          type: data.notification_type,
+          ...push.extras,
+        });
+      }
 
       return true;
     } catch (error) {

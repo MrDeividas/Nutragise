@@ -24,6 +24,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
+import { useNotificationsStore } from '../state/notificationsStore';
+import { notificationService } from '../lib/notificationService';
 import CustomBackground from '../components/CustomBackground';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { EmojiTrendChart } from '../components/EmojiTrendChart';
@@ -63,6 +65,7 @@ export default function InsightsScreen({ route }: any) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { user } = useAuthStore();
+  const unreadNotifCount = useNotificationsStore((s) => s.unreadCount);
   const { shouldOpenGraphs, setShouldOpenGraphs } = useActionStore();
   
   // Optimized state management
@@ -745,10 +748,31 @@ export default function InsightsScreen({ route }: any) {
           {/* Right: Notifications */}
           <TouchableOpacity 
             style={{ zIndex: 1 }}
-            onPress={() => (navigation as any).navigate('Notifications')}
+            onPress={async () => {
+              if (user && unreadNotifCount > 0) {
+                await notificationService.markAllAsRead(user.id);
+                useNotificationsStore.getState().clearCount();
+              }
+              (navigation as any).navigate('Notifications');
+            }}
             activeOpacity={0.7}
           >
-             <Ionicons name="notifications-outline" size={24} color={textPrimary} />
+            <View>
+              <Ionicons name="notifications-outline" size={24} color={textPrimary} />
+              {unreadNotifCount > 0 && (
+                <View style={{
+                  position: 'absolute', top: -4, right: -8,
+                  backgroundColor: '#EF4444', borderRadius: 9,
+                  minWidth: 18, height: 18,
+                  justifyContent: 'center', alignItems: 'center',
+                  paddingHorizontal: 4,
+                }}>
+                  <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+                    {unreadNotifCount > 99 ? '99+' : unreadNotifCount}
+                  </Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
         </View>
         

@@ -151,16 +151,17 @@ export const habitsService = {
         const partnerProfile = partnership.inviter_id === userId ? partnership.partner2 : partnership.partner;
         
         try {
-          const { default: notificationService } = await import('./notificationService');
-          await notificationService.createNotification({
-            user_id: partnerId,
-            from_user_id: userId,
-            notification_type: 'habit_invite_accepted', // Reusing type for general habit notifications
-            message: 'deleted a habit you were tracking together. Partnership cancelled.',
-          });
+          const { notificationService } = await import('./notificationService');
+          await notificationService.createNotification(
+            {
+              user_id: partnerId,
+              from_user_id: userId,
+              notification_type: 'habit_invite_accepted',
+            },
+            { title: '📋 Habit Update', body: 'A habit you were tracking together was deleted. Partnership cancelled.' }
+          );
         } catch (notifError) {
           console.error('[DeleteHabit] Error sending notification:', notifError);
-          // Don't fail the deletion if notification fails
         }
       }
     }

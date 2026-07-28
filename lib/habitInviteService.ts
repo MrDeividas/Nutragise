@@ -23,9 +23,15 @@ const CORE_HABIT_NAMES: Record<string, string> = {
 };
 
 class HabitInviteService {
-  /**
-   * Get display name for a habit (core or custom)
-   */
+  private async getProfileName(userId: string): Promise<string> {
+    const { data } = await supabase
+      .from('profiles')
+      .select('display_name, username')
+      .eq('id', userId)
+      .single();
+    return data?.display_name || data?.username || 'Someone';
+  }
+
   private async getHabitDisplayName(habitType: 'core' | 'custom', identifier: string): Promise<string> {
     if (habitType === 'core') {
       return CORE_HABIT_NAMES[identifier] || identifier;
@@ -107,23 +113,24 @@ class HabitInviteService {
 
           if (error) throw error;
 
-          // Get habit display name for notification
           const habitDisplayName = await this.getHabitDisplayName(habitType, identifier);
+          const inviterName = await this.getProfileName(inviterId);
 
-          // Create notification
-          await notificationService.createNotification({
-            user_id: inviteeId,
-            from_user_id: inviterId,
-            notification_type: 'habit_invite',
-            habit_type: habitDisplayName, // Store habit display name for notification
-          });
+          await notificationService.createNotification(
+            {
+              user_id: inviteeId,
+              from_user_id: inviterId,
+              notification_type: 'habit_invite',
+              habit_type: habitDisplayName,
+            },
+            { title: '🤝 Habit Invite', body: `${inviterName} invited you to do "${habitDisplayName}" together` }
+          );
 
           return data;
         }
-        return existing; // Already pending or active
+        return existing;
       }
 
-      // Create new invite
       const insertData: any = {
         inviter_id: inviterId,
         invitee_id: inviteeId,
@@ -135,7 +142,6 @@ class HabitInviteService {
         status: 'pending'
       };
       
-      // Only add new fields if they exist in the database (after migration)
       if (habitType === 'custom' && customHabitId) {
         insertData.inviter_habit_id = customHabitId;
         insertData.invitee_habit_id = null;
@@ -149,16 +155,18 @@ class HabitInviteService {
 
       if (error) throw error;
 
-      // Get habit display name for notification
       const habitDisplayName = await this.getHabitDisplayName(habitType, identifier);
+      const inviterName = await this.getProfileName(inviterId);
 
-      // Create notification
-      await notificationService.createNotification({
-        user_id: inviteeId,
-        from_user_id: inviterId,
-        notification_type: 'habit_invite',
-        habit_type: habitDisplayName, // Store habit display name for notification
-      });
+      await notificationService.createNotification(
+        {
+          user_id: inviteeId,
+          from_user_id: inviterId,
+          notification_type: 'habit_invite',
+          habit_type: habitDisplayName,
+        },
+        { title: '🤝 Habit Invite', body: `${inviterName} invited you to do "${habitDisplayName}" together` }
+      );
 
       return data;
     } catch (error) {
@@ -520,12 +528,15 @@ class HabitInviteService {
           }
         }
 
-        // Notify inviter
-        await notificationService.createNotification({
-          user_id: partnership.inviter_id,
-          from_user_id: userId,
-          notification_type: 'habit_invite_accepted',
-        });
+        const accepterName = await this.getProfileName(userId);
+        await notificationService.createNotification(
+          {
+            user_id: partnership.inviter_id,
+            from_user_id: userId,
+            notification_type: 'habit_invite_accepted',
+          },
+          { title: '✅ Invite Accepted', body: `${accepterName} accepted your habit invite!` }
+        );
       }
 
       return true;

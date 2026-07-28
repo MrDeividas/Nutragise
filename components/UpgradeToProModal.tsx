@@ -1,10 +1,21 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TouchableWithoutFeedback, Alert, ActivityIndicator, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Alert,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useStripe } from '@stripe/stripe-react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { PurchasesPackage } from 'react-native-purchases';
 import { useAuthStore } from '../state/authStore';
-import { stripeService } from '../lib/stripeService';
+import { iapService } from '../lib/iapService';
 import { supabase } from '../lib/supabase';
 
 interface Props {
@@ -34,19 +45,60 @@ const proFeatures = [
   },
 ];
 
+const DEFAULT_PRICE_LABEL = '£15';
+const DEFAULT_PERIOD_LABEL = '/month';
+
 export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props) {
   const { user } = useAuthStore();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [proPackage, setProPackage] = useState<PurchasesPackage | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let cancelled = false;
+    (async () => {
+      const pkg = await iapService.getProPackage();
+      if (!cancelled) setProPackage(pkg);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const priceLabel = proPackage?.product?.priceString || DEFAULT_PRICE_LABEL;
+  const periodLabel = proPackage ? '' : DEFAULT_PERIOD_LABEL;
+
+  const refreshProfileAfterPurchase = async () => {
+    try {
+      const { apiCache } = await import('../lib/apiCache');
+      apiCache.clear();
+    } catch {
+      // Cache module is optional — ignore if it cannot be loaded.
+    }
+
+    if (user?.id) {
+      try {
+        await supabase.from('profiles').select('is_pro').eq('id', user.id).single();
+      } catch {
+        // Best-effort refresh; webhook is the source of truth.
+      }
+    }
+
+    if (onUpgrade) {
+      await onUpgrade();
+    }
+  };
 
   const handleUpgrade = async () => {
-    if (onUpgrade) {
+    if (onUpgrade && !user) {
       onUpgrade();
       return;
     }
 
-    // Create subscription with Payment Sheet (in-app)
     if (!user) {
       Alert.alert('Error', 'Please log in to upgrade to Pro');
       return;
@@ -54,143 +106,82 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
 
     try {
       setLoading(true);
+      await iapService.logIn(user.id);
+      const result = await iapService.purchasePro();
 
-      // 1. Create subscription with Payment Sheet
-      const { subscriptionId, clientSecret } = await stripeService.createSubscriptionPaymentSheet(
-        user.id,
-        user.email,
-        user.username
-      );
+      if (result.status === 'cancelled') return;
 
-      if (!clientSecret) {
-        throw new Error('Failed to create payment sheet');
+      if (result.status === 'error') {
+        Alert.alert('Subscription Error', result.message);
+        return;
       }
 
-      // 2. Initialize Payment Sheet with Card only (Apple Pay/Google Pay disabled until app is deployed)
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'Nutragise Pro',
-        paymentIntentClientSecret: clientSecret,
-        paymentMethodTypes: ['Card'], // Only Card for now
-        defaultBillingDetails: {
-          name: user.username || user.email?.split('@')[0] || 'User',
-          email: user.email,
-        },
-        returnURL: 'nutrapp://subscription-success',
-        allowsDelayedPaymentMethods: false, // Disable Link
-        appearance: {
-          colors: {
-            primary: '#F59E0B',
-          },
-        },
-      });
+      const grantedPro = iapService.hasProEntitlement(result.customerInfo);
+      await refreshProfileAfterPurchase();
+      onClose();
 
-      if (initError) {
-        throw new Error(initError.message);
-      }
-
-      // 3. Present Payment Sheet
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        if (presentError.code === 'Canceled') {
-          console.log('Payment canceled by user');
-          return;
-        }
-        throw new Error(presentError.message);
-      }
-
-      // 4. Payment successful!
-      console.log('✅ Subscription payment successful:', subscriptionId);
-      
-      // 5. Sync subscription status from Stripe (fallback if webhook hasn't fired yet)
-      try {
-        console.log('🔄 Syncing subscription status...');
-        const syncResult = await stripeService.syncSubscriptionStatus(user.id);
-        console.log('✅ Subscription sync result:', syncResult);
-        
-        if (syncResult.isPro) {
-          // Pro status confirmed - refresh profile immediately
-          console.log('🔄 Refreshing profile data after Pro upgrade...');
-          
-          // Clear caches to force fresh data
-          try {
-            const { apiCache } = await import('../lib/apiCache');
-            apiCache.clear();
-            console.log('✅ Cache cleared');
-          } catch (cacheError) {
-            console.error('⚠️ Error clearing cache:', cacheError);
-          }
-          
-          // Verify database was updated
-          if (user?.id) {
-            try {
-              const { data: verifyProfile, error: verifyError } = await supabase
-                .from('profiles')
-                .select('is_pro')
-                .eq('id', user.id)
-                .single();
-              
-              if (!verifyError && verifyProfile) {
-                console.log('✅ Verified database update, is_pro:', verifyProfile.is_pro);
-              }
-            } catch (verifyErr) {
-              console.error('⚠️ Error verifying profile:', verifyErr);
-            }
-          }
-          
-          // Call onUpgrade callback immediately to refresh screens
-          if (onUpgrade) {
-            console.log('🔄 Calling onUpgrade callback...');
-            await onUpgrade();
-          }
-          
-          // Close modal and show success
-          onClose();
-          
-          // Small delay to ensure state updates propagate
-          setTimeout(() => {
-            Alert.alert(
-              'Welcome to Pro! 🎉',
-              'Your Pro subscription is now active!',
-              [{ 
+      setTimeout(() => {
+        if (grantedPro) {
+          Alert.alert(
+            'Welcome to Pro!',
+            'Your Pro subscription is now active.',
+            [
+              {
                 text: 'OK',
                 onPress: () => {
-                  // Force navigation refresh if possible
                   if (navigation) {
-                    // Try to refresh current screen
                     (navigation as any).dispatch((navigation as any).getState());
                   }
-                }
-              }]
-            );
-          }, 100);
+                },
+              },
+            ]
+          );
         } else {
-          // Payment succeeded but subscription not active yet (webhook pending)
           Alert.alert(
-            'Payment Successful! ⏳',
-            'Your payment was processed. Pro access will be activated shortly. If it doesn\'t appear in a few minutes, please refresh the app.',
-            [{ text: 'OK', onPress: onClose }]
+            'Payment Received',
+            "Your purchase is being processed. Pro features will unlock shortly. If they don't appear in a few minutes, try Restore Purchases.",
           );
         }
-      } catch (syncError: any) {
-        console.error('⚠️ Error syncing subscription (non-critical):', syncError);
-        // Non-critical - webhook will handle it
-        Alert.alert(
-          'Payment Successful! ⏳',
-          'Your payment was processed. Pro access will be activated shortly. If it doesn\'t appear in a few minutes, please refresh the app.',
-          [{ text: 'OK', onPress: onClose }]
-        );
-      }
+      }, 100);
     } catch (error: any) {
-      console.error('Error creating subscription:', error);
-      Alert.alert(
-        'Subscription Error',
-        error.message || 'Failed to start subscription. Please try again.'
-      );
+      console.error('Error starting Pro purchase:', error);
+      Alert.alert('Subscription Error', error?.message || 'Failed to start subscription. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleRestore = async () => {
+    if (restoring) return;
+
+    try {
+      setRestoring(true);
+      if (user?.id) await iapService.logIn(user.id);
+      const result = await iapService.restorePurchases();
+
+      if (result.status === 'error') {
+        Alert.alert('Restore Failed', result.message);
+        return;
+      }
+
+      if (result.status === 'success' && iapService.hasProEntitlement(result.customerInfo)) {
+        await refreshProfileAfterPurchase();
+        onClose();
+        setTimeout(() => {
+          Alert.alert('Pro Restored', 'Your Pro subscription has been restored.');
+        }, 100);
+      } else {
+        Alert.alert('No Purchases Found', 'We could not find an active Pro subscription on this account.');
+      }
+    } catch (error: any) {
+      console.error('Error restoring purchases:', error);
+      Alert.alert('Restore Failed', error?.message || 'Could not restore purchases.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const storeLabel = Platform.OS === 'ios' ? 'Apple ID' : Platform.OS === 'android' ? 'Google Play account' : 'store account';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -213,14 +204,13 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
 
               {/* Content */}
               <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Features List - Prominent */}
                 <View style={styles.featuresContainer}>
                   {proFeatures.map((feature, index) => (
-                    <View 
-                      key={index} 
+                    <View
+                      key={index}
                       style={[
                         styles.featureItem,
-                        index === proFeatures.length - 1 && { borderBottomWidth: 0, marginBottom: 0, paddingBottom: 0 }
+                        index === proFeatures.length - 1 && { borderBottomWidth: 0, marginBottom: 0, paddingBottom: 0 },
                       ]}
                     >
                       <View style={[styles.featureIconContainer, { backgroundColor: `${feature.color}20` }]}>
@@ -234,25 +224,27 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
                   ))}
                 </View>
 
-                {/* Pricing Section */}
                 <View style={styles.pricingContainer}>
                   <View style={styles.pricingBadge}>
                     <Text style={styles.pricingBadgeText}>PRO MEMBERSHIP</Text>
                   </View>
                   <Text style={styles.priceText}>
-                    £15<Text style={styles.pricePeriod}>/month</Text>
+                    {priceLabel}
+                    {periodLabel ? <Text style={styles.pricePeriod}>{periodLabel}</Text> : null}
                   </Text>
-                  <Text style={styles.priceSubtext}>Cancel anytime</Text>
+                  <Text style={styles.priceSubtext}>
+                    Cancel anytime in your {storeLabel}
+                  </Text>
                 </View>
               </ScrollView>
 
-              {/* Footer - Upgrade Button */}
+              {/* Footer */}
               <View style={styles.footer}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.upgradeButton, loading && styles.upgradeButtonDisabled]}
                   onPress={handleUpgrade}
                   activeOpacity={0.8}
-                  disabled={loading}
+                  disabled={loading || restoring}
                 >
                   {loading ? (
                     <ActivityIndicator color="white" size="small" />
@@ -263,11 +255,25 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
                     </>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity 
+
+                <TouchableOpacity
+                  style={styles.restoreButton}
+                  onPress={handleRestore}
+                  activeOpacity={0.8}
+                  disabled={loading || restoring}
+                >
+                  {restoring ? (
+                    <ActivityIndicator color="#666" size="small" />
+                  ) : (
+                    <Text style={styles.restoreText}>Restore Purchases</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={styles.maybeLaterButton}
                   onPress={onClose}
                   activeOpacity={0.8}
-                  disabled={loading}
+                  disabled={loading || restoring}
                 >
                   <Text style={styles.maybeLaterText}>Maybe Later</Text>
                 </TouchableOpacity>
@@ -448,8 +454,18 @@ const styles = StyleSheet.create({
   upgradeButtonDisabled: {
     opacity: 0.6,
   },
+  restoreButton: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
   maybeLaterButton: {
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
   },
   maybeLaterText: {
@@ -458,4 +474,3 @@ const styles = StyleSheet.create({
     color: '#666',
   },
 });
-

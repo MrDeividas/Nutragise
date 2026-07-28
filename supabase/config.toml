@@ -28,6 +28,14 @@ verify_jwt = false
 # Called by the app when a user joins a 7-day challenge (saves their card)
 verify_jwt = true
 
+[functions.revenuecat-webhook]
+# Called by RevenueCat (no Supabase JWT) — auth is REVENUECAT_WEBHOOK_AUTH in the Authorization header
+verify_jwt = false
+
+[functions.send-push-notification]
+# Called by the app client (authenticated users) to send push notifications
+verify_jwt = true
+
 [edge_runtime]
 policy = "per_worker"
 

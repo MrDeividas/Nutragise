@@ -8,7 +8,7 @@
  */
 
 import { config } from './config';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@env';
+import { env } from './env';
 import { supabase } from './supabase';
 
 // NOTE: For React Native, Stripe operations need to be handled through:
@@ -45,10 +45,8 @@ class StripeService {
    * Get Supabase URL and anon key (from env or supabase client)
    */
   private getSupabaseConfig(): { url: string; anonKey: string } {
-    // Get Supabase URL from env or extract from supabase client
-    let supabaseUrl = SUPABASE_URL;
+    let supabaseUrl = env.supabaseUrl;
     if (!supabaseUrl) {
-      // Extract base URL from supabase client's rest URL
       const restUrl = supabase.rest.url;
       if (restUrl) {
         supabaseUrl = restUrl.replace('/rest/v1', '');
@@ -59,10 +57,8 @@ class StripeService {
       throw new Error('Supabase URL not configured. Please set SUPABASE_URL in your .env file.');
     }
 
-    // Get anon key from env or supabase client
-    let anonKey = SUPABASE_ANON_KEY;
+    let anonKey = env.supabaseAnonKey;
     if (!anonKey) {
-      // Try to get from supabase client (if available)
       anonKey = (supabase as any).supabaseKey || '';
     }
     
@@ -539,172 +535,9 @@ class StripeService {
     return !!this.publishableKey;
   }
 
-  /**
-   * Create a subscription for Pro membership (£15/month)
-   * Returns checkout URL to complete subscription
-   */
-  async createSubscription(
-    userId: string,
-    userEmail: string,
-    userName?: string
-  ): Promise<{ sessionId: string; checkoutUrl: string; customerId: string }> {
-    try {
-      console.log('Creating Pro subscription:', { userId, userEmail });
-
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
-
-      // Call Supabase Edge Function
-      const response = await fetch(`${supabaseUrl}/functions/v1/create-subscription`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({
-          userId,
-          userEmail,
-          userName,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create subscription');
-      }
-
-      const data = await response.json();
-      return {
-        sessionId: data.sessionId,
-        checkoutUrl: data.checkoutUrl,
-        customerId: data.customerId,
-      };
-    } catch (error: any) {
-      console.error('Error creating subscription:', error);
-      throw new Error(error.message || 'Failed to create subscription');
-    }
-  }
-
-  /**
-   * Create a subscription with Payment Sheet (in-app payment)
-   * Returns client secret for Payment Sheet
-   */
-  async createSubscriptionPaymentSheet(
-    userId: string,
-    userEmail: string,
-    userName?: string
-  ): Promise<{ subscriptionId: string; clientSecret: string; customerId: string }> {
-    try {
-      console.log('Creating Pro subscription with Payment Sheet:', { userId, userEmail });
-
-      // Get user's JWT token for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated. Please log in again.');
-      }
-
-      const { url: supabaseUrl } = this.getSupabaseConfig();
-
-      // Call Supabase Edge Function with user's JWT token
-      const response = await fetch(`${supabaseUrl}/functions/v1/create-subscription-payment-sheet`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`, // Use user's JWT token, not anon key
-        },
-        body: JSON.stringify({
-          // userId removed - edge function will get it from JWT token
-          userEmail,
-          userName,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create subscription payment sheet');
-      }
-
-      const data = await response.json();
-      return {
-        subscriptionId: data.subscriptionId,
-        clientSecret: data.clientSecret,
-        customerId: data.customerId,
-      };
-    } catch (error: any) {
-      console.error('Error creating subscription payment sheet:', error);
-      throw new Error(error.message || 'Failed to create subscription payment sheet');
-    }
-  }
-
-  /**
-   * Sync subscription status from Stripe to database
-   * Useful when webhook fails or payment succeeds but status isn't updated
-   */
-  async syncSubscriptionStatus(userId: string): Promise<{
-    hasSubscription: boolean;
-    isPro: boolean;
-    status?: string;
-    subscriptionId?: string;
-    periodEnd?: string;
-    synced: boolean;
-  }> {
-    try {
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
-
-      const response = await fetch(`${supabaseUrl}/functions/v1/sync-subscription-status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to sync subscription status');
-      }
-
-      return await response.json();
-    } catch (error: any) {
-      console.error('Error syncing subscription status:', error);
-      throw new Error(error.message || 'Failed to sync subscription status');
-    }
-  }
-
-  /**
-   * Get Stripe Customer Portal URL for subscription management
-   * Users can cancel, update payment method, view invoices, etc.
-   */
-  async getCustomerPortalUrl(userId: string): Promise<string> {
-    try {
-      console.log('Getting customer portal URL for:', userId);
-
-      const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
-
-      // Call Supabase Edge Function
-      const response = await fetch(`${supabaseUrl}/functions/v1/get-customer-portal`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({
-          userId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get customer portal URL');
-      }
-
-      const data = await response.json();
-      return data.portalUrl;
-    } catch (error: any) {
-      console.error('Error getting customer portal URL:', error);
-      throw new Error(error.message || 'Failed to get customer portal URL');
-    }
-  }
+  // NOTE: Pro subscriptions moved to RevenueCat (Apple IAP / Google Play Billing).
+  // See lib/iapService.ts. Stripe is intentionally only used here for wallet
+  // deposits and challenge entry payments.
 }
 
 export const stripeService = new StripeService();

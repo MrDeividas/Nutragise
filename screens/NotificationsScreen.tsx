@@ -8,6 +8,7 @@ import { useActionStore } from '../state/actionStore';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../state/themeStore';
 import { notificationService, Notification } from '../lib/notificationService';
+import { useNotificationsStore } from '../state/notificationsStore';
 import { habitInviteService } from '../lib/habitInviteService';
 import CustomBackground from '../components/CustomBackground';
 
@@ -365,9 +366,9 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     fetchNotifications();
-    // Mark notifications as read when screen is opened
     if (user) {
       notificationService.markAllAsRead(user.id);
+      useNotificationsStore.getState().clearCount();
     }
   }, [user]);
 
