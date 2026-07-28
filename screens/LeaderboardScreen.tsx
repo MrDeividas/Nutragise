@@ -32,6 +32,8 @@ function getInitials(username: string) {
   return username.slice(0, 2).toUpperCase() || '?';
 }
 
+const DARK = '#1f2937';
+
 export default function LeaderboardScreen({ navigation }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
@@ -140,8 +142,8 @@ export default function LeaderboardScreen({ navigation }: any) {
           styles.leaderboardItem,
           isCurrentUser
             ? {
-                backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                borderColor: theme.primary,
+                backgroundColor: 'rgba(31, 41, 55, 0.08)',
+                borderColor: DARK,
                 borderWidth: 1.5,
               }
             : {
@@ -163,22 +165,14 @@ export default function LeaderboardScreen({ navigation }: any) {
 
         <View style={styles.userInfo}>
           <Text
-            style={[
-              styles.userName,
-              { color: isCurrentUser ? theme.primary : theme.textPrimary },
-            ]}
+            style={[styles.userName, { color: theme.textPrimary }]}
             numberOfLines={1}
           >
             {isCurrentUser ? 'YOU' : item.username}
           </Text>
         </View>
 
-        <Text
-          style={[
-            styles.pointsText,
-            { color: isCurrentUser ? theme.primary : theme.textPrimary },
-          ]}
-        >
+        <Text style={[styles.pointsText, { color: theme.textPrimary }]}>
           {item.points.toLocaleString()}
         </Text>
       </View>
@@ -192,7 +186,7 @@ export default function LeaderboardScreen({ navigation }: any) {
         style={[
           styles.leaderboardTab,
           active
-            ? { backgroundColor: theme.primary }
+            ? { backgroundColor: DARK }
             : { backgroundColor: '#F1F3F5' },
         ]}
         onPress={() => setLeaderboardPeriod(period)}
@@ -232,7 +226,7 @@ export default function LeaderboardScreen({ navigation }: any) {
 
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <ActivityIndicator size="large" color={DARK} />
             </View>
           ) : leaderboardData.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -249,8 +243,8 @@ export default function LeaderboardScreen({ navigation }: any) {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={onRefresh}
-                  tintColor={theme.primary}
-                  colors={[theme.primary]}
+                  tintColor={DARK}
+                  colors={[DARK]}
                 />
               }
             >

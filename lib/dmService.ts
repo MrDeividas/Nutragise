@@ -287,14 +287,14 @@ class DMService {
     }
   }
 
-  // Get messages for a chat
-  async getChatMessages(chatId: string, limit: number = 50): Promise<Message[]> {
+  // Get messages for a chat (most recent first in query, returned oldest→newest for UI)
+  async getChatMessages(chatId: string, limit: number = 15): Promise<Message[]> {
     try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
         .eq('chat_id', chatId)
-        .order('created_at', { ascending: true }) // Query in correct order
+        .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) {
@@ -302,9 +302,37 @@ class DMService {
         return [];
       }
 
-      return data || []; // Already in correct order (oldest first)
+      // Reverse so UI can render oldest → newest (scroll to bottom)
+      return (data || []).slice().reverse();
     } catch (error) {
       console.error('Error in getChatMessages:', error);
+      return [];
+    }
+  }
+
+  // Load older messages before a given timestamp (for pull-to-load)
+  async getOlderChatMessages(
+    chatId: string,
+    beforeCreatedAt: string,
+    limit: number = 15
+  ): Promise<Message[]> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chatId)
+        .lt('created_at', beforeCreatedAt)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error('Error fetching older messages:', error);
+        return [];
+      }
+
+      return (data || []).slice().reverse();
+    } catch (error) {
+      console.error('Error in getOlderChatMessages:', error);
       return [];
     }
   }

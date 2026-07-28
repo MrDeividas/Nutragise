@@ -64,15 +64,14 @@ class StoreService {
         throw error;
       }
 
-      // Tokens = level (1 token per level)
-      // If tokens field doesn't match level, sync it
-      const expectedTokens = data?.level || 1;
-      if (data?.tokens !== expectedTokens) {
-        await this.syncTokensWithLevel(userId, expectedTokens);
-        return expectedTokens;
+      // Initialize tokens once from level if unset
+      if (data?.tokens == null) {
+        const initial = data?.level || 1;
+        await this.syncTokensWithLevel(userId, initial);
+        return initial;
       }
 
-      return data?.tokens || 0;
+      return data.tokens;
     } catch (error) {
       console.error('Error in getUserTokens:', error);
       return 0;
@@ -94,6 +93,54 @@ class StoreService {
       }
     } catch (error) {
       console.error('Error in syncTokensWithLevel:', error);
+    }
+  }
+
+  /**
+   * Deduct tokens from the user's balance
+   */
+  async deductTokens(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; message: string; newBalance?: number }> {
+    try {
+      if (amount <= 0) {
+        return { success: false, message: 'Invalid amount' };
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('tokens')
+        .eq('id', userId)
+        .single();
+
+      if (error || !profile) {
+        return { success: false, message: 'Could not load token balance' };
+      }
+
+      const current = profile.tokens ?? 0;
+      if (current < amount) {
+        return {
+          success: false,
+          message: `Not enough diamonds. Need ${amount}, you have ${current}.`,
+        };
+      }
+
+      const newBalance = current - amount;
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ tokens: newBalance })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Error deducting tokens:', updateError);
+        return { success: false, message: 'Failed to deduct diamonds' };
+      }
+
+      return { success: true, message: 'Tokens deducted', newBalance };
+    } catch (error) {
+      console.error('Error in deductTokens:', error);
+      return { success: false, message: 'Failed to deduct diamonds' };
     }
   }
 

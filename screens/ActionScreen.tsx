@@ -447,20 +447,17 @@ const AnimatedHabitCard = ({
   const [timeRemaining, setTimeRemaining] = React.useState<string>('');
   const [canNudge, setCanNudge] = React.useState(true);
 
-  // Mirror WhiteHabitCard exactly: own Animated.Value, animate when `progress` prop changes
-  const [progressAnimated] = React.useState(new Animated.Value(progress));
+  // UI-thread progress fill (avoids JS-thread stutter when save/points/metrics run)
+  const progressSV = useSharedValue(progress);
   React.useEffect(() => {
-    Animated.timing(progressAnimated, {
-      toValue: progress,
-      duration: 450,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-  }, [progress, progressAnimated]);
-  const smoothProgressWidth = progressAnimated.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+    progressSV.value = withTiming(progress, {
+      duration: 280,
+      easing: ReanimatedEasing.out(ReanimatedEasing.quad),
+    });
+  }, [progress, progressSV]);
+  const progressFillStyle = useAnimatedStyle(() => ({
+    width: `${Math.max(progressSV.value, 0) * 100}%`,
+  }));
   
   React.useEffect(() => {
     if (!lastNudgeTime) {
@@ -564,14 +561,12 @@ const AnimatedHabitCard = ({
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor }]}>
-          <Animated.View
+        <View style={[styles.highlightCardProgress, { backgroundColor: progressTrackColor, overflow: 'hidden' }]}>
+          <Reanimated.View
             style={[
               styles.highlightCardProgressFill,
-              {
-                width: smoothProgressWidth,
-                backgroundColor: progressFillColor,
-              },
+              { backgroundColor: progressFillColor },
+              progressFillStyle,
             ]}
           />
         </View>
@@ -1431,6 +1426,10 @@ function ActionScreen() {
   // Ref that always mirrors quickCompletedHabits state — lets syncCompletedHabits read
   // the latest value without a stale closure (avoids 90% → 100% flicker on store updates).
   const quickCompletedHabitsRef = useRef<Set<string>>(new Set());
+  // Full + quick optimistic completes — prevents sync from wiping the bar mid-save
+  const optimisticCompletedRef = useRef<Set<string>>(new Set());
+  const completionCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completionRefreshRef = useRef<(() => void) | null>(null);
   const [isColorPickerInteracting, setIsColorPickerInteracting] = useState(false);
   const [taskDays, setTaskDays] = useState('Every Day');
   const [selectedTaskDaysOption, setSelectedTaskDaysOption] = useState<string>('specific-days-week');
@@ -1990,7 +1989,7 @@ function ActionScreen() {
       key: 'sleep',
       title: 'Sleep',
       subtitle: 'Last Night',
-      metricLabel: '7-day',
+      metricLabel: '7-day avg',
       metricValue: '—',
       progress: 0.78,
       accent: '#34D399',
@@ -2000,7 +1999,7 @@ function ActionScreen() {
       key: 'workout',
       title: 'Workout',
       subtitle: '24 Dec',
-      metricLabel: 'Last session',
+      metricLabel: 'Last',
       metricValue: '—',
       progress: 0.65,
       accent: '#EF4444',
@@ -2031,7 +2030,7 @@ function ActionScreen() {
       title: 'Update Goal',
       subtitle: 'Weekly',
       metricLabel: 'Due',
-      metricValue: '0 this week',
+      metricValue: '0',
       progress: 0.85,
       accent: '#A78BFA',
     },
@@ -2399,59 +2398,24 @@ function ActionScreen() {
   }, []);
 
   const animateCardToEnd = useCallback((habitId: string) => {
-    const currentCards = habitSpotlightCardsRef.current;
-    const card = currentCards.find(c => c.habitId === habitId);
-    if (!card || !cardAnimations[card.key]) return;
-    
-    const currentIndex = currentCards.findIndex(c => c.habitId === habitId);
-    if (currentIndex === -1 || currentIndex === currentCards.length - 1) return;
-    
-    // Calculate distance to slide (to end of carousel)
-    const cardsToSlide = currentCards.length - 1 - currentIndex;
-    const slideDistance = cardsToSlide * (spotlightCardWidth + 10);
-    
-    const anim = cardAnimations[card.key];
-    
-    // Animation sequence: shrink → slide → grow
-    anim.scale.value = withSequence(
-      withTiming(0.85, { 
-        duration: 200, 
-        easing: ReanimatedEasing.out(ReanimatedEasing.quad) 
-      }),
-      withTiming(0.85, { duration: 300 }), // Hold while sliding
-      withTiming(1, { 
-        duration: 200, 
-        easing: ReanimatedEasing.out(ReanimatedEasing.quad) 
-      })
-    );
-    
-    anim.translateX.value = withSequence(
-      withTiming(0, { duration: 200 }), // Wait for shrink
-      withTiming(slideDistance, { 
-        duration: 400,
-        easing: ReanimatedEasing.inOut(ReanimatedEasing.ease)
-      })
-    );
-    
-    // Reorder cards after slide animation completes - sort by completion status
-    setTimeout(() => {
-      setHabitSpotlightCards(prevCards => {
-        const nextCompleted = new Set(completedHabits);
-        nextCompleted.add(habitId);
-        const sorted = sortHabitsByCompletion(prevCards, nextCompleted);
-        habitSpotlightCardsRef.current = sorted;
-        // Do not save order here to preserve user's preferred order across days
-        return sorted;
-      });
-      
-      // Wait for state update/re-render to process before resetting animation values
-      setTimeout(() => {
-        anim.scale.value = 1;
-        anim.translateX.value = 0;
-        isCompletingHabitRef.current = false; // Re-enable sorting
-      }, 50);
-    }, 700); // Total animation duration
-  }, [spotlightCardWidth, cardAnimations, completedHabits, sortHabitsByCompletion]);
+    // Soft reorder only — no shrink/slide (that competed with the progress bar and felt laggy)
+    setHabitSpotlightCards(prevCards => {
+      const nextCompleted = new Set(completedHabits);
+      nextCompleted.add(habitId);
+      const sorted = sortHabitsByCompletion(prevCards, nextCompleted);
+      habitSpotlightCardsRef.current = sorted;
+      return sorted;
+    });
+
+    if (completionCleanupTimerRef.current) {
+      clearTimeout(completionCleanupTimerRef.current);
+    }
+    completionCleanupTimerRef.current = setTimeout(() => {
+      isCompletingHabitRef.current = false;
+      // Heavy refresh is attached later via completionRefreshRef
+      completionRefreshRef.current?.();
+    }, 350);
+  }, [completedHabits, sortHabitsByCompletion]);
 
   const checkAndSyncPartner = useCallback(async (habitKey: string, completed: boolean) => {
     if (!user) return;
@@ -2511,7 +2475,8 @@ function ActionScreen() {
       return;
     }
 
-    isCompletingHabitRef.current = true; // Block immediate sorting
+    isCompletingHabitRef.current = true; // Block immediate sorting + heavy refreshes
+    optimisticCompletedRef.current.add(habitId);
     setCompletedHabits((prev) => {
       if (prev.has(habitId)) return prev;
       const next = new Set(prev);
@@ -2521,15 +2486,17 @@ function ActionScreen() {
 
     if (shouldAnimate) {
       playCompletionSound();
-      // Quick complete: shorter delay (bar barely needs to fill); modal complete: longer so user sees the full bar
-      const slideDelay = completionMode === 'quick' ? 1200 : 2000;
+      // Wait for the progress bar (~280ms) to fully finish before reordering to the back
       setTimeout(() => {
         animateCardToEnd(habitId);
-      }, slideDelay);
+      }, 700);
+    } else {
+      isCompletingHabitRef.current = false;
     }
 
     clearHabitNeedsDetails(habitId);
-    checkAndSyncPartner(habitId, true);
+    // Partner sync deferred — don't contend with the progress animation
+    setTimeout(() => checkAndSyncPartner(habitId, true), 400);
   }, [
     completedHabits,
     quickCompletedHabits,
@@ -2540,6 +2507,7 @@ function ActionScreen() {
   ]);
 
   const markHabitUncompleted = useCallback((habitId: string) => {
+    optimisticCompletedRef.current.delete(habitId);
     setQuickCompletedHabits((prev) => {
       const next = new Set(prev);
       next.delete(habitId);
@@ -2637,14 +2605,13 @@ function ActionScreen() {
 
       if (success) {
         markHabitNeedsDetails(habitId);
-        checkAndSyncPartner(habitId, true);
-        await fetchUserPoints();
+        // Points / partner refresh deferred via completionRefreshRef after bar animation
         return true;
       }
     } catch {}
 
     return false;
-  }, [user, markHabitNeedsDetails, fetchUserPoints, checkAndSyncPartner]);
+  }, [user, markHabitNeedsDetails]);
 
   const handleHabitLongPress = useCallback(async (habitId: string) => {
     // Focus habit cannot be quick completed
@@ -2674,6 +2641,29 @@ function ActionScreen() {
       }
     }
   }, [completedHabits, markHabitCompleted, markHabitUncompleted, markHabitNeedsDetails, persistQuickCompletion, activePartnerships]);
+
+  /** Close modal + fill bar immediately; persist in background (matches custom-habit snappiness). */
+  const completeCoreHabitOptimistically = useCallback(async (
+    habitId: string,
+    habitData: Parameters<ReturnType<typeof useActionStore.getState>['saveDailyHabits']>[0],
+    closeAndReset: () => void,
+    options?: { syncPartner?: boolean; afterSuccess?: () => void },
+  ) => {
+    closeAndReset();
+    markHabitCompleted(habitId);
+
+    try {
+      const success = await useActionStore.getState().saveDailyHabits(habitData);
+      if (success) {
+        // Defer metrics refresh — don't fight the progress animation
+        setTimeout(() => options?.afterSuccess?.(), 400);
+      } else {
+        markHabitUncompleted(habitId);
+      }
+    } catch {
+      markHabitUncompleted(habitId);
+    }
+  }, [markHabitCompleted, markHabitUncompleted]);
 
   // Automatically sort habits on initial load
   useEffect(() => {
@@ -3114,6 +3104,9 @@ function ActionScreen() {
     // quickCompletedHabits is ONLY managed by markHabitCompleted / markHabitUncompleted.
     const mergedCompleted = new Set(completedSet);
     quickCompletedHabitsRef.current.forEach((id) => mergedCompleted.add(id));
+    optimisticCompletedRef.current.forEach((id) => mergedCompleted.add(id));
+    // Drop optimistic entries once the server confirms them
+    completedSet.forEach((id) => optimisticCompletedRef.current.delete(id));
     setCompletedHabits(mergedCompleted);
   }, [dailyHabits, user, activePartnerships]);
 
@@ -3122,8 +3115,10 @@ function ActionScreen() {
     if (user) {
       loadSelectedHabits();
     }
-    // Sync completed habits whenever data changes
-    syncCompletedHabits();
+    // Sync completed habits whenever data changes (skip mid-animation to avoid bar flicker)
+    if (!isCompletingHabitRef.current) {
+      syncCompletedHabits();
+    }
   }, [user, syncCompletedHabits, dailyHabits]);
 
   // Track current date to detect new day
@@ -3153,7 +3148,17 @@ function ActionScreen() {
     }
   }, [user?.id, userGoals]);
 
+  // Wire deferred post-completion refresh (used by animateCardToEnd)
   useEffect(() => {
+    completionRefreshRef.current = () => {
+      loadLiveHabitCardMetrics();
+      fetchUserPoints().catch(() => {});
+      syncCompletedHabits();
+    };
+  }, [loadLiveHabitCardMetrics, fetchUserPoints, syncCompletedHabits]);
+
+  useEffect(() => {
+    if (isCompletingHabitRef.current) return;
     loadLiveHabitCardMetrics();
   }, [loadLiveHabitCardMetrics, currentDate, dailyHabits]);
 
@@ -3306,6 +3311,7 @@ function ActionScreen() {
 
   // Re-sync completed habits whenever today's stored data loads/changes
   useEffect(() => {
+    if (isCompletingHabitRef.current) return;
     syncCompletedHabits();
   }, [dailyHabits, syncCompletedHabits]);
 
@@ -3741,10 +3747,7 @@ function ActionScreen() {
         return;
 
       case 'microlearn':
-        (navigation as any).navigate('Microlearning', {}, {
-          animation: 'slide_from_bottom',
-          presentation: 'modal'
-        });
+        (navigation as any).navigate('Microlearning');
         return;
 
       case 'focus':
@@ -4356,10 +4359,9 @@ function ActionScreen() {
         // Record login day (non-blocking)
         const today = new Date().toISOString().split('T')[0];
         dailyHabitsService.recordLoginDay(user.id, today).catch(() => {});
-        
-        // Decay disabled - no longer applying automatic progress reduction
-        
-        // Save pillar progress snapshot at start of day (for green indicator comparison)
+
+        // Apply pillar decay (after 3 inactive days: −0.24%/day), then snapshot for green indicators
+        await pillarProgressService.applyDecay(user.id).catch(() => {});
         await savePillarProgressSnapshot(user.id, today);
         
         // Process completed challenges (non-blocking)
@@ -4997,7 +4999,7 @@ function ActionScreen() {
               }}
               style={{ position: 'relative' }}
             >
-              <Ionicons name="notifications-outline" size={24} color={theme.textPrimary} />
+              <Ionicons name="notifications-outline" size={27} color={theme.textPrimary} />
               {unreadNotificationCount > 0 && (
                 <View
                   style={{
@@ -6904,16 +6906,11 @@ function ActionScreen() {
                     gym_training_types: gymQuestionnaire.selectedTrainingTypes,
                     gym_custom_type: gymQuestionnaire.customTrainingType,
                   };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    checkAndSyncPartner('gym', true);
+
+                  await completeCoreHabitOptimistically('gym', habitData, () => {
                     setShowGymModal(false);
                     setGymQuestionnaire({ selectedTrainingTypes: [], customTrainingType: '' });
-                    // Delay so modal fade-out finishes before the fill + slide animations play
-                    setTimeout(() => markHabitCompleted('gym'), 300);
-                  } else {
-                  }
+                  });
                 } catch {}
               }}
             >
@@ -7310,15 +7307,11 @@ function ActionScreen() {
                     sleep_wakeup_minutes: sleepQuestionnaire.wakeupMinutes,
                     sleep_notes: sleepQuestionnaire.sleepNotes,
                   };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    checkAndSyncPartner('sleep', true);
+
+                  await completeCoreHabitOptimistically('sleep', habitData, () => {
                     setShowSleepModal(false);
                     setSleepQuestionnaire({ sleepQuality: 50, bedtimeHours: 22, bedtimeMinutes: 0, wakeupHours: 6, wakeupMinutes: 0, sleepNotes: '' });
-                    setTimeout(() => markHabitCompleted('sleep'), 300);
-                  } else {
-                  }
+                  });
                 } catch {}
               }}            >
               <Text style={styles.submitButtonText}>
@@ -7431,14 +7424,16 @@ function ActionScreen() {
                     water_goal: target,
                     water_notes: waterQuestionnaire.waterNotes,
                   };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    setShowWaterModal(false);
-                    setWaterQuestionnaire({ waterIntake: 5, waterTargetLiters: target, waterNotes: '' });
-                    setTimeout(() => markHabitCompleted('water'), 300);
-                    loadLiveHabitCardMetrics();
-                  }
+
+                  await completeCoreHabitOptimistically(
+                    'water',
+                    habitData,
+                    () => {
+                      setShowWaterModal(false);
+                      setWaterQuestionnaire({ waterIntake: 5, waterTargetLiters: target, waterNotes: '' });
+                    },
+                    { syncPartner: false, afterSuccess: () => loadLiveHabitCardMetrics() },
+                  );
                 } catch {}
               }}
             >
@@ -7595,14 +7590,16 @@ function ActionScreen() {
                       date,
                       screen_time_minutes: totalMinutes,
                     };
-                    
-                    const success = await useActionStore.getState().saveDailyHabits(habitData);
-                    if (success) {
-                      setShowScreenTimeModal(false);
-                      setScreenTimeQuestionnaire({ hours: 0, minutes: 0 });
-                      setTimeout(() => markHabitCompleted('screen_time'), 300);
-                    } else {
-                    }
+
+                    await completeCoreHabitOptimistically(
+                      'screen_time',
+                      habitData,
+                      () => {
+                        setShowScreenTimeModal(false);
+                        setScreenTimeQuestionnaire({ hours: 0, minutes: 0 });
+                      },
+                      { syncPartner: false },
+                    );
                   } catch {}
                 }}
               >
@@ -7894,16 +7891,11 @@ function ActionScreen() {
                     run_duration: `${exerciseQuestionnaire.durationHours}:${exerciseQuestionnaire.durationMinutes.toString().padStart(2, '0')}:${exerciseQuestionnaire.durationSeconds.toString().padStart(2, '0')}`,
                     run_notes: exerciseQuestionnaire.exerciseNotes,
                   };
-                  
-                  const success = await useActionStore.getState().saveDailyHabits(habitData);
-                  if (success) {
-                    checkAndSyncPartner('run', true);
+
+                  await completeCoreHabitOptimistically('run', habitData, () => {
                     setShowExerciseModal(false);
                     setExerciseQuestionnaire({ selectedSport: '', customSport: '', runType: '', distance: 5, durationHours: 0, durationMinutes: 30, durationSeconds: 0, exerciseNotes: '' });
-                    setTimeout(() => markHabitCompleted('run'), 300);
-                  } else {
-                    const error = useActionStore.getState().dailyHabitsError;
-                  }
+                  });
                 } catch {}
               }}
             >
@@ -8235,10 +8227,8 @@ function ActionScreen() {
                             reflect_one_tweak: reflectQuestionnaire.oneTweak,
                             reflect_nothing_to_change: reflectQuestionnaire.nothingToChange,
                           };
-                          
-                          const success = await useActionStore.getState().saveDailyHabits(habitData);
-                          if (success) {
-                            checkAndSyncPartner('reflect', true);
+
+                          await completeCoreHabitOptimistically('reflect', habitData, () => {
                             setShowReflectModal(false);
                             setReflectQuestionnaire({ 
                               mood: 3, 
@@ -8250,9 +8240,7 @@ function ActionScreen() {
                               nothingToChange: false, 
                               currentStep: 1 
                             });
-                            setTimeout(() => markHabitCompleted('reflect'), 300);
-                          } else {
-                          }
+                          });
                         } catch {}
                       }}
                     >
@@ -8303,13 +8291,13 @@ function ActionScreen() {
                         date,
                         cold_shower_completed: true,
                       };
-                      
-                      const success = await useActionStore.getState().saveDailyHabits(habitData);
-                      if (success) {
-                        setShowColdShowerModal(false);
-                        setTimeout(() => markHabitCompleted('cold_shower'), 300);
-                      } else {
-                      }
+
+                      await completeCoreHabitOptimistically(
+                        'cold_shower',
+                        habitData,
+                        () => setShowColdShowerModal(false),
+                        { syncPartner: false },
+                      );
                     } catch {}
                   }}
                 >

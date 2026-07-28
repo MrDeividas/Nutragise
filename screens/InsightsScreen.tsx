@@ -26,6 +26,7 @@ import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useNotificationsStore } from '../state/notificationsStore';
 import { notificationService } from '../lib/notificationService';
+import { achievementsService } from '../lib/achievementsService';
 import CustomBackground from '../components/CustomBackground';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { EmojiTrendChart } from '../components/EmojiTrendChart';
@@ -92,6 +93,12 @@ export default function InsightsScreen({ route }: any) {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   
+  useEffect(() => {
+    if (user?.id) {
+      achievementsService.setFlag(user.id, 'insights_opened').catch(() => {});
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     const loadUserProfile = async () => {
       if (user?.id) {
@@ -501,7 +508,9 @@ export default function InsightsScreen({ route }: any) {
       timestamp: new Date(),
     };
 
-    // Add user message to conversation cache
+    // Prior turns only — fetch BEFORE caching this message so it isn't duplicated
+    const conversationHistory = await ConversationCacheService.getRecentChatTurns(user.id);
+
     await ConversationCacheService.addMessage(user.id, {
       id: userMessage.id,
       text: textToSend,
@@ -516,12 +525,9 @@ export default function InsightsScreen({ route }: any) {
     setIsTyping(true);
 
     try {
-      // Get conversation context for AI
-      const conversationContext = await ConversationCacheService.getConversationContext(user.id);
-      
       const aiResponse = await handleAsyncOperation(
-        () => aiService.generateResponse(user.id, textToSend, conversationContext),
-        { response: "I'm having trouble analyzing your data right now. Please try again in a moment! 🤖" }
+        () => aiService.generateResponse(user.id, textToSend, conversationHistory),
+        { response: "I'm having trouble analyzing your data right now. Please try again in a moment." }
       );
       
       const aiMessage: Message = {
@@ -758,7 +764,7 @@ export default function InsightsScreen({ route }: any) {
             activeOpacity={0.7}
           >
             <View>
-              <Ionicons name="notifications-outline" size={24} color={textPrimary} />
+              <Ionicons name="notifications-outline" size={27} color={textPrimary} />
               {unreadNotifCount > 0 && (
                 <View style={{
                   position: 'absolute', top: -4, right: -8,
@@ -1159,7 +1165,7 @@ export default function InsightsScreen({ route }: any) {
               onSubmitEditing={() => sendMessage()}
               onFocus={() => setIsHeaderExpanded(true)}
               autoCorrect={true}
-              autoCapitalize="words"
+              autoCapitalize="sentences"
               textContentType="none"
               autoComplete="off"
               spellCheck={true}
@@ -1189,16 +1195,10 @@ export default function InsightsScreen({ route }: any) {
         </Animated.View>
 
       {/* Data Requirements Modal */}
-      <Modal visible={activeModal === 'requirements'} animationType="fade" onRequestClose={() => setActiveModal(null)}>
-        <View style={[styles.modalOverlay, { backgroundColor: theme.background }]}>
+      <Modal visible={activeModal === 'requirements'} animationType="fade" transparent onRequestClose={() => setActiveModal(null)}>
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
           <View style={[styles.modalContent, { 
             backgroundColor: cardBackground, 
-            padding: 24,
-            width: '90%',
-            maxWidth: 400,
-            maxHeight: '80%',
-            borderRadius: 16,
-            borderWidth: 1,
             borderColor: borderSecondary
           }]}>
             <View style={styles.modalHeader}>
@@ -1213,7 +1213,7 @@ export default function InsightsScreen({ route }: any) {
               </TouchableOpacity>
             </View>
             
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+            <View>
               <View style={styles.requirementSection}>
                 <Text style={[styles.requirementTitle, { color: textPrimary }]}>
                   Weekly Patterns
@@ -1257,7 +1257,7 @@ export default function InsightsScreen({ route }: any) {
                 </View>
               </View>
 
-              <View style={styles.requirementSection}>
+              <View style={[styles.requirementSection, styles.requirementSectionLast]}>
                 <Text style={[styles.requirementTitle, { color: textPrimary }]}>
                   Progress Charts
                 </Text>
@@ -1276,7 +1276,7 @@ export default function InsightsScreen({ route }: any) {
                   </Text>
                 </View>
               </View>
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1598,11 +1598,10 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     borderRadius: 16,
-    padding: 0,
+    padding: 24,
     width: '90%',
     maxWidth: 400,
-    height: 600,
-    maxHeight: '80%',
+    borderWidth: 1,
   },
 
 
@@ -1729,11 +1728,11 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
-  modalScroll: {
-    flex: 1,
-  },
   requirementSection: {
     marginBottom: 24,
+  },
+  requirementSectionLast: {
+    marginBottom: 0,
   },
   requirementTitle: {
     fontSize: 16,

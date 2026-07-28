@@ -34,9 +34,12 @@ const LEVELS = [
     title: "Focused",
     minPoints: 3200,
     maxPoints: 5499,
-    unlocks: "Access to advanced challenges (e.g., 7-day cold shower streaks)",
+    unlocks: "Access to advanced challenges + raffle ticket claims in Rewards",
     comingSoon: ["Public challenges"],
-    rewards: ["Entry into monthly prize draw (rewards up to £50)"]
+    rewards: [
+      "Raffle tickets — reach Level 3 EXP to claim tickets from the Store (Pro required to enter)",
+      "Entry into the end-of-month prize draw (rewards up to £50)",
+    ]
   },
   {
     level: 4,
@@ -53,7 +56,7 @@ const LEVELS = [
     maxPoints: 12499,
     unlocks: "Exclusive community badge + advanced analytics",
     comingSoon: ["Become a mentor - create events, sell courses etc"],
-    rewards: ["Entry into monthly prize draw (rewards up to £75)", "2 free 'Accountability Boosts'"]
+    rewards: ["Entry into the end-of-month prize draw (rewards up to £75)", "2 free 'Accountability Boosts'"]
   },
   {
     level: 6,
@@ -199,6 +202,13 @@ export default function LevelInfoModal({
           contentContainerStyle={styles.scrollContent}
           style={styles.scrollView}
         >
+          <View style={styles.raffleNote}>
+            <Ionicons name="ticket-outline" size={18} color="#1f2937" />
+            <Text style={styles.raffleNoteText}>
+              Raffle tickets unlock at Level 3 EXP. Claim them in Rewards → Store (Pro needed to enter giveaways).
+            </Text>
+          </View>
+
           {/* All Levels Section */}
           <View style={styles.content}>
             <View style={styles.allLevelsSection}>
@@ -246,6 +256,24 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
+  },
+  raffleNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  raffleNoteText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#1f2937',
   },
   content: {
     flex: 1,

@@ -529,13 +529,27 @@ class HabitInviteService {
         }
 
         const accepterName = await this.getProfileName(userId);
+        let habitDisplayName = 'habit';
+        if (partnership.habit_snapshot?.title) {
+          habitDisplayName = partnership.habit_snapshot.title;
+        } else if (partnership.habit_type === 'core' && partnership.habit_key) {
+          habitDisplayName = CORE_HABIT_NAMES[partnership.habit_key] || partnership.habit_key;
+        } else if (partnership.custom_habit_id) {
+          habitDisplayName = await this.getHabitDisplayName('custom', partnership.custom_habit_id);
+        }
+
         await notificationService.createNotification(
           {
             user_id: partnership.inviter_id,
             from_user_id: userId,
             notification_type: 'habit_invite_accepted',
+            habit_type: habitDisplayName,
           },
-          { title: '✅ Invite Accepted', body: `${accepterName} accepted your habit invite!` }
+          {
+            title: '✅ Invite Accepted',
+            body: `${accepterName} accepted your "${habitDisplayName}" habit invite!`,
+            extras: { habitType: habitDisplayName },
+          }
         );
       }
 
@@ -781,7 +795,7 @@ class HabitInviteService {
       // Get partnership details to get habit info
       const { data: partnership, error: partnershipError } = await supabase
         .from('habit_accountability_partners')
-        .select('habit_type, habit_key, custom_habit_id')
+        .select('habit_type, habit_key, custom_habit_id, habit_snapshot')
         .eq('id', partnershipId)
         .single();
 
@@ -791,6 +805,21 @@ class HabitInviteService {
           success: false,
           message: 'Failed to send nudge'
         };
+      }
+
+      // Prefer a resolved display name so notifications always show the habit
+      let resolvedHabitTitle = (habitTitle || '').trim();
+      if (!resolvedHabitTitle && partnership.habit_snapshot?.title) {
+        resolvedHabitTitle = partnership.habit_snapshot.title;
+      }
+      if (!resolvedHabitTitle && partnership.habit_type === 'core' && partnership.habit_key) {
+        resolvedHabitTitle = CORE_HABIT_NAMES[partnership.habit_key] || partnership.habit_key;
+      }
+      if (!resolvedHabitTitle && partnership.custom_habit_id) {
+        resolvedHabitTitle = await this.getHabitDisplayName('custom', partnership.custom_habit_id);
+      }
+      if (!resolvedHabitTitle) {
+        resolvedHabitTitle = 'habit';
       }
 
       // Record the nudge in the database
@@ -817,7 +846,7 @@ class HabitInviteService {
       const notificationSent = await notificationService.createHabitNudgeNotification(
         nudgedUserId,
         nudgerId,
-        habitTitle
+        resolvedHabitTitle
       );
 
       if (!notificationSent) {
@@ -875,16 +904,16 @@ class HabitInviteService {
         },
         (payload) => {
           // Filter in callback - only process if it's one of our partnerships
-          const progress = payload.new || payload.old;
-          if (!progress || !partnershipIdSet.has(progress.partnership_id)) {
+          const progress = (payload.new || payload.old) as HabitPartnerProgress | null;
+          if (!progress?.partnership_id || !partnershipIdSet.has(progress.partnership_id)) {
             return;
           }
 
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            callback(payload.new as HabitPartnerProgress);
+            if (payload.new) callback(payload.new as HabitPartnerProgress);
           } else if (payload.eventType === 'DELETE') {
             // On delete, we still want to refresh (partner uncompleted)
-            callback(payload.old as HabitPartnerProgress);
+            if (payload.old) callback(payload.old as HabitPartnerProgress);
           }
         }
       )

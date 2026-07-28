@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,10 @@ import {
   Image,
   Alert,
   StatusBar,
+  Animated,
+  Dimensions,
+  Easing,
+  PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +22,11 @@ import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
 import { formatDate, calculateDayNumber } from '../lib/timeService';
 import GesturePhotoCarousel from './GesturePhotoCarousel';
 import { supabase } from '../lib/supabase';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const DISMISS_DISTANCE = SCREEN_WIDTH * 0.28;
+const DISMISS_VELOCITY = 0.55;
+const EDGE_WIDTH = 28;
 
 interface FullJourneyModalProps {
   visible: boolean;
@@ -31,13 +40,101 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(visible);
   const { theme } = useTheme();
+  const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const closingRef = useRef(false);
+
+  const finishClose = useCallback(() => {
+    setMounted(false);
+    closingRef.current = false;
+    onClose();
+  }, [onClose]);
+
+  const animateClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_WIDTH,
+      duration: 220,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) finishClose();
+      else closingRef.current = false;
+    });
+  }, [finishClose, slideAnim]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (evt, gesture) => {
+          if (closingRef.current) return false;
+          const startedNearEdge = evt.nativeEvent.pageX - gesture.dx <= EDGE_WIDTH;
+          return (
+            startedNearEdge &&
+            gesture.dx > 8 &&
+            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
+          );
+        },
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dx > 0) {
+            slideAnim.setValue(gesture.dx);
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const shouldDismiss =
+            gesture.dx > DISMISS_DISTANCE || gesture.vx > DISMISS_VELOCITY;
+          if (shouldDismiss) {
+            closingRef.current = true;
+            Animated.timing(slideAnim, {
+              toValue: SCREEN_WIDTH,
+              duration: Math.max(120, 220 - gesture.vx * 40),
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }).start(({ finished }) => {
+              if (finished) finishClose();
+              else closingRef.current = false;
+            });
+          } else {
+            Animated.spring(slideAnim, {
+              toValue: 0,
+              useNativeDriver: true,
+              bounciness: 0,
+              speed: 20,
+            }).start();
+          }
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 20,
+          }).start();
+        },
+      }),
+    [finishClose, slideAnim]
+  );
 
   useEffect(() => {
     if (visible) {
+      closingRef.current = false;
+      setMounted(true);
+      setLoading(true);
+      slideAnim.setValue(SCREEN_WIDTH);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
       loadAllJourney();
       loadStats();
       loadAccountCreationDate();
+    } else if (mounted) {
+      setMounted(false);
+      slideAnim.setValue(SCREEN_WIDTH);
     }
   }, [visible, userId]);
 
@@ -113,12 +210,22 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
   const baseDate = accountCreatedAt || allDays[allDays.length - 1]?.date;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={animateClose}>
+      <Animated.View
+        style={[
+          styles.modalSlide,
+          { transform: [{ translateX: slideAnim }], backgroundColor: theme.background || '#FFFFFF' },
+        ]}
+        {...panResponder.panHandlers}
+      >
       <SafeAreaView style={styles.modalContainer} edges={['left', 'right']}>
         <StatusBar barStyle="dark-content" />
         {/* Header */}
         <View style={styles.modalHeader}>
-          <View style={{ flex: 1 }}>
+          <TouchableOpacity onPress={animateClose} style={styles.backButton} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={24} color="#1F2937" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter} pointerEvents="none">
             <Text style={styles.modalTitle}>Journey</Text>
             {stats?.totalDays > 0 && (
               <Text style={styles.modalSubtitle}>
@@ -126,9 +233,7 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
               </Text>
             )}
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
-            <Ionicons name="close" size={20} color="#6B7280" />
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
         </View>
         
         {/* Journey Content — stats scroll with the list */}
@@ -181,6 +286,7 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
           )}
         </ScrollView>
       </SafeAreaView>
+      </Animated.View>
     </Modal>
   );
 }
@@ -283,6 +389,9 @@ function JourneyDayCard({ day, dayNumber, theme, onDelete, readOnly = false }: J
 }
 
 const styles = StyleSheet.create({
+  modalSlide: {
+    flex: 1,
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: '#FCFAF9',
@@ -290,31 +399,44 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
     paddingTop: 60,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  modalTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+  backButton: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
+  },
+  headerCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 60,
+    bottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerSpacer: {
+    width: 44,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    marginTop: 1,
+    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',

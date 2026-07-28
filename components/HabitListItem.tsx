@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Alert, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing as ReanimatedEasing,
+} from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
@@ -66,20 +72,17 @@ const HabitListItem: React.FC<HabitListItemProps> = ({
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [canNudge, setCanNudge] = useState(true);
 
-  // Mirror WhiteHabitCard: own Animated.Value, animate when `progress` prop changes
-  const [progressAnimated] = useState(new Animated.Value(progress));
+  // UI-thread progress fill — stays smooth while core save/points/metrics run
+  const progressSV = useSharedValue(progress);
   useEffect(() => {
-    Animated.timing(progressAnimated, {
-      toValue: progress,
-      duration: 450,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-  }, [progress, progressAnimated]);
-  const animatedWidth = progressAnimated.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+    progressSV.value = withTiming(progress, {
+      duration: 280,
+      easing: ReanimatedEasing.out(ReanimatedEasing.quad),
+    });
+  }, [progress, progressSV]);
+  const progressFillStyle = useAnimatedStyle(() => ({
+    width: `${Math.max(progressSV.value, 0) * 100}%`,
+  }));
 
   useEffect(() => {
     if (!lastNudgeTime) {
@@ -377,15 +380,15 @@ const HabitListItem: React.FC<HabitListItemProps> = ({
       )}
 
       {/* Progress Bar */}
-      <View style={[styles.habitListItemProgress, { backgroundColor: progressTrackColor, marginTop: 8 }]}>
-        <Animated.View
+      <View style={[styles.habitListItemProgress, { backgroundColor: progressTrackColor, marginTop: 8, overflow: 'hidden' }]}>
+        <Reanimated.View
           style={[
             {
               height: '100%',
-              width: animatedWidth,
               backgroundColor: progressFillColor,
               borderRadius: 999,
             },
+            progressFillStyle,
             isCompleted && {
               shadowColor: progressFillColor,
               shadowOffset: { width: 0, height: 0 },

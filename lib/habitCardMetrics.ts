@@ -214,12 +214,12 @@ export async function computeHabitCardMetrics(
   const sleepMetric: HabitCardMetric =
     sleepHours.length > 0
       ? {
-          metricLabel: '7-day',
+          metricLabel: '7-day avg',
           metricValue: formatSleepHours(
             sleepHours.reduce((a, b) => a + b, 0) / sleepHours.length
           ),
         }
-      : { metricLabel: '7-day', metricValue: '—' };
+      : { metricLabel: '7-day avg', metricValue: '—' };
 
   let waterTarget: string | null = null;
   let bestWaterDate = '';
@@ -235,14 +235,14 @@ export async function computeHabitCardMetrics(
     metricValue: waterTarget ? `${waterTarget}L` : '—',
   };
 
-  let gymMetric: HabitCardMetric = { metricLabel: 'Last session', metricValue: '—' };
+  let gymMetric: HabitCardMetric = { metricLabel: 'Last', metricValue: '—' };
   {
     const gymRows = [...rows]
       .filter((r) => r.gym_day_type === 'active' && gymSessionName(r))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
     if (gymRows[0]) {
       gymMetric = {
-        metricLabel: 'Last session',
+        metricLabel: 'Last',
         metricValue: truncateMetric(gymSessionName(gymRows[0])!, 16),
       };
     }
@@ -312,7 +312,7 @@ export async function computeHabitCardMetrics(
     microlearn: { metricLabel: 'Streak', metricValue: String(microlearnStreak) },
     update_goal: {
       metricLabel: 'Due',
-      metricValue: `${dueCount} this week`,
+      metricValue: String(dueCount),
     },
     screen_time: screenMetric,
   };

@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { PurchasesPackage } from 'react-native-purchases';
 import { useAuthStore } from '../state/authStore';
 import { iapService } from '../lib/iapService';
+import { achievementsService } from '../lib/achievementsService';
 import { supabase } from '../lib/supabase';
 
 interface Props {
@@ -34,7 +35,7 @@ const proFeatures = [
   {
     icon: 'gift',
     title: 'Raffle Access',
-    description: 'Enter exclusive giveaways and win amazing prizes',
+    description: 'Enter the end-of-month giveaway and win prizes (raffle tickets from Level 3 EXP)',
     color: '#EC4899',
   },
   {
@@ -57,6 +58,9 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
 
   useEffect(() => {
     if (!visible) return;
+    if (user?.id) {
+      achievementsService.setFlag(user.id, 'pro_modal_opened').catch(() => {});
+    }
 
     let cancelled = false;
     (async () => {
@@ -67,7 +71,7 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
     return () => {
       cancelled = true;
     };
-  }, [visible]);
+  }, [visible, user?.id]);
 
   const priceLabel = proPackage?.product?.priceString || DEFAULT_PRICE_LABEL;
   const periodLabel = proPackage ? '' : DEFAULT_PERIOD_LABEL;

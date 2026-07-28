@@ -120,15 +120,23 @@ export default function NotificationsScreen() {
         
         switch (notification.notification_type) {
           case 'post_like':
-            message = 'liked your post';
+            message = notification.post_preview
+              ? `liked your post · "${notification.post_preview}"`
+              : 'liked your post';
             break;
           case 'post_comment':
-            message = notification.comment_content 
-              ? `commented: "${notification.comment_content}"`
-              : 'commented on your post';
+            if (notification.comment_content) {
+              message = notification.post_preview
+                ? `commented on "${notification.post_preview}": "${notification.comment_content}"`
+                : `commented: "${notification.comment_content}"`;
+            } else {
+              message = notification.post_preview
+                ? `commented on "${notification.post_preview}"`
+                : 'commented on your post';
+            }
             break;
           case 'post_reply':
-            message = notification.reply_content 
+            message = notification.reply_content
               ? `replied: "${notification.reply_content}"`
               : 'replied to your comment';
             break;
@@ -136,14 +144,19 @@ export default function NotificationsScreen() {
             message = 'started following you';
             break;
           case 'habit_invite':
-            message = notification.habit_type 
-              ? `invited you to track ${notification.habit_type} together`
+            message = notification.habit_type
+              ? `invited you to track "${notification.habit_type}" together`
               : 'invited you to track a habit together';
             break;
           case 'habit_invite_accepted':
             message = notification.habit_type
-              ? `accepted your ${notification.habit_type} habit invitation`
+              ? `accepted your "${notification.habit_type}" habit invitation`
               : 'accepted your habit invitation';
+            break;
+          case 'habit_nudge':
+            message = notification.habit_type
+              ? `nudged you to complete "${notification.habit_type}"`
+              : 'nudged you about a habit';
             break;
           default:
             message = 'interacted with your content';
@@ -163,6 +176,9 @@ export default function NotificationsScreen() {
           reply_id: notification.reply_id,
           goal_id: notification.goal_id,
           from_user_id: notification.from_user_id,
+          habit_type: notification.habit_type,
+          post_preview: notification.post_preview,
+          post_photo: notification.post_photo,
           inviteStatus: inviteStatus
         };
       });
@@ -331,6 +347,73 @@ export default function NotificationsScreen() {
     }
   };
 
+  const handleNotificationPress = (item: any) => {
+    if (item.type === 'habit_invite') return;
+
+    const nav = navigation as any;
+
+    if (
+      (item.type === 'post_like' || item.type === 'post_comment' || item.type === 'post_reply') &&
+      item.post_id
+    ) {
+      // Profile stack has PostDetail; root stack also has it for push taps
+      if (nav.navigate) {
+        nav.navigate('PostDetail', {
+          postId: item.post_id,
+          openComments: item.type === 'post_comment' || item.type === 'post_reply',
+        });
+      }
+      return;
+    }
+
+    if (item.type === 'habit_invite_accepted' || item.type === 'habit_nudge') {
+      // Jump to Action tab from nested Profile stack
+      const parent = nav.getParent?.();
+      if (parent?.navigate) {
+        parent.navigate('Action');
+      } else {
+        nav.navigate('MainTabs', { screen: 'Action' });
+      }
+      return;
+    }
+
+    if (item.type === 'follow' && item.from_user_id) {
+      nav.navigate('UserProfile', { userId: item.from_user_id });
+      return;
+    }
+
+    if (item.goal_id) {
+      nav.navigate('GoalDetail', { goalId: item.goal_id });
+      return;
+    }
+
+    Alert.alert(
+      'Notification',
+      `${item.name} ${item.message} on ${getDetailedTime(item.created_at)}`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const getInteractionIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+    switch (type) {
+      case 'post_like':
+        return 'heart';
+      case 'post_comment':
+        return 'chatbubble';
+      case 'post_reply':
+        return 'arrow-undo';
+      case 'habit_invite':
+      case 'habit_invite_accepted':
+        return 'people';
+      case 'habit_nudge':
+        return 'hand-left';
+      case 'follow':
+        return 'person-add';
+      default:
+        return 'notifications';
+    }
+  };
+
   const groupNotificationsByTime = (notifications: any[]) => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -452,7 +535,7 @@ export default function NotificationsScreen() {
             }
             
             return (
-              <>
+              <View>
                 {showHeader && (
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
@@ -463,32 +546,34 @@ export default function NotificationsScreen() {
                 <View style={[styles.card, { flexDirection: 'column', alignItems: 'flex-start', padding: 0 }]}>
                   <TouchableOpacity 
                     style={{ flexDirection: 'row', alignItems: 'center', width: '100%', padding: 12 }}
-                    onPress={() => {
-                      if (item.type === 'habit_invite') return;
-                      const title = item.type === 'follow' ? 'Follow Details' : 'Notification Details';
-                      const msg = item.type === 'follow' 
-                        ? `${item.name} started following you on ${getDetailedTime(item.created_at)}`
-                        : `${item.name} ${item.message} on ${getDetailedTime(item.created_at)}`;
-                        
-                      Alert.alert(
-                        title,
-                        msg,
-                        [{ text: 'OK' }]
-                      );
-                    }}
+                    onPress={() => handleNotificationPress(item)}
                   >
-                    {item.avatar ? (
-                      <Image source={{ uri: item.avatar }} style={styles.avatar} />
-                    ) : (
-                      <View style={[styles.avatar, { backgroundColor: theme.textTertiary }]}>
-                        <Ionicons name="person" size={20} color={theme.textSecondary} />
+                    <View>
+                      {item.avatar ? (
+                        <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                      ) : (
+                        <View style={[styles.avatar, { backgroundColor: theme.textTertiary }]}>
+                          <Ionicons name="person" size={20} color={theme.textSecondary} />
+                        </View>
+                      )}
+                      <View style={[styles.typeBadge, { backgroundColor: theme.background }]}>
+                        <Ionicons
+                          name={getInteractionIcon(item.type)}
+                          size={10}
+                          color={item.type === 'post_like' ? '#ef4444' : theme.primary}
+                        />
                       </View>
-                    )}
+                    </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.name, { color: theme.textPrimary }]}>{item.name}</Text>
-                      <Text style={[styles.message, { color: theme.textSecondary }]}>{item.message}</Text>
+                      <Text style={[styles.message, { color: theme.textSecondary }]} numberOfLines={3}>
+                        {item.message}
+                      </Text>
+                      <Text style={[styles.detailedTime, { color: theme.textTertiary }]}>{item.time}</Text>
                     </View>
-                    <Text style={[styles.time, { color: theme.textTertiary }]}>{item.time}</Text>
+                    {item.post_photo ? (
+                      <Image source={{ uri: item.post_photo }} style={styles.postThumb} />
+                    ) : null}
                   </TouchableOpacity>
                   
                   {item.type === 'habit_invite' && (item.inviteStatus === 'pending' || !item.inviteStatus) && (
@@ -518,7 +603,7 @@ export default function NotificationsScreen() {
                      </Text>
                   )}
                 </View>
-              </>
+              </View>
             );
           }}
           ListEmptyComponent={
@@ -809,6 +894,23 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 6,
     marginRight: 12,
+    backgroundColor: '#e5e7eb',
+  },
+  typeBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    marginLeft: 10,
     backgroundColor: '#e5e7eb',
   },
   name: {

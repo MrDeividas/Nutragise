@@ -184,8 +184,10 @@ export const useActionStore = create<ActionState>((set, get) => ({
 					dailyHabitsError: null 
 				});
 				
-				// Update points for the daily habits
-				await pointsService.updateDailyHabitsPoints(userId, result, habitData.date);
+				// Points/EXP off the critical path — don't block habit complete UI
+				pointsService.updateDailyHabitsPoints(userId, result, habitData.date).catch(err => {
+					console.warn('Failed to update daily habit points:', err);
+				});
 				
 				return true;
 			} else {

@@ -1,6 +1,5 @@
 /**
- * Raffle/Giveaway Screen
- * Displays current raffle and allows Pro members to enter
+ * Rewards Hub — game-style Raffles / Store / Inventory in one screen
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -9,168 +8,189 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
-import { raffleService, Raffle } from '../lib/raffleService';
-import { storeService } from '../lib/storeService';
+import { raffleService, Raffle, getEndOfMonthDeadline, getCountdownParts, CountdownParts, RAFFLE_ENTRY_TOKEN_COST } from '../lib/raffleService';
+import { storeService, StoreItem, InventoryItem } from '../lib/storeService';
 import CustomBackground from '../components/CustomBackground';
 import UpgradeToProModal from '../components/UpgradeToProModal';
 
+const DARK = '#1f2937';
+const GOLD = '#D4A017';
+const SCREEN_W = Dimensions.get('window').width;
+const STORE_GAP = 12;
+const STORE_PAD = 16;
+const STORE_CELL = (SCREEN_W - STORE_PAD * 2 - STORE_GAP) / 2;
+
+type HubTab = 'raffles' | 'store' | 'inventory';
+
+const TABS: { key: HubTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'raffles', label: 'Raffles', icon: 'trophy' },
+  { key: 'store', label: 'Store', icon: 'cart' },
+  { key: 'inventory', label: 'Bag', icon: 'cube' },
+];
+
 export default function RaffleScreen() {
   const navigation = useNavigation() as any;
+  const route = useRoute<any>();
   const { theme } = useTheme();
   const { user } = useAuthStore();
 
-  const [currentRaffle, setCurrentRaffle] = useState<Raffle | null>(null);
-  const [tokenBalance, setTokenBalance] = useState<number>(0);
-  const [hasEntered, setHasEntered] = useState(false);
-  const [entryCount, setEntryCount] = useState(0);
-  const [hasTicket, setHasTicket] = useState(false);
+  const initialTab: HubTab =
+    route.params?.tab === 'store' || route.params?.tab === 'inventory' || route.params?.tab === 'raffles'
+      ? route.params.tab
+      : 'raffles';
+
+  const [tab, setTab] = useState<HubTab>(initialTab);
+
+  // Shared
+  const [tokenBalance, setTokenBalance] = useState(0);
   const [ticketCount, setTicketCount] = useState(0);
+  const [isPro, setIsPro] = useState(false);
+  const [userLevel, setUserLevel] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [entering, setEntering] = useState(false);
-  const [isPro, setIsPro] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  const loadRaffleData = useCallback(async () => {
-    if (!user) return;
+  // Raffle
+  const [currentRaffle, setCurrentRaffle] = useState<Raffle | null>(null);
+  const [hasEntered, setHasEntered] = useState(false);
+  const [entryCount, setEntryCount] = useState(0);
+  const [entering, setEntering] = useState(false);
+  const [countdown, setCountdown] = useState<CountdownParts>(() =>
+    getCountdownParts(getEndOfMonthDeadline())
+  );
 
+  // Store / Inventory
+  const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [claiming, setClaiming] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (route.params?.tab && route.params.tab !== tab) {
+      setTab(route.params.tab);
+    }
+  }, [route.params?.tab]);
+
+  const getUserProfile = async () => {
+    if (!user) return { level: 1, is_pro: false };
     try {
-      const [raffle, tokens, profileData] = await Promise.all([
+      const { supabase } = await import('../lib/supabase');
+      const { data } = await supabase
+        .from('profiles')
+        .select('level, is_pro')
+        .eq('id', user.id)
+        .single();
+      return data || { level: 1, is_pro: false };
+    } catch {
+      return { level: 1, is_pro: false };
+    }
+  };
+
+  const loadAll = useCallback(async () => {
+    if (!user) return;
+    try {
+      await raffleService.syncActiveRaffleDrawToMonthEnd();
+
+      const [raffle, tokens, profileData, items, inv] = await Promise.all([
         raffleService.getCurrentRaffle(),
         storeService.getUserTokens(user.id),
         getUserProfile(),
+        storeService.getStoreItems(),
+        storeService.getUserInventory(user.id),
       ]);
 
       setCurrentRaffle(raffle);
       setTokenBalance(tokens);
-      setIsPro(profileData.is_pro);
+      setIsPro(!!profileData.is_pro);
+      setUserLevel(profileData.level || 1);
+      setStoreItems(items);
+      setInventory(inv.filter((i) => i.quantity > 0));
+
+      const raffleTicketItem = items.find((i) => i.type === 'raffle_ticket');
+      let qty = 0;
+      if (raffle?.ticket_item_id) {
+        qty = inv.find((i) => i.item_id === raffle.ticket_item_id)?.quantity || 0;
+      } else if (raffleTicketItem) {
+        qty = inv.find((i) => i.item_id === raffleTicketItem.id)?.quantity || 0;
+      }
+      setTicketCount(qty);
 
       if (raffle) {
-        // Check if user has entered
-        const entered = await raffleService.hasUserEntered(user.id, raffle.id);
+        const [entered, count] = await Promise.all([
+          raffleService.hasUserEntered(user.id, raffle.id),
+          raffleService.getEntryCount(raffle.id),
+        ]);
         setHasEntered(entered);
-
-        // Get total entry count
-        const count = await raffleService.getEntryCount(raffle.id);
         setEntryCount(count);
-
-        // Check if user has tickets - fetch directly from inventory for accuracy
-        if (raffle.ticket_item_id) {
-          const inventory = await storeService.getUserInventory(user.id);
-          const ticketItem = inventory.find(item => item.item_id === raffle.ticket_item_id);
-          const quantity = ticketItem?.quantity || 0;
-          setHasTicket(quantity > 0);
-          setTicketCount(quantity);
-        } else {
-          setHasTicket(false);
-          setTicketCount(0);
-        }
+      } else {
+        setHasEntered(false);
+        setEntryCount(0);
       }
     } catch (error) {
-      console.error('Error loading raffle data:', error);
-      Alert.alert('Error', 'Failed to load raffle information');
+      console.error('Error loading rewards hub:', error);
+      Alert.alert('Error', 'Failed to load rewards');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [user]);
 
-  const getUserProfile = async () => {
-    if (!user) return { is_pro: false };
-
-    try {
-      const { supabase } = await import('../lib/supabase');
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('is_pro')
-        .eq('id', user.id)
-        .single();
-
-      if (error) throw error;
-      return data || { is_pro: false };
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      return { is_pro: false };
-    }
-  };
-
   useEffect(() => {
-    loadRaffleData();
-  }, [loadRaffleData]);
+    loadAll();
+  }, [loadAll]);
 
-  // Refresh data when screen comes into focus to ensure accurate ticket count
+  // Live countdown to end-of-month draw
+  useEffect(() => {
+    const tick = () => setCountdown(getCountdownParts(getEndOfMonthDeadline()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      loadRaffleData();
-    }, [loadRaffleData])
+      loadAll();
+    }, [loadAll])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadRaffleData();
+    loadAll();
   };
 
   const handleEnterRaffle = async () => {
     if (!user || !currentRaffle) return;
-
-    // Check Pro status
     if (!isPro) {
       setShowUpgradeModal(true);
       return;
     }
-
-    // Check if already entered
     if (hasEntered) {
       Alert.alert('Already Entered', 'You have already entered this raffle. Good luck!');
       return;
     }
 
-    // Check if has ticket - fetch fresh count to ensure accuracy
-    if (currentRaffle.ticket_item_id) {
-      const inventory = await storeService.getUserInventory(user.id);
-      const ticketItem = inventory.find(item => item.item_id === currentRaffle.ticket_item_id);
-      const freshTicketCount = ticketItem?.quantity || 0;
-      
-      if (freshTicketCount <= 0) {
-        Alert.alert(
-          'No Tickets',
-          'You need a raffle ticket to enter. Visit the store to claim one!',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Visit Store', onPress: () => navigation.navigate('Store') },
-          ]
-        );
-        // Update the displayed count to reflect reality
-        setTicketCount(0);
-        setHasTicket(false);
-        return;
-      }
-    } else if (!hasTicket || ticketCount <= 0) {
+    if (tokenBalance < RAFFLE_ENTRY_TOKEN_COST) {
       Alert.alert(
-        'No Tickets',
-        'You need a raffle ticket to enter. Visit the store to claim one!',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Visit Store', onPress: () => navigation.navigate('Store') },
-        ]
+        'Not enough diamonds',
+        `Entering costs ${RAFFLE_ENTRY_TOKEN_COST} diamonds. You have ${tokenBalance}.`
       );
       return;
     }
 
-    // Confirm entry
     Alert.alert(
       'Enter Raffle',
-      `Use 1 raffle ticket to enter the ${currentRaffle.title}?`,
+      `Spend ${RAFFLE_ENTRY_TOKEN_COST} diamonds to enter ${currentRaffle.title}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -179,15 +199,16 @@ export default function RaffleScreen() {
             try {
               setEntering(true);
               const result = await raffleService.enterRaffle(user.id, currentRaffle.id);
-
               if (result.success) {
+                if (result.newTokenBalance != null) {
+                  setTokenBalance(result.newTokenBalance);
+                }
                 Alert.alert('Success!', result.message);
-                loadRaffleData(); // Refresh
+                loadAll();
               } else {
                 Alert.alert('Failed', result.message);
               }
             } catch (error: any) {
-              console.error('Error entering raffle:', error);
               Alert.alert('Error', error.message || 'Failed to enter raffle');
             } finally {
               setEntering(false);
@@ -198,308 +219,771 @@ export default function RaffleScreen() {
     );
   };
 
-  const getTimeRemaining = () => {
-    if (!currentRaffle) return '';
+  const handleClaimItem = async (item: StoreItem) => {
+    if (!user) return;
+    if (item.is_pro_only && !isPro) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    if (userLevel < item.level_required) {
+      Alert.alert('Level Required', `Reach level ${item.level_required} to claim this.`);
+      return;
+    }
+    if (tokenBalance < item.price_tokens) {
+      Alert.alert(
+        'Not enough tokens',
+        `Need ${item.price_tokens} tokens. You have ${tokenBalance}.`
+      );
+      return;
+    }
 
-    const now = new Date();
-    const drawDate = new Date(currentRaffle.draw_date);
-    const diff = drawDate.getTime() - now.getTime();
-
-    if (diff <= 0) return 'Draw happening soon!';
-
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-    if (days > 0) return `${days} day${days > 1 ? 's' : ''} remaining`;
-    return `${hours} hour${hours > 1 ? 's' : ''} remaining`;
+    Alert.alert(
+      'Claim Item',
+      `Claim ${item.name} for ${item.price_tokens} token${item.price_tokens > 1 ? 's' : ''}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Claim',
+          onPress: async () => {
+            try {
+              setClaiming(item.id);
+              const result = await storeService.claimItem(user.id, item.id);
+              if (result.success) {
+                Alert.alert('Claimed!', result.message);
+                setTokenBalance(result.newTokenBalance || 0);
+                loadAll();
+              } else {
+                Alert.alert('Failed', result.message);
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to claim item');
+            } finally {
+              setClaiming(null);
+            }
+          },
+        },
+      ]
+    );
   };
+
+  const handleUseInventoryItem = (item: InventoryItem) => {
+    if (item.item?.type === 'raffle_ticket') {
+      setTab('raffles');
+    } else {
+      Alert.alert('Item', `You have ${item.quantity}× ${item.item?.name || 'item'}`);
+    }
+  };
+
+  const renderHud = () => (
+    <View style={styles.hud}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
+        <Ionicons name="arrow-back" size={22} color={DARK} />
+      </TouchableOpacity>
+
+      <Text style={styles.hudTitle}>Rewards</Text>
+
+      <View style={styles.resourceRow}>
+        <View style={styles.resourcePill}>
+          <Ionicons name="diamond" size={14} color={GOLD} />
+          <Text style={styles.resourceText}>{tokenBalance}</Text>
+        </View>
+        <View style={styles.resourcePill}>
+          <Ionicons name="ticket" size={14} color={DARK} />
+          <Text style={styles.resourceText}>{ticketCount}</Text>
+        </View>
+        {isPro && (
+          <View style={[styles.resourcePill, styles.proPill]}>
+            <Text style={styles.proPillText}>PRO</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
+  const renderTabs = () => (
+    <View style={styles.tabBar}>
+      {TABS.map((t) => {
+        const active = tab === t.key;
+        return (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.tab, active && styles.tabActive]}
+            onPress={() => setTab(t.key)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name={t.icon} size={18} color={active ? '#FFFFFF' : '#6B7280'} />
+            <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderRaffles = () => {
+    if (!currentRaffle) {
+      return (
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyIconRing}>
+            <Ionicons name="calendar-outline" size={40} color={DARK} />
+          </View>
+          <Text style={styles.emptyTitle}>No active raffle</Text>
+          <Text style={styles.emptySub}>Check back soon for the next giveaway</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView
+        contentContainerStyle={styles.tabContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DARK} />}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.stage}>
+          <View style={styles.stageGlow} />
+          <Text style={styles.stageEyebrow}>FEATURED PRIZE</Text>
+          <View style={styles.trophyRing}>
+            <Ionicons name="trophy" size={48} color={GOLD} />
+          </View>
+          <Text style={styles.stageTitle}>{currentRaffle.title}</Text>
+          <Text style={styles.stagePrize}>£{currentRaffle.prize_amount}</Text>
+          {currentRaffle.description ? (
+            <Text style={styles.stageDesc} numberOfLines={3}>
+              {currentRaffle.description}
+            </Text>
+          ) : null}
+
+          <View style={styles.countdownBlock}>
+            <Text style={styles.countdownLabel}>
+              {countdown.isComplete ? 'DRAWING NOW' : 'DRAW AT MONTH END'}
+            </Text>
+            <View style={styles.countdownRow}>
+              {(
+                [
+                  { value: countdown.days, label: 'Days' },
+                  { value: countdown.hours, label: 'Hrs' },
+                  { value: countdown.minutes, label: 'Min' },
+                  { value: countdown.seconds, label: 'Sec' },
+                ] as const
+              ).map((unit, i) => (
+                <React.Fragment key={unit.label}>
+                  {i > 0 ? <Text style={styles.countdownSep}>:</Text> : null}
+                  <View style={styles.countdownUnit}>
+                    <Text style={styles.countdownValue}>
+                      {String(unit.value).padStart(2, '0')}
+                    </Text>
+                    <Text style={styles.countdownUnitLabel}>{unit.label}</Text>
+                  </View>
+                </React.Fragment>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.statRow}>
+            <View style={styles.statChip}>
+              <Ionicons name="people" size={14} color={DARK} />
+              <Text style={styles.statChipText}>{entryCount} in</Text>
+            </View>
+            {hasEntered && (
+              <View style={[styles.statChip, styles.enteredChip]}>
+                <Ionicons name="checkmark-circle" size={14} color={DARK} />
+                <Text style={[styles.statChipText, { color: DARK }]}>Entered</Text>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.ctaButton,
+              (hasEntered || !isPro || tokenBalance < RAFFLE_ENTRY_TOKEN_COST) && styles.ctaDisabled,
+              entering && { opacity: 0.65 },
+            ]}
+            onPress={handleEnterRaffle}
+            disabled={hasEntered || entering || !isPro || tokenBalance < RAFFLE_ENTRY_TOKEN_COST}
+            activeOpacity={0.9}
+          >
+            {entering ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <Ionicons name="flash" size={18} color="#FFF" />
+                <Text style={styles.ctaText}>
+                  {hasEntered
+                    ? 'Already Entered'
+                    : !isPro
+                      ? 'Pro Members Only'
+                      : tokenBalance < RAFFLE_ENTRY_TOKEN_COST
+                        ? `Need ${RAFFLE_ENTRY_TOKEN_COST} Diamonds`
+                        : 'Enter Giveaway'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {!hasEntered && isPro && (
+            <Text style={styles.ctaHint}>
+              Costs {RAFFLE_ENTRY_TOKEN_COST} diamonds · You have {tokenBalance}
+            </Text>
+          )}
+          {!isPro && (
+            <TouchableOpacity onPress={() => setShowUpgradeModal(true)}>
+              <Text style={styles.upgradeLink}>Upgrade to Pro to enter →</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <TouchableOpacity style={styles.quickLink} onPress={() => setTab('store')} activeOpacity={0.85}>
+          <Ionicons name="cart" size={18} color={DARK} />
+          <Text style={styles.quickLinkText}>Need tickets? Visit the Store</Text>
+          <Ionicons name="chevron-forward" size={18} color={DARK} />
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  };
+
+  const renderStoreItem = ({ item }: { item: StoreItem }) => {
+    const canClaim =
+      (!item.is_pro_only || isPro) && userLevel >= item.level_required && tokenBalance >= item.price_tokens;
+    const claimingThis = claiming === item.id;
+
+    return (
+      <TouchableOpacity
+        style={[styles.storeTile, !canClaim && styles.storeTileLocked]}
+        onPress={() => canClaim && !claimingThis && handleClaimItem(item)}
+        disabled={!canClaim || claimingThis}
+        activeOpacity={0.88}
+      >
+        <View style={styles.storeTileTop}>
+          <View style={styles.storeIconWrap}>
+            <Ionicons
+              name={item.type === 'raffle_ticket' ? 'ticket' : 'gift'}
+              size={28}
+              color={DARK}
+            />
+          </View>
+          {item.is_pro_only && (
+            <View style={styles.miniBadge}>
+              <Text style={styles.miniBadgeText}>PRO</Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.storeName} numberOfLines={2}>
+          {item.name}
+        </Text>
+        {item.level_required > 1 && (
+          <Text style={styles.storeReq}>Lvl {item.level_required}</Text>
+        )}
+        <View style={styles.storeFooter}>
+          <View style={styles.priceChip}>
+            <Ionicons name="diamond" size={12} color={GOLD} />
+            <Text style={styles.priceChipText}>{item.price_tokens}</Text>
+          </View>
+          <View style={[styles.claimChip, canClaim ? styles.claimChipOn : styles.claimChipOff]}>
+            {claimingThis ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Text style={[styles.claimChipText, !canClaim && { color: '#9CA3AF' }]}>
+                {canClaim ? 'Claim' : 'Locked'}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderStore = () => (
+    <FlatList
+      data={storeItems}
+      keyExtractor={(item) => item.id}
+      numColumns={2}
+      columnWrapperStyle={{ gap: STORE_GAP }}
+      contentContainerStyle={styles.gridContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DARK} />}
+      ListHeaderComponent={
+        <View>
+          <View style={styles.levelNoteLight}>
+            <Ionicons name="information-circle-outline" size={16} color={DARK} />
+            <Text style={styles.levelNoteText}>
+              Raffle tickets unlock at Level 3 EXP. Reach level 3, then claim tickets here.
+            </Text>
+          </View>
+          {!isPro ? (
+            <TouchableOpacity
+              style={styles.proBanner}
+              onPress={() => setShowUpgradeModal(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="star" size={16} color={GOLD} />
+              <Text style={styles.proBannerText}>Some loot is Pro-only — tap to upgrade</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      }
+      renderItem={renderStoreItem}
+      ListEmptyComponent={
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Store is empty</Text>
+        </View>
+      }
+    />
+  );
+
+  const renderInventoryItem = ({ item }: { item: InventoryItem }) => (
+    <TouchableOpacity
+      style={styles.invTile}
+      onPress={() => handleUseInventoryItem(item)}
+      activeOpacity={0.88}
+    >
+      <View style={styles.qtyBadge}>
+        <Text style={styles.qtyBadgeText}>×{item.quantity}</Text>
+      </View>
+      <View style={styles.invIconWrap}>
+        <Ionicons
+          name={item.item?.type === 'raffle_ticket' ? 'ticket' : 'gift'}
+          size={30}
+          color={DARK}
+        />
+      </View>
+      <Text style={styles.invName} numberOfLines={2}>
+        {item.item?.name || 'Item'}
+      </Text>
+      <Text style={styles.invUse}>
+        {item.item?.type === 'raffle_ticket' ? 'Use in Raffles' : 'Tap for info'}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const renderInventory = () => (
+    <FlatList
+      data={inventory}
+      keyExtractor={(item) => item.id}
+      numColumns={2}
+      columnWrapperStyle={{ gap: STORE_GAP }}
+      contentContainerStyle={styles.gridContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DARK} />}
+      renderItem={renderInventoryItem}
+      ListEmptyComponent={
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyIconRing}>
+            <Ionicons name="cube-outline" size={40} color={DARK} />
+          </View>
+          <Text style={styles.emptyTitle}>Inventory empty</Text>
+          <Text style={styles.emptySub}>Claim items from the Store</Text>
+          <TouchableOpacity style={styles.ctaButton} onPress={() => setTab('store')}>
+            <Ionicons name="cart" size={18} color="#FFF" />
+            <Text style={styles.ctaText}>Open Store</Text>
+          </TouchableOpacity>
+        </View>
+      }
+    />
+  );
 
   if (loading) {
     return (
-      <CustomBackground>
-        <SafeAreaView style={styles.container} edges={['top']}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+      <View style={styles.root}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color={DARK} />
           </View>
         </SafeAreaView>
-      </CustomBackground>
+      </View>
     );
   }
 
   return (
-    <CustomBackground>
-      <SafeAreaView style={styles.container} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          {/* Back Button - Left */}
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
+    <View style={styles.root}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        {renderHud()}
+        {renderTabs()}
 
-          {/* Title - Center */}
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Raffles</Text>
-
-          {/* Navigation Icons - Right */}
-          <View style={styles.headerIcons}>
-            <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: theme.cardBackground }]}
-              onPress={() => navigation.navigate('Store')}
-            >
-              <Ionicons name="cart" size={22} color={theme.textPrimary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: theme.cardBackground }]}
-              onPress={() => navigation.navigate('Inventory')}
-            >
-              <Ionicons name="cube" size={22} color={theme.textPrimary} />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.panel}>
+          {tab === 'raffles' && renderRaffles()}
+          {tab === 'store' && renderStore()}
+          {tab === 'inventory' && renderInventory()}
         </View>
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
-          }
-        >
-          {currentRaffle ? (
-            <View style={[styles.raffleCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-              {/* Header */}
-              <View style={styles.raffleHeader}>
-                <View style={[styles.raffleIcon, { backgroundColor: theme.primary + '20' }]}>
-                  <Ionicons name="trophy" size={28} color={theme.primary} />
-                </View>
-                <View style={styles.raffleHeaderText}>
-                  <Text style={[styles.raffleTitle, { color: theme.textPrimary }]}>
-                    {currentRaffle.title}
-                  </Text>
-                  <Text style={[styles.rafflePrize, { color: theme.primary }]}>
-                    £{currentRaffle.prize_amount} Prize
-                  </Text>
-                </View>
-                {hasEntered && (
-                  <View style={styles.enteredBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                    <Text style={styles.enteredText}>Entered</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Description */}
-              {currentRaffle.description && (
-                <Text style={[styles.raffleDescription, { color: theme.textSecondary }]} numberOfLines={2}>
-                  {currentRaffle.description}
-                </Text>
-              )}
-
-              {/* Stats Row */}
-              <View style={styles.raffleStats}>
-                <View style={styles.raffleStat}>
-                  <Ionicons name="people" size={16} color={theme.textSecondary} />
-                  <Text style={[styles.raffleStatText, { color: theme.textSecondary }]}>
-                    {entryCount} {entryCount === 1 ? 'participant' : 'participants'}
-                  </Text>
-                </View>
-                <View style={styles.raffleStat}>
-                  <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-                  <Text style={[styles.raffleStatText, { color: theme.textSecondary }]}>
-                    {getTimeRemaining()}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Enter Button */}
-              <TouchableOpacity
-                style={[
-                  styles.raffleButton,
-                  {
-                    backgroundColor: hasEntered || !isPro ? '#E5E7EB' : theme.primary,
-                    opacity: entering ? 0.6 : 1,
-                  },
-                ]}
-                onPress={handleEnterRaffle}
-                disabled={hasEntered || entering || !isPro}
-              >
-                {entering ? (
-                  <ActivityIndicator size="small" color={hasEntered || !isPro ? theme.textSecondary : '#FFFFFF'} />
-                ) : (
-                  <Text style={[styles.raffleButtonText, { color: hasEntered || !isPro ? theme.textSecondary : '#FFFFFF' }]}>
-                    {hasEntered ? 'Already Entered' : !isPro ? 'Pro Members Only' : 'Enter Giveaway'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={64} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No active raffles at the moment
-              </Text>
-              <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>
-                Check back soon for the next giveaway!
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-
-        {/* Upgrade to Pro Modal */}
-        <UpgradeToProModal
-          visible={showUpgradeModal}
-          onClose={() => setShowUpgradeModal(false)}
-          onUpgrade={async () => {
-            // Refresh profile data and reload raffle data
-            await loadRaffleData();
-          }}
-        />
       </SafeAreaView>
-    </CustomBackground>
+
+      <UpgradeToProModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onUpgrade={async () => {
+          await loadAll();
+        }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+    backgroundColor: '#F8F9FB',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  safe: { flex: 1 },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  hud: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
-  header: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hudTitle: {
+    flex: 1,
+    color: DARK,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  resourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  resourcePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  resourceText: { color: DARK, fontWeight: '700', fontSize: 13 },
+  proPill: { backgroundColor: DARK, borderColor: DARK },
+  proPillText: { color: '#FFFFFF', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 },
+
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 11,
+  },
+  tabActive: {
+    backgroundColor: DARK,
+  },
+  tabLabel: {
+    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tabLabelActive: { color: '#FFFFFF' },
+
+  panel: {
+    flex: 1,
+    backgroundColor: '#F8F9FB',
+    overflow: 'hidden',
+  },
+  tabContent: { padding: 16, paddingBottom: 40 },
+  gridContent: { padding: STORE_PAD, paddingBottom: 40, gap: STORE_GAP },
+
+  stage: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  stageGlow: {
+    position: 'absolute',
+    top: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(212,160,23,0.1)',
+  },
+  stageEyebrow: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    marginBottom: 14,
+  },
+  trophyRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: 'rgba(212,160,23,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  stageTitle: {
+    color: DARK,
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  stagePrize: {
+    color: DARK,
+    fontSize: 36,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  stageDesc: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  countdownBlock: {
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignSelf: 'stretch',
+  },
+  countdownLabel: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+  },
+  countdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  countdownUnit: {
+    alignItems: 'center',
+    minWidth: 52,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  countdownValue: {
+    color: DARK,
+    fontSize: 22,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  countdownUnitLabel: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
+  countdownSep: {
+    color: DARK,
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 14,
+  },
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 18 },
+  statChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  enteredChip: {
+    backgroundColor: 'rgba(31,41,55,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(31,41,55,0.2)',
+  },
+  statChipText: { color: DARK, fontSize: 12, fontWeight: '600' },
+
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: DARK,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    alignSelf: 'stretch',
+  },
+  ctaDisabled: { backgroundColor: '#D1D5DB' },
+  ctaText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  ctaHint: { color: '#6B7280', fontSize: 12, marginTop: 10 },
+  upgradeLink: { color: DARK, fontSize: 13, fontWeight: '700', marginTop: 12 },
+  levelNoteLight: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  levelNoteText: {
+    flex: 1,
+    color: DARK,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+
+  quickLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quickLinkText: { flex: 1, color: DARK, fontWeight: '700', fontSize: 14 },
+
+  proBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  proBannerText: { color: DARK, fontSize: 13, fontWeight: '600', flex: 1 },
+
+  storeTile: {
+    width: STORE_CELL,
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minHeight: 168,
+  },
+  storeTileLocked: { opacity: 0.72 },
+  storeTileTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  storeIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniBadge: {
+    backgroundColor: DARK,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    height: 20,
+  },
+  miniBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
+  storeName: { color: DARK, fontSize: 14, fontWeight: '800', minHeight: 36 },
+  storeReq: { color: '#6B7280', fontSize: 11, marginTop: 2, marginBottom: 8 },
+  storeFooter: {
+    marginTop: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    zIndex: 0,
-  },
-  backButton: {
-    padding: 8,
-    zIndex: 1,
-  },
-  headerIcons: {
-    flexDirection: 'row',
-    gap: 8,
-    zIndex: 1,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  raffleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  raffleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  raffleIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  raffleHeaderText: {
-    flex: 1,
-  },
-  raffleTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  rafflePrize: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  enteredBadge: {
+  priceChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(212,160,23,0.12)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
   },
-  enteredText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  raffleDescription: {
-    fontSize: 16,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  raffleStats: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  raffleStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  raffleStatText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  raffleButton: {
-    paddingVertical: 12,
-    borderRadius: 12,
+  priceChipText: { color: DARK, fontWeight: '800', fontSize: 13 },
+  claimChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 58,
     alignItems: 'center',
   },
-  raffleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-});
+  claimChipOn: { backgroundColor: DARK },
+  claimChipOff: { backgroundColor: '#E5E7EB' },
+  claimChipText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
 
+  invTile: {
+    width: STORE_CELL,
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    minHeight: 150,
+  },
+  qtyBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: DARK,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    zIndex: 1,
+  },
+  qtyBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '800' },
+  invIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  invName: { color: DARK, fontSize: 14, fontWeight: '800', textAlign: 'center', minHeight: 36 },
+  invUse: { color: '#6B7280', fontSize: 11, marginTop: 4, fontWeight: '600' },
+
+  emptyWrap: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 },
+  emptyIconRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(31,41,55,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: { color: DARK, fontSize: 17, fontWeight: '800', marginBottom: 6 },
+  emptySub: { color: '#6B7280', fontSize: 13, textAlign: 'center', marginBottom: 18 },
+});

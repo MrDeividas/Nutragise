@@ -57,114 +57,49 @@ class DailyHabitsService {
           console.warn('Failed to initialize user pillars:', err);
         });
         
+        // Pillar + reward notifications — fire-and-forget so habit UI isn't blocked
+        const trackPillar = (
+          pillar: Parameters<typeof pillarProgressService.trackAction>[1],
+          action: Parameters<typeof pillarProgressService.trackAction>[2],
+          habitType: string,
+        ) => {
+          pillarProgressService.trackAction(userId, pillar, action).catch(err => {
+            console.error(`❌ Failed to track ${action} for pillar progress:`, err);
+          });
+          notificationService.createHabitRewardNotification({
+            user_id: userId,
+            habit_type: habitType,
+            points_gained: 15,
+            pillar_type: pillar,
+            pillar_progress: 0.36,
+          }).catch(console.error);
+        };
+
         // Strength & Fitness: gym, run, cold_shower, water
         if (habitData.gym_day_type === 'active') {
-          console.log('💪 Gym habit detected, tracking action...');
-          try {
-            await pillarProgressService.trackAction(userId, 'strength_fitness', 'gym');
-            console.log('✅ Gym pillar action tracked successfully');
-          } catch (err) {
-            console.error('❌ Failed to track gym action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'gym',
-            points_gained: 15,
-            pillar_type: 'strength_fitness',
-            pillar_progress: 0.36
-          }).catch(console.error);
-        } else {
-          console.log('⚠️ Gym habit not active:', habitData.gym_day_type);
+          trackPillar('strength_fitness', 'gym', 'gym');
         }
         if (habitData.run_activity_type || habitData.run_day_type === 'active') {
-          console.log('🏃 Run habit detected, tracking action...');
-          try {
-            await pillarProgressService.trackAction(userId, 'strength_fitness', 'run');
-            console.log('✅ Run pillar action tracked successfully');
-          } catch (err) {
-            console.error('❌ Failed to track run action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'run',
-            points_gained: 15,
-            pillar_type: 'strength_fitness',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('strength_fitness', 'run', 'run');
         }
         if (habitData.cold_shower_completed) {
-          try {
-            await pillarProgressService.trackAction(userId, 'strength_fitness', 'cold_shower');
-          } catch (err) {
-            console.error('❌ Failed to track cold_shower action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'cold_shower',
-            points_gained: 15,
-            pillar_type: 'strength_fitness',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('strength_fitness', 'cold_shower', 'cold_shower');
         }
         if (habitData.water_intake && habitData.water_intake > 0) {
-          try {
-            await pillarProgressService.trackAction(userId, 'strength_fitness', 'water');
-          } catch (err) {
-            console.error('❌ Failed to track water action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'water',
-            points_gained: 15,
-            pillar_type: 'strength_fitness',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('strength_fitness', 'water', 'water');
         }
-        
+
         // Growth & Wisdom: reflect, focus
         if (habitData.reflect_mood || habitData.reflect_energy) {
-          try {
-            await pillarProgressService.trackAction(userId, 'growth_wisdom', 'reflect');
-          } catch (err) {
-            console.error('❌ Failed to track reflect action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'reflect',
-            points_gained: 15,
-            pillar_type: 'growth_wisdom',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('growth_wisdom', 'reflect', 'reflect');
         }
         if (habitData.focus_completed) {
-          try {
-            await pillarProgressService.trackAction(userId, 'growth_wisdom', 'focus');
-          } catch (err) {
-            console.error('❌ Failed to track focus action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'focus',
-            points_gained: 15,
-            pillar_type: 'growth_wisdom',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('growth_wisdom', 'focus', 'focus');
         }
-        
+
         // Discipline: sleep
         if (habitData.sleep_hours && habitData.sleep_hours > 0) {
-          try {
-            await pillarProgressService.trackAction(userId, 'discipline', 'sleep');
-          } catch (err) {
-            console.error('❌ Failed to track sleep action for pillar progress:', err);
-          }
-          notificationService.createHabitRewardNotification({
-            user_id: userId,
-            habit_type: 'sleep',
-            points_gained: 15,
-            pillar_type: 'discipline',
-            pillar_progress: 0.36
-          }).catch(console.error);
+          trackPillar('discipline', 'sleep', 'sleep');
         }
       }
       

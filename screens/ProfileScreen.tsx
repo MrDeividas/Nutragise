@@ -38,7 +38,14 @@ import FullJourneyModal from '../components/FullJourneyModal';
 import LevelInfoModal from '../components/LevelInfoModal';
 import AchievementModal from '../components/AchievementModal';
 import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
+import AchievementBadge from '../components/AchievementBadge';
 import { Achievement } from '../types/database';
+import {
+  achievementsService,
+  BadgeWithStatus,
+  TOTAL_ACHIEVEMENTS,
+} from '../lib/achievementsService';
+import { sortAchievementsHardestFirst } from '../lib/achievementDefinitions';
 
 const { width } = Dimensions.get('window');
 
@@ -127,7 +134,9 @@ function ProfileScreen({ navigation }: any) {
   
   // Highlights State
   const [showAchievementModal, setShowAchievementModal] = useState(false);
-  const [highlights, setHighlights] = useState<any[]>([]);
+  const [highlights, setHighlights] = useState<Achievement[]>([]);
+  const [badgeAchievements, setBadgeAchievements] = useState<BadgeWithStatus[]>([]);
+  const [badgeUnlockedCount, setBadgeUnlockedCount] = useState(0);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   
@@ -161,8 +170,21 @@ function ProfileScreen({ navigation }: any) {
       // Force a refresh of the action store data to ensure live updates
       getActiveSegmentCount();
       fetchRecentActivity();
+      loadBadgeAchievements();
     }, [user, userGoals.length, getActiveSegmentCount])
   );
+
+  const loadBadgeAchievements = async () => {
+    if (!user?.id) return;
+    try {
+      await achievementsService.evaluateAndUnlock(user.id);
+      const list = await achievementsService.getBadgesWithStatus(user.id);
+      setBadgeAchievements(list);
+      setBadgeUnlockedCount(list.filter((b) => b.unlocked).length);
+    } catch (e) {
+      console.warn('loadBadgeAchievements:', e);
+    }
+  };
 
   const loadChallengeStats = async () => {
     if (!user?.id) return;
@@ -1025,7 +1047,7 @@ function ProfileScreen({ navigation }: any) {
               style={styles.headerIconButton}
             >
               <View style={{ position: 'relative' }}>
-                <Ionicons name="chatbubble-outline" size={24} color="#ffffff" />
+                <Ionicons name="chatbubble-outline" size={24} color={theme.textPrimary} />
                 {dmUnreadCount > 0 && (
                   <View style={{
                     position: 'absolute',
@@ -1059,7 +1081,7 @@ function ProfileScreen({ navigation }: any) {
               navigation.navigate('Notifications');
             }} style={styles.headerIconButton}>
               <View style={{ position: 'relative' }}>
-                <Ionicons name="notifications-outline" size={24} color="#ffffff" />
+                <Ionicons name="notifications-outline" size={27} color={theme.textPrimary} />
                 {notificationCount > 0 && (
                   <View style={{
                     position: 'absolute',
@@ -1217,9 +1239,14 @@ function ProfileScreen({ navigation }: any) {
               </View>
               <View style={styles.expandedProfileItem}>
                 <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>EXP</Text>
-                <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {totalPoints}
-                </Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('ProfileStats')}
+                >
+                  <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
+                    {totalPoints}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
             
@@ -1351,7 +1378,11 @@ function ProfileScreen({ navigation }: any) {
         <View style={styles.keepTrackSection}>
           <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border, marginTop: 20 }]}>
             <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('ProfileStats')}
+                style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, flex: 1 }}
+              >
                 <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
                 <View style={{
                   backgroundColor: showProgressIndicator.overall ? '#10B981' : (isDark ? '#1f1f1f' : '#111827'),
@@ -1363,7 +1394,8 @@ function ProfileScreen({ navigation }: any) {
                     {Math.floor(pillarProgress.overall)}
                   </Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} style={{ marginTop: 6 }} />
+              </TouchableOpacity>
               <TouchableOpacity 
                 onPress={toggleStatsVisibility}
                 style={styles.eyeIconButton}
@@ -1447,13 +1479,7 @@ function ProfileScreen({ navigation }: any) {
                   <View style={styles.progressBarLabelBelow}>
                     <TouchableOpacity 
                       style={styles.progressBarNumberContainer}
-                      onPress={() => {
-                        Alert.alert(
-                          bar.pillar,
-                          `${exactProgress.toFixed(1)}%`,
-                          [{ text: 'OK' }]
-                        );
-                      }}
+                      onPress={() => navigation.navigate('ProfileStats')}
                       onLongPress={async () => {
                         if (user) {
                           // ... keep debug logic ...
@@ -1488,7 +1514,7 @@ function ProfileScreen({ navigation }: any) {
                         key={entry.id}
                         style={[
                           styles.leaderboardRow,
-                          isCurrentUser && { backgroundColor: 'rgba(18, 148, 144, 0.08)' }
+                          isCurrentUser && { backgroundColor: 'rgba(31, 41, 55, 0.08)' }
                         ]}
                       >
                         <Text style={[styles.leaderboardRankText, { color: theme.textSecondary }]}>
@@ -1637,6 +1663,54 @@ function ProfileScreen({ navigation }: any) {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Unlockable Achievements badges */}
+        <View style={styles.keepTrackSection}>
+          <TouchableOpacity
+            style={styles.badgeAchievementsBox}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Achievements')}
+          >
+            <View style={styles.badgeAchievementsHeader}>
+              <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Achievements</Text>
+              <Text style={[styles.badgeAchievementsProgress, { color: theme.textSecondary }]}>
+                {badgeUnlockedCount}/{TOTAL_ACHIEVEMENTS}
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.badgeAchievementsRow}
+            >
+              {(() => {
+                const completed = sortAchievementsHardestFirst(
+                  badgeAchievements.filter((b) => b.unlocked)
+                ).slice(0, 8);
+
+                if (completed.length === 0) {
+                  return (
+                    <Text style={[styles.badgeAchievementsEmpty, { color: theme.textSecondary }]}>
+                      No achievements unlocked yet
+                    </Text>
+                  );
+                }
+
+                return completed.map((badge) => (
+                  <AchievementBadge
+                    key={badge.id}
+                    image={badge.image}
+                    unlocked
+                    size={52}
+                    style={{ marginRight: 10 }}
+                  />
+                ));
+              })()}
+            </ScrollView>
+            <Text style={[styles.badgeAchievementsHint, { color: theme.textSecondary }]}>
+              Tap to view all
+            </Text>
+          </TouchableOpacity>
         </View>
 
       </ScrollView>
@@ -2478,6 +2552,43 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     minHeight: 120,
+  },
+  badgeAchievementsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  badgeAchievementsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  badgeAchievementsProgress: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  badgeAchievementsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+    minHeight: 52,
+  },
+  badgeAchievementsEmpty: {
+    fontSize: 12,
+    paddingVertical: 16,
+  },
+  badgeAchievementsHint: {
+    fontSize: 11,
+    marginTop: 10,
+    textAlign: 'center',
   },
   levelTextbox: {
     borderRadius: 8,

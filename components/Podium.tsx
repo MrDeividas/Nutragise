@@ -115,7 +115,7 @@ function PodiumSlot({
               {isCurrentUser ? 'YOU' : user.username.toUpperCase()}
             </Text>
 
-            <Text style={[styles.points, { color: theme.primary }]}>
+            <Text style={[styles.points, { color: rank === 1 ? theme.primary : '#1f2937' }]}>
               {user.points.toLocaleString()}
             </Text>
           </>

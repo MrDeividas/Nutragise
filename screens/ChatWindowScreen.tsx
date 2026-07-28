@@ -10,7 +10,8 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
-  Keyboard
+  Keyboard,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,8 @@ import { supabase } from '../lib/supabase';
 import { Message } from '../types/database';
 import CustomBackground from '../components/CustomBackground';
 
+const PAGE_SIZE = 15;
+
 export default function ChatWindowScreen() {
   const route = useRoute();
   const navigation = useNavigation();
@@ -29,9 +32,11 @@ export default function ChatWindowScreen() {
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [inputText, setInputText] = useState('');
   const [otherUser, setOtherUser] = useState<any>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -39,6 +44,8 @@ export default function ChatWindowScreen() {
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const lastTypingUpdateRef = useRef<number>(0);
+  const initialScrollDoneRef = useRef(false);
+  const loadingOlderRef = useRef(false);
 
   // Load other user profile
   useEffect(() => {
@@ -48,41 +55,68 @@ export default function ChatWindowScreen() {
         .select('id, username, display_name, avatar_url')
         .eq('id', otherUserId)
         .single();
-      
+
       setOtherUser(data);
     };
     loadOtherUser();
   }, [otherUserId]);
 
-  // Load messages
+  // Load latest messages only
   const loadMessages = useCallback(async () => {
-    const chatMessages = await dmService.getChatMessages(chatId);
+    initialScrollDoneRef.current = false;
+    const chatMessages = await dmService.getChatMessages(chatId, PAGE_SIZE);
     setMessages(chatMessages);
+    setHasMore(chatMessages.length >= PAGE_SIZE);
     setLoading(false);
-    
-    // Mark as read
+
     if (user) {
       await dmService.markMessagesAsRead(chatId, user.id);
     }
   }, [chatId, user]);
 
-  // Load messages on mount
+  const loadOlderMessages = useCallback(async () => {
+    if (!hasMore || loadingOlderRef.current || messages.length === 0) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const oldest = messages[0];
+      const older = await dmService.getOlderChatMessages(
+        chatId,
+        oldest.created_at,
+        PAGE_SIZE
+      );
+      setHasMore(older.length >= PAGE_SIZE);
+      if (older.length > 0) {
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const unique = older.filter((m) => !existingIds.has(m.id));
+          return [...unique, ...prev];
+        });
+      }
+    } finally {
+      setLoadingOlder(false);
+      // Keep flag briefly so onContentSizeChange doesn't jump to bottom
+      setTimeout(() => {
+        loadingOlderRef.current = false;
+      }, 250);
+    }
+  }, [chatId, hasMore, messages]);
+
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
 
-  // Subscribe to new messages (separate from loadMessages to avoid re-subscription)
   useEffect(() => {
     if (!user) return;
-    
+
     const messageSubscription = dmService.subscribeToMessages(chatId, (newMessage) => {
-      // Prevent duplicates - check if message already exists
-      setMessages(prev => {
-        const exists = prev.some(m => m.id === newMessage.id);
+      setMessages((prev) => {
+        const exists = prev.some((m) => m.id === newMessage.id);
         if (exists) return prev;
         return [...prev, newMessage];
       });
-      
+
       if (newMessage.sender_id !== user.id) {
         dmService.markMessagesAsRead(chatId, user.id);
       }
@@ -103,8 +137,6 @@ export default function ChatWindowScreen() {
     };
   }, [chatId, user]);
 
-  // Scroll to bottom when keyboard shows; track visibility so we don’t add safe-area
-  // bottom inset on top of keyboard padding (that caused a large gap above the keyboard).
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -126,13 +158,11 @@ export default function ChatWindowScreen() {
     };
   }, []);
 
-  // Handle typing indicator with throttling (max 1 update per second)
   const handleTyping = (text: string) => {
     setInputText(text);
-    
+
     if (!user) return;
-    
-    // If input is empty, clear typing indicator immediately
+
     if (!text.trim()) {
       dmService.setTypingIndicator(chatId, user.id, false);
       if (typingTimeoutRef.current) {
@@ -143,10 +173,8 @@ export default function ChatWindowScreen() {
 
     const now = Date.now();
     const timeSinceLastUpdate = now - lastTypingUpdateRef.current;
-    
-    // Throttle: only update typing status once per second
+
     if (timeSinceLastUpdate < 1000) {
-      // Still clear and reset the timeout to keep typing active
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
@@ -156,36 +184,30 @@ export default function ChatWindowScreen() {
       return;
     }
 
-    // Update typing indicator
     lastTypingUpdateRef.current = now;
     dmService.setTypingIndicator(chatId, user.id, true);
 
-    // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set timeout to clear typing after 2 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
       dmService.setTypingIndicator(chatId, user.id, false);
     }, 2000);
   };
 
-  // Send message with optimistic UI
   const sendMessage = async () => {
     if (!inputText.trim() || !user) return;
 
     const content = inputText.trim();
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Clear typing indicator FIRST (before clearing input)
+
     dmService.setTypingIndicator(chatId, user.id, false);
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
-    lastTypingUpdateRef.current = 0; // Reset throttle
-    
-    // Create optimistic message
+    lastTypingUpdateRef.current = 0;
+
     const optimisticMessage: Message = {
       id: tempId,
       chat_id: chatId,
@@ -194,33 +216,27 @@ export default function ChatWindowScreen() {
       message_type: 'text',
       is_read: false,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
-    
-    // Show message immediately
-    setMessages(prev => [...prev, optimisticMessage]);
+
+    setMessages((prev) => [...prev, optimisticMessage]);
     setInputText('');
-    
-    // Scroll to bottom
+
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 50);
 
-    // Send to server
     try {
       const result = await dmService.sendMessage(chatId, user.id, content);
-      
+
       if (result) {
-        // Replace temp message with real one
-        setMessages(prev => prev.map(m => m.id === tempId ? result : m));
+        setMessages((prev) => prev.map((m) => (m.id === tempId ? result : m)));
       } else {
-        // Remove temp message on error
-        setMessages(prev => prev.filter(m => m.id !== tempId));
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      // Remove temp message on error
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 
@@ -231,15 +247,16 @@ export default function ChatWindowScreen() {
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isOwnMessage = item.sender_id === user?.id;
-    const showAvatar = !isOwnMessage && (
-      index === 0 || messages[index - 1].sender_id !== item.sender_id
-    );
+    const showAvatar =
+      !isOwnMessage && (index === 0 || messages[index - 1].sender_id !== item.sender_id);
 
     return (
-      <View style={[
-        styles.messageContainer,
-        isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer
-      ]}>
+      <View
+        style={[
+          styles.messageContainer,
+          isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer,
+        ]}
+      >
         {showAvatar && !isOwnMessage && (
           <Image
             source={{ uri: otherUser?.avatar_url || 'https://via.placeholder.com/32' }}
@@ -247,22 +264,28 @@ export default function ChatWindowScreen() {
           />
         )}
         {!showAvatar && !isOwnMessage && <View style={styles.avatarPlaceholder} />}
-        
-        <View style={[
-          styles.messageBubble,
-          isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble
-        ]}>
-          <Text style={[
-            styles.messageText,
-            isOwnMessage ? styles.ownMessageText : styles.otherMessageText
-          ]}>
+
+        <View
+          style={[
+            styles.messageBubble,
+            isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
+          ]}
+        >
+          <Text
+            style={[
+              styles.messageText,
+              isOwnMessage ? styles.ownMessageText : styles.otherMessageText,
+            ]}
+          >
             {item.content}
           </Text>
           <View style={styles.messageFooter}>
-            <Text style={[
-              styles.messageTime,
-              isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime
-            ]}>
+            <Text
+              style={[
+                styles.messageTime,
+                isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime,
+              ]}
+            >
               {formatMessageTime(item.created_at)}
             </Text>
             {isOwnMessage && item.is_read && (
@@ -287,12 +310,11 @@ export default function ChatWindowScreen() {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top']}>
-        {/* Header - Fixed position on Android */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ width: 40 }}>
             <Ionicons name="arrow-back" size={24} color="#0F172A" />
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.headerUser}
             onPress={() => (navigation as any).navigate('UserProfile', { userId: otherUserId })}
           >
@@ -304,28 +326,58 @@ export default function ChatWindowScreen() {
               <Text style={styles.headerName}>
                 {otherUser.display_name || otherUser.username}
               </Text>
-              {isTyping && (
-                <Text style={styles.typingText}>typing...</Text>
-              )}
+              {isTyping && <Text style={styles.typingText}>typing...</Text>}
             </View>
           </TouchableOpacity>
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Chat Content - Wraps Messages + Input for Android */}
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
           keyboardVerticalOffset={0}
         >
-          {/* Messages */}
           <FlatList
             ref={flatListRef}
             data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.messagesList}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 10,
+            }}
+            onContentSizeChange={() => {
+              // Only auto-scroll to bottom on first paint — not when loading older history
+              if (
+                !initialScrollDoneRef.current &&
+                !loadingOlderRef.current &&
+                messages.length > 0
+              ) {
+                flatListRef.current?.scrollToEnd({ animated: false });
+                initialScrollDoneRef.current = true;
+              }
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={loadingOlder}
+                onRefresh={loadOlderMessages}
+                tintColor={theme.primary}
+                colors={[theme.primary]}
+                enabled={hasMore}
+              />
+            }
+            ListHeaderComponent={
+              hasMore ? (
+                <Text style={[styles.loadOlderHint, { color: theme.textTertiary }]}>
+                  Pull down for earlier messages
+                </Text>
+              ) : messages.length > 0 ? (
+                <Text style={[styles.loadOlderHint, { color: theme.textTertiary }]}>
+                  Beginning of conversation
+                </Text>
+              ) : null
+            }
             keyboardDismissMode="interactive"
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
@@ -336,18 +388,15 @@ export default function ChatWindowScreen() {
             }
           />
 
-          {/* Input */}
-          <View style={[
-            styles.inputContainer, 
-            { 
-              borderTopColor: theme.border,
-              // When keyboard is open, only a thin gap; don’t stack home-indicator inset
-              // (that + KAV padding looked like a huge empty band above the keyboard).
-              paddingBottom: keyboardVisible
-                ? 8
-                : Math.max(insets.bottom, 8),
-            }
-          ]}>
+          <View
+            style={[
+              styles.inputContainer,
+              {
+                borderTopColor: theme.border,
+                paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8),
+              },
+            ]}
+          >
             <TextInput
               style={[styles.input, { color: '#1f2937' }]}
               placeholder="Message..."
@@ -365,15 +414,12 @@ export default function ChatWindowScreen() {
             <TouchableOpacity
               onPress={sendMessage}
               disabled={!inputText.trim()}
-              style={[
-                styles.sendButton,
-                !inputText.trim() && styles.sendButtonDisabled
-              ]}
+              style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
             >
-              <Ionicons 
-                name="send" 
-                size={20} 
-                color={inputText.trim() ? '#14b8a6' : theme.textSecondary} 
+              <Ionicons
+                name="send"
+                size={20}
+                color={inputText.trim() ? '#14b8a6' : theme.textSecondary}
               />
             </TouchableOpacity>
           </View>
@@ -420,6 +466,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingBottom: 4,
+    flexGrow: 1,
+  },
+  loadOlderHint: {
+    textAlign: 'center',
+    fontSize: 12,
+    paddingVertical: 8,
   },
   messageContainer: {
     flexDirection: 'row',
@@ -526,4 +578,3 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
 });
-

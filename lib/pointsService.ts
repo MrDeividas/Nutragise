@@ -4,14 +4,14 @@ import { pillarProgressService } from './pillarProgressService';
 import { notificationService } from './notificationService';
 import { habitChallengeSyncService } from './habitChallengeSyncService';
 
-interface DailyPointsBreakdown {
+export interface DailyPointsBreakdown {
   daily: number;
   core: number;
   bonus: number;
   total: number;
 }
 
-interface UserPointsDaily {
+export interface UserPointsDaily {
   user_id: string;
   date: string;
   gym_completed: boolean;
@@ -30,6 +30,8 @@ interface UserPointsDaily {
   core_habits_points: number;
   bonus_points: number;
   total_points_today: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 class PointsService {
@@ -639,6 +641,30 @@ class PointsService {
     } catch (error) {
       console.error('Error in getTodaysPoints:', error);
       return { daily: 0, core: 0, bonus: 0, total: 0 };
+    }
+  }
+
+  /**
+   * Recent daily EXP rows with source flags (newest first)
+   */
+  async getRecentDailyBreakdown(userId: string, days: number = 14): Promise<UserPointsDaily[]> {
+    try {
+      const { data, error } = await supabase
+        .from('user_points_daily')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(days);
+
+      if (error) {
+        console.error('Error fetching recent daily points:', error);
+        return [];
+      }
+
+      return (data || []) as UserPointsDaily[];
+    } catch (error) {
+      console.error('Error in getRecentDailyBreakdown:', error);
+      return [];
     }
   }
 

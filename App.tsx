@@ -18,6 +18,8 @@ import { initializeAI } from './lib/config';
 import { pushNotificationService } from './lib/pushNotificationService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
+import InAppNotificationBanner from './components/InAppNotificationBanner';
+import type { InAppBanner } from './state/notificationsStore';
 
 // Soft-load Stripe — Expo Go has no Stripe native module and will blank otherwise
 let StripeProvider: React.ComponentType<{ publishableKey: string; children?: React.ReactNode }> = ({
@@ -52,11 +54,14 @@ import RaffleScreen from './screens/RaffleScreen';
 import MeditationPlayerScreen from './screens/MeditationPlayerScreen';
 // Default tab — eager load so import failures surface in index.ts instead of a blank Suspense tree
 import ActionScreen from './screens/ActionScreen';
+import PostDetailScreen from './screens/PostDetailScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
 const ProfileSettingsScreen = lazy(() => import('./screens/ProfileSettingsScreen'));
 const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
+const ProfileStatsScreen = lazy(() => import('./screens/ProfileStatsScreen'));
+const AchievementsScreen = lazy(() => import('./screens/AchievementsScreen'));
 const OnboardingAnswersScreen = lazy(() => import('./screens/OnboardingAnswersScreen'));
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
@@ -242,6 +247,16 @@ function ProfileStack() {
             gestureDirection: 'horizontal'
           }}
         />
+        <Stack.Screen
+          name="PostDetail"
+          component={PostDetailScreen as any}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
+            headerShown: false,
+          }}
+        />
         {/* <Stack.Screen name="Test" component={TestScreen as any} /> */}
         <Stack.Screen 
           name="GoalDetail" 
@@ -251,6 +266,26 @@ function ProfileStack() {
             animationDuration: 200,
             gestureEnabled: true,
             gestureDirection: 'horizontal'
+          }}
+        />
+        <Stack.Screen
+          name="ProfileStats"
+          component={ProfileStatsScreen as any}
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 200,
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
+          }}
+        />
+        <Stack.Screen
+          name="Achievements"
+          component={AchievementsScreen as any}
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 200,
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
           }}
         />
       </Stack.Navigator>
@@ -360,10 +395,10 @@ function AppStack() {
         name="Microlearning" 
         component={MicrolearningScreen}
         options={{
-          animation: 'slide_from_bottom',
+          animation: 'slide_from_right',
           animationDuration: 200,
           gestureEnabled: true,
-          gestureDirection: 'vertical'
+          gestureDirection: 'horizontal'
         }}
       />
       <Stack.Screen 
@@ -393,6 +428,16 @@ function AppStack() {
           animation: 'slide_from_right',
           gestureEnabled: true,
           gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen
+        name="PostDetail"
+        component={PostDetailScreen as any}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
         }}
       />
       <Stack.Screen 
@@ -583,10 +628,15 @@ export default function App() {
           navigationRef.current.navigate('ChallengeDetail', { challengeId: data.challengeId });
         } else if (data.type === 'habit_reminder' || data.type === 'nudge') {
           navigationRef.current.navigate('Action');
-        } else if ((data.type === 'post_like' || data.type === 'post_comment') && data.postId) {
-          navigationRef.current.navigate('PostDetail', { postId: data.postId });
+        } else if ((data.type === 'post_like' || data.type === 'post_comment' || data.type === 'post_reply') && data.postId) {
+          navigationRef.current.navigate('PostDetail', {
+            postId: data.postId,
+            openComments: data.type === 'post_comment' || data.type === 'post_reply',
+          });
+        } else if (data.type === 'habit_invite_accepted' || data.type === 'habit_nudge') {
+          navigationRef.current.navigate('MainTabs', { screen: 'Action' });
         } else if (data.type === 'post_reply' && data.commentId) {
-          navigationRef.current.navigate('Action'); // fall back to feed
+          navigationRef.current.navigate('MainTabs', { screen: 'Community' });
         }
       } catch (e) {
         // Navigation may not be ready yet — silently ignore
@@ -686,6 +736,39 @@ export default function App() {
   }
 
   const stripeKey = stripeService.getPublishableKey();
+
+  const handleInAppBannerPress = (banner: InAppBanner) => {
+    if (!navigationRef.current) return;
+    try {
+      if (
+        (banner.type === 'post_like' ||
+          banner.type === 'post_comment' ||
+          banner.type === 'post_reply') &&
+        banner.postId
+      ) {
+        navigationRef.current.navigate('PostDetail', {
+          postId: banner.postId,
+          openComments: banner.type === 'post_comment' || banner.type === 'post_reply',
+        });
+      } else if (banner.type === 'habit_invite') {
+        navigationRef.current.navigate('Notifications');
+      } else if (
+        banner.type === 'habit_invite_accepted' ||
+        banner.type === 'habit_nudge'
+      ) {
+        navigationRef.current.navigate('MainTabs', { screen: 'Action' });
+      } else if (banner.type === 'follow' && banner.fromUserId) {
+        navigationRef.current.navigate('UserProfile', { userId: banner.fromUserId });
+      } else if (banner.goalId) {
+        navigationRef.current.navigate('GoalDetail', { goalId: banner.goalId });
+      } else {
+        navigationRef.current.navigate('Notifications');
+      }
+    } catch {
+      // Navigation may not be ready
+    }
+  };
+
   const appTree = (
     <SafeAreaProvider>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
@@ -726,6 +809,9 @@ export default function App() {
            user && onboardingComplete === false ? <OnboardingStack /> :
            <AuthStack />}
         </Suspense>
+        {user && onboardingComplete === true ? (
+          <InAppNotificationBanner onPressBanner={handleInAppBannerPress} />
+        ) : null}
       </NavigationContainer>
     </SafeAreaProvider>
   );

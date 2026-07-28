@@ -26,7 +26,66 @@ export interface RaffleEntry {
   entered_at: string;
 }
 
+export interface CountdownParts {
+  totalMs: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  isComplete: boolean;
+}
+
+/** Diamonds (tokens) required to enter an active raffle */
+export const RAFFLE_ENTRY_TOKEN_COST = 2;
+
+/** Last moment of the current calendar month (local time). */
+export function getEndOfMonthDeadline(from: Date = new Date()): Date {
+  return new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+export function getCountdownParts(deadline: Date, now: Date = new Date()): CountdownParts {
+  const totalMs = Math.max(0, deadline.getTime() - now.getTime());
+  const totalSec = Math.floor(totalMs / 1000);
+  return {
+    totalMs,
+    days: Math.floor(totalSec / 86400),
+    hours: Math.floor((totalSec % 86400) / 3600),
+    minutes: Math.floor((totalSec % 3600) / 60),
+    seconds: totalSec % 60,
+    isComplete: totalMs <= 0,
+  };
+}
+
 class RaffleService {
+  /**
+   * Ensure the active raffle's draw_date is end of the current month.
+   * Keeps DB aligned with the monthly draw schedule.
+   */
+  async syncActiveRaffleDrawToMonthEnd(): Promise<void> {
+    try {
+      const raffle = await this.getCurrentRaffle();
+      if (!raffle || raffle.status === 'completed') return;
+
+      const deadline = getEndOfMonthDeadline();
+      const existing = new Date(raffle.draw_date);
+      // Same calendar month/year already set → skip
+      if (
+        existing.getFullYear() === deadline.getFullYear() &&
+        existing.getMonth() === deadline.getMonth() &&
+        existing.getDate() === deadline.getDate()
+      ) {
+        return;
+      }
+
+      await supabase
+        .from('raffles')
+        .update({ draw_date: deadline.toISOString() })
+        .eq('id', raffle.id);
+    } catch (error) {
+      console.warn('syncActiveRaffleDrawToMonthEnd:', error);
+    }
+  }
+
   /**
    * Get the current active raffle
    */
@@ -151,12 +210,12 @@ class RaffleService {
   }
 
   /**
-   * Enter a raffle (uses a ticket from inventory)
+   * Enter a raffle (costs diamonds / tokens)
    */
   async enterRaffle(
     userId: string, 
     raffleId: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; newTokenBalance?: number }> {
     try {
       // 1. Get raffle details
       const { data: raffle, error: raffleError } = await supabase
@@ -180,61 +239,39 @@ class RaffleService {
         return { success: false, message: 'You have already entered this raffle' };
       }
 
-      // 4. Check if user has a ticket
-      if (raffle.ticket_item_id) {
-        const { has, quantity } = await storeService.hasItem(userId, raffle.ticket_item_id);
-        
-        if (!has || quantity <= 0) {
-          return { success: false, message: 'You need a raffle ticket to enter. Visit the store!' };
-        }
-
-        // 5. Use the ticket
-        const useResult = await storeService.useItem(userId, raffle.ticket_item_id);
-        
-        if (!useResult.success) {
-          return { success: false, message: 'Failed to use ticket' };
-        }
-
-        // 6. Create raffle entry
-        const { error: entryError } = await supabase
-          .from('raffle_entries')
-          .insert({
-            raffle_id: raffleId,
-            user_id: userId,
-            ticket_used_id: useResult.inventoryId
-          });
-
-        if (entryError) {
-          console.error('Error creating raffle entry:', entryError);
-          // TODO: Rollback ticket usage
-          return { success: false, message: 'Failed to enter raffle' };
-        }
-
-        console.log('✅ User entered raffle successfully:', { userId, raffleId });
-
-        return { 
-          success: true, 
-          message: 'You have successfully entered the raffle! Good luck!' 
-        };
-      } else {
-        // No ticket required (free entry)
-        const { error: entryError } = await supabase
-          .from('raffle_entries')
-          .insert({
-            raffle_id: raffleId,
-            user_id: userId
-          });
-
-        if (entryError) {
-          console.error('Error creating raffle entry:', entryError);
-          return { success: false, message: 'Failed to enter raffle' };
-        }
-
-        return { 
-          success: true, 
-          message: 'You have successfully entered the raffle! Good luck!' 
-        };
+      // 4. Charge diamonds
+      const deduct = await storeService.deductTokens(userId, RAFFLE_ENTRY_TOKEN_COST);
+      if (!deduct.success) {
+        return { success: false, message: deduct.message };
       }
+
+      // 5. Create raffle entry
+      const { error: entryError } = await supabase
+        .from('raffle_entries')
+        .insert({
+          raffle_id: raffleId,
+          user_id: userId,
+        });
+
+      if (entryError) {
+        console.error('Error creating raffle entry:', entryError);
+        // Rollback tokens
+        if (deduct.newBalance != null) {
+          await supabase
+            .from('profiles')
+            .update({ tokens: deduct.newBalance + RAFFLE_ENTRY_TOKEN_COST })
+            .eq('id', userId);
+        }
+        return { success: false, message: 'Failed to enter raffle' };
+      }
+
+      console.log('✅ User entered raffle successfully:', { userId, raffleId });
+
+      return {
+        success: true,
+        message: 'You have successfully entered the raffle! Good luck!',
+        newTokenBalance: deduct.newBalance,
+      };
     } catch (error) {
       console.error('Error in enterRaffle:', error);
       return { success: false, message: 'Failed to enter raffle' };

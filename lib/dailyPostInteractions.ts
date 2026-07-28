@@ -70,6 +70,13 @@ class DailyPostInteractionsService {
           return { success: false, isLiked: false };
         }
 
+        try {
+          const { notificationService } = await import('./notificationService');
+          await notificationService.createPostLikeNotification(dailyPostId, user.id);
+        } catch (notifError) {
+          console.error('Error creating daily post like notification:', notifError);
+        }
+
         return { success: true, isLiked: true };
       }
     } catch (error) {

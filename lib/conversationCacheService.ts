@@ -107,25 +107,39 @@ class ConversationCacheService {
   }
 
   /**
-   * Get conversation context for AI
+   * Get conversation context for AI (legacy string dump)
    */
   static async getConversationContext(userId: string): Promise<string> {
     try {
-      const messages = await this.getConversation(userId);
-      
-      if (!messages || messages.length === 0) {
-        return '';
-      }
-      
-      // Get last 5 messages for context
-      const recentMessages = messages.slice(-5);
-      
-      return recentMessages.map(msg => 
-        `${msg.isUser ? 'User' : 'AI'}: ${msg.text}`
-      ).join('\n');
+      const turns = await this.getRecentChatTurns(userId);
+      return turns.map(t => `${t.role === 'user' ? 'User' : 'AI'}: ${t.content}`).join('\n');
     } catch (error) {
       console.error('Error getting conversation context:', error);
       return '';
+    }
+  }
+
+  /**
+   * Structured prior turns for the chat API (excludes welcome fluff if present)
+   */
+  static async getRecentChatTurns(
+    userId: string,
+    limit = 6
+  ): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
+    try {
+      const messages = await this.getConversation(userId);
+      if (!messages || messages.length === 0) return [];
+
+      return messages
+        .slice(-limit)
+        .filter(msg => msg.text?.trim())
+        .map(msg => ({
+          role: (msg.isUser ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: msg.text.trim(),
+        }));
+    } catch (error) {
+      console.error('Error getting recent chat turns:', error);
+      return [];
     }
   }
 

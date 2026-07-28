@@ -31,12 +31,20 @@ import FullJourneyModal from '../components/FullJourneyModal';
 import LevelInfoModal from '../components/LevelInfoModal';
 import AchievementModal from '../components/AchievementModal';
 import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
+import AchievementBadge from '../components/AchievementBadge';
+import {
+  achievementsService,
+  BadgeWithStatus,
+  TOTAL_ACHIEVEMENTS,
+} from '../lib/achievementsService';
+import { sortAchievementsHardestFirst } from '../lib/achievementDefinitions';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 type UserProfileStackParamList = {
   UserProfile: { userId: string; username: string };
   Followers: { userId: string; username: string; initialTab?: 'followers' | 'following' };
   ChatWindow: { chatId: string; otherUserId: string; otherUserName: string; otherUserAvatar?: string };
+  Achievements: { userId?: string };
 };
 
 type Props = NativeStackScreenProps<UserProfileStackParamList, 'UserProfile'>;
@@ -76,6 +84,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   // New state for Activity, Highlights, Pillar Progress, and Modals
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [highlights, setHighlights] = useState<any[]>([]);
+  const [badgeAchievements, setBadgeAchievements] = useState<BadgeWithStatus[]>([]);
+  const [badgeUnlockedCount, setBadgeUnlockedCount] = useState(0);
   const [pillarProgress, setPillarProgress] = useState({
     strength_fitness: 35,
     growth_wisdom: 35,
@@ -101,8 +111,19 @@ export default function UserProfileScreen({ navigation, route }: Props) {
     loadPillarProgress();
     fetchRecentActivity();
     fetchHighlights();
+    fetchBadgeAchievements();
     loadChallengeStats();
   }, [userId]);
+
+  const fetchBadgeAchievements = async () => {
+    try {
+      const list = await achievementsService.getBadgesWithStatus(userId);
+      setBadgeAchievements(list);
+      setBadgeUnlockedCount(list.filter((b) => b.unlocked).length);
+    } catch (e) {
+      console.warn('fetchBadgeAchievements:', e);
+    }
+  };
 
   const loadProfile = async () => {
     setIsLoadingProfile(true);
@@ -1027,6 +1048,43 @@ export default function UserProfileScreen({ navigation, route }: Props) {
           </View>
         </View>
         )}
+
+        {badgeUnlockedCount > 0 && (
+          <View style={styles.keepTrackSection}>
+            <TouchableOpacity
+              style={styles.badgeAchievementsBox}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('Achievements', { userId })}
+            >
+              <View style={styles.badgeAchievementsHeader}>
+                <Text style={[styles.achievementsLabel, { color: theme.textPrimary }]}>Achievements</Text>
+                <Text style={[styles.badgeAchievementsProgress, { color: theme.textSecondary }]}>
+                  {badgeUnlockedCount}/{TOTAL_ACHIEVEMENTS}
+                </Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.badgeAchievementsRow}
+              >
+                {sortAchievementsHardestFirst(badgeAchievements.filter((b) => b.unlocked))
+                  .slice(0, 8)
+                  .map((badge) => (
+                    <AchievementBadge
+                      key={badge.id}
+                      image={badge.image}
+                      unlocked
+                      size={52}
+                      style={{ marginRight: 10 }}
+                    />
+                  ))}
+              </ScrollView>
+              <Text style={[styles.badgeAchievementsHint, { color: theme.textSecondary }]}>
+                Tap to view all
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Full Journey Modal */}
@@ -1576,6 +1634,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  badgeAchievementsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  badgeAchievementsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  badgeAchievementsProgress: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  badgeAchievementsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  badgeAchievementsHint: {
+    fontSize: 11,
+    marginTop: 10,
+    textAlign: 'center',
   },
   // Pillar Progress Bars Styles
   progressBarsBox: {

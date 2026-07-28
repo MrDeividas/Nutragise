@@ -28,7 +28,6 @@ import { supabase } from '../lib/supabase';
 import { Goal, DailyHabits } from '../types/database';
 import { useTheme } from '../state/themeStore';
 import { useBottomNavPadding } from '../components/CustomTabBar';
-import { syncAllUserData } from '../lib/syncUserData';
 import { useSocialStore } from '../state/socialStore';
 import { Profile } from '../lib/socialService';
 import { socialService } from '../lib/socialService';
@@ -173,7 +172,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     if (user) {
       loadExploreGoals();
       fetchSuggestedUsers(user.id);
-      syncAllUserData();
     } else {
       // Clear explore goals when user logs out
       setExploreGoals([]);

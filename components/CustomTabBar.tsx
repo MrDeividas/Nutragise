@@ -216,7 +216,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
                   />
                 ) : (
                   <View>
-                    <Ionicons name={iconName} size={25} color={tint} />
+                    <Ionicons name={iconName} size={28} color={tint} />
                     {route.name === 'Action' && unreadCount > 0 && (
                       <View style={styles.notifBadge}>
                         <Text style={styles.notifBadgeText}>
@@ -302,9 +302,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileAvatarContainer: {
-    width: 27,
-    height: 27,
-    borderRadius: 9,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: 'rgba(229, 231, 235, 0.9)',
@@ -321,14 +321,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profileAvatarInitial: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
   },
   robotIcon: {
-    width: 27,
-    height: 27,
-    borderRadius: 7,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
   },
   notifBadge: {
     position: 'absolute',

@@ -863,14 +863,32 @@ export default function ChallengeDetailScreen({ route }: any) {
     return `£${fee}`;
   };
 
-  /** Returns the list of calendar days for the challenge (YYYY-MM-DD strings, newest first available). */
-  const getChallengeDays = (): { dayNumber: number; dateStr: string; label: string; isPast: boolean; isToday: boolean }[] => {
+  /** Returns the list of calendar days for the challenge. */
+  const getChallengeDays = (): {
+    dayNumber: number;
+    dateStr: string;
+    label: string;
+    weekday: string;
+    dayOfMonth: string;
+    monthShort: string;
+    isPast: boolean;
+    isToday: boolean;
+  }[] => {
     if (!challenge) return [];
     const start = new Date(challenge.start_date);
     const end = new Date(challenge.end_date);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
-    const days: { dayNumber: number; dateStr: string; label: string; isPast: boolean; isToday: boolean }[] = [];
+    const days: {
+      dayNumber: number;
+      dateStr: string;
+      label: string;
+      weekday: string;
+      dayOfMonth: string;
+      monthShort: string;
+      isPast: boolean;
+      isToday: boolean;
+    }[] = [];
     const cur = new Date(start);
     let dayNum = 1;
     while (cur <= end) {
@@ -881,6 +899,9 @@ export default function ChallengeDetailScreen({ route }: any) {
         dayNumber: dayNum,
         dateStr,
         label: isToday ? 'Today' : `Day ${dayNum}`,
+        weekday: cur.toLocaleDateString(undefined, { weekday: 'short' }),
+        dayOfMonth: String(cur.getDate()),
+        monthShort: cur.toLocaleDateString(undefined, { month: 'short' }),
         isPast,
         isToday,
       });
@@ -1460,227 +1481,239 @@ export default function ChallengeDetailScreen({ route }: any) {
 
         {activeTab === 'participants' && (
           <View style={styles.tabContent}>
-            {/* Day picker */}
-            {getChallengeDays().length > 1 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8, flexDirection: 'row' }}
-              >
-                {getChallengeDays().map((d) => {
-                  const isSelected = d.dayNumber === selectedParticipantDay;
-                  const isFuture = !d.isPast && !d.isToday;
-                  return (
-                    <TouchableOpacity
-                      key={d.dateStr}
-                      onPress={() => !isFuture && setSelectedParticipantDay(d.dayNumber)}
-                      activeOpacity={isFuture ? 1 : 0.75}
-                      style={[
-                        styles.dayChip,
-                        isSelected
-                          ? { backgroundColor: theme.textPrimary, borderColor: theme.textPrimary }
-                          : { backgroundColor: theme.cardBackground, borderColor: theme.border },
-                        isFuture && { opacity: 0.4 },
-                      ]}
-                    >
-                      <Text style={[styles.dayChipText, { color: isSelected ? '#FFFFFF' : theme.textPrimary }]}>
-                        {d.label}
-                      </Text>
-                      {d.isToday && !isSelected && (
-                        <View style={[styles.dayChipDot, { backgroundColor: theme.textPrimary }]} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
+            {(() => {
+              const days = getChallengeDays();
+              const selectedDayObj = days.find((d) => d.dayNumber === selectedParticipantDay);
+              const selectedDateStr = selectedDayObj?.dateStr ?? '';
+              const totalChallengeDays = Math.max(1, days.length);
+              const startStr = challenge.start_date?.split('T')[0] ?? '';
+              const endStr = challenge.end_date?.split('T')[0] ?? '';
+              const selectedIsFuture = selectedDayObj
+                ? !selectedDayObj.isPast && !selectedDayObj.isToday
+                : false;
 
-            <View style={styles.participantsContainer}>
-              {challenge.participants && challenge.participants.length > 0 ? (
-                (() => {
-                  const days = getChallengeDays();
-                  const selectedDayObj = days.find((d) => d.dayNumber === selectedParticipantDay);
-                  const selectedDateStr = selectedDayObj?.dateStr ?? '';
-                  const totalChallengeDays = Math.max(1, days.length);
-                  const startStr = challenge.start_date?.split('T')[0] ?? '';
-                  const endStr = challenge.end_date?.split('T')[0] ?? '';
+              const submittedOnSelectedDay = (challenge.participants || []).filter((participant) => {
+                const isOwnRow = participant.user_id === user?.id;
+                const sharedSubs = participantSubmissions[participant.user_id] ?? [];
+                const ownProgressSubs =
+                  isOwnRow && progress ? Object.values(progress.submissions_by_week).flat() : [];
+                const subs = sharedSubs.length > 0 ? sharedSubs : ownProgressSubs;
+                const matched = subs.find((s) => submissionCalendarDate(s) === selectedDateStr);
+                if (matched) return true;
+                if (isOwnRow && selectedDayObj?.isToday) return !!getTodaysSubmission();
+                if (selectedDayObj?.isToday) return participantTodaySubmissions.has(participant.user_id);
+                return false;
+              }).length;
 
-                  return challenge.participants.map((participant, index) => {
-                  const isOwnRow = participant.user_id === user?.id;
-                  const sharedSubs = participantSubmissions[participant.user_id] ?? [];
-                  const ownProgressSubs = isOwnRow && progress
-                    ? Object.values(progress.submissions_by_week).flat()
-                    : [];
-                  const subs = sharedSubs.length > 0 ? sharedSubs : ownProgressSubs;
-                  const submittedDaysCount = countDistinctSubmissionDaysInRange(subs, startStr, endStr);
-
-                  // Find the submission for the selected day specifically
-                  const matchedDaySubmission = subs.find((s) => {
-                    const d = submissionCalendarDate(s);
-                    return d === selectedDateStr;
-                  }) ?? null;
-                  const todayOwnSubmission =
-                    isOwnRow && selectedDayObj?.isToday ? getTodaysSubmission() : null;
-                  const daySubmission = matchedDaySubmission ?? todayOwnSubmission;
-
-                  // Only show the proof for the currently selected day.
-                  const previewSub = daySubmission;
-                  const previewUri = previewSub?.photo_url ?? null;
-                  const hasDaySubmission = daySubmission !== null;
-                  const hasSubmittedOnDay = selectedDayObj?.isToday
-                    ? participantTodaySubmissions.has(participant.user_id) || daySubmission !== null
-                    : daySubmission !== null;
-                  const isFlagged = daySubmission?.is_flagged ?? false;
-                  const selectedIsFuture = selectedDayObj
-                    ? !selectedDayObj.isPast && !selectedDayObj.isToday
-                    : false;
-
-                  return (
-                    <View
-                      key={participant.id || index}
-                      style={[styles.participantItem, {
-                        backgroundColor: '#FFFFFF',
-                        borderColor: '#E5E7EB' as any,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 8,
-                        elevation: 3,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                      }]}
-                    >
-                      {/* Profile avatar */}
-                      {participant.user?.avatar_url ? (
-                        <Image
-                          source={{ uri: participant.user.avatar_url }}
-                          style={styles.participantAvatar}
-                        />
-                      ) : (
-                        <View style={[styles.participantAvatarPlaceholder, { backgroundColor: '#F3F4F6' }]}>
-                          <Ionicons name="person" size={20} color={theme.textSecondary} />
-                        </View>
-                      )}
-
-                      {/* Name + progress (X/Y) + day-submission badge */}
-                      <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
-                          <Text
-                            style={[styles.participantName, { color: theme.textPrimary, flex: 1, minWidth: 0 }]}
-                            numberOfLines={1}
-                          >
-                            {participant.user?.display_name || participant.user?.username || 'Anonymous'}
+              return (
+                <>
+                  {/* Clean day strip */}
+                  {days.length > 0 && (
+                    <View style={styles.dayPreviewHeader}>
+                      <View style={styles.dayPreviewTitleRow}>
+                        <View>
+                          <Text style={[styles.dayPreviewEyebrow, { color: theme.textSecondary }]}>
+                            Day preview
                           </Text>
-                          <Text
-                            style={{
-                              fontSize: 13,
-                              fontWeight: '700',
-                              color: theme.textSecondary,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {submittedDaysCount}/{totalChallengeDays}
+                          <Text style={[styles.dayPreviewTitle, { color: theme.textPrimary }]}>
+                            {selectedDayObj
+                              ? selectedDayObj.isToday
+                                ? 'Today'
+                                : `Day ${selectedDayObj.dayNumber}`
+                              : 'Select a day'}
                           </Text>
-                          {hasSubmittedOnDay && (
-                            <View style={styles.completedTodayBadge}>
-                              <Ionicons name="checkmark-circle" size={15} color={theme.textPrimary} />
-                              <Text style={[styles.completedTodayText, { color: theme.textPrimary }]}>
-                                {selectedDayObj?.isToday ? 'Today' : '✓'}
-                              </Text>
-                            </View>
+                          {selectedDayObj && (
+                            <Text style={[styles.dayPreviewSubtitle, { color: theme.textSecondary }]}>
+                              {selectedDayObj.weekday} {selectedDayObj.dayOfMonth} {selectedDayObj.monthShort}
+                            </Text>
                           )}
                         </View>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            marginTop: 4,
-                            fontWeight: '600',
-                            color: selectedIsFuture
-                              ? theme.textSecondary
-                              : hasSubmittedOnDay
-                                ? theme.textPrimary
-                                : theme.textSecondary,
-                          }}
-                        >
-                          {selectedIsFuture
-                            ? 'Upcoming day'
-                            : hasSubmittedOnDay
-                              ? 'Submitted'
-                              : 'Not submitted'}
+                        <View style={[styles.dayPreviewStat, { backgroundColor: primarySoftBg }]}>
+                          <Text style={[styles.dayPreviewStatValue, { color: theme.textPrimary }]}>
+                            {submittedOnSelectedDay}/{challenge.participants?.length || 0}
+                          </Text>
+                          <Text style={[styles.dayPreviewStatLabel, { color: theme.textSecondary }]}>
+                            submitted
+                          </Text>
+                        </View>
+                      </View>
+
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.dayStripContent}
+                      >
+                        {days.map((d) => {
+                          const isSelected = d.dayNumber === selectedParticipantDay;
+                          const isFuture = !d.isPast && !d.isToday;
+                          return (
+                            <TouchableOpacity
+                              key={d.dateStr}
+                              onPress={() => !isFuture && setSelectedParticipantDay(d.dayNumber)}
+                              activeOpacity={isFuture ? 1 : 0.75}
+                              style={[
+                                styles.dayCell,
+                                isSelected && { backgroundColor: theme.textPrimary, borderColor: theme.textPrimary },
+                                !isSelected && { backgroundColor: '#FFFFFF', borderColor: '#EEF0F3' },
+                                isFuture && { opacity: 0.35 },
+                                d.isToday && !isSelected && { borderColor: theme.textPrimary },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.dayCellWeekday,
+                                  { color: isSelected ? 'rgba(255,255,255,0.75)' : theme.textSecondary },
+                                ]}
+                              >
+                                {d.weekday.slice(0, 2).toUpperCase()}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.dayCellNumber,
+                                  { color: isSelected ? '#FFFFFF' : theme.textPrimary },
+                                ]}
+                              >
+                                {d.dayOfMonth}
+                              </Text>
+                              {d.isToday && (
+                                <View
+                                  style={[
+                                    styles.dayCellTodayDot,
+                                    { backgroundColor: isSelected ? '#FFFFFF' : theme.textPrimary },
+                                  ]}
+                                />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  <View style={styles.participantsContainer}>
+                    {challenge.participants && challenge.participants.length > 0 ? (
+                      challenge.participants.map((participant, index) => {
+                        const isOwnRow = participant.user_id === user?.id;
+                        const sharedSubs = participantSubmissions[participant.user_id] ?? [];
+                        const ownProgressSubs =
+                          isOwnRow && progress ? Object.values(progress.submissions_by_week).flat() : [];
+                        const subs = sharedSubs.length > 0 ? sharedSubs : ownProgressSubs;
+                        const submittedDaysCount = countDistinctSubmissionDaysInRange(subs, startStr, endStr);
+
+                        const matchedDaySubmission =
+                          subs.find((s) => submissionCalendarDate(s) === selectedDateStr) ?? null;
+                        const todayOwnSubmission =
+                          isOwnRow && selectedDayObj?.isToday ? getTodaysSubmission() : null;
+                        const daySubmission = matchedDaySubmission ?? todayOwnSubmission;
+                        const previewSub = daySubmission;
+                        const previewUri = previewSub?.photo_url ?? null;
+                        const hasDaySubmission = daySubmission !== null;
+                        const hasSubmittedOnDay = selectedDayObj?.isToday
+                          ? participantTodaySubmissions.has(participant.user_id) || daySubmission !== null
+                          : daySubmission !== null;
+                        const isFlagged = daySubmission?.is_flagged ?? false;
+
+                        const statusLabel = selectedIsFuture
+                          ? 'Upcoming'
+                          : hasSubmittedOnDay
+                            ? 'Submitted'
+                            : 'Missing';
+                        const statusColor = selectedIsFuture
+                          ? theme.textSecondary
+                          : hasSubmittedOnDay
+                            ? '#059669'
+                            : '#DC2626';
+
+                        return (
+                          <View key={participant.id || index} style={styles.participantCard}>
+                            <TouchableOpacity
+                              style={styles.participantCardMain}
+                              activeOpacity={previewUri || hasDaySubmission ? 0.85 : 1}
+                              disabled={!hasDaySubmission}
+                              onPress={() => previewSub && setPreviewedSubmission(previewSub)}
+                            >
+                              {previewUri ? (
+                                <Image source={{ uri: previewUri }} style={styles.participantProofLarge} />
+                              ) : (
+                                <View style={styles.participantProofEmpty}>
+                                  <Ionicons
+                                    name={selectedIsFuture ? 'time-outline' : hasDaySubmission ? 'image-outline' : 'remove-outline'}
+                                    size={22}
+                                    color="#C4C9D1"
+                                  />
+                                </View>
+                              )}
+
+                              <View style={styles.participantMeta}>
+                                <View style={styles.participantIdentity}>
+                                  {participant.user?.avatar_url ? (
+                                    <Image
+                                      source={{ uri: participant.user.avatar_url }}
+                                      style={styles.participantAvatarSm}
+                                    />
+                                  ) : (
+                                    <View style={styles.participantAvatarSmPlaceholder}>
+                                      <Text style={styles.participantAvatarInitial}>
+                                        {(participant.user?.display_name || participant.user?.username || '?')
+                                          .charAt(0)
+                                          .toUpperCase()}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  <View style={{ flex: 1, minWidth: 0 }}>
+                                    <Text style={[styles.participantNameClean, { color: theme.textPrimary }]} numberOfLines={1}>
+                                      {isOwnRow
+                                        ? 'You'
+                                        : participant.user?.display_name || participant.user?.username || 'Anonymous'}
+                                    </Text>
+                                    <Text style={[styles.participantProgressClean, { color: theme.textSecondary }]}>
+                                      {submittedDaysCount}/{totalChallengeDays} days
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
+                                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                                  <Text style={[styles.statusPillText, { color: statusColor }]}>{statusLabel}</Text>
+                                </View>
+                              </View>
+
+                              {isFlagged && (
+                                <View style={styles.flagCorner}>
+                                  <Ionicons name="flag" size={10} color="#FFFFFF" />
+                                </View>
+                              )}
+                            </TouchableOpacity>
+
+                            {!isOwnRow && daySubmission && (
+                              <TouchableOpacity
+                                onPress={() => handleFlagSubmission(daySubmission)}
+                                disabled={!!flaggingSubmissionId}
+                                style={styles.flagSideBtn}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons
+                                  name={daySubmission.has_flagged_by_me ? 'flag' : 'flag-outline'}
+                                  size={16}
+                                  color={daySubmission.has_flagged_by_me ? '#F59E0B' : theme.textTertiary}
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        );
+                      })
+                    ) : (
+                      <View style={styles.emptyParticipants}>
+                        <Ionicons name="people-outline" size={40} color={theme.textSecondary} />
+                        <Text style={[styles.emptyParticipantsText, { color: theme.textSecondary }]}>
+                          No participants yet
                         </Text>
                       </View>
-
-                      {/* Proof thumbnail with flag badge overlay */}
-                      <View style={{ position: 'relative' }}>
-                        {previewUri ? (
-                          <TouchableOpacity
-                            onPress={() => previewSub && setPreviewedSubmission(previewSub)}
-                            activeOpacity={0.8}
-                            style={styles.participantProofThumbWrap}
-                          >
-                            <Image
-                              source={{ uri: previewUri }}
-                              style={styles.participantProofThumb}
-                            />
-                            <View style={styles.participantProofThumbOverlay}>
-                              <Ionicons name="eye" size={14} color="#FFFFFF" />
-                            </View>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity
-                            onPress={() => previewSub && setPreviewedSubmission(previewSub)}
-                            activeOpacity={hasDaySubmission ? 0.8 : 1}
-                            disabled={!hasDaySubmission}
-                            style={[styles.participantProofThumbWrap, styles.participantProofThumbEmpty]}
-                          >
-                            <Ionicons
-                              name={hasDaySubmission ? 'image-outline' : 'camera-outline'}
-                              size={20}
-                              color={hasDaySubmission ? theme.textSecondary : '#D1D5DB'}
-                            />
-                            <Text style={{ fontSize: 9, color: hasDaySubmission ? theme.textSecondary : '#D1D5DB', marginTop: 2 }}>
-                              {hasDaySubmission ? 'No photo' : 'None yet'}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                        {/* Red flag badge for the selected day's submission */}
-                        {isFlagged && (
-                          <View style={styles.participantFlagBadge} pointerEvents="none">
-                            <Ionicons name="flag" size={9} color="#FFFFFF" />
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Flag / unflag button — only for other users */}
-                      {!isOwnRow && daySubmission && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            if (daySubmission) handleFlagSubmission(daySubmission);
-                          }}
-                          disabled={!!flaggingSubmissionId}
-                          style={styles.participantFlagBtn}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Ionicons
-                            name={daySubmission.has_flagged_by_me ? 'flag' : 'flag-outline'}
-                            size={18}
-                            color={daySubmission.has_flagged_by_me ? '#F59E0B' : theme.textSecondary}
-                          />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  );
-                });
-                })()
-              ) : (
-                <View style={styles.emptyParticipants}>
-                  <Ionicons name="people-outline" size={48} color={theme.textSecondary} />
-                  <Text style={[styles.emptyParticipantsText, { color: theme.textSecondary }]}>
-                    No participants yet
-                  </Text>
-                </View>
-              )}
-            </View>
+                    )}
+                  </View>
+                </>
+              );
+            })()}
           </View>
         )}
       </ScrollView>
@@ -2323,96 +2356,185 @@ const styles = StyleSheet.create({
   },
   participantsContainer: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 12,
   },
-  participantItem: {
+  dayPreviewHeader: {
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  dayPreviewTitleRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
+  dayPreviewEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  dayPreviewTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  dayPreviewSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  dayPreviewStat: {
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    paddingVertical: 12,
+    minWidth: 72,
+  },
+  dayPreviewStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  dayPreviewStatLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  dayStripContent: {
     paddingHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 16,
+    gap: 8,
+    paddingBottom: 8,
+  },
+  dayCell: {
+    width: 52,
+    height: 68,
+    borderRadius: 14,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
-  participantAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+  dayCellWeekday: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
-  participantAvatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+  dayCellNumber: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  dayCellTodayDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 6,
+  },
+  participantCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
+    overflow: 'hidden',
+  },
+  participantCardMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  participantProofLarge: {
+    width: '100%',
+    height: 168,
+    backgroundColor: '#F3F4F6',
+  },
+  participantProofEmpty: {
+    width: '100%',
+    height: 120,
+    backgroundColor: '#F8F9FB',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  participantTopRow: {
+  participantMeta: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
   },
-  participantNameBlock: {
+  participantIdentity: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    marginLeft: 12,
     minWidth: 0,
+    gap: 10,
   },
-  participantNameRow: {
+  participantAvatarSm: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+  },
+  participantAvatarSmPlaceholder: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#EEF2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  participantAvatarInitial: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  participantNameClean: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  participantProgressClean: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'nowrap',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     gap: 6,
   },
-  participantNameTextWrap: {
-    flex: 1,
-    minWidth: 0,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  participantName: {
-    fontSize: 16,
-    fontWeight: '500',
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  participantProofThumbWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginLeft: 10,
-    flexShrink: 0,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-  },
-  participantProofThumb: {
-    width: 60,
-    height: 60,
-  },
-  participantProofThumbOverlay: {
+  flagCorner: {
     position: 'absolute',
-    bottom: 4,
-    right: 4,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 6,
-    padding: 2,
-  },
-  participantProofThumbEmpty: {
-    backgroundColor: '#F9FAFB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  participantFlagBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
+    top: 10,
+    right: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: '#EF4444',
-    borderRadius: 8,
-    width: 16,
-    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
-  participantFlagBtn: {
-    marginLeft: 8,
-    padding: 4,
-    flexShrink: 0,
+  flagSideBtn: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#EEF0F3',
+    backgroundColor: '#FAFBFC',
   },
   participantPhotoModalRoot: {
     flex: 1,
@@ -2444,49 +2566,13 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.45)',
     paddingTop: 8,
   },
-  completedTodayBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexShrink: 0,
-  },
-  completedTodayText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   emptyParticipants: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
   },
   emptyParticipantsText: {
-    fontSize: 16,
-    marginTop: 12,
-  },
-  dayChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 5,
-  },
-  dayChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  dayChipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    fontSize: 15,
+    marginTop: 10,
   },
 });
