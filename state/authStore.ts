@@ -21,6 +21,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   loading: true,
 
   initialize: async () => {
+    // Never leave the UI on a blank/loading screen if auth hangs
+    const safetyTimer = setTimeout(() => {
+      if (get().loading) {
+        console.warn('Auth initialize timed out — clearing loading state');
+        set({ loading: false });
+      }
+    }, 8000);
+
     try {
       // Get initial session
       const { data: { session } } = await supabase.auth.getSession();
@@ -58,12 +66,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
         iapService.logIn(session.user.id).catch(() => {});
 
+        clearTimeout(safetyTimer);
         set({
           user: userToSet,
           session,
           loading: false
         });
       } else {
+        clearTimeout(safetyTimer);
         set({ user: null, session: null, loading: false });
       }
 
@@ -110,6 +120,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       });
     } catch (error) {
       console.error('Auth initialization error:', error);
+      clearTimeout(safetyTimer);
       set({ loading: false });
     }
   },

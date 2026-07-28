@@ -1,13 +1,13 @@
 import 'react-native-gesture-handler';
 
-import React, { useEffect, useState } from 'react';
+import React, { Component, useEffect, useState } from 'react';
 import { ErrorUtils, ScrollView, Text, View, StyleSheet } from 'react-native';
 import { registerRootComponent } from 'expo';
 
 /**
- * Capture fatal JS errors BEFORE App loads, and do not forward them to
- * expo-updates ErrorRecovery (which SIGABRTs TestFlight builds with no message).
- * Instead show the error on screen so we can fix the real cause.
+ * Capture fatal JS errors and React render failures.
+ * Without an ErrorBoundary, production builds blank to a white screen when a
+ * child throws during render — Expo Updates used to SIGABRT instead.
  */
 type ErrorListener = (message: string) => void;
 const errorListeners = new Set<ErrorListener>();
@@ -32,8 +32,6 @@ function installFatalErrorHandler() {
   ErrorUtils.setGlobalHandler?.((error, isFatal) => {
     const message = formatError(error);
     publishError(message);
-    // Intentionally do NOT call previousHandler for fatal errors — that path is
-    // expo-updates ErrorRecovery.crash() which aborts the process on TestFlight.
     if (!isFatal && typeof previousHandler === 'function') {
       previousHandler(error, isFatal);
     }
@@ -44,17 +42,16 @@ installFatalErrorHandler();
 
 let AppComponent: React.ComponentType;
 try {
-  // Load App after the handler is installed so import-time throws are caught.
   AppComponent = require('./App').default;
 } catch (error) {
   publishError(formatError(error));
   AppComponent = function FailedImport() {
-    return null;
+    return React.createElement(StartupErrorScreen, {
+      message: capturedStartupError || 'Failed to load App module',
+    });
   };
 }
 
-// expo-updates (and other native modules) may replace the global handler while
-// App is importing — put ours back so TestFlight does not SIGABRT.
 installFatalErrorHandler();
 setTimeout(installFatalErrorHandler, 0);
 setTimeout(installFatalErrorHandler, 500);
@@ -66,15 +63,40 @@ function StartupErrorScreen({ message }: { message: string }) {
     React.createElement(
       ScrollView,
       { contentContainerStyle: styles.errorContent },
+      React.createElement(Text, { style: styles.errorBanner }, 'STARTUP ERROR'),
       React.createElement(Text, { style: styles.errorTitle }, 'App failed to start'),
       React.createElement(
         Text,
         { style: styles.errorHint },
-        'Screenshot this and send it — this is the real error behind the TestFlight crash.'
+        'Screenshot this screen and send it — this is the real error.'
       ),
       React.createElement(Text, { style: styles.errorBody, selectable: true }, message)
     )
   );
+}
+
+class AppErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { errorMessage: string | null }
+> {
+  state = { errorMessage: null as string | null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { errorMessage: formatError(error) };
+  }
+
+  componentDidCatch(error: unknown) {
+    publishError(formatError(error));
+  }
+
+  render() {
+    if (this.state.errorMessage) {
+      return React.createElement(StartupErrorScreen, {
+        message: this.state.errorMessage,
+      });
+    }
+    return this.props.children;
+  }
 }
 
 function Root() {
@@ -89,11 +111,16 @@ function Root() {
     };
   }, []);
 
-  if (error) {
-    return React.createElement(StartupErrorScreen, { message: error });
+  const displayError = error || capturedStartupError;
+  if (displayError) {
+    return React.createElement(StartupErrorScreen, { message: displayError });
   }
 
-  return React.createElement(AppComponent);
+  return React.createElement(
+    AppErrorBoundary,
+    null,
+    React.createElement(AppComponent)
+  );
 }
 
 registerRootComponent(Root);
@@ -101,12 +128,24 @@ registerRootComponent(Root);
 const styles = StyleSheet.create({
   errorRoot: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FEF2F2',
   },
   errorContent: {
     paddingTop: 72,
     paddingHorizontal: 24,
     paddingBottom: 48,
+  },
+  errorBanner: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DC2626',
+    color: '#FFFFFF',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 12,
   },
   errorTitle: {
     fontSize: 22,
@@ -123,7 +162,7 @@ const styles = StyleSheet.create({
   errorBody: {
     fontSize: 12,
     lineHeight: 18,
-    color: '#B91C1C',
+    color: '#991B1B',
     fontFamily: 'Courier',
   },
 });

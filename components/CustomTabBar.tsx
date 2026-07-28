@@ -96,7 +96,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
               styles.indicator,
               {
                 width: tabWidth - INDICATOR_INSET * 2,
-                transform: [{ translateX: Animated.add(indicatorX, INDICATOR_INSET) }],
+                transform: [{ translateX: indicatorX }],
               },
             ]}
           >
@@ -117,7 +117,9 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         )}
 
         {orderedRoutes.map((route) => {
-          const { options } = descriptors[route.key];
+          const descriptor = descriptors[route.key];
+          if (!descriptor) return null;
+          const { options } = descriptor;
           const isFocused = route.key === activeRouteKey;
           const orderIndex = DISPLAY_ORDER.indexOf(route.name);
           const scale = scales[orderIndex === -1 ? 0 : orderIndex];
@@ -245,7 +247,7 @@ const styles = StyleSheet.create({
   },
   indicator: {
     position: 'absolute',
-    left: PILL_PADDING,
+    left: PILL_PADDING + INDICATOR_INSET,
     top: PILL_PADDING,
     bottom: PILL_PADDING,
     borderRadius: 16,

@@ -41,6 +41,8 @@ import StoreScreen from './screens/StoreScreen';
 import InventoryScreen from './screens/InventoryScreen';
 import RaffleScreen from './screens/RaffleScreen';
 import MeditationPlayerScreen from './screens/MeditationPlayerScreen';
+// Default tab — eager load so import failures surface in index.ts instead of a blank Suspense tree
+import ActionScreen from './screens/ActionScreen';
 
 // Lazy-loaded screens (loaded on demand)
 const ProfileScreen = lazy(() => import('./screens/ProfileScreen'));
@@ -50,7 +52,6 @@ const OnboardingAnswersScreen = lazy(() => import('./screens/OnboardingAnswersSc
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const CommunityScreen = lazy(() => import('./screens/CommunityScreen'));
-const ActionScreen = lazy(() => import('./screens/ActionScreen'));
 const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const ProgressChartsScreen = lazy(() => import('./screens/ProgressChartsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
@@ -70,7 +71,7 @@ const Tab = createBottomTabNavigator();
 function LoadingScreen() {
   const { theme } = useTheme();
   return (
-    <View style={[styles.loadingContainer, { backgroundColor: '#FFFFFF' }]}>
+    <View style={[styles.loadingContainer, { backgroundColor: '#FCFAF9' }]}>
       <ActivityIndicator size="large" color={theme.primary} />
       <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
     </View>
@@ -118,7 +119,7 @@ function GoalsStack() {
   );
 }
 
-// Action Stack
+// Action Stack — ActionScreen is eager so first paint can't blank on a failed lazy import
 function ActionStack() {
   return (
     <Suspense fallback={<LoadingScreen />}>
@@ -591,34 +592,64 @@ export default function App() {
   useEffect(() => {
     if (supabaseConfigError) return;
     // Check if user has completed onboarding
+    let cancelled = false;
+    const safetyTimer = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('Onboarding check timed out — opening main app');
+        setOnboardingComplete(true);
+      }
+    }, 8000);
+
     const checkOnboarding = async () => {
-      if (user) {
+      if (!user) {
+        clearTimeout(safetyTimer);
+        setOnboardingComplete(null);
+        return;
+      }
+
+      try {
         const { data, error } = await supabase
           .from('profiles')
           .select('onboarding_completed, onboarding_last_step')
           .eq('id', user.id)
           .single();
-        
-        
+
+        if (cancelled) return;
+
+        if (error) {
+          console.warn('Onboarding check failed, opening main app:', error.message);
+          clearTimeout(safetyTimer);
+          setOnboardingComplete(true);
+          return;
+        }
+
         // If onboarding is completed, or if user has progressed past step 1 (has exited), show main app
         const isComplete = data?.onboarding_completed || false;
         const hasPartialProgress = data?.onboarding_last_step && data.onboarding_last_step > 1;
-        
+
         // Show main app if completed OR if user has partial progress (exited onboarding)
         const shouldShowMainApp = isComplete || hasPartialProgress;
-        
-        
+
         // Add small delay to prevent navigation stack conflicts
-        // Longer delay for new sign-ups to ensure SignUpScreen can be seen
         setTimeout(() => {
-          setOnboardingComplete(shouldShowMainApp);
+          if (cancelled) return;
+          clearTimeout(safetyTimer);
+          setOnboardingComplete(!!shouldShowMainApp);
         }, 500);
-      } else {
-        setOnboardingComplete(null);
+      } catch (e) {
+        console.warn('Onboarding check threw, opening main app:', e);
+        if (!cancelled) {
+          clearTimeout(safetyTimer);
+          setOnboardingComplete(true);
+        }
       }
     };
-    
+
     checkOnboarding();
+    return () => {
+      cancelled = true;
+      clearTimeout(safetyTimer);
+    };
   }, [user]);
 
   if (supabaseConfigError) {
@@ -637,7 +668,7 @@ export default function App() {
   if (loading || (user && onboardingComplete === null)) {
     return (
       <CustomBackground>
-        <View style={[styles.loadingContainer, { backgroundColor: '#FFFFFF' }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: '#FCFAF9' }]}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
         </View>
