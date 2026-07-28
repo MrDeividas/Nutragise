@@ -80,6 +80,7 @@ function LoadingScreen() {
 // Goals Stack
 function GoalsStack() {
   return (
+    <Suspense fallback={<LoadingScreen />}>
     <Stack.Navigator 
       screenOptions={{ 
         headerShown: false
@@ -113,6 +114,7 @@ function GoalsStack() {
         component={MyExercisesScreen}
       />
     </Stack.Navigator>
+    </Suspense>
   );
 }
 
@@ -144,6 +146,7 @@ function ActionStack() {
 // Profile Stack
 function ProfileStack() {
   return (
+    <Suspense fallback={<LoadingScreen />}>
     <Stack.Navigator 
       screenOptions={{ 
         headerShown: false,
@@ -241,6 +244,7 @@ function ProfileStack() {
           }}
         />
       </Stack.Navigator>
+    </Suspense>
   );
 }
 
@@ -678,9 +682,11 @@ export default function App() {
             },
           }}
         >
-          {user && onboardingComplete === true ? <AppStack /> : 
-           user && onboardingComplete === false ? <OnboardingStack /> : 
-           <AuthStack />}
+          <Suspense fallback={<LoadingScreen />}>
+            {user && onboardingComplete === true ? <AppStack /> : 
+             user && onboardingComplete === false ? <OnboardingStack /> : 
+             <AuthStack />}
+          </Suspense>
         </NavigationContainer>
       </SafeAreaProvider>
       </StripeProvider>
