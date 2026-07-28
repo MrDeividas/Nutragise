@@ -586,10 +586,10 @@ export default function CompeteScreen({ navigation }: any) {
             activeOpacity={0.8}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="gift" size={24} color={theme.primary} />
+            <Ionicons name="gift" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           {userProfile?.is_pro && (
-            <Text style={[styles.proBadge, { color: theme.primary }]}>Pro</Text>
+            <Text style={[styles.proBadge, { color: theme.textPrimary }]}>Pro</Text>
           )}
         </View>
         
@@ -640,12 +640,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setPrivateChallengesExpanded(!privateChallengesExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="lock-closed" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Private Challenges
                 </Text>
-              </View>
               <Ionicons 
                 name={privateChallengesExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -700,12 +697,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setMyChallengesExpanded(!myChallengesExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="trophy" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   My Challenges
                 </Text>
-              </View>
               <Ionicons 
                 name={myChallengesExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -730,12 +724,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setCoreHabitsExpanded(!coreHabitsExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="fitness" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Core Habits
                 </Text>
-              </View>
               <Ionicons 
                 name={coreHabitsExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -776,12 +767,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setProOnlyExpanded(!proOnlyExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="star" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Pro Challenges
                 </Text>
-              </View>
               <Ionicons
                 name={proOnlyExpanded ? 'chevron-up' : 'chevron-down'}
                 size={20}
@@ -828,13 +816,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setInvestExpanded(!investExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {/* Inclusive “all users” — paid entry, open to non‑Pro */}
-                <Ionicons name="people" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Everyone Can Play
                 </Text>
-              </View>
               <Ionicons 
                 name={investExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -881,12 +865,9 @@ export default function CompeteScreen({ navigation }: any) {
             onPress={() => setFreeExpanded(!freeExpanded)}
             activeOpacity={0.7}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="play-circle-outline" size={20} color={theme.primary} />
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                 Free to Play
               </Text>
-            </View>
             <Ionicons 
               name={freeExpanded ? "chevron-up" : "chevron-down"} 
               size={20} 
@@ -939,12 +920,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setPrivateChallengesExpanded(!privateChallengesExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="lock-closed" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   Private Challenges
                 </Text>
-              </View>
               <Ionicons 
                 name={privateChallengesExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -979,12 +957,9 @@ export default function CompeteScreen({ navigation }: any) {
               onPress={() => setMyChallengesExpanded(!myChallengesExpanded)}
               activeOpacity={0.7}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="trophy" size={20} color={theme.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
                   My Challenges
                 </Text>
-              </View>
               <Ionicons 
                 name={myChallengesExpanded ? "chevron-up" : "chevron-down"} 
                 size={20} 

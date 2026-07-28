@@ -5045,7 +5045,7 @@ function ActionScreen() {
                   flex: 1,
                   marginHorizontal: 4,
                   height: 8,
-                  backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                  backgroundColor: 'rgba(31, 41, 55, 0.15)',
                   borderRadius: 4,
                   overflow: 'visible',
                   position: 'relative',
@@ -5062,6 +5062,7 @@ function ActionScreen() {
                     styles.levelProgressFill,
                     {
                       width: fillWidthInterpolation ?? 0,
+                      backgroundColor: theme.textPrimary,
                     },
                   ]}
                 />
@@ -9572,7 +9573,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     height: '100%',
-    backgroundColor: '#10B981',
+    backgroundColor: '#1f2937',
     borderRadius: 4,
   },
   levelProgressDash: {

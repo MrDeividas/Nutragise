@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, TextInput, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  TextInput,
+  Linking,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -11,6 +25,8 @@ import { useBottomNavPadding } from '../components/CustomTabBar';
 import { supabase } from '../lib/supabase';
 import { iapService } from '../lib/iapService';
 import { adminService } from '../lib/adminService';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export default function ProfileSettingsScreen() {
   const navigation = useNavigation();
@@ -33,24 +49,30 @@ export default function ProfileSettingsScreen() {
   const [paypalEmail, setPaypalEmail] = useState('');
   const [showPaypalEdit, setShowPaypalEdit] = useState(false);
   const [savingPaypal, setSavingPaypal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
-  // Check email verification status
+  const accent = theme.textPrimary;
+  const softAccent = `${theme.textPrimary}14`;
+  const cardBg = '#FFFFFF';
+  const cardBorder = '#EEF0F3';
+
   const checkEmailStatus = async () => {
     const verified = await checkEmailVerification();
     setEmailVerified(verified);
   };
 
-  // Load user profile to check is_pro status and last username change
   const loadUserProfile = async () => {
     if (!user) return;
-    
+
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('is_pro, username_last_changed, paypal_email')
         .eq('id', user.id)
         .single();
-      
+
       if (!error && profile) {
         setUserProfile(profile);
         if (profile.username_last_changed) {
@@ -65,13 +87,11 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  // Check admin status
   const checkAdminStatus = async () => {
     if (!user?.id) return;
     try {
       const admin = await adminService.isAdmin(user.id);
       setIsAdmin(admin);
-      // Debug: Log admin status (remove in production)
       if (__DEV__) {
         console.log('Admin status check:', { userId: user.id, isAdmin: admin });
       }
@@ -81,7 +101,6 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  // Check on mount and when screen comes into focus
   useEffect(() => {
     checkEmailStatus();
     loadUserProfile();
@@ -111,26 +130,22 @@ export default function ProfileSettingsScreen() {
     } else {
       Alert.alert(
         'Email Sent',
-        'Please check your inbox for the verification email. If you don\'t see it, check your spam folder.'
+        "Please check your inbox for the verification email. If you don't see it, check your spam folder."
       );
     }
   };
 
   const handleSignOut = async () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Log Out', 
-          style: 'destructive',
-          onPress: async () => {
-            await signOut();
-          }
-        }
-      ]
-    );
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          await signOut();
+        },
+      },
+    ]);
   };
 
   const handleManageSubscription = async () => {
@@ -178,14 +193,12 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  // Check if user can change username (30 days restriction)
   const canChangeUsername = (): boolean => {
-    if (!lastUsernameChange) return true; // Never changed before
+    if (!lastUsernameChange) return true;
     const daysSinceChange = (Date.now() - lastUsernameChange.getTime()) / (1000 * 60 * 60 * 24);
     return daysSinceChange >= 30;
   };
 
-  // Handle change username
   const handleChangeUsername = async () => {
     if (!user) return;
 
@@ -210,12 +223,11 @@ export default function ProfileSettingsScreen() {
 
     setChangingUsername(true);
     try {
-      // Update username in both users and profiles tables
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           username: newUsername.trim(),
-          username_last_changed: new Date().toISOString()
+          username_last_changed: new Date().toISOString(),
         })
         .eq('id', user.id);
 
@@ -223,24 +235,18 @@ export default function ProfileSettingsScreen() {
         throw updateError;
       }
 
-      // Also update users table if possible
       try {
-        await supabase
-          .from('users')
-          .update({ username: newUsername.trim() })
-          .eq('id', user.id);
+        await supabase.from('users').update({ username: newUsername.trim() }).eq('id', user.id);
       } catch (usersError) {
-        // Ignore if users table update fails (RLS might block it)
         console.warn('Failed to update users table:', usersError);
       }
 
-      // Update local state
       await updateProfile({ username: newUsername.trim() });
       setLastUsernameChange(new Date());
       setShowChangeUsername(false);
       setNewUsername('');
       await loadUserProfile();
-      
+
       Alert.alert('Success', 'Username updated successfully!');
     } catch (error: any) {
       console.error('Error changing username:', error);
@@ -250,7 +256,6 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  // Handle change password
   const handleChangePassword = async () => {
     if (!user) return;
 
@@ -271,9 +276,8 @@ export default function ProfileSettingsScreen() {
 
     setChangingPassword(true);
     try {
-      // Update password using Supabase auth
       const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword
+        password: newPassword,
       });
 
       if (updateError) {
@@ -284,7 +288,7 @@ export default function ProfileSettingsScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      
+
       Alert.alert('Success', 'Password updated successfully!');
     } catch (error: any) {
       console.error('Error changing password:', error);
@@ -323,350 +327,447 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  let joinDateText = 'Joined';
-  if (user?.created_at) {
-    const date = new Date(user.created_at);
-    const options = { year: 'numeric', month: 'long' } as const;
-    joinDateText = `Joined ${date.toLocaleDateString(undefined, options)}`;
-  }
-  
+  const closeDeleteModal = () => {
+    if (deletingAccount) return;
+    setShowDeleteModal(false);
+    setDeletePassword('');
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!user?.email) {
+      Alert.alert('Error', 'No email address found for this account.');
+      return;
+    }
+    if (!deletePassword.trim()) {
+      Alert.alert('Password required', 'Please enter your password to confirm account deletion.');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: deletePassword,
+      });
+
+      if (authError) {
+        Alert.alert('Incorrect password', 'The password you entered is incorrect. Please try again.');
+        return;
+      }
+
+      const { error } = await supabase.rpc('delete_user');
+      if (error) {
+        Alert.alert('Error', 'Failed to delete account. Please contact support.');
+        return;
+      }
+
+      setShowDeleteModal(false);
+      setDeletePassword('');
+      await signOut();
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      Alert.alert('Error', error?.message || 'Failed to delete account. Please try again.');
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
+  const renderRow = ({
+    icon,
+    label,
+    onPress,
+    value,
+    disabled,
+    destructive,
+    showChevron = true,
+  }: {
+    icon: IoniconName;
+    label: string;
+    onPress?: () => void;
+    value?: string;
+    disabled?: boolean;
+    destructive?: boolean;
+    showChevron?: boolean;
+  }) => (
+    <TouchableOpacity
+      style={[styles.row, disabled && { opacity: 0.45 }]}
+      onPress={onPress}
+      disabled={disabled || !onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.rowIconWrap, { backgroundColor: softAccent }]}>
+        <Ionicons name={icon} size={18} color={destructive ? '#DC2626' : accent} />
+      </View>
+      <View style={styles.rowContent}>
+        <Text style={[styles.rowLabel, { color: destructive ? '#DC2626' : accent }]}>{label}</Text>
+        {!!value && (
+          <Text style={[styles.rowValue, { color: theme.textSecondary }]} numberOfLines={1}>
+            {value}
+          </Text>
+        )}
+      </View>
+      {showChevron && <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />}
+    </TouchableOpacity>
+  );
+
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <View style={styles.section}>
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{title}</Text>
+      <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>{children}</View>
+    </View>
+  );
+
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
         <View style={[styles.headerRow, { borderBottomColor: theme.border }]}>
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()} 
-          style={styles.backButton}
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 32 + bottomNavPadding }]}
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-      <ScrollView 
-        contentContainerStyle={[styles.optionsContainer, { paddingBottom: 24 + bottomNavPadding }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Email Verification Reminder */}
-        {emailVerified === false && (
-          <View style={[styles.emailVerificationContainer, { backgroundColor: 'rgba(255, 193, 7, 0.1)', borderColor: '#FFC107' }]}>
-            <View style={styles.emailVerificationContent}>
-              <Ionicons name="mail-unread-outline" size={24} color="#FFC107" />
-              <View style={styles.emailVerificationText}>
-                <Text style={[styles.emailVerificationTitle, { color: '#FFC107' }]}>
-                  Verify Your Email
+          {emailVerified === false && (
+            <View style={styles.verifyBanner}>
+              <View style={styles.verifyTop}>
+                <View style={styles.verifyIconWrap}>
+                  <Ionicons name="mail-unread-outline" size={20} color="#B45309" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.verifyTitle}>Verify your email</Text>
+                  <Text style={[styles.verifySubtitle, { color: theme.textSecondary }]}>
+                    Confirm your email to keep your account secure
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.verifyButton}
+                onPress={handleResendVerification}
+                disabled={resendingEmail}
+                activeOpacity={0.8}
+              >
+                {resendingEmail ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.verifyButtonText}>Resend email</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Section title="Account">
+            {!showChangeUsername ? (
+              renderRow({
+                icon: 'person-outline',
+                label: 'Change Username',
+                value: canChangeUsername() ? undefined : '30 day cooldown',
+                disabled: !canChangeUsername(),
+                onPress: () => {
+                  if (canChangeUsername()) {
+                    setShowChangeUsername(true);
+                  } else {
+                    const daysRemaining = Math.ceil(
+                      30 - (Date.now() - lastUsernameChange!.getTime()) / (1000 * 60 * 60 * 24)
+                    );
+                    Alert.alert(
+                      'Cannot Change Username',
+                      `You can only change your username once every 30 days. Please try again in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.`
+                    );
+                  }
+                },
+              })
+            ) : (
+              <View style={styles.expandBlock}>
+                <Text style={[styles.expandTitle, { color: accent }]}>Change Username</Text>
+                <TextInput
+                  style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder }]}
+                  placeholder="Enter new username"
+                  placeholderTextColor={theme.textTertiary}
+                  value={newUsername}
+                  onChangeText={setNewUsername}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, { borderColor: cardBorder }]}
+                    onPress={() => {
+                      setShowChangeUsername(false);
+                      setNewUsername('');
+                    }}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: accent }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { backgroundColor: accent }]}
+                    onPress={handleChangeUsername}
+                    disabled={changingUsername}
+                  >
+                    {changingUsername ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+
+            {!showChangePassword ? (
+              renderRow({
+                icon: 'lock-closed-outline',
+                label: 'Change Password',
+                onPress: () => setShowChangePassword(true),
+              })
+            ) : (
+              <View style={styles.expandBlock}>
+                <Text style={[styles.expandTitle, { color: accent }]}>Change Password</Text>
+                <TextInput
+                  style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder, marginBottom: 10 }]}
+                  placeholder="Current password"
+                  placeholderTextColor={theme.textTertiary}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder, marginBottom: 10 }]}
+                  placeholder="New password"
+                  placeholderTextColor={theme.textTertiary}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder }]}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={theme.textTertiary}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, { borderColor: cardBorder }]}
+                    onPress={() => {
+                      setShowChangePassword(false);
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmPassword('');
+                    }}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: accent }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { backgroundColor: accent }]}
+                    onPress={handleChangePassword}
+                    disabled={changingPassword}
+                  >
+                    {changingPassword ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+
+            {!showPaypalEdit ? (
+              renderRow({
+                icon: 'logo-paypal',
+                label: 'PayPal Email',
+                value: paypalEmail || 'Not set',
+                onPress: () => setShowPaypalEdit(true),
+              })
+            ) : (
+              <View style={styles.expandBlock}>
+                <Text style={[styles.expandTitle, { color: accent }]}>PayPal Email</Text>
+                <Text style={[styles.expandHint, { color: theme.textSecondary }]}>
+                  Used to receive withdrawals from your wallet
                 </Text>
-                <Text style={[styles.emailVerificationSubtitle, { color: theme.textSecondary }]}>
-                  Please verify your email address to secure your account
-                </Text>
+                <TextInput
+                  style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder }]}
+                  placeholder="your@paypal-email.com"
+                  placeholderTextColor={theme.textTertiary}
+                  value={paypalEmail}
+                  onChangeText={setPaypalEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                />
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, { borderColor: cardBorder }]}
+                    onPress={() => setShowPaypalEdit(false)}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: accent }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { backgroundColor: accent }]}
+                    onPress={handleSavePaypalEmail}
+                    disabled={savingPaypal}
+                  >
+                    {savingPaypal ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Save</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </Section>
+
+          <Section title="Preferences">
+            {renderRow({
+              icon: 'clipboard-outline',
+              label: 'View Onboarding Answers',
+              onPress: () => navigation.navigate('OnboardingAnswers' as never),
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+            {renderRow({
+              icon: 'images-outline',
+              label: 'Change Profile Card',
+              onPress: () => navigation.navigate('ProfileCard' as never),
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+            {renderRow({
+              icon: 'notifications-outline',
+              label: 'Notification Preferences',
+              onPress: () => {},
+            })}
+          </Section>
+
+          <Section title="Subscription">
+            {userProfile?.is_pro && (
+              <>
+                {renderRow({
+                  icon: 'card-outline',
+                  label: 'Manage Subscription',
+                  onPress: handleManageSubscription,
+                })}
+                <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+              </>
+            )}
+            {renderRow({
+              icon: 'refresh-outline',
+              label: 'Restore Purchases',
+              onPress: handleRestorePurchases,
+            })}
+          </Section>
+
+          <Section title="Legal">
+            {renderRow({
+              icon: 'document-text-outline',
+              label: 'Privacy Policy',
+              onPress: () => Linking.openURL('https://www.nutragise.com/privacy-policy'),
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+            {renderRow({
+              icon: 'reader-outline',
+              label: 'Terms of Service',
+              onPress: () => Linking.openURL('https://www.nutragise.com/terms'),
+            })}
+          </Section>
+
+          {isAdmin && (
+            <Section title="Admin">
+              {renderRow({
+                icon: 'shield-checkmark-outline',
+                label: 'Admin Review',
+                onPress: () => navigation.navigate('AdminReview' as never),
+              })}
+            </Section>
+          )}
+
+          <Section title="Account actions">
+            {renderRow({
+              icon: 'trash-outline',
+              label: 'Delete Account',
+              destructive: true,
+              onPress: () => setShowDeleteModal(true),
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+            {renderRow({
+              icon: 'log-out-outline',
+              label: 'Log Out',
+              destructive: true,
+              onPress: handleSignOut,
+            })}
+          </Section>
+        </ScrollView>
+
+        <Modal
+          visible={showDeleteModal}
+          transparent
+          animationType="fade"
+          onRequestClose={closeDeleteModal}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeDeleteModal} />
+            <View style={[styles.deleteModalCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <View style={styles.deleteModalIconWrap}>
+                <Ionicons name="warning-outline" size={28} color="#DC2626" />
+              </View>
+              <Text style={[styles.deleteModalTitle, { color: accent }]}>Delete account</Text>
+              <Text style={[styles.deleteModalBody, { color: theme.textSecondary }]}>
+                This cannot be undone. All your data will be permanently erased. Enter your password to confirm.
+              </Text>
+              <TextInput
+                style={[styles.input, { color: theme.textPrimary, borderColor: cardBorder }]}
+                placeholder="Enter your password"
+                placeholderTextColor={theme.textTertiary}
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deletingAccount}
+              />
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: cardBorder }]}
+                  onPress={closeDeleteModal}
+                  disabled={deletingAccount}
+                >
+                  <Text style={[styles.secondaryButtonText, { color: accent }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    styles.deleteConfirmButton,
+                    { opacity: deletingAccount || !deletePassword.trim() ? 0.5 : 1 },
+                  ]}
+                  onPress={handleConfirmDeleteAccount}
+                  disabled={deletingAccount || !deletePassword.trim()}
+                >
+                  {deletingAccount ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Confirm</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity
-              style={[styles.resendButton, { backgroundColor: '#FFC107' }]}
-              onPress={handleResendVerification}
-              disabled={resendingEmail}
-            >
-              {resendingEmail ? (
-                <ActivityIndicator size="small" color="#000" />
-              ) : (
-                <Text style={[styles.resendButtonText, { color: '#000' }]}>
-                  Resend Email
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Change Username */}
-        {!showChangeUsername ? (
-          <TouchableOpacity 
-            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary, opacity: canChangeUsername() ? 1 : 0.5 }]}
-            onPress={() => {
-              if (canChangeUsername()) {
-                setShowChangeUsername(true);
-              } else {
-                const daysRemaining = Math.ceil(30 - (Date.now() - lastUsernameChange!.getTime()) / (1000 * 60 * 60 * 24));
-                Alert.alert(
-                  'Cannot Change Username',
-                  `You can only change your username once every 30 days. Please try again in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}.`
-                );
-              }
-            }}
-            disabled={!canChangeUsername()}
-          >
-            <View style={styles.optionRow}>
-              <Text style={[styles.optionText, { color: theme.primary }]}>Change Username</Text>
-              {!canChangeUsername() && (
-                <Text style={[styles.optionDescription, { color: theme.textSecondary, marginLeft: 8 }]}>
-                  (30 day cooldown)
-                </Text>
-              )}
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 12 }]}>Change Username</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
-              placeholder="Enter new username"
-              placeholderTextColor={theme.textTertiary}
-              value={newUsername}
-              onChangeText={setNewUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
-                onPress={() => {
-                  setShowChangeUsername(false);
-                  setNewUsername('');
-                }}
-              >
-                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, { backgroundColor: theme.primary }]}
-                onPress={handleChangeUsername}
-                disabled={changingUsername}
-              >
-                {changingUsername ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Change Password */}
-        {!showChangePassword ? (
-          <TouchableOpacity 
-            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-            onPress={() => setShowChangePassword(true)}
-          >
-            <Text style={[styles.optionText, { color: theme.primary }]}>Change Password</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 12 }]}>Change Password</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
-              placeholder="Current password"
-              placeholderTextColor={theme.textTertiary}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
-              placeholder="New password"
-              placeholderTextColor={theme.textTertiary}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary, marginBottom: 12 }]}
-              placeholder="Confirm new password"
-              placeholderTextColor={theme.textTertiary}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
-                onPress={() => {
-                  setShowChangePassword(false);
-                  setCurrentPassword('');
-                  setNewPassword('');
-                  setConfirmPassword('');
-                }}
-              >
-                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, { backgroundColor: theme.primary }]}
-                onPress={handleChangePassword}
-                disabled={changingPassword}
-              >
-                {changingPassword ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        {/* PayPal Email for Withdrawals */}
-        {!showPaypalEdit ? (
-          <TouchableOpacity
-            style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-            onPress={() => setShowPaypalEdit(true)}
-          >
-            <View style={styles.optionRow}>
-              <Text style={[styles.optionText, { color: theme.primary }]}>PayPal Email</Text>
-              {paypalEmail ? (
-                <Text style={[styles.optionDescription, { color: theme.textSecondary, marginLeft: 8, flex: 1 }]} numberOfLines={1}>
-                  {paypalEmail}
-                </Text>
-              ) : (
-                <Text style={[styles.optionDescription, { color: theme.textTertiary, marginLeft: 8 }]}>
-                  Not set
-                </Text>
-              )}
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <View style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-            <Text style={[styles.optionText, { color: theme.textPrimary, marginBottom: 4 }]}>PayPal Email</Text>
-            <Text style={[styles.optionDescription, { color: theme.textSecondary, marginBottom: 12 }]}>
-              Used to receive withdrawals from your wallet
-            </Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: 'rgba(128, 128, 128, 0.15)', color: theme.textPrimary, borderColor: theme.borderSecondary }]}
-              placeholder="your@paypal-email.com"
-              placeholderTextColor={theme.textTertiary}
-              value={paypalEmail}
-              onChangeText={setPaypalEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.cancelButton, { backgroundColor: theme.borderSecondary }]}
-                onPress={() => setShowPaypalEdit(false)}
-              >
-                <Text style={[styles.buttonText, { color: theme.textPrimary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, { backgroundColor: theme.primary }]}
-                onPress={handleSavePaypalEmail}
-                disabled={savingPaypal}
-              >
-                {savingPaypal ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={[styles.buttonText, { color: '#fff' }]}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={() => navigation.navigate('OnboardingAnswers' as never)}
-        >
-          <Text style={[styles.optionText, { color: theme.primary }]}>View Onboarding Answers</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={() => navigation.navigate('ProfileCard')}
-        >
-          <Text style={[styles.optionText, { color: theme.primary }]}>Change profile card</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-          <Text style={[styles.optionText, { color: theme.primary }]}>Notification Preferences</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={() => {
-            Linking.openURL('https://www.nutragise.com/privacy-policy');
-          }}
-        >
-          <Text style={[styles.optionText, { color: theme.primary }]}>Privacy Policy</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={() => {
-            Linking.openURL('https://www.nutragise.com/terms');
-          }}
-        >
-          <Text style={[styles.optionText, { color: theme.primary }]}>Terms of Service</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={handleRestorePurchases}
-        >
-          <Text style={[styles.optionText, { color: theme.primary }]}>Restore Purchases</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.option, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={() => {
-            Alert.alert(
-              'Delete Account',
-              'Are you sure you want to delete your account? This action cannot be undone and will erase all your data.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { 
-                  text: 'Delete', 
-                  style: 'destructive',
-                  onPress: async () => {
-                    const { error } = await supabase.rpc('delete_user');
-                    if (error) {
-                      Alert.alert('Error', 'Failed to delete account. Please contact support.');
-                    } else {
-                      await signOut();
-                    }
-                  }
-                }
-              ]
-            );
-          }}
-        >
-          <Text style={[styles.optionText, { color: '#d32f2f' }]}>Delete Account</Text>
-        </TouchableOpacity>
-        
-        {/* Admin Review - Admin Users Only */}
-        {isAdmin && (
-          <TouchableOpacity
-            style={[styles.option, styles.optionRow, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-            onPress={() => navigation.navigate('AdminReview' as never)}
-          >
-            <View style={styles.optionLeft}>
-              <Ionicons name="shield-checkmark-outline" size={20} color={theme.primary} style={styles.optionIcon} />
-              <Text style={[styles.optionText, { color: theme.primary }]}>Admin Review</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-          </TouchableOpacity>
-        )}
-        
-        {/* Manage Subscription Button - Pro Users Only */}
-        {userProfile?.is_pro && (
-          <TouchableOpacity
-            style={[styles.manageSubscriptionButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-            onPress={handleManageSubscription}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.manageSubscriptionIconContainer, { backgroundColor: `${theme.primary}20` }]}>
-              <Ionicons name="card-outline" size={18} color={theme.primary} />
-            </View>
-            <Text style={[styles.manageSubscriptionText, { color: theme.textPrimary }]}>
-              Manage Subscription
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
-          </TouchableOpacity>
-        )}
-        
-        {/* Log Out Button */}
-        <TouchableOpacity 
-          style={[styles.logoutButton, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}
-          onPress={handleSignOut}
-        >
-          <Text style={[styles.logoutText, { color: '#d32f2f' }]}>Log Out</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+          </KeyboardAvoidingView>
+        </Modal>
+      </SafeAreaView>
     </CustomBackground>
   );
 }
@@ -679,164 +780,205 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
     flex: 1,
   },
   backButton: {
     padding: 8,
-    marginRight: 8,
+    width: 40,
   },
   headerSpacer: {
     width: 40,
   },
-  optionsContainer: {
-    padding: 24,
-    gap: 16,
-  },
-  option: {
-    borderRadius: 12,
-    paddingVertical: 18,
+  scrollContent: {
     paddingHorizontal: 20,
-    borderWidth: 1,
+    paddingTop: 20,
   },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  section: {
+    marginBottom: 22,
   },
-  optionTextContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  optionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  optionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  optionIcon: {
-    marginRight: 12,
-  },
-  optionText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  optionDescription: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  joinDate: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 8,
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginBottom: 8,
+    marginLeft: 4,
   },
-  logoutButton: {
-    borderRadius: 12,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
+  sectionCard: {
+    borderRadius: 16,
     borderWidth: 1,
-    marginTop: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  emailVerificationContainer: {
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    marginBottom: 24,
-    gap: 12,
-  },
-  emailVerificationContent: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
-  emailVerificationText: {
-    flex: 1,
-  },
-  emailVerificationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  emailVerificationSubtitle: {
-    fontSize: 14,
-  },
-  resendButton: {
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 40,
-  },
-  resendButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  manageSubscriptionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  manageSubscriptionIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+  rowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  manageSubscriptionText: {
+  rowContent: {
     flex: 1,
-    fontSize: 16,
+    marginRight: 8,
+  },
+  rowLabel: {
+    fontSize: 15,
     fontWeight: '600',
+  },
+  rowValue: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 60,
+  },
+  expandBlock: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  expandTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  expandHint: {
+    fontSize: 13,
+    marginBottom: 10,
   },
   input: {
-    borderRadius: 8,
+    borderRadius: 12,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    fontSize: 16,
+    fontSize: 15,
+    backgroundColor: '#F8F9FB',
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
+    gap: 10,
+    marginTop: 12,
   },
-  cancelButton: {
+  secondaryButton: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
   },
-  saveButton: {
-    flex: 1,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    fontSize: 16,
+  secondaryButtonText: {
+    fontSize: 15,
     fontWeight: '600',
   },
-}); 
+  primaryButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  verifyBanner: {
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F5D08A',
+    backgroundColor: '#FFF8EB',
+    marginBottom: 22,
+    gap: 12,
+  },
+  verifyTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  verifyIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  verifySubtitle: {
+    fontSize: 13,
+  },
+  verifyButton: {
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1f2937',
+    minHeight: 42,
+  },
+  verifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  deleteModalCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 20,
+    zIndex: 1,
+  },
+  deleteModalIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  deleteModalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  deleteConfirmButton: {
+    backgroundColor: '#DC2626',
+  },
+});

@@ -18,7 +18,7 @@ export default function CreateJoinBox({ onCreatePress, onJoinPress }: Props) {
         onPress={onCreatePress}
         activeOpacity={0.7}
       >
-        <View style={[styles.iconContainer, { backgroundColor: theme.primary }]}>
+        <View style={[styles.iconContainer, { backgroundColor: theme.textPrimary }]}>
           <Ionicons name="add-circle" size={20} color="white" />
         </View>
         <View style={styles.buttonTextContainer}>
@@ -31,7 +31,7 @@ export default function CreateJoinBox({ onCreatePress, onJoinPress }: Props) {
         onPress={onJoinPress}
         activeOpacity={0.7}
       >
-        <View style={[styles.iconContainer, { backgroundColor: theme.primary }]}>
+        <View style={[styles.iconContainer, { backgroundColor: theme.textPrimary }]}>
           <Ionicons name="key" size={20} color="white" />
         </View>
         <View style={styles.buttonTextContainer}>

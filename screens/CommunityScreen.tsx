@@ -109,7 +109,6 @@ interface CommunityScreenProps {
 
 function CommunityScreen({ navigation }: CommunityScreenProps) {
   const FullScreenPhotoModalAny = FullScreenPhotoModal as any;
-  const [activeTab, setActiveTab] = useState<'explore' | 'following'>('following');
   const bottomNavPadding = useBottomNavPadding();
   const [searchQuery, setSearchQuery] = useState('');
   const [exploreGoals, setExploreGoals] = useState<GoalWithUser[]>([]);
@@ -131,7 +130,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
   const [followingStatus, setFollowingStatus] = useState<Map<string, boolean>>(new Map());
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [youMayLikeUsers, setYouMayLikeUsers] = useState<Profile[]>([]);
-  const [communityStats, setCommunityStats] = useState({ habitsToday: 0, activeChallenges: 0 });
   
   const [followerCounts, setFollowerCounts] = useState<Map<string, number>>(new Map());
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -196,12 +194,12 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     }
   }, [dailyPosts]);
 
-  // Load posts when posts tab is active
+  // Load tips/motivation posts
   useEffect(() => {
-    if (activeTab === 'following' && user) {
+    if (user) {
       loadAllPosts();
     }
-  }, [activeTab, user]);
+  }, [user]);
 
   // Load interaction data for goals
   const refreshPostInteractionData = async (postId: string) => {
@@ -1064,13 +1062,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     );
   }, [exploreGoals, explorePosts, dailyPosts]);
 
-  // Load community stats when component mounts
-  useEffect(() => {
-    if (user) {
-      loadCommunityStats();
-    }
-  }, [user]);
-
   // Load search history and suggested users when modal opens
   useEffect(() => {
     if (showSearchModal && user) {
@@ -1108,32 +1099,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
       }
     } catch (error) {
       console.error('Error loading suggested users:', error);
-    }
-  };
-
-  const loadCommunityStats = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-      const [habitsResult, challengesResult] = await Promise.all([
-        supabase
-          .from('daily_habits')
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', `${today}T00:00:00`)
-          .lte('created_at', `${today}T23:59:59`),
-        supabase
-          .from('challenges')
-          .select('id', { count: 'exact', head: true })
-          .gte('updated_at', `${today}T00:00:00`)
-          .lte('updated_at', `${today}T23:59:59`),
-      ]);
-
-      setCommunityStats({
-        habitsToday: habitsResult.count ?? 0,
-        activeChallenges: challengesResult.count ?? 0,
-      });
-    } catch (error) {
-      console.error('Error loading community stats:', error);
     }
   };
 
@@ -1294,11 +1259,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     
     setRefreshing(true);
     try {
-      // Reload both explore and following data
-      await Promise.all([
-        loadExploreGoals(),
-        loadAllPosts(),
-      ]);
+      await loadAllPosts();
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -1359,18 +1320,9 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Modern Header Design */}
       <View style={styles.header}>
-        {/* Left side buttons */}
+        {/* Left spacer to keep title centered */}
         <View style={styles.headerLeftButtons}>
-          <TouchableOpacity 
-            onPress={() => setActiveTab(activeTab === 'explore' ? 'following' : 'explore')}
-            style={{ marginRight: 12 }}
-          >
-            <Ionicons 
-              name={activeTab === 'explore' ? "globe-outline" : "people-outline"} 
-              size={24} 
-              color={theme.textPrimary} 
-            />
-          </TouchableOpacity>
+          <View style={{ width: 24 }} />
         </View>
 
         {/* Center title */}
@@ -1681,97 +1633,32 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
 
 
 
-      {/* Content based on active tab and search */}
+      {/* Tips & motivation feed */}
       <View style={styles.contentContainer}>
-        {activeTab === 'explore' ? (
-          searchQuery ? (
-              // Show search results
-              socialLoading || isSearching ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color={theme.primary} />
-                  <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                    {isSearching ? 'Searching...' : 'Loading...'}
-                  </Text>
-                </View>
-              ) : (
-              <FlatList
-                data={searchResults}
-                renderItem={renderUser}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContainer}
-                showsVerticalScrollIndicator={false}
-                ListEmptyComponent={renderEmptyUsers}
-              />
-            )
-          ) : (
-            // Show trending goals
-            <ScrollView 
-              style={styles.scrollView}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: bottomNavPadding }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  tintColor={theme.primary}
-                  colors={[theme.primary]}
-                />
-              }
-            >
-              <ExploreContent 
-                goals={filteredGoals} 
-                posts={filteredPosts}
-                dailyPosts={filteredDailyPosts}
-                mergedFeed={getMergedFeed}
-                loading={loading} 
-                theme={theme}
-                goalInteractionData={goalInteractionData}
-                onLikeChange={handleGoalLikeChange}
-                onCommentPress={handleGoalCommentPress}
-                onFollow={handleFollow}
-                followingUsers={followingUsers}
-                followingStatus={followingStatus}
-                fetchFollowerCounts={fetchFollowerCounts}
-                user={user}
-                currentPhotoIndex={currentPhotoIndex}
-                setCurrentPhotoIndex={setCurrentPhotoIndex}
-                postInteractionData={postInteractionData}
-                onPostLikeChange={handlePostLikeChange}
-                onDailyPostLikeChange={handleDailyPostLikeChange}
-                onPostCommentPress={handlePostCommentPress}
-                onDailyPostCommentPress={handleDailyPostCommentPress}
-                onPhotoPress={handlePhotoPress}
-                youMayLikeUsers={youMayLikeUsers}
-                communityStats={communityStats}
-              />
-            </ScrollView>
-          )
-        ) : (
-          <ScrollView 
-            style={styles.scrollView}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: bottomNavPadding }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={theme.primary}
-                colors={[theme.primary]}
-              />
-            }
-          >
-            <PostFeedContent 
-              theme={theme} 
-              posts={allPosts}
-              loading={loadingPosts}
-              postInteractionData={postInteractionData}
-              onLikeChange={handlePostLikeChange}
-              onCommentPress={handlePostCommentPress}
-              user={user}
-              onPostCreated={loadAllPosts}
+        <ScrollView 
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.primary}
+              colors={[theme.primary]}
             />
-          </ScrollView>
-        )}
+          }
+        >
+          <PostFeedContent 
+            theme={theme} 
+            posts={allPosts}
+            loading={loadingPosts}
+            postInteractionData={postInteractionData}
+            onLikeChange={handlePostLikeChange}
+            onCommentPress={handlePostCommentPress}
+            user={user}
+            onPostCreated={loadAllPosts}
+          />
+        </ScrollView>
       </View>
 
       {/* Comment Modal */}
@@ -1911,723 +1798,6 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
 
 // Memoize the component to prevent unnecessary re-renders
 export default React.memo(CommunityScreen);
-
-// Explore Content Component
-
-
-function ExploreContent({ 
-  goals, 
-  posts,
-  dailyPosts,
-  mergedFeed,
-  loading, 
-  theme, 
-  goalInteractionData,
-  onLikeChange,
-  onCommentPress,
-  onFollow,
-  followingUsers,
-  followingStatus,
-  fetchFollowerCounts,
-  user,
-  currentPhotoIndex,
-  setCurrentPhotoIndex,
-  postInteractionData,
-  onPostLikeChange,
-  onDailyPostLikeChange,
-  onPostCommentPress,
-  onDailyPostCommentPress,
-  onPhotoPress,
-  youMayLikeUsers,
-  communityStats,
-}: { 
-  goals: GoalWithUser[], 
-  posts: PostWithUser[],
-  dailyPosts: DailyPostWithUser[],
-  mergedFeed: any[],
-  loading: boolean, 
-  theme: any,
-  goalInteractionData: {[goalId: string]: { likes: number; comments: number; isLiked: boolean }},
-  onLikeChange: (goalId: string, isLiked: boolean, newCount: number) => void,
-  onCommentPress: (goalId: string) => void,
-  onFollow: (userId: string) => void,
-  followingUsers: Set<string>;
-  followingStatus: Map<string, boolean>;
-  fetchFollowerCounts: (users: Profile[]) => Promise<void>;
-  user: any;
-  currentPhotoIndex: {[postId: string]: number};
-  setCurrentPhotoIndex: React.Dispatch<React.SetStateAction<{[postId: string]: number}>>;
-  postInteractionData: {[postId: string]: { likes: number; comments: number; isLiked: boolean }};
-  onPostLikeChange: (postId: string, isLiked: boolean, newCount: number) => void;
-  onDailyPostLikeChange: (dailyPostId: string, isLiked: boolean, newCount: number) => void;
-  onPostCommentPress: (postId: string) => void;
-  onDailyPostCommentPress: (dailyPostId: string) => void;
-  onPhotoPress: (photos: string[], initialIndex: number, captions?: string[]) => void;
-  youMayLikeUsers: Profile[];
-  communityStats: { habitsToday: number; activeChallenges: number };
-}) {
-  const [expandedDailyActivities, setExpandedDailyActivities] = useState<Record<string, boolean>>({});
-  const [expandedDailyDetails, setExpandedDailyDetails] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-  }, []);
-
-  const closeAllActivityDropdowns = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedDailyActivities({});
-  };
-
-  const getCategoryIcon = (category: string) => {
-    switch (category?.toLowerCase()) {
-      case 'fitness':
-        return 'fitness-outline';
-      case 'health':
-        return 'medical-outline';
-      case 'learning':
-        return 'school-outline';
-      case 'career':
-        return 'briefcase-outline';
-      case 'relationships':
-        return 'people-outline';
-      case 'finance':
-        return 'wallet-outline';
-      case 'hobbies':
-        return 'game-controller-outline';
-      default:
-        return 'flag-outline';
-    }
-  };
-
-  // Helper function to calculate time until next check-in
-  const getTimeUntilNextCheckIn = (checkInSchedule: string, lastUpdatedAt?: string) => {
-    if (!checkInSchedule) return 'No schedule set';
-    
-    const now = new Date();
-    let nextCheckIn = new Date();
-    
-    // Parse the check-in schedule and calculate next check-in time
-    if (checkInSchedule.includes('Daily')) {
-      const time = checkInSchedule.includes('6pm') ? 18 : 9; // 6pm or 9am
-      nextCheckIn.setHours(time, 0, 0, 0);
-      
-      // If today's time has passed, set to tomorrow
-      if (now > nextCheckIn) {
-        nextCheckIn.setDate(nextCheckIn.getDate() + 1);
-      }
-    } else if (checkInSchedule.includes('Every Monday')) {
-      const daysUntilMonday = (8 - now.getDay()) % 7;
-      nextCheckIn.setDate(now.getDate() + daysUntilMonday);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    } else if (checkInSchedule.includes('Every Friday')) {
-      const daysUntilFriday = (5 - now.getDay() + 7) % 7;
-      nextCheckIn.setDate(now.getDate() + daysUntilFriday);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    } else if (checkInSchedule.includes('Twice a week')) {
-      // Simple approximation - every 3-4 days
-      nextCheckIn.setDate(now.getDate() + 3);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    } else if (checkInSchedule.includes('Weekly')) {
-      nextCheckIn.setDate(now.getDate() + 7);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    } else if (checkInSchedule.includes('Bi-weekly')) {
-      nextCheckIn.setDate(now.getDate() + 14);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    } else if (checkInSchedule.includes('Monthly')) {
-      nextCheckIn.setMonth(now.getMonth() + 1);
-      nextCheckIn.setHours(9, 0, 0, 0);
-    }
-    
-    const timeDiff = nextCheckIn.getTime() - now.getTime();
-    const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (days > 0) {
-      return `${days} day${days > 1 ? 's' : ''} ${hours > 0 ? `${hours} hour${hours > 1 ? 's' : ''}` : ''}`;
-    } else if (hours > 0) {
-      return `${hours} hour${hours > 1 ? 's' : ''} ${minutes > 0 ? `${minutes} minute${minutes > 1 ? 's' : ''}` : ''}`;
-    } else if (minutes > 0) {
-      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
-    } else {
-      return 'Due now';
-    }
-  };
-
-  return (
-          <View
-            style={styles.content}
-            onStartShouldSetResponderCapture={() => {
-              closeAllActivityDropdowns();
-              return false;
-            }}
-          >
-        {/* Statistics Section */}
-        <View style={styles.spotlightHeader}>
-          <Text style={[styles.spotlightTitle, { color: theme.textPrimary }]}>Today's statistics</Text>
-        </View>
-        <View style={[styles.spotlightContainer, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-          <View style={styles.statsRow}>
-            <View style={[styles.statBlock, styles.statBlockFirst, { borderRightColor: '#E5E7EB' }]}>
-              <Text style={[styles.statLabel, { color: '#1f2937' }]}>Habits completed</Text>
-              <Text style={[styles.statValue, { color: '#1f2937' }]}>{communityStats.habitsToday}</Text>
-            </View>
-            <View style={styles.statBlock}>
-              <Text style={[styles.statLabel, { color: '#1f2937' }]}>Updated challenges</Text>
-              <Text style={[styles.statValue, { color: '#1f2937' }]}>{communityStats.activeChallenges}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Activity Section */}
-        <View style={styles.activityHeader}>
-          <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>
-            Activity
-          </Text>
-        </View>
-        
-        <View style={[styles.section, { marginTop: 8 }]}>
-          
-          {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading goals & posts...</Text>
-          </View>
-        ) : mergedFeed.length > 0 ? (
-          <View style={styles.cardsContainer}>
-            {mergedFeed.map((item) => {
-              if (item.type === 'goal') {
-                const goal = item;
-                return (
-              <View key={goal.id} style={styles.goalCardContainer}>
-                {/* Goal Card */}
-                <View style={[styles.card, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-                  {/* Profile Section */}
-                  <View style={styles.profileSection}>
-                    <View style={styles.profileInfo}>
-                      {goal.profiles?.avatar_url ? (
-                        <Image 
-                          source={{ uri: goal.profiles.avatar_url }} 
-                          style={styles.floatingAvatar}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.floatingAvatarPlaceholder}>
-                          <Text style={styles.floatingAvatarInitial}>
-                            {goal.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
-                          </Text>
-                        </View>
-                      )}
-                      <View style={styles.profileTextInfo}>
-                        <View style={styles.usernameWithFollow}>
-                          <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{goal.profiles?.username || 'user'}</Text>
-                          {goal.user_id !== user?.id && (
-                            <TouchableOpacity 
-                              onPress={() => onFollow(goal.profiles?.id || '')}
-                              style={styles.followIconButton}
-                            >
-                              <Ionicons 
-                                name={goal.profiles?.id && followingStatus.get(goal.profiles.id) ? 'checkmark' : 'add'} 
-                                size={14} 
-                                color={theme.textPrimary} 
-                              />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                        <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
-                          {formatLastUpdate(goal.last_updated_at, goal.created_at)}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    {/* Today's Activity Section */}
-                    <View style={styles.activitySection}>
-                      <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Activities</Text>
-                      <View style={styles.activityIcons}>
-                        <FontAwesome5 
-                          name="brain" 
-                          size={20} 
-                          color={goal.pointsData?.microlearn_completed ? '#FB7185' : '#D1D5DB'} 
-                          style={{ opacity: goal.pointsData?.microlearn_completed ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="spa" 
-                          size={20} 
-                          color={goal.pointsData?.meditation_completed ? '#2DD4BF' : '#D1D5DB'} 
-                          style={{ opacity: goal.pointsData?.meditation_completed ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="shower" 
-                          size={20} 
-                          color={goal.dailyHabits?.cold_shower_completed ? '#7DD3FC' : '#D1D5DB'} 
-                          style={{ opacity: goal.dailyHabits?.cold_shower_completed ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="journal-whills" 
-                          size={20} 
-                          color={(goal.dailyHabits?.reflect_mood || goal.dailyHabits?.reflect_energy || goal.dailyHabits?.reflect_what_went_well || goal.dailyHabits?.reflect_friction) ? '#F59E0B' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.reflect_mood || goal.dailyHabits?.reflect_energy || goal.dailyHabits?.reflect_what_went_well || goal.dailyHabits?.reflect_friction) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="tint" 
-                          size={20} 
-                          color={(goal.dailyHabits?.water_intake || goal.dailyHabits?.water_goal) ? '#60A5FA' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.water_intake || goal.dailyHabits?.water_goal) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="bed" 
-                          size={20} 
-                          color={(goal.dailyHabits?.sleep_hours || goal.dailyHabits?.sleep_quality || goal.dailyHabits?.sleep_bedtime_hours || goal.dailyHabits?.sleep_wakeup_hours) ? '#34D399' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.sleep_hours || goal.dailyHabits?.sleep_quality || goal.dailyHabits?.sleep_bedtime_hours || goal.dailyHabits?.sleep_wakeup_hours) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="running" 
-                          size={20} 
-                          color={(goal.dailyHabits?.run_day_type === 'active' || goal.dailyHabits?.run_activity_type || goal.dailyHabits?.run_distance) ? '#FFEB3B' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.run_day_type === 'active' || goal.dailyHabits?.run_activity_type || goal.dailyHabits?.run_distance) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="dumbbell" 
-                          size={20} 
-                          color={(goal.dailyHabits?.gym_day_type === 'active' || (goal.dailyHabits?.gym_training_types && goal.dailyHabits.gym_training_types.length > 0)) ? '#EF4444' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.gym_day_type === 'active' || (goal.dailyHabits?.gym_training_types && goal.dailyHabits.gym_training_types.length > 0)) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="lightbulb" 
-                          size={20} 
-                          color={(goal.dailyHabits?.focus_completed || goal.dailyHabits?.focus_duration) ? '#F472B6' : '#D1D5DB'} 
-                          style={{ opacity: (goal.dailyHabits?.focus_completed || goal.dailyHabits?.focus_duration) ? 1 : 0.3 }}
-                        />
-                        <FontAwesome5 
-                          name="mobile-alt" 
-                          size={20} 
-                          color={false ? '#FCD34D' : theme.textSecondary} 
-                        />
-                      </View>
-                    </View>
-                  </View>
-                  {/* Today's Uploads Section */}
-                  <View style={styles.uploadsSection}>
-                    <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
-                    {goal.media_url && goal.media_url !== 'no-photo' ? (
-                      <Image 
-                        source={{ uri: goal.media_url }} 
-                        style={styles.goalUpdateMedia}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.noMediaContainer, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
-                        <Ionicons name="camera-outline" size={32} color={theme.textSecondary} />
-                        <Text style={[styles.noMediaText, { color: theme.textSecondary }]}>
-                          No progress photos yet
-                        </Text>
-                        <Text style={[styles.noMediaSubtext, { color: theme.textTertiary }]}>
-                          Check in to share your journey
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Content Section */}
-                  <View style={styles.contentSection}>
-                    <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>
-                      {goal.title}
-                    </Text>
-                    
-                    {/* Separator */}
-                    <View style={styles.captionSeparator} />
-                    
-                    {/* Goal Interaction Bar */}
-                    <View style={styles.interactionBarContainer}>
-                      <GoalInteractionBar
-                        goalId={goal.id}
-                        initialLikeCount={goalInteractionData[goal.id]?.likes || 0}
-                        initialCommentCount={goalInteractionData[goal.id]?.comments || 0}
-                        initialIsLiked={goalInteractionData[goal.id]?.isLiked || false}
-                        onLikeChange={(isLiked, newCount) => onLikeChange(goal.id, isLiked, newCount)}
-                        onCommentPress={() => onCommentPress(goal.id)}
-                        size="medium"
-                        showCounts={true}
-                      />
-                    </View>
-                    
-                    <View style={styles.goalStats}>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            );
-              } else if (item.type === 'post') {
-                const post = item;
-                const habits = Array.isArray(post.habits_completed) ? post.habits_completed : [];
-                return (
-                  <View key={post.id} style={styles.goalCardContainer}>
-                    {/* Post Card */}
-                    <View style={styles.card}>
-                      {/* Profile Section */}
-                      <View style={styles.profileSection}>
-                        <View style={styles.profileInfo}>
-                          {post.profiles?.avatar_url ? (
-                            <Image 
-                              source={{ uri: post.profiles.avatar_url }} 
-                              style={styles.floatingAvatar}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.floatingAvatarPlaceholder}>
-                              <Text style={styles.floatingAvatarInitial}>
-                                {post.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
-                              </Text>
-                            </View>
-                          )}
-                          <View style={styles.profileTextInfo}>
-                            <View style={styles.usernameWithFollow}>
-                              <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{post.profiles?.username || 'user'}</Text>
-                              {post.user_id !== user?.id && (
-                                <TouchableOpacity 
-                                  onPress={() => onFollow(post.profiles?.id || '')}
-                                  style={styles.followIconButton}
-                                >
-                                  <Ionicons 
-                                    name={post.profiles?.id && followingStatus.get(post.profiles.id) ? 'checkmark' : 'add'} 
-                                    size={14} 
-                                    color={theme.textPrimary} 
-                                  />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                            <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
-                              {formatLastUpdate(post.created_at, post.created_at)}
-                            </Text>
-                          </View>
-                        </View>
-                        
-                        {/* Today's Activity Section */}
-                        <View style={styles.activitySection}>
-                          <Text style={[styles.activityLabel, { color: '#1f2937' }]}>Activities</Text>
-                          <View style={styles.activityIcons}>
-                            <FontAwesome5 
-                              name="brain" 
-                              size={20} 
-                              color={habits.includes('microlearn') ? '#FB7185' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('microlearn') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="spa" 
-                              size={20} 
-                              color={habits.includes('meditation') ? '#2DD4BF' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('meditation') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="shower" 
-                              size={20} 
-                              color={habits.includes('cold_shower') ? '#7DD3FC' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('cold_shower') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="journal-whills" 
-                              size={20} 
-                              color={habits.includes('reflect') ? '#F59E0B' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('reflect') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="tint" 
-                              size={20} 
-                              color={habits.includes('water') ? '#60A5FA' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('water') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="bed" 
-                              size={20} 
-                              color={habits.includes('sleep') ? '#34D399' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('sleep') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="running" 
-                              size={20} 
-                              color={habits.includes('run') ? '#FFEB3B' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('run') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="dumbbell" 
-                              size={20} 
-                              color={habits.includes('gym') || habits.includes('workout') ? '#EF4444' : '#D1D5DB'} 
-                              style={{ opacity: (habits.includes('gym') || habits.includes('workout')) ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="lightbulb" 
-                              size={20} 
-                              color={habits.includes('focus') ? '#F472B6' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('focus') ? 1 : 0.3 }}
-                            />
-                            <FontAwesome5 
-                              name="mobile-alt" 
-                              size={20} 
-                              color={habits.includes('screen_time') ? '#FCD34D' : '#D1D5DB'} 
-                              style={{ opacity: habits.includes('screen_time') ? 1 : 0.3 }}
-                            />
-                            {/* Football icon for goal progress */}
-                            <Ionicons 
-                              name="football-outline" 
-                              size={20} 
-                              color={post.goal_id ? '#ef4444' : theme.textSecondary} 
-                            />
-                          </View>
-                        </View>
-                      </View>
-                      {/* Today's Uploads Section - Only show if photos exist */}
-                      {post.photos && post.photos.length > 0 && (
-                        <View style={styles.uploadsSection}>
-                          <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Today's Uploads</Text>
-                          <View style={styles.photoCarouselWrapper}>
-                            <GesturePhotoCarousel
-                              photos={post.photos}
-                              currentIndex={currentPhotoIndex[post.id] || 0}
-                              photoWidth={120}
-                              photoHeight={120}
-                              photoSpacing={8}
-                              onIndexChange={(index) => {
-                                setCurrentPhotoIndex(prev => ({
-                                  ...prev,
-                                  [post.id]: index
-                                }));
-                              }}
-                              onPhotoPress={() =>
-                                onPhotoPress(
-                                  post.photos,
-                                  currentPhotoIndex[post.id] || 0,
-                                  post.caption ? post.caption.split(' | ') : []
-                                )
-                              }
-                              style={styles.photoContainer}
-                            />
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Content Section */}
-                      <View style={styles.contentSection}>
-                        {/* Separator */}
-                        <View style={styles.captionSeparator} />
-                        
-                        {/* Post Interaction Bar */}
-                        <View style={styles.interactionBarContainer}>
-                          <PostInteractionBar
-                            postId={post.id}
-                            initialLikeCount={postInteractionData[post.id]?.likes || 0}
-                            initialCommentCount={postInteractionData[post.id]?.comments || 0}
-                            initialIsLiked={postInteractionData[post.id]?.isLiked || false}
-                            onLikeChange={(isLiked, newCount) => onPostLikeChange(post.id, isLiked, newCount)}
-                            onCommentPress={() => onPostCommentPress(post.id)}
-                            size="medium"
-                            showCounts={true}
-                          />
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                );
-              } else if (item.type === 'daily_post') {
-                const dailyPost = item;
-                const habits: string[] = Array.isArray(dailyPost.habits_completed) ? dailyPost.habits_completed : [];
-                const completedActivitiesCount = habits.length;
-                const isActivitiesExpanded = !!expandedDailyActivities[dailyPost.id];
-                const isDetailsExpanded = expandedDailyDetails[dailyPost.id] ?? false;
-                const completedHabitLabels = habits.map((habit: string) => {
-                  switch (habit) {
-                    case 'microlearn':
-                      return 'Microlearning';
-                    case 'meditation':
-                      return 'Meditation';
-                    case 'cold_shower':
-                      return 'Cold shower';
-                    case 'water':
-                      return 'Water';
-                    case 'sleep':
-                      return 'Sleep';
-                    case 'run':
-                      return 'Run';
-                    case 'gym':
-                    case 'workout':
-                      return 'Workout';
-                    case 'focus':
-                      return 'Focus';
-                    case 'screen_time':
-                      return 'Screen time';
-                    case 'reflection':
-                    case 'reflect':
-                      return 'Reflection';
-                    default:
-                      return habit
-                        .split('_')
-                        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ');
-                  }
-                });
-                return (
-                  <View key={dailyPost.id} style={styles.goalCardContainer}>
-                    {/* Main Content Area */}
-                    <View style={[styles.card, !isDetailsExpanded && styles.dailyPostCardCollapsed]}>
-                      {/* Profile Section */}
-                      <View style={[styles.profileSection, !isDetailsExpanded && styles.profileSectionCollapsed]}>
-                        <View style={styles.profileInfo}>
-                          {dailyPost.profiles?.avatar_url ? (
-                            <Image 
-                              source={{ uri: dailyPost.profiles.avatar_url }} 
-                              style={styles.floatingAvatar}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={styles.floatingAvatarPlaceholder}>
-                              <Text style={styles.floatingAvatarInitial}>
-                                {dailyPost.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
-                              </Text>
-                            </View>
-                          )}
-                          <View style={styles.profileTextInfo}>
-                            <View style={styles.usernameWithFollow}>
-                              <View style={styles.usernameLeftGroup}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                  <Text style={[styles.floatingUsername, { color: theme.textPrimary }]}>@{dailyPost.profiles?.username || 'user'}</Text>
-                                  {dailyPost.user_id !== user?.id && (
-                                    <TouchableOpacity 
-                                      onPress={() => onFollow(dailyPost.profiles?.id || '')}
-                                      style={styles.followIconButton}
-                                    >
-                                      <Ionicons 
-                                        name={dailyPost.profiles?.id && followingStatus.get(dailyPost.profiles.id) ? 'checkmark' : 'add'} 
-                                        size={14} 
-                                        color={theme.textPrimary} 
-                                      />
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
-                              </View>
-                              <View style={styles.dailyPostMetaRow}>
-                                <Text style={[styles.dailyPostStats, { color: theme.textSecondary }]}>
-                                  {dailyPost.post_count} updates
-                                </Text>
-                                {completedActivitiesCount > 0 && (
-                                  <View style={styles.activitiesTriggerWrap}>
-                                    <TouchableOpacity
-                                      onPress={() =>
-                                        {
-                                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                                          setExpandedDailyActivities(prev => ({
-                                            ...prev,
-                                            [dailyPost.id]: !prev[dailyPost.id],
-                                          }));
-                                        }
-                                      }
-                                      activeOpacity={0.7}
-                                    >
-                                      <Text style={[styles.dailyPostStats, { color: theme.textSecondary }]}>
-                                        {completedActivitiesCount} activities
-                                      </Text>
-                                    </TouchableOpacity>
-                                    {isActivitiesExpanded && (
-                                      <View style={styles.activitiesDropdown}>
-                                        {completedHabitLabels.map((label: string, index: number) => (
-                                          <Text key={`${dailyPost.id}-habit-${index}`} style={[styles.activitiesDropdownItem, { color: theme.textSecondary }]}>
-                                            {label}
-                                          </Text>
-                                        ))}
-                                      </View>
-                                    )}
-                                  </View>
-                                )}
-                              </View>
-                              <TouchableOpacity
-                                style={styles.detailsToggleButton}
-                                onPress={() =>
-                                  setExpandedDailyDetails(prev => ({
-                                    ...prev,
-                                    [dailyPost.id]: !(prev[dailyPost.id] ?? true),
-                                  }))
-                                }
-                                activeOpacity={0.7}
-                              >
-                                <Ionicons
-                                  name={isDetailsExpanded ? 'chevron-up' : 'chevron-down'}
-                                  size={18}
-                                  color={theme.textSecondary}
-                                />
-                              </TouchableOpacity>
-                            </View>
-                            <Text style={[styles.floatingTime, { color: theme.textSecondary }]}>
-                              {formatLastUpdate(dailyPost.updated_at, dailyPost.created_at)}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                      {/* Uploads Section */}
-                      {isDetailsExpanded && dailyPost.photos && dailyPost.photos.length > 0 && (
-                        <View style={styles.uploadsSection}>
-                          <Text style={[styles.uploadsLabel, { color: '#1f2937' }]}>Uploads</Text>
-                          <View style={styles.photoCarouselWrapper}>
-                            <GesturePhotoCarousel
-                              photos={dailyPost.photos}
-                              currentIndex={currentPhotoIndex[dailyPost.id] ?? 0}
-                              photoWidth={120}
-                              photoHeight={120}
-                              photoSpacing={8}
-                              onIndexChange={(index) => setCurrentPhotoIndex(prev => ({ ...prev, [dailyPost.id]: index }))}
-                              onPhotoPress={() =>
-                                onPhotoPress(
-                                  dailyPost.photos,
-                                  currentPhotoIndex[dailyPost.id] || 0,
-                                  dailyPost.captions || []
-                                )
-                              }
-                            />
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Content Section */}
-                      {isDetailsExpanded && (
-                      <View style={styles.contentSection}>
-                        {/* Separator */}
-                        <View style={styles.captionSeparator} />
-                        
-                        {/* Interaction Bar - Centered below separator */}
-                        <View style={styles.interactionBarContainer}>
-                          <DailyPostInteractionBar
-                            dailyPostId={dailyPost.id}
-                            initialLikeCount={postInteractionData[dailyPost.id]?.likes || 0}
-                            initialCommentCount={postInteractionData[dailyPost.id]?.comments || 0}
-                            initialIsLiked={postInteractionData[dailyPost.id]?.isLiked || false}
-                            onLikeChange={(isLiked, newCount) => onDailyPostLikeChange(dailyPost.id, isLiked, newCount)}
-                            onCommentPress={() => onDailyPostCommentPress(dailyPost.id)}
-                            size="medium"
-                            showCounts={true}
-                          />
-                        </View>
-                      </View>
-                      )}
-                    </View>
-                  </View>
-                );
-              }
-              return null;
-            })}
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <Ionicons name="flag-outline" size={64} color={theme.textSecondary} />
-            <Text style={[styles.emptyStateTitle, { color: theme.textPrimary }]}>
-              Discover Goals & Posts
-            </Text>
-            <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
-              Find inspiring goals and posts from other users
-            </Text>
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
 
 // Post Feed Content Component
 function PostFeedContent({ 

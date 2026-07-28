@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Animated, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useNotificationsStore } from '../state/notificationsStore';
 
 const TAB_BAR_HEIGHT = 56;
 const PILL_PADDING = 4;
-const INDICATOR_INSET = 4;
+const INDICATOR_INSET = 1;
 const SIDE_INSET = 28;
 
 /** Left-to-right order the tabs appear in, independent of navigator registration order. */
@@ -46,8 +47,26 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
   const tabWidth = barWidth > 0 ? barWidth / tabCount : 0;
 
   const indicatorX = useRef(new Animated.Value(0)).current;
-  const scales = useRef(DISPLAY_ORDER.map(() => new Animated.Value(1))).current;
+  const pillScale = useRef(new Animated.Value(1)).current;
   const hasPositioned = useRef(false);
+
+  const bounceNavBar = () => {
+    pillScale.stopAnimation();
+    pillScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(pillScale, {
+        toValue: 1.0225,
+        duration: 90,
+        useNativeDriver: true,
+      }),
+      Animated.spring(pillScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 170,
+      }),
+    ]).start();
+  };
 
   // Slide the glass highlight from the previous tab to the newly selected one
   useEffect(() => {
@@ -70,106 +89,106 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     }).start();
   }, [activeIndex, tabWidth, indicatorX]);
 
-  // Pop the active icon slightly as it becomes selected
-  useEffect(() => {
-    scales.forEach((scale, i) => {
-      Animated.spring(scale, {
-        toValue: i === activeIndex ? 1.14 : 1,
-        useNativeDriver: true,
-        stiffness: 260,
-        damping: 18,
-        mass: 0.7,
-      }).start();
-    });
-  }, [activeIndex, scales]);
-
   return (
     <View style={[styles.container, { paddingBottom: (insets.bottom || 20) - 8 }]}>
-      <View
-        style={styles.pillContainer}
-        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width - PILL_PADDING * 2)}
-      >
-        {/* Sliding glass highlight */}
-        {tabWidth > 0 && (
-          <Animated.View
+      {/* Outer wrapper keeps shadow (overflow:hidden on glass would clip it) */}
+      <Animated.View style={[styles.pillShadow, { transform: [{ scale: pillScale }] }]}>
+        <View
+          style={styles.pillGlass}
+          onLayout={(e) => setBarWidth(e.nativeEvent.layout.width - PILL_PADDING * 2)}
+        >
+          {Platform.OS === 'ios' ? (
+            <BlurView intensity={55} tint="light" style={StyleSheet.absoluteFill} />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, styles.androidGlassFallback]} />
+          )}
+          <View style={[StyleSheet.absoluteFill, styles.glassTint]} />
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 0.55)', 'rgba(255, 255, 255, 0.12)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.glassSheen}
             pointerEvents="none"
-            style={[
-              styles.indicator,
-              {
-                width: tabWidth - INDICATOR_INSET * 2,
-                transform: [{ translateX: indicatorX }],
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={['rgba(16, 185, 129, 0.22)', 'rgba(16, 185, 129, 0.06)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {/* Top sheen for the frosted-glass feel */}
-            <LinearGradient
-              colors={['rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.indicatorSheen}
-            />
-          </Animated.View>
-        )}
+          />
 
-        {orderedRoutes.map((route) => {
-          const descriptor = descriptors[route.key];
-          if (!descriptor) return null;
-          const { options } = descriptor;
-          const isFocused = route.key === activeRouteKey;
-          const orderIndex = DISPLAY_ORDER.indexOf(route.name);
-          const scale = scales[orderIndex === -1 ? 0 : orderIndex];
-
-          const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          };
-
-          const onLongPress = () => {
-            navigation.emit({ type: 'tabLongPress', target: route.key });
-          };
-
-          let iconName: any = 'home-outline';
-          if (route.name === 'Community') iconName = isFocused ? 'people' : 'people-outline';
-          else if (route.name === 'Action') iconName = isFocused ? 'flash' : 'flash-outline';
-          else if (route.name === 'Goals') iconName = isFocused ? 'trending-up' : 'trending-up-outline';
-          else if (route.name === 'Discover') iconName = isFocused ? 'podium' : 'podium-outline';
-
-          // Icons are unlabelled, so surface the tab name to screen readers instead
-          const label = String(
-            options.tabBarLabel !== undefined
-              ? options.tabBarLabel
-              : options.title !== undefined
-              ? options.title
-              : route.name
-          );
-
-          const tint = isFocused ? theme.primary : '#9CA3AF';
-
-          return (
-            <TouchableOpacity
-              key={route.key}
-              accessibilityRole="button"
-              accessibilityState={isFocused ? { selected: true } : {}}
-              accessibilityLabel={options.tabBarAccessibilityLabel ?? label}
-              testID={(options as any).tabBarTestID}
-              onPress={onPress}
-              onLongPress={onLongPress}
-              style={styles.tabItem}
-              activeOpacity={0.7}
+          {/* Sliding glass highlight */}
+          {tabWidth > 0 && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.indicator,
+                {
+                  width: tabWidth - INDICATOR_INSET * 2,
+                  transform: [{ translateX: indicatorX }],
+                },
+              ]}
             >
-              <Animated.View style={{ transform: [{ scale }] }}>
+              <LinearGradient
+                colors={['rgba(31, 41, 55, 0.16)', 'rgba(31, 41, 55, 0.05)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <LinearGradient
+                colors={['rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.indicatorSheen}
+              />
+            </Animated.View>
+          )}
+
+          {orderedRoutes.map((route) => {
+            const descriptor = descriptors[route.key];
+            if (!descriptor) return null;
+            const { options } = descriptor;
+            const isFocused = route.key === activeRouteKey;
+
+            const onPress = () => {
+              bounceNavBar();
+
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
+
+            const onLongPress = () => {
+              navigation.emit({ type: 'tabLongPress', target: route.key });
+            };
+
+            let iconName: any = 'home-outline';
+            if (route.name === 'Community') iconName = isFocused ? 'people' : 'people-outline';
+            else if (route.name === 'Action') iconName = isFocused ? 'flash' : 'flash-outline';
+            else if (route.name === 'Goals') iconName = isFocused ? 'trending-up' : 'trending-up-outline';
+            else if (route.name === 'Discover') iconName = isFocused ? 'podium' : 'podium-outline';
+
+            const label = String(
+              options.tabBarLabel !== undefined
+                ? options.tabBarLabel
+                : options.title !== undefined
+                  ? options.title
+                  : route.name
+            );
+
+            const tint = isFocused ? theme.textPrimary : '#9CA3AF';
+
+            return (
+              <TouchableOpacity
+                key={route.key}
+                accessibilityRole="button"
+                accessibilityState={isFocused ? { selected: true } : {}}
+                accessibilityLabel={options.tabBarAccessibilityLabel ?? label}
+                testID={(options as any).tabBarTestID}
+                onPress={onPress}
+                onLongPress={onLongPress}
+                style={styles.tabItem}
+                activeOpacity={1}
+              >
                 {route.name === 'Profile' ? (
                   <View style={styles.profileAvatarContainer}>
                     {user?.avatar_url ? (
@@ -178,7 +197,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
                       <View
                         style={[
                           styles.profileAvatarPlaceholder,
-                          { backgroundColor: isFocused ? theme.primary : '#9CA3AF' },
+                          { backgroundColor: isFocused ? theme.textPrimary : '#9CA3AF' },
                         ]}
                       >
                         <Text style={styles.profileAvatarInitial}>
@@ -207,11 +226,11 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
                     )}
                   </View>
                 )}
-              </Animated.View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -225,21 +244,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIDE_INSET,
     backgroundColor: 'transparent',
   },
-  pillContainer: {
+  pillShadow: {
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  pillGlass: {
     flexDirection: 'row',
     alignItems: 'center',
     height: TAB_BAR_HEIGHT,
     borderRadius: 18,
     paddingHorizontal: PILL_PADDING,
-    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: 'rgba(255, 255, 255, 0.55)',
     position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
+    backgroundColor: 'transparent',
+  },
+  androidGlassFallback: {
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+  },
+  glassTint: {
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  glassSheen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
   },
   indicator: {
     position: 'absolute',
@@ -249,7 +285,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: 'rgba(31, 41, 55, 0.14)',
+    backgroundColor: 'rgba(255, 255, 255, 0.35)',
   },
   indicatorSheen: {
     position: 'absolute',
@@ -270,7 +307,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
+    borderColor: 'rgba(229, 231, 235, 0.9)',
   },
   profileAvatar: {
     width: '100%',

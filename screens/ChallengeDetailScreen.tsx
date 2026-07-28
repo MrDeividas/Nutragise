@@ -28,6 +28,7 @@ import {
   ChallengeWithDetails,
   ChallengeProgress,
   ChallengeSubmission,
+  ChallengeRequirement,
   getChallengeWeekNumber,
   getCurrentWeekForRecurringChallenge,
   isRecurringChallenge,
@@ -36,7 +37,7 @@ import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
 import UpgradeToProModal from '../components/UpgradeToProModal';
-import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero } from '../lib/challengeTitleUtils';
+import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero, challengeAllowsGalleryProofUpload } from '../lib/challengeTitleUtils';
 import { localDeviceCalendarYmd } from '../lib/timeService';
 
 const { width, height: windowHeight } = Dimensions.get('window');
@@ -77,6 +78,89 @@ function countDistinctSubmissionDaysInRange(
     if (d && d >= startStr && d <= endStr) set.add(d);
   }
   return set.size;
+}
+
+function getSortedRequirements(challenge: ChallengeWithDetails): ChallengeRequirement[] {
+  const reqs = challenge.requirements ?? [];
+  return [...reqs].sort((a, b) => (a.requirement_order ?? 0) - (b.requirement_order ?? 0));
+}
+
+function getPrimaryRequirement(challenge: ChallengeWithDetails): ChallengeRequirement | null {
+  const sorted = getSortedRequirements(challenge);
+  return sorted[0] ?? null;
+}
+
+function getScheduleActivityLabel(challenge: ChallengeWithDetails): string {
+  const primary = getPrimaryRequirement(challenge);
+  const text = primary?.requirement_text?.trim();
+  if (text) return text;
+  const title = getChallengeDisplayTitle(challenge.title)?.trim();
+  if (title) return title;
+  return 'Daily check-in';
+}
+
+function getWeekActivityCountLabel(challenge: ChallengeWithDetails): string {
+  const primary = getPrimaryRequirement(challenge);
+  const frequency = primary?.frequency ?? 'daily';
+  if (frequency === 'weekly') {
+    const count = Math.max(1, primary?.target_count ?? 1);
+    return `${count} ${count === 1 ? 'Activity' : 'Activities'}`;
+  }
+  return '7 Activities';
+}
+
+function getHowToWinText(challenge: ChallengeWithDetails): string {
+  const reqs = getSortedRequirements(challenge);
+  const hasPot = (challenge.entry_fee ?? 0) > 0;
+  const missConsequence = hasPot
+    ? 'Missing required check-ins will disqualify you from winning the pot.'
+    : 'Missing required check-ins means you will not complete the challenge.';
+
+  if (reqs.length === 0) {
+    const fallback = challenge.description?.trim();
+    if (fallback) {
+      return `${fallback} ${missConsequence}`;
+    }
+    return `Complete the challenge activities for the full duration. ${missConsequence}`;
+  }
+
+  const lines = reqs.map((req) => {
+    const freq = req.frequency === 'weekly' ? 'weekly' : 'daily';
+    const target = req.target_count > 0 ? `, ${req.target_count} required` : '';
+    return `• ${req.requirement_text} (${freq}${target})`;
+  });
+
+  return `Complete the following to finish this challenge:\n${lines.join('\n')}\n\n${missConsequence}`;
+}
+
+function getHowToVerifyText(challenge: ChallengeWithDetails): string {
+  const primary = getPrimaryRequirement(challenge);
+  const requirementHint = primary?.requirement_text?.trim();
+  const frequency = primary?.frequency ?? 'daily';
+  const period = frequency === 'weekly' ? 'week' : 'day';
+  const allowsGallery = challengeAllowsGalleryProofUpload(challenge.title);
+  const type = challenge.verification_type ?? 'photo';
+
+  if (type === 'manual') {
+    return requirementHint
+      ? `Submit proof for review: ${requirementHint}. The host will verify your submissions manually.`
+      : 'Submit your proof for host review. Manual verification is used for this challenge.';
+  }
+
+  if (type === 'automatic') {
+    return requirementHint
+      ? `Progress is tracked automatically for: ${requirementHint}. Keep doing the activity for the full challenge duration.`
+      : 'Progress is tracked automatically. Keep completing the challenge activity for the full duration.';
+  }
+
+  // photo (default)
+  const subject = requirementHint
+    ? `Take a clear photo that proves: ${requirementHint}.`
+    : 'Take a clear verification photo for each required check-in.';
+  const galleryNote = allowsGallery
+    ? ' You may upload a screenshot or gallery photo for this challenge.'
+    : ' Photos should be clear and show the date when possible.';
+  return `${subject}${galleryNote} You can submit one verification photo per ${period} during the challenge period.`;
 }
 
 function upsertSubmissionByDate(
@@ -869,7 +953,7 @@ export default function ChallengeDetailScreen({ route }: any) {
       <CustomBackground>
         <SafeAreaView style={[styles.container, { backgroundColor: '#FFFFFF' }]} edges={['top', 'left', 'right']}>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <ActivityIndicator size="large" color={theme.textPrimary} />
             <Text style={[styles.loadingText, { color: theme.textPrimary }]}>
               Loading challenge details...
             </Text>
@@ -894,9 +978,9 @@ export default function ChallengeDetailScreen({ route }: any) {
     );
   }
 
-  /** #RRGGBBAA-style tint from brand primary for soft fills (e.g. banners, day chip area). */
+  /** Soft fill tint from heading/text color (matches Challenge page accents). */
   const primarySoftBg =
-    theme.primary.startsWith('#') && theme.primary.length === 7 ? `${theme.primary}1A` : `${theme.primary}33`;
+    theme.textPrimary.startsWith('#') && theme.textPrimary.length === 7 ? `${theme.textPrimary}1A` : `${theme.textPrimary}33`;
 
   return (
     <CustomBackground>
@@ -972,7 +1056,7 @@ export default function ChallengeDetailScreen({ route }: any) {
               borderColor: challenge.approval_status === 'pending'
                 ? '#F59E0B'
                 : challenge.approval_status === 'approved'
-                ? theme.primary
+                ? theme.textPrimary
                 : '#EF4444',
             }
           ]}>
@@ -989,7 +1073,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                 challenge.approval_status === 'pending'
                   ? '#F59E0B'
                   : challenge.approval_status === 'approved'
-                  ? theme.primary
+                  ? theme.textPrimary
                   : '#EF4444'
               }
             />
@@ -1000,7 +1084,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   color: challenge.approval_status === 'pending'
                     ? '#F59E0B'
                     : challenge.approval_status === 'approved'
-                    ? theme.primary
+                    ? theme.textPrimary
                     : '#EF4444',
                 }
               ]}>
@@ -1037,7 +1121,7 @@ export default function ChallengeDetailScreen({ route }: any) {
               </View>
               <TouchableOpacity 
                 onPress={() => navigation.navigate('Wallet')}
-                style={[styles.addFundsButton, { backgroundColor: theme.primary }]}
+                style={[styles.addFundsButton, { backgroundColor: theme.textPrimary }]}
               >
                 <Text style={styles.addFundsButtonText}>Add Funds</Text>
               </TouchableOpacity>
@@ -1053,11 +1137,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'about' ? theme.primary : theme.textSecondary }
+              { color: activeTab === 'about' ? theme.textPrimary : theme.textSecondary }
             ]}>
               About
             </Text>
-            {activeTab === 'about' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
+            {activeTab === 'about' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -1066,11 +1150,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'schedule' ? theme.primary : theme.textSecondary }
+              { color: activeTab === 'schedule' ? theme.textPrimary : theme.textSecondary }
             ]}>
               Schedule
             </Text>
-            {activeTab === 'schedule' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
+            {activeTab === 'schedule' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -1079,11 +1163,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'details' ? theme.primary : theme.textSecondary }
+              { color: activeTab === 'details' ? theme.textPrimary : theme.textSecondary }
             ]}>
               Details
             </Text>
-            {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
+            {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -1092,11 +1176,11 @@ export default function ChallengeDetailScreen({ route }: any) {
           >
             <Text style={[
               styles.tabText, 
-              { color: activeTab === 'participants' ? theme.primary : theme.textSecondary }
+              { color: activeTab === 'participants' ? theme.textPrimary : theme.textSecondary }
             ]}>
               Participants
             </Text>
-            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />}
+            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
           </TouchableOpacity>
         </View>
 
@@ -1106,7 +1190,7 @@ export default function ChallengeDetailScreen({ route }: any) {
             {/* Challenge Info */}
             <View style={styles.challengeInfo}>
               {/* Category Tag */}
-              <View style={[styles.categoryTag, { backgroundColor: theme.primary }]}>
+              <View style={[styles.categoryTag, { backgroundColor: theme.textPrimary }]}>
                 <Text style={styles.categoryText}>{challenge.category}</Text>
               </View>
 
@@ -1139,8 +1223,8 @@ export default function ChallengeDetailScreen({ route }: any) {
 
               {/* Time Remaining */}
               <View style={[styles.daysRemainingContainer, { backgroundColor: primarySoftBg }]}>
-                <Ionicons name="calendar-outline" size={16} color={theme.primary} />
-                <Text style={[styles.daysRemainingText, { color: theme.primary }]}>
+                <Ionicons name="calendar-outline" size={16} color={theme.textPrimary} />
+                <Text style={[styles.daysRemainingText, { color: theme.textPrimary }]}>
                   {(() => {
                     const timeRemaining = getTimeRemaining();
                     if (timeRemaining.ended) {
@@ -1173,7 +1257,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                 Hosted by
               </Text>
               <View style={[styles.hostContainer, { backgroundColor: theme.cardBackground }]}>
-                <View style={[styles.hostAvatar, { backgroundColor: theme.primary }]}>
+                <View style={[styles.hostAvatar, { backgroundColor: theme.textPrimary }]}>
                   <Ionicons name="person" size={24} color="#FFFFFF" />
                 </View>
                 <View style={styles.hostInfo}>
@@ -1241,7 +1325,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                       </Text>
                       <View style={styles.weekSeparator} />
                       <Text style={[styles.weekActivityCount, { color: theme.textSecondary }]}>
-                        7 Activities
+                        {getWeekActivityCountLabel(challenge)}
                       </Text>
                     </View>
                     
@@ -1301,11 +1385,11 @@ export default function ChallengeDetailScreen({ route }: any) {
                               {dayName} • Activity {dayIndex + 1}
                             </Text>
                             <Text style={[styles.activityName, { color: theme.textPrimary }]}>
-                              10k steps a day
+                              {getScheduleActivityLabel(challenge)}
                             </Text>
                           </View>
                           {hasSubmission && (
-                            <View style={[styles.submissionCheck, { backgroundColor: theme.primary }]}>
+                            <View style={[styles.submissionCheck, { backgroundColor: theme.textPrimary }]}>
                               <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                             </View>
                           )}
@@ -1329,8 +1413,8 @@ export default function ChallengeDetailScreen({ route }: any) {
             <View style={styles.detailsContainer}>
               {/* Daily Proof Warning (if challenge has entry fee and user is participating) */}
               {(challenge.entry_fee ?? 0) > 0 && isParticipating && (
-                <View style={[styles.warningCard, { backgroundColor: primarySoftBg, borderColor: theme.primary, marginBottom: 16 }]}>
-                  <Ionicons name="warning" size={20} color={theme.primary} />
+                <View style={[styles.warningCard, { backgroundColor: primarySoftBg, borderColor: theme.textPrimary, marginBottom: 16 }]}>
+                  <Ionicons name="warning" size={20} color={theme.textPrimary} />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={[styles.warningTitle, { color: theme.textPrimary }]}>
                       Daily Proof Required
@@ -1347,7 +1431,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   How to Win
                 </Text>
                 <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                  Complete all daily activities for the entire challenge duration. Each day you must complete the required 10k steps and take a verification photo. Missing any day will disqualify you from winning the pot.
+                  {getHowToWinText(challenge)}
                 </Text>
               </View>
 
@@ -1356,18 +1440,20 @@ export default function ChallengeDetailScreen({ route }: any) {
                   How to Verify
                 </Text>
                 <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                  Take a photo of your step counter or fitness app showing 10,000+ steps each day. Photos must be clear and show the date. You can submit one verification photo per day during the challenge period.
+                  {getHowToVerifyText(challenge)}
                 </Text>
               </View>
 
-              <View style={styles.detailSection}>
-                <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
-                  How the Pot is Split
-                </Text>
-                <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                  At the end of the challenge, all participants who completed every single day will split the total pot equally. If you miss any day, you forfeit your entry fee and are not eligible for any winnings. The more people who complete the challenge, the bigger the pot!
-                </Text>
-              </View>
+              {(challenge.entry_fee ?? 0) > 0 && (
+                <View style={styles.detailSection}>
+                  <Text style={[styles.detailTitle, { color: theme.textPrimary }]}>
+                    How the Pot is Split
+                  </Text>
+                  <Text style={[styles.detailText, { color: theme.textSecondary }]}>
+                    At the end of the challenge, all participants who completed every single day will split the total pot equally. If you miss any day, you forfeit your entry fee and are not eligible for any winnings. The more people who complete the challenge, the bigger the pot!
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -1392,7 +1478,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                       style={[
                         styles.dayChip,
                         isSelected
-                          ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                          ? { backgroundColor: theme.textPrimary, borderColor: theme.textPrimary }
                           : { backgroundColor: theme.cardBackground, borderColor: theme.border },
                         isFuture && { opacity: 0.4 },
                       ]}
@@ -1401,7 +1487,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                         {d.label}
                       </Text>
                       {d.isToday && !isSelected && (
-                        <View style={[styles.dayChipDot, { backgroundColor: theme.primary }]} />
+                        <View style={[styles.dayChipDot, { backgroundColor: theme.textPrimary }]} />
                       )}
                     </TouchableOpacity>
                   );
@@ -1497,8 +1583,8 @@ export default function ChallengeDetailScreen({ route }: any) {
                           </Text>
                           {hasSubmittedOnDay && (
                             <View style={styles.completedTodayBadge}>
-                              <Ionicons name="checkmark-circle" size={15} color={theme.primary} />
-                              <Text style={[styles.completedTodayText, { color: theme.primary }]}>
+                              <Ionicons name="checkmark-circle" size={15} color={theme.textPrimary} />
+                              <Text style={[styles.completedTodayText, { color: theme.textPrimary }]}>
                                 {selectedDayObj?.isToday ? 'Today' : '✓'}
                               </Text>
                             </View>
@@ -1512,7 +1598,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                             color: selectedIsFuture
                               ? theme.textSecondary
                               : hasSubmittedOnDay
-                                ? theme.primary
+                                ? theme.textPrimary
                                 : theme.textSecondary,
                           }}
                         >
@@ -1631,7 +1717,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                     {
                       backgroundColor:
                         hasSubmittedToday || (hasStarted && !photoActionLocked)
-                          ? theme.primary
+                          ? theme.textPrimary
                           : theme.textSecondary,
                       opacity: hasSubmittedToday ? 1 : photoActionLocked ? 0.6 : 1,
                     },
@@ -1667,7 +1753,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                     style={{ alignItems: 'center', marginTop: 8 }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>
+                    <Text style={{ color: theme.textPrimary, fontSize: 13, fontWeight: '600' }}>
                       ↻  Replace today's photo
                     </Text>
                   </TouchableOpacity>
@@ -1677,7 +1763,7 @@ export default function ChallengeDetailScreen({ route }: any) {
           })()
         ) : (
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.primary }]}
+            style={[styles.actionButton, { backgroundColor: theme.textPrimary }]}
             onPress={handleJoinChallenge}
             disabled={joining}
           >
