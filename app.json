@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -109,6 +109,8 @@
     "owner": "deividasg1",
     "runtimeVersion": "1.0.0",
     "updates": {
+      "enabled": false,
+      "checkAutomatically": "NEVER",
       "url": "https://u.expo.dev/9e8404c1-7a71-40b3-a796-f53fde11b798"
     }
   }

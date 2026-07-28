@@ -9,8 +9,28 @@ type AppExtra = {
   deepseekApiKey?: string;
 };
 
+/**
+ * Read expo.extra from every place store/TestFlight builds may put it.
+ * With expo-updates enabled, Constants.expoConfig can be empty while the
+ * embedded manifest still has the values from app.config.js.
+ */
 function getExtra(): AppExtra {
-  return (Constants.expoConfig?.extra ?? {}) as AppExtra;
+  const anyConstants = Constants as any;
+  const candidates = [
+    Constants.expoConfig?.extra,
+    anyConstants.manifest2?.extra,
+    anyConstants.manifest?.extra,
+    anyConstants.easConfig?.extra,
+    anyConstants.manifest2?.extra?.expoClient?.extra,
+    anyConstants.manifest?.extra?.expoClient?.extra,
+  ];
+
+  for (const extra of candidates) {
+    if (extra && typeof extra === 'object') {
+      return extra as AppExtra;
+    }
+  }
+  return {};
 }
 
 function read(value: string | undefined): string {

@@ -52,11 +52,20 @@ import { CreateCustomHabitInput, HabitCategory, HabitScheduleType, CustomHabit, 
 import InviteFriendModal from '../components/InviteFriendModal';
 import { habitInviteService } from '../lib/habitInviteService';
 import { walletService } from '../lib/walletService';
-import AppleHealthKit, { HealthValue, HealthKitPermissions } from 'react-native-health';
 import { habitsService } from '../lib/habitsService';
 import { workoutSplitService } from '../lib/workoutSplitService';
 import { pillarProgressService } from '../lib/pillarProgressService';
 import { challengePotService } from '../lib/challengePotService';
+
+// Soft-load HealthKit — missing native module must not crash the Action tab on TestFlight
+let AppleHealthKit: any = null;
+try {
+  AppleHealthKit = require('react-native-health').default ?? require('react-native-health');
+} catch {
+  AppleHealthKit = null;
+}
+type HealthValue = any;
+type HealthKitPermissions = any;
 
 
 

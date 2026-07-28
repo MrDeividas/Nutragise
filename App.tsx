@@ -645,51 +645,59 @@ export default function App() {
     );
   }
 
+  const stripeKey = stripeService.getPublishableKey();
+  const appTree = (
+    <SafeAreaProvider>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+      <NavigationContainer
+        ref={navigationRef}
+        theme={{
+          dark: false,
+          colors: {
+            primary: '#129490',
+            background: 'transparent',
+            card: 'transparent',
+            text: '#1f2937',
+            border: '#e5e7eb',
+            notification: '#ff3b30',
+          },
+          fonts: {
+            regular: {
+              fontFamily: 'System',
+              fontWeight: '400',
+            },
+            medium: {
+              fontFamily: 'System',
+              fontWeight: '500',
+            },
+            bold: {
+              fontFamily: 'System',
+              fontWeight: '700',
+            },
+            heavy: {
+              fontFamily: 'System',
+              fontWeight: '900',
+            },
+          },
+        }}
+      >
+        <Suspense fallback={<LoadingScreen />}>
+          {user && onboardingComplete === true ? <AppStack /> :
+           user && onboardingComplete === false ? <OnboardingStack /> :
+           <AuthStack />}
+        </Suspense>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+
   return (
     <CustomBackground>
-      <StripeProvider publishableKey={stripeService.getPublishableKey()}>
-      <SafeAreaProvider>
-        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
-        <NavigationContainer
-          ref={navigationRef}
-          theme={{
-            dark: false,
-            colors: {
-              primary: '#129490',
-              background: 'transparent',
-              card: 'transparent',
-              text: '#1f2937',
-              border: '#e5e7eb',
-              notification: '#ff3b30',
-            },
-            fonts: {
-              regular: {
-                fontFamily: 'System',
-                fontWeight: '400',
-              },
-              medium: {
-                fontFamily: 'System',
-                fontWeight: '500',
-              },
-              bold: {
-                fontFamily: 'System',
-                fontWeight: '700',
-              },
-              heavy: {
-                fontFamily: 'System',
-                fontWeight: '900',
-              },
-            },
-          }}
-        >
-          <Suspense fallback={<LoadingScreen />}>
-            {user && onboardingComplete === true ? <AppStack /> : 
-             user && onboardingComplete === false ? <OnboardingStack /> : 
-             <AuthStack />}
-          </Suspense>
-        </NavigationContainer>
-      </SafeAreaProvider>
-      </StripeProvider>
+      {/* Empty publishable keys can crash Stripe's native init on TestFlight */}
+      {stripeKey ? (
+        <StripeProvider publishableKey={stripeKey}>{appTree}</StripeProvider>
+      ) : (
+        appTree
+      )}
     </CustomBackground>
   );
 }
