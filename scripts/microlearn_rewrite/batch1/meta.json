@@ -1,0 +1,367 @@
+[
+  {
+    "id": "64b1dcde-1820-4546-aecf-35a4a87bd17a",
+    "title": "Born to Run",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780307279187-L.jpg",
+    "short_description": "McDougall\u2019s Tarahumara odyssey \u2014 ultrarunning, barefoot biomechanics, and the joy of running as a human birthright.",
+    "chapter_titles": [
+      "Chapter 1: The question that starts it",
+      "Chapter 2: Tarahumara example",
+      "Chapter 3: Born to run thesis",
+      "Chapter 4: Form cues",
+      "Chapter 5: Shoes and feet",
+      "Chapter 6: Ultrarunning characters",
+      "Chapter 7: Leadville and races",
+      "Chapter 8: Diet tales",
+      "Chapter 9: Injury humility",
+      "Chapter 10: Joy as metric",
+      "Chapter 11: Science and story",
+      "Chapter 12: Your canyon"
+    ],
+    "questions": [
+      {
+        "id": "20a74ad6-92f5-4383-8178-5fde34f58197",
+        "question_text": "What central question drives Born to Run?",
+        "option_a": "How to never move again",
+        "option_b": "Why many modern runners get hurt while some cultures run far with joy",
+        "option_c": "Only shoe brand rankings",
+        "option_d": "How to skip community",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "7442390f-1d88-4468-8ebf-e216065cffa0",
+        "question_text": "What form ideas does the book popularize?",
+        "option_a": "Always overstride hard",
+        "option_b": "Softer landings, quicker cadence, less overstride \u2014 change gradually",
+        "option_c": "Ignore all pain always",
+        "option_d": "Only sprint form",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "9405fbdc-c933-45e9-8f6f-db5a4a41078c",
+        "question_text": "Footwear lesson from the cultural wave?",
+        "option_a": "Switch to minimalist overnight always",
+        "option_b": "Strengthen feet gradually \u2014 avoid dogmatic overnight transitions",
+        "option_c": "Shoes never matter",
+        "option_d": "Barefoot on highways daily",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "5a5ef265-81b1-4416-9874-4d52a97c8f4a",
+        "question_text": "What metric helps adherence?",
+        "option_a": "Only suffering",
+        "option_b": "Joy alongside mileage \u2014 design play and community",
+        "option_c": "Never run with friends",
+        "option_d": "Only treadmill screens",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "084f6c3d-3686-4b9d-a88b-728500fdf606",
+        "question_text": "Best way to use the book\u2019s science claims?",
+        "option_a": "As unchangeable religion",
+        "option_b": "With curiosity \u2014 update as evidence and your body feedback evolve",
+        "option_c": "Ignore all caution",
+        "option_d": "Only copy ultramarathon week one",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "cb35bb5c-3ed0-4e53-8790-8a91930bd805",
+    "title": "The Courage to Be Disliked",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/id/15129220-L.jpg",
+    "short_description": "Adlerian psychology as dialogue \u2014 separate tasks, discard the desire for recognition, and live in the present community.",
+    "chapter_titles": [
+      "Chapter 1: Dialogue as method",
+      "Chapter 2: Deny trauma determinism carefully",
+      "Chapter 3: Teleology over etiology alone",
+      "Chapter 4: All problems interpersonal",
+      "Chapter 5: Task separation",
+      "Chapter 6: Freedom and being disliked",
+      "Chapter 7: Recognition hunger",
+      "Chapter 8: Horizontal relationships",
+      "Chapter 9: Community feeling",
+      "Chapter 10: Here and now",
+      "Chapter 11: Courage rehearse",
+      "Chapter 12: Live the dialogue"
+    ],
+    "questions": [
+      {
+        "id": "3bc0d554-076d-4fc3-9b9b-80076fbfc59b",
+        "question_text": "What does task separation mean?",
+        "option_a": "Never help anyone",
+        "option_b": "Own your tasks and stop controlling others\u2019 tasks/feelings",
+        "option_c": "Only parents have tasks",
+        "option_d": "Avoid all relationships",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "62fee5ca-2609-4f4c-a47d-a7551897425c",
+        "question_text": "Why courage to be disliked?",
+        "option_a": "To be cruel freely",
+        "option_b": "Because needing everyone\u2019s approval makes you unfree",
+        "option_c": "Because hate is the goal",
+        "option_d": "To avoid contribution",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "7a7312cd-17cb-420c-9050-41bf28bad150",
+        "question_text": "Horizontal relationships are?",
+        "option_a": "Ranking people superior/inferior",
+        "option_b": "Equal footing with different contributions",
+        "option_c": "Only workplace ladders",
+        "option_d": "Ignoring everyone",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "998a3e52-8fdc-4bcf-a35a-4efaf52966f3",
+        "question_text": "Community feeling emphasizes?",
+        "option_a": "Pure self-absorption",
+        "option_b": "Belonging through contribution to others",
+        "option_c": "Winning status wars",
+        "option_d": "Avoiding all groups",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "208dd8a9-479b-4d23-ab30-3d9fc6d0d66d",
+        "question_text": "Adlerian teleology asks?",
+        "option_a": "Only childhood dates",
+        "option_b": "What purpose/goal a behavior is aiming at now",
+        "option_c": "Never change",
+        "option_d": "Ignore goals",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "4f2f798b-b105-424d-8557-09410d89c5a4",
+    "title": "Never Split the Difference",
+    "duration_minutes": 31,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062407801-L.jpg",
+    "short_description": "FBI negotiator Chris Voss on tactical empathy \u2014 mirroring, labeling, calibrated questions, and never splitting the difference.",
+    "chapter_titles": [
+      "Chapter 1: Hostage skills for deal life",
+      "Chapter 2: Mirroring",
+      "Chapter 3: Labeling",
+      "Chapter 4: Calibrated questions",
+      "Chapter 5: The beauty of \u2018No\u2019",
+      "Chapter 6: That\u2019s right vs you\u2019re right",
+      "Chapter 7: Bending reality with empathy",
+      "Chapter 8: Black swans",
+      "Chapter 9: Voice and demeanor",
+      "Chapter 10: Bargaining without splitting mindlessly",
+      "Chapter 11: Email and digital deals",
+      "Chapter 12: Practice gym"
+    ],
+    "questions": [
+      {
+        "id": "dbe13af5-d107-456e-bd2a-bb44258e6fbc",
+        "question_text": "What is tactical empathy?",
+        "option_a": "Agreeing to everything",
+        "option_b": "Understanding someone\u2019s feelings/worldview to guide outcomes without becoming a doormat",
+        "option_c": "Ignoring emotions",
+        "option_d": "Always splitting 50/50",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "b6f0ccba-8ab1-4a9b-80db-02bf8c31f4ca",
+        "question_text": "What does mirroring mainly do?",
+        "option_a": "Mock people",
+        "option_b": "Prompt elaboration and information by reflecting their words",
+        "option_c": "End talks instantly",
+        "option_d": "Prove dominance",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "1064adef-eb62-4995-8ca2-96a9949aaae0",
+        "question_text": "Why can \u2018No\u2019 be useful?",
+        "option_a": "It always ends negotiation forever",
+        "option_b": "It feels safe and starts honest negotiation better than false yes",
+        "option_c": "It is always rude",
+        "option_d": "It replaces listening",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "61137ec7-67e9-4e84-8bd2-7a1882e1d8c2",
+        "question_text": "What phrase signals a breakthrough summary?",
+        "option_a": "You\u2019re right (dismissive)",
+        "option_b": "That\u2019s right",
+        "option_c": "Whatever",
+        "option_d": "Split it",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "280f86fa-9884-43d8-8965-faa026a701b5",
+        "question_text": "What are calibrated questions typically?",
+        "option_a": "Only yes/no traps",
+        "option_b": "How/what questions that steer while granting a sense of control",
+        "option_c": "Why attacks only",
+        "option_d": "Silent treatments only",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "cf613810-11bf-48f4-9837-7d65f252e2a2",
+    "title": "The Obstacle Is the Way",
+    "duration_minutes": 28,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591846352-L.jpg",
+    "short_description": "Holiday\u2019s Stoic playbook \u2014 perception, action, and will turn obstacles into the path.",
+    "chapter_titles": [
+      "Chapter 1: The formula",
+      "Chapter 2: Steady perception",
+      "Chapter 3: Courageous action",
+      "Chapter 4: Will and endurance",
+      "Chapter 5: Premeditation",
+      "Chapter 6: Turn to advantage",
+      "Chapter 7: Persist through iteration",
+      "Chapter 8: Altitudes of view",
+      "Chapter 9: Help others' obstacles",
+      "Chapter 10: Emotion as ally",
+      "Chapter 11: Practice gym",
+      "Chapter 12: Obstacle log"
+    ],
+    "questions": [
+      {
+        "id": "2390ff63-5072-4371-aa5e-b2d6d11d0a6d",
+        "question_text": "What triad structures the book?",
+        "option_a": "Fame, money, luck",
+        "option_b": "Perception, action, and will",
+        "option_c": "Ignore, deny, quit",
+        "option_d": "Only action forever",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "66cd7493-c149-4e2c-abf0-2360cdd8cbc4",
+        "question_text": "What is trained perception?",
+        "option_a": "Panic storytelling",
+        "option_b": "Seeing facts clearly without extra drama narratives",
+        "option_c": "Pretending problems aren\u2019t real",
+        "option_d": "Blaming only",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "b3136c2f-d38b-4dfc-8b24-bd569cdedbe2",
+        "question_text": "What should you do with constraints?",
+        "option_a": "Only resent them",
+        "option_b": "Ask what skill or invention they force \u2014 turn them to advantage",
+        "option_c": "Quit immediately always",
+        "option_d": "Ignore learning",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "eb643caf-84e7-4534-9543-bccaa763369b",
+        "question_text": "What is premeditatio malorum used for?",
+        "option_a": "Doom paralysis",
+        "option_b": "Anticipating setbacks to reduce shock and prepare if-then responses",
+        "option_c": "Avoiding all plans",
+        "option_d": "Guaranteeing failure",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "17e1e998-9685-4f06-acf9-909272bc40b5",
+        "question_text": "Will means?",
+        "option_a": "Bitterness forever",
+        "option_b": "Enduring what remains with courage while keeping virtue \u2014 including wise rest",
+        "option_c": "Never feeling",
+        "option_d": "Controlling others",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "88150993-dd34-44b3-b5d3-76046f50f895",
+    "title": "The Champion's Mind",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/id/14370897-L.jpg",
+    "short_description": "Sport psychologist Jim Afremow on thinking like a champion \u2014 focus, confidence, adversity, and mastery rituals.",
+    "chapter_titles": [
+      "Chapter 1: Sport psych toolkit",
+      "Chapter 2: Present-moment focus",
+      "Chapter 3: Confidence receipts",
+      "Chapter 4: Adversity response",
+      "Chapter 5: Body language loop",
+      "Chapter 6: Goal setting layered",
+      "Chapter 7: Mental imagery",
+      "Chapter 8: Pressure relish",
+      "Chapter 9: Team chemistry roles",
+      "Chapter 10: Daily mental hygiene",
+      "Chapter 11: Identity beyond scoreboard",
+      "Chapter 12: Game-day script"
+    ],
+    "questions": [
+      {
+        "id": "a4d71162-f707-478c-a3fd-3619b2652be0",
+        "question_text": "What builds real confidence here?",
+        "option_a": "Only empty pep talks",
+        "option_b": "Evidence from training receipts and preparation",
+        "option_c": "Ignoring practice",
+        "option_d": "Blaming refs always",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "1bb26f32-4938-4b7e-9af4-643a41819728",
+        "question_text": "Where should focus go under pressure?",
+        "option_a": "Past mistakes and future medals only",
+        "option_b": "Present controllable cues and next action",
+        "option_c": "Spectator noise",
+        "option_d": "Phone notifications",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "ae464e1d-6fb1-4933-836e-07fda03101f7",
+        "question_text": "What goal type owns the day?",
+        "option_a": "Only distant medals",
+        "option_b": "Process goals nested under performance and outcome goals",
+        "option_c": "No goals",
+        "option_d": "Only other people\u2019s goals",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "54394986-38a2-4383-99f3-485a7e84bbd9",
+        "question_text": "What is mental hygiene?",
+        "option_a": "Ignoring sleep",
+        "option_b": "Daily practices like journaling, imagery, sleep, and reset routines",
+        "option_c": "Only caffeine",
+        "option_d": "Trash talk",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "c8f5ad22-5954-4c78-9e0b-687a63ac30aa",
+        "question_text": "How treat pressure?",
+        "option_a": "Always as threat to avoid",
+        "option_b": "As privilege to relish with trained cues",
+        "option_c": "As reason to quit",
+        "option_d": "As irrelevant",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

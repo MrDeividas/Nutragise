@@ -45,6 +45,8 @@ class PostsService {
           daily_post_id: dailyPost.id,
           content: postData.content,
           goal_id: postData.goal_id,
+          challenge_id: postData.challenge_id ?? null,
+          challenge_title: postData.challenge_title ?? null,
           date: dailyPostDate,
           photos: postData.photos,
           habits_completed: postData.habits_completed,

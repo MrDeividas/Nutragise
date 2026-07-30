@@ -19,7 +19,7 @@ import { useSocialStore } from '../state/socialStore';
 import { useGoalsStore } from '../state/goalsStore';
 import { useActionStore } from '../state/actionStore';
 import { socialService, Profile } from '../lib/socialService';
-import { pointsService } from '../lib/pointsService';
+import { pointsService, LEVEL_TITLES } from '../lib/pointsService';
 import { progressService } from '../lib/progressService';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { calculateCompletionPercentage } from '../lib/goalHelpers';
@@ -95,7 +95,8 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   });
   const [challengeStats, setChallengeStats] = useState({
     wins: 0,
-    losses: 0
+    losses: 0,
+    entered: 0,
   });
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [showAchievementModal, setShowAchievementModal] = useState(false);
@@ -224,7 +225,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
       }
       
       if (!participations || participations.length === 0) {
-        setChallengeStats({ wins: 0, losses: 0 });
+        setChallengeStats({ wins: 0, losses: 0, entered: 0 });
         return;
       }
       
@@ -255,7 +256,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         }
       });
       
-      setChallengeStats({ wins, losses });
+      setChallengeStats({ wins, losses, entered: participations.length });
     } catch (error) {
       console.error('Error loading challenge stats:', error);
     }
@@ -553,7 +554,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <ActivityIndicator size="large" color={"#1f2937"} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading profile...
           </Text>
@@ -671,7 +672,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
                 )}
               </View>
               <Text style={[styles.profileLocation, { color: theme.textSecondary }]}>
-                England, London
+                {LEVEL_TITLES[Math.max(0, Math.min(LEVEL_TITLES.length - 1, currentLevel - 1))] || 'Beginner'}
               </Text>
             </View>
             <TouchableOpacity 
@@ -710,15 +711,15 @@ export default function UserProfileScreen({ navigation, route }: Props) {
               <View style={styles.expandedProfileInfo}>
               <View style={styles.expandedProfileRow}>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Wins</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Challenges</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    {challengeStats.wins}
+                    {challengeStats.entered}
                   </Text>
                 </View>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Losses</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Completed</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    {challengeStats.losses}
+                    {challengeStats.wins}
                   </Text>
                 </View>
                 <TouchableOpacity 
@@ -740,21 +741,24 @@ export default function UserProfileScreen({ navigation, route }: Props) {
               
               <View style={styles.expandedProfileRow}>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Competitions</Text>
-                  <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    {challengeStats.wins + challengeStats.losses}
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Location</Text>
+                  <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]} numberOfLines={1}>
+                    {(profile as any)?.location || 'England, London'}
                   </Text>
                 </View>
-                <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Awards</Text>
+                <TouchableOpacity
+                  style={styles.expandedProfileItem}
+                  onPress={() => navigation.navigate('Achievements', { userId })}
+                >
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Achievements</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    0
+                    {badgeUnlockedCount}
                   </Text>
-                </View>
+                </TouchableOpacity>
                 <View style={styles.expandedProfileItem}>
-                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>EXP</Text>
+                  <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Level</Text>
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    {totalPoints}
+                    {currentLevel}
                   </Text>
                 </View>
               </View>

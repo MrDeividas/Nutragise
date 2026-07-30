@@ -33,9 +33,9 @@ class PatternService {
   /**
    * Get weekly patterns for a specific habit
    */
-  async getWeeklyPatterns(userId: string, habitType: string, weeks: number = 4): Promise<PatternData> {
+  async getWeeklyPatterns(userId: string, habitType: string, days: number = 28): Promise<PatternData> {
     try {
-      const patterns = await analyticsService.calculateWeeklyPatterns(userId, habitType, weeks);
+      const patterns = await analyticsService.calculateWeeklyPatterns(userId, habitType, days);
       
       return {
         peakDay: patterns.peakDay,
@@ -74,12 +74,12 @@ class PatternService {
   async getPatternAnalytics(userId: string): Promise<PatternAnalytics> {
     try {
       const [sleepPatterns, waterPatterns, runPatterns, gymPatterns, reflectPatterns, coldShowerPatterns] = await Promise.all([
-        this.getWeeklyPatterns(userId, 'sleep', 4),
-        this.getWeeklyPatterns(userId, 'water', 4),
-        this.getWeeklyPatterns(userId, 'run', 4),
-        this.getWeeklyPatterns(userId, 'gym', 4),
-        this.getWeeklyPatterns(userId, 'reflect', 4),
-        this.getWeeklyPatterns(userId, 'cold_shower', 4)
+        this.getWeeklyPatterns(userId, 'sleep', 28),
+        this.getWeeklyPatterns(userId, 'water', 28),
+        this.getWeeklyPatterns(userId, 'run', 28),
+        this.getWeeklyPatterns(userId, 'gym', 28),
+        this.getWeeklyPatterns(userId, 'reflect', 28),
+        this.getWeeklyPatterns(userId, 'cold_shower', 28)
       ]);
 
       // Calculate overall consistency from ALL habits

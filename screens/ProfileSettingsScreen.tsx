@@ -241,7 +241,10 @@ export default function ProfileSettingsScreen() {
         console.warn('Failed to update users table:', usersError);
       }
 
-      await updateProfile({ username: newUsername.trim() });
+      await updateProfile({
+        username: newUsername.trim(),
+        bio: user.bio || '',
+      });
       setLastUsernameChange(new Date());
       setShowChangeUsername(false);
       setNewUsername('');

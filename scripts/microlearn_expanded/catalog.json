@@ -1,0 +1,1052 @@
+[
+  {
+    "title": "Atomic Habits",
+    "author": "James Clear",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780735211292-L.jpg",
+    "short_description": "James Clear\u2019s practical system for getting 1% better every day \u2014 identity, systems, the habit loop, and the Four Laws of Behavior Change.",
+    "questions": [
+      {
+        "question_text": "According to Atomic Habits, what do you 'fall to the level of'?",
+        "option_a": "Your motivation",
+        "option_b": "Your systems",
+        "option_c": "Your goals",
+        "option_d": "Your talent",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What are the four steps of Clear\u2019s habit loop?",
+        "option_a": "Plan, act, review, repeat",
+        "option_b": "Cue, craving, response, reward",
+        "option_c": "Trigger, habit, streak, identity",
+        "option_d": "Want, try, fail, restart",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the 1st law of behavior change for building a good habit?",
+        "option_a": "Make it obvious",
+        "option_b": "Make it rare",
+        "option_c": "Make it expensive",
+        "option_d": "Make it secret",
+        "correct_answer": "A"
+      },
+      {
+        "question_text": "What does Clear mean by identity-based habits?",
+        "option_a": "Copying a celebrity\u2019s routine",
+        "option_b": "Focusing on who you want to become, with actions as votes for that identity",
+        "option_c": "Only tracking outcomes",
+        "option_d": "Changing jobs first",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How do you break a bad habit using Clear\u2019s framework?",
+        "option_a": "Set a bigger goal",
+        "option_b": "Invert the Four Laws (e.g. make the cue invisible)",
+        "option_c": "Ignore the cue forever",
+        "option_d": "Only use willpower",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The 7 Habits of Highly Effective People",
+    "author": "Stephen R. Covey",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781982137137-L.jpg",
+    "short_description": "Stephen R. Covey\u2019s principle-centered classic: seven habits that move you from dependence to independence to interdependence.",
+    "questions": [
+      {
+        "question_text": "What is Habit 1 in Covey\u2019s framework?",
+        "option_a": "Sharpen the Saw",
+        "option_b": "Be Proactive",
+        "option_c": "Synergize",
+        "option_d": "Think Win/Win",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Habits 1\u20133 are mainly about achieving what?",
+        "option_a": "Interdependence",
+        "option_b": "Independence (private victory)",
+        "option_c": "Retirement",
+        "option_d": "Popularity",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does 'Begin with the End in Mind' emphasize?",
+        "option_a": "Multitasking",
+        "option_b": "A clear personal vision / mission before acting",
+        "option_c": "Ignoring values",
+        "option_d": "Working longer hours",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is Habit 5?",
+        "option_a": "Seek First to Understand, Then to Be Understood",
+        "option_b": "Always speak first",
+        "option_c": "Avoid conflict",
+        "option_d": "Put First Things First",
+        "correct_answer": "A"
+      },
+      {
+        "question_text": "What does Sharpen the Saw mean?",
+        "option_a": "Buy new tools only",
+        "option_b": "Renew physical, mental, social/emotional, and spiritual capacity",
+        "option_c": "Cut people out of your life",
+        "option_d": "Work without breaks",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5800,
+    "duration_minutes": 33
+  },
+  {
+    "title": "Think and Grow Rich",
+    "author": "Napoleon Hill",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781585424337-L.jpg",
+    "short_description": "Napoleon Hill\u2019s classic success philosophy \u2014 burning desire, faith, auto-suggestion, specialized knowledge, organized planning, and the Master Mind.",
+    "questions": [
+      {
+        "question_text": "What does Hill say is the starting point of all achievement?",
+        "option_a": "Luck",
+        "option_b": "A burning, definite desire",
+        "option_c": "A large inheritance",
+        "option_d": "A perfect resume",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is auto-suggestion in Think and Grow Rich?",
+        "option_a": "Asking strangers for advice once",
+        "option_b": "Self-suggestion that influences the subconscious through emotionalized repetition",
+        "option_c": "Ignoring your goals",
+        "option_d": "Only writing goals once",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "According to Hill, what should you do if a plan fails?",
+        "option_a": "Quit the desire",
+        "option_b": "Replace the plan and continue",
+        "option_c": "Hide the failure",
+        "option_d": "Wait a year without acting",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the Master Mind principle?",
+        "option_a": "Working entirely alone forever",
+        "option_b": "A harmonious alliance of minds toward a definite purpose",
+        "option_c": "Memorizing quotes",
+        "option_d": "Avoiding mentors",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How does Hill say faith can be strengthened?",
+        "option_a": "By never thinking about goals",
+        "option_b": "Through affirmation and repeated instructions to the subconscious",
+        "option_c": "By sleeping more only",
+        "option_d": "By avoiding written goals",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5600,
+    "duration_minutes": 32
+  },
+  {
+    "title": "The Psychology of Money",
+    "author": "Morgan Housel",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780857197689-L.jpg",
+    "short_description": "Morgan Housel\u2019s essays on how behavior \u2014 not spreadsheets \u2014 drives financial outcomes: compounding, enough, room for error, and being reasonable.",
+    "questions": [
+      {
+        "question_text": "What does Housel argue matters more than pure financial brilliance?",
+        "option_a": "Secret stock tips",
+        "option_b": "Behavior and temperament with money",
+        "option_c": "Knowing every tax loophole on day one",
+        "option_d": "Never saving",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why is compounding 'confounding' in Housel\u2019s telling?",
+        "option_a": "It only works for one year",
+        "option_b": "Its power is easy to underestimate and requires long, uninterrupted time",
+        "option_c": "It requires daily trading",
+        "option_d": "It only applies to cash under a mattress",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is 'room for error'?",
+        "option_a": "Ignoring all risk",
+        "option_b": "A margin of safety so you can survive when plans go wrong",
+        "option_c": "Maxing leverage",
+        "option_d": "Never investing",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What danger comes from never defining 'enough'?",
+        "option_a": "You save too much automatically",
+        "option_b": "Goalposts keep moving and risk-taking may never stop",
+        "option_c": "You become too humble",
+        "option_d": "Compounding speeds up too much",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "According to Housel, what can saving buy beyond purchases?",
+        "option_a": "Only status",
+        "option_b": "Flexibility and control over your time",
+        "option_c": "Guaranteed market timing",
+        "option_d": "Freedom from all emotions",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "Can't Hurt Me",
+    "author": "David Goggins",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/1544512287-L.jpg",
+    "short_description": "David Goggins\u2019 memoir of mental toughness \u2014 the Accountability Mirror, Taking Souls, Cookie Jar, 40% Rule, and callousing the mind.",
+    "questions": [
+      {
+        "question_text": "What is the Accountability Mirror?",
+        "option_a": "A compliment journal only",
+        "option_b": "A daily radical-honesty practice facing your real gaps and goals",
+        "option_c": "A fitness app",
+        "option_d": "Ignoring feedback",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the Cookie Jar for Goggins?",
+        "option_a": "A diet plan",
+        "option_b": "A mental stockpile of past victories and survived hardships",
+        "option_c": "A savings account",
+        "option_d": "A list of excuses",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does the 40% Rule claim?",
+        "option_a": "You should only ever use 40% effort",
+        "option_b": "When your mind says you\u2019re done, you may still have substantial capacity left",
+        "option_c": "Sleep is unnecessary",
+        "option_d": "Talent is 40% genetics only",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does 'callous the mind' mean in this book?",
+        "option_a": "Avoid all discomfort",
+        "option_b": "Strengthen mental toughness by repeatedly doing hard things",
+        "option_c": "Never set goals",
+        "option_d": "Only visualize success",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does Goggins argue about most people\u2019s capability usage?",
+        "option_a": "They always operate at 100%",
+        "option_b": "They often live far below their potential",
+        "option_c": "They should never train",
+        "option_d": "Limits are purely genetic and fixed",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Deep Work",
+    "author": "Cal Newport",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781455586691-L.jpg",
+    "short_description": "Cal Newport\u2019s case for focused, distraction-free work \u2014 deep vs shallow, four rules, depth philosophies, and the shutdown ritual.",
+    "questions": [
+      {
+        "question_text": "How does Newport define deep work?",
+        "option_a": "Answering email quickly",
+        "option_b": "Distraction-free concentration on cognitively demanding tasks",
+        "option_c": "Attending more meetings",
+        "option_d": "Multitasking on chat",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which depth philosophy uses a daily consistent block?",
+        "option_a": "Monastic only",
+        "option_b": "Rhythmic",
+        "option_c": "Never scheduling",
+        "option_d": "Only weekend retreats forever",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is Rule 2 in Deep Work?",
+        "option_a": "Answer every notification",
+        "option_b": "Embrace boredom to train focus",
+        "option_c": "Post more online",
+        "option_d": "Skip breaks forever",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is a shutdown ritual for?",
+        "option_a": "Starting more Slack channels",
+        "option_b": "Closing open loops and signaling the workday is done",
+        "option_c": "Checking email all night",
+        "option_d": "Avoiding planning",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does Newport say about deep work\u2019s economic value?",
+        "option_a": "It is useless today",
+        "option_b": "It is becoming more valuable while becoming rarer",
+        "option_c": "Only managers need it",
+        "option_d": "It is the same as shallow work",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4900,
+    "duration_minutes": 28
+  },
+  {
+    "title": "Mindset",
+    "author": "Carol S. Dweck",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780345472328-L.jpg",
+    "short_description": "Carol Dweck\u2019s research on fixed vs growth mindset \u2014 how beliefs about ability shape challenge-seeking, effort, failure, praise, and resilience.",
+    "questions": [
+      {
+        "question_text": "What is a fixed mindset?",
+        "option_a": "Belief that abilities can always grow",
+        "option_b": "Belief that qualities like intelligence are largely static",
+        "option_c": "Belief that effort never matters for anyone",
+        "option_d": "Belief that feedback is always wrong",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is a growth mindset?",
+        "option_a": "Avoiding all challenges",
+        "option_b": "Belief that abilities can be developed through effort, strategies, and learning",
+        "option_c": "Only caring about talent labels",
+        "option_d": "Never practicing",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How does a growth mindset typically view failure?",
+        "option_a": "As a permanent identity verdict",
+        "option_b": "As painful but useful information for improvement",
+        "option_c": "As proof you should quit forever",
+        "option_d": "As unrelated to learning",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What kind of praise better supports growth, according to Dweck\u2019s research themes?",
+        "option_a": "Only praising innate smartness",
+        "option_b": "Praising process: strategies, practice, and persistence",
+        "option_c": "Never giving feedback",
+        "option_d": "Praising only final rankings",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is a risk of a 'false' growth mindset?",
+        "option_a": "Reading books",
+        "option_b": "Praising effort alone without better strategies and real learning",
+        "option_c": "Sleeping enough",
+        "option_d": "Asking for help",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "The Power of Now",
+    "author": "Eckhart Tolle",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781577314806-L.jpg",
+    "short_description": "Eckhart Tolle\u2019s guide to presence \u2014 disidentifying from egoic thinking, psychological time, the pain-body, and returning to the Now.",
+    "questions": [
+      {
+        "question_text": "What does Tolle say is ultimately real and primary for peace?",
+        "option_a": "Only the future",
+        "option_b": "The present moment (the Now)",
+        "option_c": "Only memories",
+        "option_d": "Other people\u2019s opinions",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is psychological time in Tolle\u2019s teaching?",
+        "option_a": "A clock on the wall",
+        "option_b": "Living absorbed in past/future mental stories rather than the present",
+        "option_c": "Airport schedules",
+        "option_d": "Meditation timers only",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the pain-body?",
+        "option_a": "A gym injury only",
+        "option_b": "Accumulated emotional pain that can activate and feed on negativity",
+        "option_c": "A medical diagnosis for everyone",
+        "option_d": "A type of meditation cushion",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How does presence affect identification with pain?",
+        "option_a": "It always increases drama",
+        "option_b": "Observing without becoming the pain withdraws identification",
+        "option_c": "It requires arguing with every thought",
+        "option_d": "It means suppressing all feeling forever",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which practice fits Tolle\u2019s approach?",
+        "option_a": "Constant multitasking",
+        "option_b": "Anchoring attention in breath / inner body / present sensing",
+        "option_c": "Refreshing social feeds",
+        "option_d": "Replaying regrets all day",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "The Mountain Is You",
+    "author": "Brianna Wiest",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781949759228-L.jpg",
+    "short_description": "Brianna Wiest on transforming self-sabotage into self-mastery \u2014 internal mountains, triggers, emotional intelligence, identity death, and discomfort.",
+    "questions": [
+      {
+        "question_text": "How does Wiest reframe self-sabotage?",
+        "option_a": "As proof you are hopeless",
+        "option_b": "As often a form of self-protection that outlived its usefulness",
+        "option_c": "As purely genetic destiny",
+        "option_d": "As something to ignore",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the 'mountain' in the book\u2019s metaphor?",
+        "option_a": "Only other people",
+        "option_b": "Primarily internal obstacles and patterns you must climb through",
+        "option_c": "A literal hiking guide",
+        "option_d": "Your job title",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What do emotional triggers offer, according to this book\u2019s themes?",
+        "option_a": "Random noise only",
+        "option_b": "Information about wounds, beliefs, and needs",
+        "option_c": "Proof you should never feel",
+        "option_d": "A reason to quit growth",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why is discomfort important in Wiest\u2019s framing?",
+        "option_a": "Pain is the only goal",
+        "option_b": "Avoiding discomfort can mean avoiding the life you want",
+        "option_c": "Comfort always equals growth",
+        "option_d": "Discomfort means you chose wrong forever",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What attitude does the book favor toward changing sabotage patterns?",
+        "option_a": "Pure self-hatred",
+        "option_b": "Understanding plus responsibility and new aligned action",
+        "option_c": "Blame everyone else",
+        "option_d": "Wait for motivation only",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4400,
+    "duration_minutes": 25
+  },
+  {
+    "title": "The Subtle Art of Not Giving a F*ck",
+    "author": "Mark Manson",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062457714-L.jpg",
+    "short_description": "Mark Manson\u2019s counterintuitive guide to values \u2014 the backwards law, Feedback Loop from Hell, choosing what to care about, and responsibility over fault.",
+    "questions": [
+      {
+        "question_text": "What is the Feedback Loop from Hell?",
+        "option_a": "A workout plan",
+        "option_b": "Feeling bad, then judging yourself for feeling bad, which multiplies suffering",
+        "option_c": "A savings method",
+        "option_d": "A networking strategy",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does Manson say about 'not giving a f*ck'?",
+        "option_a": "Care about nothing forever",
+        "option_b": "Selectively care about what truly matters; stop wasting care everywhere",
+        "option_c": "Never feel emotions",
+        "option_d": "Avoid all responsibility",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which are closer to Manson\u2019s 'good values'?",
+        "option_a": "Always being right and endless pleasure-chasing",
+        "option_b": "Honesty, curiosity, and responsibility",
+        "option_c": "Never being wrong",
+        "option_d": "Constant performed positivity only",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the fault vs responsibility distinction?",
+        "option_a": "They are identical",
+        "option_b": "You may not be at fault for an event, but you are responsible for your response",
+        "option_c": "Responsibility means blaming yourself for everything",
+        "option_d": "Fault means you must fix others",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the backwards law idea in the book?",
+        "option_a": "Wanting only positivity can create more negativity; accepting struggle can help",
+        "option_b": "Always avoid hard things",
+        "option_c": "Success needs zero discomfort",
+        "option_d": "Feelings should be ignored permanently",
+        "correct_answer": "A"
+      }
+    ],
+    "target_words": 4400,
+    "duration_minutes": 25
+  },
+  {
+    "title": "Grit",
+    "author": "Angela Duckworth",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781501111105-L.jpg",
+    "short_description": "Angela Duckworth\u2019s research on grit: passion plus perseverance, effort counting twice, and the four psychological assets that build staying power.",
+    "questions": [
+      {
+        "question_text": "What is Duckworth\u2019s definition of grit?",
+        "option_a": "Talent plus luck",
+        "option_b": "Passion plus perseverance for long-term goals",
+        "option_c": "Working only when inspired",
+        "option_d": "Avoiding hard tasks",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "In Duckworth\u2019s formula, why does effort 'count twice'?",
+        "option_a": "Effort is irrelevant to skill",
+        "option_b": "Talent \u00d7 effort = skill, and skill \u00d7 effort = achievement",
+        "option_c": "Effort only builds talent",
+        "option_d": "Effort replaces purpose",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which four psychological assets does Duckworth link to growing grit?",
+        "option_a": "Fame, money, status, ease",
+        "option_b": "Interest, practice, purpose, and hope",
+        "option_c": "Speed, charisma, luck, networking",
+        "option_d": "Rest, avoidance, comfort, praise",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What characterizes deliberate practice?",
+        "option_a": "Only repeating easy skills for fun",
+        "option_b": "Stretch goals, concentration, feedback, and refinement",
+        "option_c": "Multitasking while practicing",
+        "option_d": "Avoiding all feedback",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does the Grit Scale primarily measure?",
+        "option_a": "IQ score",
+        "option_b": "Consistency of interests and perseverance of effort",
+        "option_c": "Physical strength",
+        "option_d": "Short-term mood",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "The Compound Effect",
+    "author": "Darren Hardy",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780981951249-L.jpg",
+    "short_description": "Darren Hardy on how small, smart choices compound into massive results \u2014 habits, momentum, influences, and acceleration.",
+    "questions": [
+      {
+        "question_text": "What is the core idea of The Compound Effect?",
+        "option_a": "One big breakthrough fixes everything",
+        "option_b": "Small smart choices + consistency + time create massive results",
+        "option_c": "Only talent matters",
+        "option_d": "Avoid tracking anything",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why does Hardy emphasize tracking choices?",
+        "option_a": "To shame yourself daily",
+        "option_b": "To reveal patterns self-deception hides",
+        "option_c": "Because measurement replaces action",
+        "option_d": "To impress others",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is 'Big Mo' in Hardy\u2019s framework?",
+        "option_a": "A financial product",
+        "option_b": "Momentum created by consistent action",
+        "option_c": "A type of mentor",
+        "option_d": "A diet plan",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which three influence categories does Hardy highlight?",
+        "option_a": "Luck, weather, astrology",
+        "option_b": "Input, associations, and environment",
+        "option_c": "Titles, salaries, awards",
+        "option_d": "Vacations, hobbies, naps",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "When does Hardy say you should accelerate?",
+        "option_a": "Before building any habits",
+        "option_b": "When results appear and the flywheel is already turning",
+        "option_c": "Only after retirement",
+        "option_d": "Never \u2014 coast instead",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4300,
+    "duration_minutes": 25
+  },
+  {
+    "title": "The Four Agreements",
+    "author": "Don Miguel Ruiz",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781878424310-L.jpg",
+    "short_description": "Don Miguel Ruiz\u2019s Toltec-inspired code: be impeccable with your word, don\u2019t take anything personally, don\u2019t make assumptions, and always do your best.",
+    "questions": [
+      {
+        "question_text": "What is the first agreement?",
+        "option_a": "Always be right",
+        "option_b": "Be impeccable with your word",
+        "option_c": "Never speak",
+        "option_d": "Win every argument",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does 'don\u2019t take anything personally' mean?",
+        "option_a": "Ignore all feedback forever",
+        "option_b": "Others\u2019 actions reflect them more than your worth",
+        "option_c": "Never set boundaries",
+        "option_d": "Agree with every insult",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How does Ruiz suggest you avoid assumptions?",
+        "option_a": "Mind-read better",
+        "option_b": "Ask questions and communicate clearly",
+        "option_c": "Assume the worst always",
+        "option_d": "Stay silent for years",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is true of 'always do your best'?",
+        "option_a": "Your best is identical every day",
+        "option_b": "Your best changes with circumstances; sincerity matters",
+        "option_c": "Only perfection counts",
+        "option_d": "Best means outworking everyone",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "In Ruiz\u2019s framing, what does childhood 'domestication' create?",
+        "option_a": "Only practical skills",
+        "option_b": "Unconscious fear-based agreements and inner judgment",
+        "option_c": "Permanent freedom",
+        "option_d": "Guaranteed success",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4200,
+    "duration_minutes": 24
+  },
+  {
+    "title": "Ikigai",
+    "author": "H\u00e9ctor Garc\u00eda & Francesc Miralles",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780143130727-L.jpg",
+    "short_description": "Garc\u00eda and Miralles on the Japanese idea of ikigai \u2014 a reason for being \u2014 and habits linked to longevity, flow, and joyful purpose.",
+    "questions": [
+      {
+        "question_text": "What does ikigai roughly mean?",
+        "option_a": "A strict diet only",
+        "option_b": "A reason for being / reason to get up",
+        "option_c": "A type of martial art",
+        "option_d": "A financial product",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What eating principle is associated with Okinawan longevity in the book?",
+        "option_a": "Eat until painfully full",
+        "option_b": "Hara hachi bu \u2014 stop around 80% full",
+        "option_c": "Skip all vegetables",
+        "option_d": "Only eat once a week",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How is flow related to ikigai?",
+        "option_a": "Flow means constant stress",
+        "option_b": "Absorbing challenge-skill balance reveals and fuels meaningful engagement",
+        "option_c": "Flow requires doing nothing",
+        "option_d": "Flow is only for athletes",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What do the authors suggest about retirement?",
+        "option_a": "Stop all activity immediately",
+        "option_b": "Stay active with purpose rather than abandoning contribution",
+        "option_c": "Never leave a job",
+        "option_d": "Purpose only exists at work",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which is one of the ten rules of ikigai?",
+        "option_a": "Fill every minute with hustle",
+        "option_b": "Live in the moment / follow your ikigai",
+        "option_c": "Avoid friends to stay focused",
+        "option_d": "Never go outside",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4300,
+    "duration_minutes": 25
+  },
+  {
+    "title": "How to Win Friends and Influence People",
+    "author": "Dale Carnegie",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780671027032-L.jpg",
+    "short_description": "Dale Carnegie\u2019s timeless classic on human relations \u2014 appreciation, genuine interest, names, listening, and leading without resentment.",
+    "questions": [
+      {
+        "question_text": "What does Carnegie advise instead of criticizing first?",
+        "option_a": "Public shaming",
+        "option_b": "Avoid criticism/condemnation/complaint; use sincere appreciation and better framing",
+        "option_c": "Silent treatment forever",
+        "option_d": "Argue until you win",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why does Carnegie emphasize a person\u2019s name?",
+        "option_a": "Names are legally required in chat",
+        "option_b": "A person\u2019s name is deeply important to them; remembering it shows respect",
+        "option_c": "Names replace listening",
+        "option_d": "Only celebrities care",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is meant by arousing an 'eager want'?",
+        "option_a": "Threaten people into action",
+        "option_b": "Frame requests in terms of the other person\u2019s interests and desires",
+        "option_c": "Hide your goal completely",
+        "option_d": "Only talk about yourself",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How should you handle being wrong, according to Carnegie?",
+        "option_a": "Never admit it",
+        "option_b": "Admit it quickly and emphatically",
+        "option_c": "Blame a teammate",
+        "option_d": "Change the subject forever",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is a key leadership principle for correcting others?",
+        "option_a": "Humiliate them publicly so they learn",
+        "option_b": "Praise first, save face, encourage improvement, invite ownership",
+        "option_c": "Only use written reprimands",
+        "option_d": "Ignore all mistakes",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5800,
+    "duration_minutes": 33
+  },
+  {
+    "title": "The Almanack of Naval Ravikant",
+    "author": "Eric Jorgenson",
+    "cover_image_url": "https://covers.openlibrary.org/b/id/10449931-L.jpg",
+    "short_description": "Eric Jorgenson\u2019s curated guide to Naval Ravikant\u2019s thinking on wealth, specific knowledge, leverage, judgment, and happiness.",
+    "questions": [
+      {
+        "question_text": "How does Naval distinguish wealth from status?",
+        "option_a": "They are identical",
+        "option_b": "Wealth is assets that earn while you sleep; status is zero-sum social rank",
+        "option_c": "Status creates all wealth",
+        "option_d": "Wealth is only cash in a wallet",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is specific knowledge?",
+        "option_a": "Whatever a standard school course teaches everyone",
+        "option_b": "Unique, hard-to-train knowledge that feels like play to you",
+        "option_c": "Memorizing trivia",
+        "option_d": "Only credentials from elite schools",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Which leverage forms does Naval call more permissionless?",
+        "option_a": "Only government jobs",
+        "option_b": "Code and media",
+        "option_c": "Only physical labor",
+        "option_d": "Only inheritance",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why is judgment so important in Naval\u2019s framework?",
+        "option_a": "Judgment never matters",
+        "option_b": "Leverage amplifies decisions, so clear thinking becomes extremely valuable",
+        "option_c": "Judgment replaces all skill",
+        "option_d": "Only short-term thinking counts",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How does Naval frame happiness?",
+        "option_a": "Only as buying more things",
+        "option_b": "As a skill related to peace, presence, and managing desire \u2014 aided by meditation",
+        "option_c": "As ignoring health",
+        "option_d": "As winning status fights",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "The One Thing",
+    "author": "Gary Keller",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781885167774-L.jpg",
+    "short_description": "Gary Keller\u2019s focus classic: the Focusing Question, successive dominoes, time blocking, and going small to achieve big results.",
+    "questions": [
+      {
+        "question_text": "What is Keller\u2019s Focusing Question aimed at finding?",
+        "option_a": "Every task on a long list",
+        "option_b": "The one action that makes everything else easier or unnecessary",
+        "option_c": "Only recreational hobbies",
+        "option_d": "What others want you to do first",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does 'go small' mean in The One Thing?",
+        "option_a": "Think tiny goals forever",
+        "option_b": "Narrow focus to the highest-leverage priority to achieve big results",
+        "option_c": "Avoid ambition",
+        "option_d": "Do only easy tasks",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why does Keller emphasize time blocking?",
+        "option_a": "Schedules don\u2019t matter",
+        "option_b": "To protect a non-negotiable period for the ONE Thing before interruptions win",
+        "option_c": "To fill the day with meetings",
+        "option_d": "To multitask better",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the domino metaphor about?",
+        "option_a": "Playing games at work",
+        "option_b": "Lining up priorities so successive successes unlock larger outcomes",
+        "option_c": "Knocking over competitors personally",
+        "option_d": "Avoiding planning",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "When should you typically do your ONE Thing, per Keller\u2019s willpower view?",
+        "option_a": "When completely exhausted",
+        "option_b": "When willpower and energy are freshest \u2014 often early",
+        "option_c": "Only on weekends",
+        "option_d": "After all emails are zero",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4400,
+    "duration_minutes": 25
+  },
+  {
+    "title": "12 Rules for Life",
+    "author": "Jordan B. Peterson",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780345816023-L.jpg",
+    "short_description": "Jordan B. Peterson\u2019s practical-philosophical rules for meaning and responsibility \u2014 posture, self-care, truth, precision, and aiming up.",
+    "questions": [
+      {
+        "question_text": "What is the practical point of 'stand up straight with your shoulders back'?",
+        "option_a": "Become aggressive toward everyone",
+        "option_b": "Face life with embodied readiness; posture and willingness affect feedback and confidence",
+        "option_c": "Ignore all social situations",
+        "option_d": "Only think about lobsters",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does Rule 2 ask you to do?",
+        "option_a": "Neglect your health as humility",
+        "option_b": "Treat yourself like someone you are responsible for helping",
+        "option_c": "Put everyone else last always",
+        "option_d": "Avoid all plans",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "According to Rule 4, whom should you compare yourself to?",
+        "option_a": "Only billionaires",
+        "option_b": "Who you were yesterday, not everyone else today",
+        "option_c": "Your enemies",
+        "option_d": "Celebrities on social media",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What should you do before criticizing the world (Rule 6)?",
+        "option_a": "Post more complaints",
+        "option_b": "Set your house in order / stop doing what you know is wrong",
+        "option_c": "Ignore your personal life",
+        "option_d": "Quit all responsibilities",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What do Rules 8 and 10 emphasize together?",
+        "option_a": "Vague speech and comforting lies",
+        "option_b": "Tell the truth and be precise in your speech",
+        "option_c": "Never listen to others",
+        "option_d": "Avoid naming problems",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5900,
+    "duration_minutes": 34
+  },
+  {
+    "title": "Outliers",
+    "author": "Malcolm Gladwell",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780316017930-L.jpg",
+    "short_description": "Malcolm Gladwell on why outliers succeed \u2014 10,000 hours, hidden opportunity, cultural legacy, meaningful work, and the Matthew effect.",
+    "questions": [
+      {
+        "question_text": "What is Gladwell\u2019s main critique of typical success stories?",
+        "option_a": "Hard work never matters",
+        "option_b": "They ignore hidden advantages, timing, and culture \u2014 not only individual talent",
+        "option_c": "Only luck matters and effort is useless",
+        "option_d": "Schools explain everything",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does the 10,000-hour discussion emphasize?",
+        "option_a": "Mastery needs no practice",
+        "option_b": "Enormous practice \u2014 and unusual access to practice opportunities",
+        "option_c": "One hour is enough",
+        "option_d": "Talent replaces all practice",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the relative-age effect example in Outliers often about?",
+        "option_a": "Random adult hobbies",
+        "option_b": "Youth sports cutoff dates advantaging older children in a cohort",
+        "option_c": "Astrology signs",
+        "option_d": "Retirement ages",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What three qualities does Gladwell associate with meaningful work?",
+        "option_a": "Fame, ease, and gossip",
+        "option_b": "Complexity, autonomy, and a link between effort and reward",
+        "option_c": "Strict obedience only",
+        "option_d": "Short hours only",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the Matthew effect in this context?",
+        "option_a": "Advantages compound \u2014 early gains attract more gains",
+        "option_b": "Everyone starts equal forever",
+        "option_c": "Practice reduces skill",
+        "option_d": "Culture never matters",
+        "correct_answer": "A"
+      }
+    ],
+    "target_words": 5500,
+    "duration_minutes": 31
+  },
+  {
+    "title": "Essentialism",
+    "author": "Greg McKeown",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780804137386-L.jpg",
+    "short_description": "Greg McKeown\u2019s disciplined pursuit of less but better \u2014 explore, eliminate, execute, and protect the essential with sleep, play, and tradeoffs.",
+    "questions": [
+      {
+        "question_text": "What is Essentialism\u2019s core phrase?",
+        "option_a": "More but faster",
+        "option_b": "Less but better",
+        "option_c": "Everything is equally important",
+        "option_d": "Never say no",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What are the three phases McKeown emphasizes?",
+        "option_a": "Ignore, delay, forget",
+        "option_b": "Explore, eliminate, execute",
+        "option_c": "Hustle, multitask, burn out",
+        "option_d": "Copy, paste, coast",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "How should essentialists treat tradeoffs?",
+        "option_a": "Pretend they don\u2019t exist",
+        "option_b": "Accept and choose them consciously \u2014 or others will choose for you",
+        "option_c": "Always say yes to avoid them",
+        "option_d": "Only make tradeoffs once a year",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "Why does McKeown value sleep and play in exploration?",
+        "option_a": "They are wastes of time",
+        "option_b": "They protect judgment and spark insight needed to discern essentials",
+        "option_c": "Only athletes need them",
+        "option_d": "They replace all hard work",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is a practical elimination question for old commitments?",
+        "option_a": "How can I add more?",
+        "option_b": "If I didn\u2019t already have this commitment, how hard would I work to get it?",
+        "option_c": "Who can I blame?",
+        "option_d": "How do I hide it?",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "Rich Dad Poor Dad",
+    "author": "Robert Kiyosaki",
+    "cover_image_url": "https://images-na.ssl-images-amazon.com/images/I/81bsw6fnUiL.jpg",
+    "short_description": "A guide to financial literacy and wealth building \u2014 the principles that separate assets from liabilities and how to make money work for you.",
+    "questions": [
+      {
+        "question_text": "What is the main difference between an asset and a liability according to Rich Dad?",
+        "option_a": "Assets cost money, liabilities make money",
+        "option_b": "Assets put money in your pocket, liabilities take money out",
+        "option_c": "Assets are investments, liabilities are expenses",
+        "option_d": "There is no difference",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What does \"Mind Your Own Business\" mean in the context of the book?",
+        "option_a": "Focus on your job and career",
+        "option_b": "Build assets outside of your profession",
+        "option_c": "Avoid talking about money",
+        "option_d": "Start your own company immediately",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "According to Rich Dad, what should you prioritize when it comes to money?",
+        "option_a": "Working harder for a higher salary",
+        "option_b": "Learning financial literacy and building assets",
+        "option_c": "Avoiding all risks",
+        "option_d": "Saving everything you earn",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What is the \"Rat Race\" that Kiyosaki describes?",
+        "option_a": "A competitive job market",
+        "option_b": "The cycle of working to pay bills, which keeps you working",
+        "option_c": "A financial investment strategy",
+        "option_d": "A type of business competition",
+        "correct_answer": "B"
+      },
+      {
+        "question_text": "What mindset shift does Rich Dad recommend instead of saying \"I can't afford it\"?",
+        "option_a": "Accept that you can't afford it",
+        "option_b": "Ask \"How can I afford it?\"",
+        "option_c": "Borrow money to buy it",
+        "option_d": "Wait until you have more money",
+        "correct_answer": "B"
+      }
+    ],
+    "target_words": 5000,
+    "duration_minutes": 28
+  }
+]

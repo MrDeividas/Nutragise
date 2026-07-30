@@ -75,6 +75,7 @@ export default function ChallengeSubmissionModal({
   );
   const [uploading, setUploading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [shareToCommunity, setShareToCommunity] = useState(false);
 
   const handleImagePicker = async () => {
     if (!allowsGalleryProof) {
@@ -131,7 +132,7 @@ export default function ChallengeSubmissionModal({
         photoUrl = await uploadProofPhoto(selectedImage, user.id, challenge.id);
       }
 
-      await onSubmit(photoUrl, submissionNotes.trim() || undefined);
+      await onSubmit(photoUrl, submissionNotes.trim() || undefined, shareToCommunity);
       onClose();
     } catch (error) {
       console.error('Error submitting proof:', error);
@@ -145,6 +146,7 @@ export default function ChallengeSubmissionModal({
     setShowCamera(false);
     setSelectedImage(existingSubmission?.photo_url || null);
     setSubmissionNotes(existingSubmission?.submission_notes || '');
+    setShareToCommunity(false);
     onClose();
   };
 
@@ -307,6 +309,43 @@ export default function ChallengeSubmissionModal({
                 {submissionNotes || 'Add notes about your submission...'}
               </Text>
             </View>
+          </View>
+
+          {/* Share to community */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[
+                styles.shareRow,
+                {
+                  backgroundColor: shareToCommunity ? '#ECFDF5' : theme.cardBackground,
+                  borderColor: shareToCommunity ? '#10B981' : theme.border,
+                },
+              ]}
+              onPress={() => setShareToCommunity((v) => !v)}
+              activeOpacity={0.85}
+            >
+              <View
+                style={[
+                  styles.shareCheckbox,
+                  {
+                    backgroundColor: shareToCommunity ? '#10B981' : '#FFFFFF',
+                    borderColor: shareToCommunity ? '#10B981' : '#D1D5DB',
+                  },
+                ]}
+              >
+                {shareToCommunity ? (
+                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                ) : null}
+              </View>
+              <View style={styles.shareTextCol}>
+                <Text style={[styles.shareTitle, { color: theme.textPrimary }]}>
+                  Also post to community feed
+                </Text>
+                <Text style={[styles.shareSubtitle, { color: theme.textSecondary }]}>
+                  Share this proof photo on Community. It will show as posted in this challenge.
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* Requirements Reminder */}
@@ -486,6 +525,35 @@ const styles = StyleSheet.create({
   notesPlaceholder: {
     fontSize: 16,
     lineHeight: 22,
+  },
+  shareRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  shareCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  shareTextCol: {
+    flex: 1,
+  },
+  shareTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  shareSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   requirementItem: {
     flexDirection: 'row',

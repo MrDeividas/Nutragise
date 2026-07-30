@@ -18,6 +18,8 @@ import { useAuthStore } from '../state/authStore';
 import { useActionStore } from '../state/actionStore';
 import { supabase } from '../lib/supabase';
 import { meditationService, MeditationStats } from '../lib/meditationService';
+import { ensureMeditationStart, getMeditationLimitHint } from '../lib/meditationAccess';
+import UpgradeToProModal from '../components/UpgradeToProModal';
 
 export default function MeditationScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -27,6 +29,9 @@ export default function MeditationScreen({ navigation }: any) {
     averageSessionMinutes: 0,
     totalTimeMinutes: 0,
   });
+  const [limitHint, setLimitHint] = useState('1 meditation per day · Level 3 unlocks 2 · Level 5 unlocks 3 · Pro is unlimited');
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [startingId, setStartingId] = useState<string | null>(null);
 
   // Load meditation stats
   useEffect(() => {
@@ -34,6 +39,9 @@ export default function MeditationScreen({ navigation }: any) {
       if (user?.id) {
         const meditationStats = await meditationService.getStats(user.id);
         setStats(meditationStats);
+        setLimitHint(await getMeditationLimitHint(user.id));
+      } else {
+        setLimitHint(await getMeditationLimitHint(null));
       }
     };
     loadStats();
@@ -44,6 +52,7 @@ export default function MeditationScreen({ navigation }: any) {
     useCallback(() => {
       if (user?.id) {
         meditationService.getStats(user.id).then(setStats);
+        getMeditationLimitHint(user.id).then(setLimitHint);
       }
     }, [user?.id])
   );
@@ -218,18 +227,37 @@ export default function MeditationScreen({ navigation }: any) {
     },
   ];
 
+  const handleOpenSession = async (session: any) => {
+    if (!session.audioUrl) {
+      Alert.alert('Coming Soon', 'This meditation session will be available soon.');
+      return;
+    }
+    if (startingId) return;
+
+    setStartingId(session.id);
+    try {
+      const result = await ensureMeditationStart(user?.id);
+      if (!result.allowed) {
+        if (result.reason === 'daily_limit') {
+          setShowUpgradeModal(true);
+        } else {
+          Alert.alert('Unable to start', result.message);
+        }
+        return;
+      }
+      navigation.navigate('MeditationPlayer', { session });
+    } finally {
+      setStartingId(null);
+    }
+  };
+
   const renderMeditationCard = (session: any) => (
     <TouchableOpacity
       key={session.id}
       style={styles.card}
-      onPress={() => {
-        // Navigate to meditation player if audio is available
-        if (session.audioUrl) {
-          navigation.navigate('MeditationPlayer', { session });
-        } else {
-          Alert.alert('Coming Soon', 'This meditation session will be available soon.');
-        }
-      }}
+      onPress={() => handleOpenSession(session)}
+      activeOpacity={0.88}
+      disabled={startingId === session.id}
     >
       <View style={styles.cardContent}>
         <Text 
@@ -285,6 +313,9 @@ export default function MeditationScreen({ navigation }: any) {
               </Text>
               <Text style={[styles.headerSubtitle, { color: theme.textSecondary, textAlign: 'center' }]}>
                 Find peace and clarity with guided sessions
+              </Text>
+              <Text style={[styles.limitHint, { color: theme.textTertiary || theme.textSecondary }]}>
+                {limitHint}
               </Text>
             </View>
           </View>
@@ -373,6 +404,16 @@ export default function MeditationScreen({ navigation }: any) {
         </View>
       </ScrollView>
       </SafeAreaView>
+
+      <UpgradeToProModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        subtitle="You've hit today's meditation limit. Upgrade to Pro for unlimited sessions, or level up for more free daily slots."
+        onUpgrade={async () => {
+          setShowUpgradeModal(false);
+          if (user?.id) setLimitHint(await getMeditationLimitHint(user.id));
+        }}
+      />
     </CustomBackground>
   );
 }
@@ -413,6 +454,14 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 16,
     lineHeight: 22,
+  },
+  limitHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+    textAlign: 'center',
+    opacity: 0.9,
   },
   content: {
     flex: 1,

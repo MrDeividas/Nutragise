@@ -25,9 +25,11 @@ interface PaymentIntentMetadata {
 interface CreatePaymentIntentResponse {
   clientSecret: string;
   paymentIntentId: string;
-  originalAmount?: number; // Amount before fee
-  stripeFee?: number; // Fee amount
-  totalAmount?: number; // Total amount including fee
+  originalAmount?: number; // Amount credited to wallet
+  platformFee?: number; // Platform deposit fee
+  stripeFee?: number; // Alias / legacy field (same as platformFee for deposits)
+  totalAmount?: number; // Total amount charged on card
+  isPro?: boolean;
 }
 
 class StripeService {
@@ -99,9 +101,7 @@ class StripeService {
         },
         body: JSON.stringify({
           amount,
-          // userId removed - edge function will get it from JWT token
           currency: 'gbp',
-          includeStripeFee: true, // User pays Stripe fee
         }),
       });
 
@@ -115,8 +115,10 @@ class StripeService {
         clientSecret: data.clientSecret,
         paymentIntentId: data.paymentIntentId,
         originalAmount: data.originalAmount,
-        stripeFee: data.stripeFee,
+        platformFee: data.platformFee ?? data.stripeFee,
+        stripeFee: data.platformFee ?? data.stripeFee,
         totalAmount: data.totalAmount,
+        isPro: data.isPro,
       };
     } catch (error) {
       console.error('Error creating payment intent:', error);
@@ -202,20 +204,16 @@ class StripeService {
   }
 
   /**
-   * Transfer funds from wallet to Stripe escrow (Platform account)
-   * Calls Edge Function to deduct from wallet and create/confirm Payment Intent
+   * Debit wallet for challenge entry fee (replaces hold/escrow transfer).
    */
-  async transferWalletToEscrow(
+  async payChallengeFromWallet(
     userId: string,
     challengeId: string,
     amount: number
   ): Promise<{ paymentIntentId: string; newBalance: number }> {
     try {
-      console.log('Transferring wallet to escrow:', { userId, challengeId, amount });
-
       const { url: supabaseUrl, anonKey } = this.getSupabaseConfig();
 
-      // Call Supabase Edge Function
       const response = await fetch(`${supabaseUrl}/functions/v1/transfer-wallet-to-escrow`, {
         method: 'POST',
         headers: {
@@ -232,7 +230,7 @@ class StripeService {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to transfer funds to escrow');
+        throw new Error(errorData.error || 'Failed to pay challenge from wallet');
       }
 
       const data = await response.json();
@@ -241,9 +239,20 @@ class StripeService {
         newBalance: data.newBalance,
       };
     } catch (error) {
-      console.error('Error transferring wallet to escrow:', error);
-      throw new Error(error.message || 'Failed to transfer funds to escrow');
+      console.error('Error paying challenge from wallet:', error);
+      throw new Error(
+        error instanceof Error ? error.message : 'Failed to pay challenge from wallet'
+      );
     }
+  }
+
+  /** @deprecated Use payChallengeFromWallet */
+  async transferWalletToEscrow(
+    userId: string,
+    challengeId: string,
+    amount: number
+  ): Promise<{ paymentIntentId: string; newBalance: number }> {
+    return this.payChallengeFromWallet(userId, challengeId, amount);
   }
 
   /**

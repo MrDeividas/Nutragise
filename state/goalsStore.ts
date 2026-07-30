@@ -112,7 +112,10 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
     const goal = get().goals.find(g => g.id === goalId);
     if (!goal) return;
 
-    await get().updateGoal(goalId, { completed: !goal.completed });
+    await get().updateGoal(goalId, {
+      completed: !goal.completed,
+      last_updated_at: new Date().toISOString(),
+    });
   },
 
   clearError: () => set({ error: null }),

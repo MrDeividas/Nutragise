@@ -1,0 +1,83 @@
+[
+  {
+    "title": "Open",
+    "author": "Andre Agassi",
+    "isbn": "9780307388407",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780307388407-L.jpg",
+    "short_description": "Andre Agassi\u2019s raw memoir \u2014 hating tennis, loving the fight, image vs self, and finding meaning beyond the ranking.",
+    "target_words": 5300,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Legacy",
+    "author": "James Kerr",
+    "isbn": "9781472103536",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781472103536-L.jpg",
+    "short_description": "James Kerr on All Blacks culture \u2014 humility, high standards, sweeping the sheds, and leaving the jersey greater.",
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "Peak",
+    "author": "Anders Ericsson & Robert Pool",
+    "isbn": "9780544456235",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780544456235-L.jpg",
+    "short_description": "Ericsson\u2019s science of expertise \u2014 deliberate practice, mental representations, and why greatness is grown.",
+    "target_words": 5400,
+    "duration_minutes": 31
+  },
+  {
+    "title": "The Champion's Mind",
+    "author": "Jim Afremow",
+    "isbn": "9781623361488",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781623361488-L.jpg",
+    "short_description": "Sport psychologist Jim Afremow on thinking like a champion \u2014 focus, confidence, adversity, and mastery rituals.",
+    "target_words": 4700,
+    "duration_minutes": 27
+  },
+  {
+    "title": "The Obstacle Is the Way",
+    "author": "Ryan Holiday",
+    "isbn": "9781591846352",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591846352-L.jpg",
+    "short_description": "Holiday\u2019s Stoic playbook \u2014 perception, action, and will turn obstacles into the path.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The Richest Man in Babylon",
+    "author": "George S. Clason",
+    "isbn": "9780451205360",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780451205360-L.jpg",
+    "short_description": "Clason\u2019s Babylonian parables of money \u2014 pay yourself first, make money work, and protect capital.",
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "Unfu*k Yourself",
+    "author": "Gary John Bishop",
+    "isbn": "9780062803832",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062803832-L.jpg",
+    "short_description": "Bishop\u2019s tough-love assertiveness \u2014 stop self-talk spirals, claim responsibility, and act before you feel ready.",
+    "target_words": 4400,
+    "duration_minutes": 25
+  },
+  {
+    "title": "Psycho-Cybernetics",
+    "author": "Maxwell Maltz",
+    "isbn": "9780399176135",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780399176135-L.jpg",
+    "short_description": "Maltz on self-image as the thermostat of performance \u2014 visualization, rational thinking, and intentional identity.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Awaken the Giant Within",
+    "author": "Tony Robbins",
+    "isbn": "9780671791544",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780671791544-L.jpg",
+    "short_description": "Robbins on deciding your life \u2014 beliefs, neuro-associative conditioning, values, and raising standards.",
+    "target_words": 5600,
+    "duration_minutes": 32
+  }
+]

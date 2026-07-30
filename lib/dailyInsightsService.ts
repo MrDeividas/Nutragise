@@ -41,11 +41,14 @@ class DailyInsightsService {
       };
 
       
+      const periodDays =
+        period === 'last30' ? 30 : period === 'currentWeek' ? 7 : 7;
+
       const [streaks, patterns, completionRate, correlations] = await Promise.allSettled([
         timeoutPromise(streakService.getStreakAnalytics(userId), 8000),
         timeoutPromise(patternService.getPatternAnalytics(userId), 8000),
         timeoutPromise(analyticsService.calculateHabitCompletionRate(userId, period), 8000),
-        timeoutPromise(analyticsService.generateCorrelationInsights(userId), 8000)
+        timeoutPromise(analyticsService.generateCorrelationInsights(userId, periodDays), 8000)
       ]);
 
       // Handle failed promises with fallbacks

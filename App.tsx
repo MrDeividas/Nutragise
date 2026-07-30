@@ -70,6 +70,7 @@ const InsightsScreen = lazy(() => import('./screens/InsightsScreen'));
 const ProgressChartsScreen = lazy(() => import('./screens/ProgressChartsScreen'));
 const MeditationScreen = lazy(() => import('./screens/MeditationScreen'));
 const MicrolearningScreen = lazy(() => import('./screens/MicrolearningScreen'));
+const AllBooksScreen = lazy(() => import('./screens/AllBooksScreen'));
 const FocusScreen = lazy(() => import('./screens/FocusScreen'));
 const InformationDetailScreen = lazy(() => import('./screens/InformationDetailScreen'));
 const DMScreen = lazy(() => import('./screens/DMScreen'));
@@ -86,7 +87,7 @@ function LoadingScreen() {
   const { theme } = useTheme();
   return (
     <View style={[styles.loadingContainer, { backgroundColor: '#FCFAF9' }]}>
-      <ActivityIndicator size="large" color={theme.primary} />
+      <ActivityIndicator size="large" color={"#1f2937"} />
       <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
     </View>
   );
@@ -310,7 +311,15 @@ function MainTabs() {
         }
       }}
     >
-      <Tab.Screen name="Action" component={ActionStack} options={{ tabBarLabel: 'Action' }} />
+      <Tab.Screen
+        name="Action"
+        component={ActionStack}
+        options={{
+          tabBarLabel: 'Action',
+          // Hidden until ActionScreen finishes its boot/quote load
+          tabBarStyle: { display: 'none' },
+        }}
+      />
       <Tab.Screen 
         name="Discover"
         options={{ tabBarLabel: 'Challenge' }}>
@@ -399,6 +408,17 @@ function AppStack() {
           animationDuration: 200,
           gestureEnabled: true,
           gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen
+        name="AllBooks"
+        component={AllBooksScreen}
+        options={{
+          animation: 'slide_from_right',
+          animationDuration: 200,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
         }}
       />
       <Stack.Screen 
@@ -569,11 +589,10 @@ function AuthStack() {
         name="SignUp" 
         component={SignUpScreen}
         options={{
-          animation: 'slide_from_bottom',
+          animation: 'slide_from_right',
           animationDuration: 200,
           gestureEnabled: true,
-          presentation: 'modal',
-          headerShown: false
+          headerShown: false,
         }}
       />
       <Stack.Screen 
@@ -728,7 +747,7 @@ export default function App() {
     return (
       <CustomBackground>
         <View style={[styles.loadingContainer, { backgroundColor: '#FCFAF9' }]}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <ActivityIndicator size="large" color={"#1f2937"} />
           <Text style={[styles.loadingText, { color: theme.textPrimary }]}>Loading...</Text>
         </View>
       </CustomBackground>
@@ -759,6 +778,8 @@ export default function App() {
         navigationRef.current.navigate('MainTabs', { screen: 'Action' });
       } else if (banner.type === 'follow' && banner.fromUserId) {
         navigationRef.current.navigate('UserProfile', { userId: banner.fromUserId });
+      } else if (banner.type === 'achievement_unlocked') {
+        navigationRef.current.navigate('Achievements');
       } else if (banner.goalId) {
         navigationRef.current.navigate('GoalDetail', { goalId: banner.goalId });
       } else {

@@ -1,13 +1,6 @@
 // @ts-nocheck - Deno runtime (Supabase Edge Functions)
 // Processes a user withdrawal from their in-app wallet to their PayPal account.
-// Flow:
-//   1. Authenticate user
-//   2. Validate balance
-//   3. Deduct balance immediately (prevents double-spend)
-//   4. Create audit row in withdrawal_requests (status: pending)
-//   5. Get PayPal OAuth token
-//   6. Call PayPal Payouts API
-//   7. Mark request completed (or roll back balance on failure)
+// Free: £3 fee | Pro: £1 fee — deducted from the withdrawal; net sent to PayPal.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -17,7 +10,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const PAYPAL_BASE = 'https://api.paypal.com' // use https://api.sandbox.paypal.com for testing
+const FREE_WITHDRAWAL_FEE = 3
+const PRO_WITHDRAWAL_FEE = 1
+
+const PAYPAL_BASE = 'https://api.paypal.com'
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -37,7 +33,6 @@ serve(async (req: Request) => {
     )
   }
 
-  // Authenticate the calling user
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) {
     return new Response(
@@ -70,12 +65,11 @@ serve(async (req: Request) => {
       )
     }
 
-    const withdrawAmount = Math.round(amount * 100) / 100 // round to 2dp
+    const withdrawAmount = Math.round(amount * 100) / 100
 
-    // --- 1. Check user has a PayPal email saved ---
     const { data: profile, error: profileError } = await adminSupabase
       .from('profiles')
-      .select('paypal_email')
+      .select('paypal_email, is_pro')
       .eq('id', user.id)
       .single()
 
@@ -86,9 +80,21 @@ serve(async (req: Request) => {
       )
     }
 
+    const isPro = profile.is_pro === true
+    const fee = isPro ? PRO_WITHDRAWAL_FEE : FREE_WITHDRAWAL_FEE
+    const payoutAmount = Math.round((withdrawAmount - fee) * 100) / 100
+
+    if (payoutAmount <= 0) {
+      return new Response(
+        JSON.stringify({
+          error: `Withdrawal must be more than the £${fee.toFixed(2)} fee. Your balance is too low.`,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      )
+    }
+
     const paypalEmail = profile.paypal_email
 
-    // --- 2. Validate wallet balance ---
     const { data: wallet, error: walletError } = await adminSupabase
       .from('user_wallets')
       .select('id, balance')
@@ -110,8 +116,7 @@ serve(async (req: Request) => {
       )
     }
 
-    // --- 3. Deduct balance immediately to prevent double-spend ---
-    const newBalance = currentBalance - withdrawAmount
+    const newBalance = Math.round((currentBalance - withdrawAmount) * 100) / 100
     const { error: deductError } = await adminSupabase
       .from('user_wallets')
       .update({ balance: newBalance })
@@ -121,7 +126,6 @@ serve(async (req: Request) => {
       throw new Error(`Failed to deduct balance: ${deductError.message}`)
     }
 
-    // --- 4. Create audit row ---
     const { data: request, error: requestError } = await adminSupabase
       .from('withdrawal_requests')
       .insert({
@@ -134,12 +138,10 @@ serve(async (req: Request) => {
       .single()
 
     if (requestError) {
-      // Rollback balance
       await adminSupabase.from('user_wallets').update({ balance: currentBalance }).eq('id', wallet.id)
       throw new Error(`Failed to create withdrawal record: ${requestError.message}`)
     }
 
-    // --- 5. Get PayPal OAuth access token ---
     const tokenRes = await fetch(`${PAYPAL_BASE}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
@@ -160,7 +162,6 @@ serve(async (req: Request) => {
 
     const { access_token } = await tokenRes.json()
 
-    // --- 6. Call PayPal Payouts API ---
     const payoutRes = await fetch(`${PAYPAL_BASE}/v1/payments/payouts`, {
       method: 'POST',
       headers: {
@@ -171,17 +172,17 @@ serve(async (req: Request) => {
         sender_batch_header: {
           sender_batch_id: `withdrawal_${request.id}`,
           email_subject: 'You have a payout from Nutragise!',
-          email_message: `Your withdrawal of £${withdrawAmount.toFixed(2)} has been processed.`,
+          email_message: `Your withdrawal of £${payoutAmount.toFixed(2)} has been processed (£${fee.toFixed(2)} fee).`,
         },
         items: [
           {
             recipient_type: 'EMAIL',
             amount: {
-              value: withdrawAmount.toFixed(2),
+              value: payoutAmount.toFixed(2),
               currency: 'GBP',
             },
             receiver: paypalEmail,
-            note: `Nutragise wallet withdrawal`,
+            note: `Nutragise wallet withdrawal (fee £${fee.toFixed(2)})`,
             sender_item_id: request.id,
           },
         ],
@@ -201,7 +202,6 @@ serve(async (req: Request) => {
 
     const paypalPayoutId = payoutData?.batch_header?.payout_batch_id || null
 
-    // --- 7. Mark request completed ---
     await adminSupabase
       .from('withdrawal_requests')
       .update({
@@ -211,7 +211,6 @@ serve(async (req: Request) => {
       })
       .eq('id', request.id)
 
-    // Record transaction in wallet_transactions
     await adminSupabase.from('wallet_transactions').insert({
       wallet_id: wallet.id,
       type: 'withdrawal',
@@ -222,10 +221,16 @@ serve(async (req: Request) => {
         paypal_email: paypalEmail,
         paypal_payout_id: paypalPayoutId,
         withdrawal_request_id: request.id,
+        gross_amount: withdrawAmount,
+        fee,
+        payout_amount: payoutAmount,
+        is_pro: isPro,
       },
     })
 
-    console.log(`✅ Withdrawal processed: £${withdrawAmount} to ${paypalEmail} (payout: ${paypalPayoutId})`)
+    console.log(
+      `✅ Withdrawal: gross £${withdrawAmount}, fee £${fee}, payout £${payoutAmount} to ${paypalEmail}`
+    )
 
     return new Response(
       JSON.stringify({
@@ -233,7 +238,9 @@ serve(async (req: Request) => {
         newBalance,
         paypalEmail,
         paypalPayoutId,
-        message: `£${withdrawAmount.toFixed(2)} sent to ${paypalEmail}. PayPal may take a few minutes to arrive.`,
+        fee,
+        payoutAmount,
+        message: `£${payoutAmount.toFixed(2)} sent to ${paypalEmail} (£${fee.toFixed(2)} fee). PayPal may take a few minutes to arrive.`,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
@@ -246,7 +253,6 @@ serve(async (req: Request) => {
   }
 })
 
-// Rolls back the wallet balance and marks the request as failed
 async function rollback(
   supabase: any,
   walletId: string,

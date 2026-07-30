@@ -1,25 +1,57 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { InsightCard } from '../types/insights';
+
+const DARK = '#1f2937';
+
+type InsightPeriod = 'past7' | 'currentWeek' | 'last30';
+
+const PERIODS: { key: InsightPeriod; label: string }[] = [
+  { key: 'past7', label: 'Past 7 Days' },
+  { key: 'currentWeek', label: 'This Week' },
+  { key: 'last30', label: 'Last 30 Days' },
+];
 
 interface StreakInsightProps {
   data: any;
   textPrimary: string;
   textSecondary: string;
   primary: string;
-  selectedPeriod: 'past7' | 'currentWeek' | 'last30';
-  onPeriodChange: (period: 'past7' | 'currentWeek' | 'last30') => void;
+  selectedPeriod: InsightPeriod;
+  onPeriodChange: (period: InsightPeriod) => void;
 }
 
 export const StreakInsight: React.FC<StreakInsightProps> = ({ 
   data, 
   textPrimary, 
   textSecondary, 
-  primary, 
   selectedPeriod, 
   onPeriodChange 
 }) => {
+  const [segmentTrackWidth, setSegmentTrackWidth] = useState(0);
+  const segmentIndicatorX = useRef(new Animated.Value(0)).current;
+  const segmentHasPositioned = useRef(false);
+
+  const segmentIndex = Math.max(0, PERIODS.findIndex((p) => p.key === selectedPeriod));
+  const segmentTabWidth = segmentTrackWidth > 0 ? segmentTrackWidth / PERIODS.length : 0;
+
+  useEffect(() => {
+    if (segmentTabWidth <= 0) return;
+    const toValue = segmentIndex * segmentTabWidth;
+    if (!segmentHasPositioned.current) {
+      segmentHasPositioned.current = true;
+      segmentIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(segmentIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 80,
+    }).start();
+  }, [segmentIndex, segmentTabWidth, segmentIndicatorX]);
+
   if (!data?.streaks || !Array.isArray(data.streaks)) {
     return null;
   }
@@ -30,55 +62,48 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled={true}
     >
-      {/* Period Selector */}
+      {/* Period Selector — Goals-style segment */}
       <View style={styles.periodSelector}>
-        <TouchableOpacity 
-          style={[
-            styles.periodButton,
-            selectedPeriod === 'past7' && { backgroundColor: primary }
-          ]}
-          onPress={() => onPeriodChange('past7')}
-          activeOpacity={0.7}
+        <View
+          style={styles.segmentBar}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width - 8;
+            if (w > 0 && Math.abs(w - segmentTrackWidth) > 0.5) {
+              setSegmentTrackWidth(w);
+            }
+          }}
         >
-          <Text style={[
-            styles.periodButtonText,
-            { color: selectedPeriod === 'past7' ? '#ffffff' : textPrimary }
-          ]}>
-            Past 7 Days
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[
-            styles.periodButton,
-            selectedPeriod === 'currentWeek' && { backgroundColor: primary }
-          ]}
-          onPress={() => onPeriodChange('currentWeek')}
-          activeOpacity={0.7}
-        >
-          <Text style={[
-            styles.periodButtonText,
-            { color: selectedPeriod === 'currentWeek' ? '#ffffff' : textPrimary }
-          ]}>
-            This Week
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[
-            styles.periodButton,
-            selectedPeriod === 'last30' && { backgroundColor: primary }
-          ]}
-          onPress={() => onPeriodChange('last30')}
-          activeOpacity={0.7}
-        >
-          <Text style={[
-            styles.periodButtonText,
-            { color: selectedPeriod === 'last30' ? '#ffffff' : textPrimary }
-          ]}>
-            Last 30 Days
-          </Text>
-        </TouchableOpacity>
+          {segmentTabWidth > 0 && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.segmentIndicator,
+                {
+                  width: segmentTabWidth,
+                  transform: [{ translateX: segmentIndicatorX }],
+                },
+              ]}
+            />
+          )}
+          {PERIODS.map((period) => (
+            <TouchableOpacity
+              key={period.key}
+              style={styles.segment}
+              onPress={() => onPeriodChange(period.key)}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.segmentText,
+                  selectedPeriod === period.key && styles.segmentTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {period.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Key Metrics Section */}
@@ -89,7 +114,7 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
           </Text>
           <View style={styles.keyMetricsGrid}>
             <View style={styles.keyMetricItem}>
-              <Text style={[styles.keyMetricValue, { color: primary }]}>
+              <Text style={[styles.keyMetricValue, { color: DARK }]}>
                 {data.keyMetrics.activeStreaks}
               </Text>
               <Text style={[styles.keyMetricLabel, { color: textSecondary }]}>
@@ -97,7 +122,7 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
               </Text>
             </View>
             <View style={styles.keyMetricItem}>
-              <Text style={[styles.keyMetricValue, { color: primary }]}>
+              <Text style={[styles.keyMetricValue, { color: DARK }]}>
                 {data.keyMetrics.weeklyConsistency}%
               </Text>
               <Text style={[styles.keyMetricLabel, { color: textSecondary }]}>
@@ -105,7 +130,7 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
               </Text>
             </View>
             <View style={styles.keyMetricItem}>
-              <Text style={[styles.keyMetricValue, { color: primary }]}>
+              <Text style={[styles.keyMetricValue, { color: DARK }]}>
                 {data.keyMetrics.completionRate}%
               </Text>
               <Text style={[styles.keyMetricLabel, { color: textSecondary }]}>
@@ -114,7 +139,7 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
             </View>
             {data.keyMetrics.topPerformer && (
               <View style={styles.keyMetricItem}>
-                <Text style={[styles.keyMetricValue, { color: primary }]}>
+                <Text style={[styles.keyMetricValue, { color: DARK }]}>
                   {data.keyMetrics.topPerformer}
                 </Text>
                 <Text style={[styles.keyMetricLabel, { color: textSecondary }]}>
@@ -125,6 +150,32 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
           </View>
         </View>
       )}
+
+      {/* Active streaks */}
+      <View style={styles.streaksSection}>
+        <Text style={[styles.streaksSectionTitle, { color: textPrimary }]}>
+          Active streaks
+        </Text>
+        {data.streaks.filter((s: any) => s.current_streak > 0).length === 0 ? (
+          <Text style={[styles.patternDescription, { color: textSecondary }]}>
+            No active streaks — log a habit today.
+          </Text>
+        ) : (
+          data.streaks
+            .filter((s: any) => s.current_streak > 0)
+            .sort((a: any, b: any) => b.current_streak - a.current_streak)
+            .map((streak: any) => (
+              <View key={streak.habit_type} style={styles.streakItem}>
+                <Text style={[styles.streakLabel, { color: textPrimary }]}>
+                  {(streak.habit_type || '').replace(/_/g, ' ')}
+                </Text>
+                <Text style={[styles.streakValue, { color: DARK }]}>
+                  {streak.current_streak} days · best {streak.longest_streak || streak.current_streak}
+                </Text>
+              </View>
+            ))
+        )}
+      </View>
 
       {/* Daily Insights Section */}
       {data.dailyInsights && data.dailyInsights.length > 0 && (
@@ -138,10 +189,7 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
                 <Ionicons 
                   name={insight.icon as any} 
                   size={16} 
-                  color={insight.type === 'achievement' ? '#4CAF50' : 
-                         insight.type === 'warning' ? '#FF9800' : 
-                         insight.type === 'tip' ? '#2196F3' : 
-                         insight.type === 'pattern' ? '#9C27B0' : '#607D8B'} 
+                  color={DARK} 
                 />
                 <Text style={[styles.dailyInsightTitle, { color: textPrimary }]}>
                   {insight.title}
@@ -150,13 +198,6 @@ export const StreakInsight: React.FC<StreakInsightProps> = ({
               <Text style={[styles.dailyInsightMessage, { color: textSecondary }]}>
                 {insight.message}
               </Text>
-              {insight.actionable && insight.actionText && (
-                <TouchableOpacity style={styles.dailyInsightAction}>
-                  <Text style={[styles.dailyInsightActionText, { color: primary }]}>
-                    {insight.actionText}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           ))}
         </View>
@@ -192,7 +233,7 @@ export const PatternInsight: React.FC<PatternInsightProps> = ({
     setInsights(updatedInsights);
   };
 
-  if (data?.consistencyScore !== undefined && data.consistencyScore > 0 && data.totalDays >= 14) {
+  if (data?.consistencyScore !== undefined && data.consistencyScore > 0 && data.totalDays >= 7) {
     return (
       <View style={styles.patternData}>
         {/* Weekly Consistency Section */}
@@ -208,7 +249,7 @@ export const PatternInsight: React.FC<PatternInsightProps> = ({
               <Ionicons name="information-circle" size={16} color={textSecondary} />
             </TouchableOpacity>
           </View>
-          <Text style={[styles.patternValue, { color: primary }]}>
+          <Text style={[styles.patternValue, { color: DARK }]}>
             {data.consistencyScore.toFixed(1)}%
           </Text>
           {insights[index]?.showConsistencyInfo && (
@@ -240,7 +281,7 @@ export const PatternInsight: React.FC<PatternInsightProps> = ({
             <Text style={[styles.patternLabel, { color: textSecondary }]}>
               Sleep Quality Pattern:
             </Text>
-            <Text style={[styles.patternValue, { color: primary }]}>
+            <Text style={[styles.patternValue, { color: DARK }]}>
               Best on {data.sleepPatterns.peakDay.charAt(0).toUpperCase() + data.sleepPatterns.peakDay.slice(1)}s
             </Text>
           </View>
@@ -252,7 +293,7 @@ export const PatternInsight: React.FC<PatternInsightProps> = ({
             <Text style={[styles.patternLabel, { color: textSecondary }]}>
               Water Intake Pattern:
             </Text>
-            <Text style={[styles.patternValue, { color: primary }]}>
+            <Text style={[styles.patternValue, { color: DARK }]}>
               Best on {data.waterPatterns.peakDay.charAt(0).toUpperCase() + data.waterPatterns.peakDay.slice(1)}s
             </Text>
           </View>
@@ -324,10 +365,15 @@ export const CorrelationInsight: React.FC<CorrelationInsightProps> = ({ data, te
           <View key={corrIndex} style={styles.correlationItem}>
             <View style={styles.correlationHeader}>
               <Text style={[styles.correlationTitle, { color: textPrimary }]}>
-                {correlation.title}
+                {correlation.title ||
+                  `${correlation.habit1 || 'Habit'} & ${correlation.habit2 || 'Habit'}`}
               </Text>
               <Text style={[styles.correlationStrength, { color: textSecondary }]}>
+                {correlation.coefficient != null
+                  ? `r ${correlation.coefficient > 0 ? '+' : ''}${Number(correlation.coefficient).toFixed(2)} · `
+                  : ''}
                 {correlation.strength}
+                {correlation.dataPoints != null ? ` · ${correlation.dataPoints} days` : ''}
               </Text>
             </View>
             <Text style={[styles.correlationDescription, { color: textPrimary }]}>
@@ -635,13 +681,50 @@ const styles = {
     lineHeight: 18,
   },
   periodSelector: {
+    paddingHorizontal: 0,
+    paddingTop: 4,
+    paddingBottom: 12,
+    marginBottom: 12,
+  },
+  segmentBar: {
     flexDirection: 'row' as const,
-    justifyContent: 'space-around' as const,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128, 128, 128, 0.1)',
-    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative' as const,
+    overflow: 'visible' as const,
+  },
+  segmentIndicator: {
+    position: 'absolute' as const,
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  segmentText: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  segmentTextActive: {
+    color: '#FFFFFF',
   },
   periodButton: {
     paddingHorizontal: 12,

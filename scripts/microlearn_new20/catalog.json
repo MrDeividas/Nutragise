@@ -1,0 +1,182 @@
+[
+  {
+    "title": "The Let Them Theory",
+    "author": "Mel Robbins",
+    "isbn": "9781401971366",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781401971366-L.jpg",
+    "short_description": "Mel Robbins on releasing control of others \u2014 let them, reclaim your peace, and focus on your own next step.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The 5 AM Club",
+    "author": "Robin Sharma",
+    "isbn": "9781443456623",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781443456623-L.jpg",
+    "short_description": "Robin Sharma\u2019s morning victory hour \u2014 own the early hours to elevate focus, health, and craft.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Daring Greatly",
+    "author": "Bren\u00e9 Brown",
+    "isbn": "9781592408412",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781592408412-L.jpg",
+    "short_description": "Bren\u00e9 Brown on vulnerability as courage \u2014 shame resilience, wholehearted living, and showing up when you can\u2019t control the outcome.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "The Gifts of Imperfection",
+    "author": "Bren\u00e9 Brown",
+    "isbn": "9781592858491",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781592858491-L.jpg",
+    "short_description": "Bren\u00e9 Brown\u2019s guide to wholehearted living \u2014 worthiness, authenticity, and letting go of who you think you\u2019re supposed to be.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The Untethered Soul",
+    "author": "Michael A. Singer",
+    "isbn": "9781572245372",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781572245372-L.jpg",
+    "short_description": "Michael Singer on inner freedom \u2014 watch the voice in your head, release blocked energy, and live from openness.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "You Are a Badass",
+    "author": "Jen Sincero",
+    "isbn": "9780762447695",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780762447695-L.jpg",
+    "short_description": "Jen Sincero\u2019s blunt pep talk \u2014 ditch self-doubt, raise your self-worth, and take imperfect action toward the life you want.",
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "The Magic of Thinking Big",
+    "author": "David J. Schwartz",
+    "isbn": "9780671644239",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780671644239-L.jpg",
+    "short_description": "David Schwartz on expanding belief \u2014 think bigger, act bigger, and build the habits that make large goals feel natural.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "Who Moved My Cheese?",
+    "author": "Spencer Johnson",
+    "isbn": "9780399144462",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780399144462-L.jpg",
+    "short_description": "Spencer Johnson\u2019s parable of change \u2014 notice when the cheese moves, adapt early, and laugh at your own resistance.",
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "The Dip",
+    "author": "Seth Godin",
+    "isbn": "9781591841661",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591841661-L.jpg",
+    "short_description": "Seth Godin on strategic quitting \u2014 recognize the Dip, quit the wrong things, and push through where mastery pays.",
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "The 48 Laws of Power",
+    "author": "Robert Greene",
+    "isbn": "9780140280197",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780140280197-L.jpg",
+    "short_description": "Robert Greene\u2019s study of power dynamics \u2014 observe strategy, protect yourself, and use influence with clear eyes.",
+    "target_words": 5600,
+    "duration_minutes": 32
+  },
+  {
+    "title": "Mastery",
+    "author": "Robert Greene",
+    "isbn": "9780143124177",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780143124177-L.jpg",
+    "short_description": "Robert Greene on the long path to mastery \u2014 apprenticeship, creative-active phase, and fusing intuition with skill.",
+    "target_words": 5400,
+    "duration_minutes": 31
+  },
+  {
+    "title": "The Code of the Extraordinary Mind",
+    "author": "Vishen Lakhiani",
+    "isbn": "9781623367084",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781623367084-L.jpg",
+    "short_description": "Vishen Lakhiani on rewriting life\u2019s brules \u2014 bend reality with consciousness engineering and bold personal models.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Limitless",
+    "author": "Jim Kwik",
+    "isbn": "9781401958237",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781401958237-L.jpg",
+    "short_description": "Jim Kwik on unlocking learning \u2014 mindset, motivation, and methods to remember more and learn faster.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "High Performance Habits",
+    "author": "Brendon Burchard",
+    "isbn": "9781401952853",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781401952853-L.jpg",
+    "short_description": "Brendon Burchard\u2019s six habits of high performers \u2014 clarity, energy, necessity, productivity, influence, and courage.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "The Monk Who Sold His Ferrari",
+    "author": "Robin Sharma",
+    "isbn": "9780062516046",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062516046-L.jpg",
+    "short_description": "Robin Sharma\u2019s fable of waking up \u2014 simplify, practice daily disciplines, and trade status for a richer inner life.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The Success Principles",
+    "author": "Jack Canfield",
+    "isbn": "9780060594886",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780060594886-L.jpg",
+    "short_description": "Jack Canfield\u2019s principles for getting from where you are to where you want to be \u2014 responsibility, vision, and consistent action.",
+    "target_words": 5400,
+    "duration_minutes": 31
+  },
+  {
+    "title": "The Art of Possibility",
+    "author": "Rosamund Stone Zander & Benjamin Zander",
+    "isbn": "9780142001103",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780142001103-L.jpg",
+    "short_description": "The Zanders on living in possibility \u2014 give an A, lead from shining eyes, and invent frameworks that open people up.",
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "Winning the War in Your Mind",
+    "author": "Craig Groeschel",
+    "isbn": "9780310363545",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780310363545-L.jpg",
+    "short_description": "Craig Groeschel on replacing toxic thought patterns \u2014 identify lies, reframe with truth, and train a healthier mental battlefield.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "Attached",
+    "author": "Amir Levine & Rachel Heller",
+    "isbn": "9781585429134",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781585429134-L.jpg",
+    "short_description": "Levine and Heller on adult attachment styles \u2014 understand anxious, avoidant, and secure patterns to build healthier relationships.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "The Happiness Project",
+    "author": "Gretchen Rubin",
+    "isbn": "9780061583261",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780061583261-L.jpg",
+    "short_description": "Gretchen Rubin\u2019s year-long experiment \u2014 small resolutions, personal commandments, and making ordinary days happier on purpose.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  }
+]

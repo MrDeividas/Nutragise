@@ -26,10 +26,17 @@ export const useBottomNavPadding = () => {
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { user } = useAuthStore();
+  const { user, loading: authLoading } = useAuthStore();
   const unreadCount = useNotificationsStore((s) => s.unreadCount);
 
   const [barWidth, setBarWidth] = useState(0);
+  const indicatorX = useRef(new Animated.Value(0)).current;
+  const pillScale = useRef(new Animated.Value(1)).current;
+  const hasPositioned = useRef(false);
+
+  const focusedOptions = descriptors[state.routes[state.index]?.key]?.options ?? {};
+  const tabBarStyle = focusedOptions.tabBarStyle as { display?: string } | undefined;
+  const hideTabBar = authLoading || tabBarStyle?.display === 'none';
 
   const orderedRoutes = [...state.routes].sort((a, b) => {
     const ai = DISPLAY_ORDER.indexOf(a.name);
@@ -45,10 +52,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   const tabCount = orderedRoutes.length;
   const tabWidth = barWidth > 0 ? barWidth / tabCount : 0;
-
-  const indicatorX = useRef(new Animated.Value(0)).current;
-  const pillScale = useRef(new Animated.Value(1)).current;
-  const hasPositioned = useRef(false);
 
   const bounceNavBar = () => {
     pillScale.stopAnimation();
@@ -70,7 +73,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   // Slide the glass highlight from the previous tab to the newly selected one
   useEffect(() => {
-    if (tabWidth <= 0) return;
+    if (hideTabBar || tabWidth <= 0) return;
     const toValue = activeIndex * tabWidth;
 
     // Place it instantly the first time so it doesn't slide in on app launch
@@ -87,7 +90,11 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       damping: 24,
       mass: 0.9,
     }).start();
-  }, [activeIndex, tabWidth, indicatorX]);
+  }, [activeIndex, tabWidth, indicatorX, hideTabBar]);
+
+  if (hideTabBar) {
+    return null;
+  }
 
   return (
     <View style={[styles.container, { paddingBottom: (insets.bottom || 20) - 8 }]}>

@@ -18,12 +18,13 @@ interface InsightCache {
 
 class CacheService {
   private static CACHE_EXPIRY = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+  private static PERIODS = ['past7', 'currentWeek', 'last30'] as const;
 
   /**
-   * Generate cache key for user insights
+   * Generate cache key for user insights (period-scoped)
    */
-  private static getInsightCacheKey(userId: string): string {
-    return `insights_${userId}`;
+  private static getInsightCacheKey(userId: string, period: string = 'past7'): string {
+    return `insights_${userId}_${period}`;
   }
 
   /**
@@ -35,23 +36,25 @@ class CacheService {
   }
 
   /**
-   * Get cached insights for user
+   * Get cached insights for user + period
    */
-  static async getCachedInsights(userId: string): Promise<InsightCache | null> {
+  static async getCachedInsights(
+    userId: string,
+    period: string = 'past7'
+  ): Promise<InsightCache | null> {
     try {
-      const cacheKey = this.getInsightCacheKey(userId);
+      const cacheKey = this.getInsightCacheKey(userId, period);
       const cached = await AsyncStorage.getItem(cacheKey);
-      
+
       if (!cached) return null;
-      
+
       const cache: CacheItem<InsightCache> = JSON.parse(cached);
-      
+
       if (!this.isCacheValid(cache)) {
-        // Cache expired, remove it
         await AsyncStorage.removeItem(cacheKey);
         return null;
       }
-      
+
       return cache.data;
     } catch (error) {
       console.error('Error reading cache:', error);
@@ -60,20 +63,25 @@ class CacheService {
   }
 
   /**
-   * Cache insights for user
+   * Cache insights for user + period
    */
-  static async cacheInsights(userId: string, insights: InsightCard[], analytics: any): Promise<void> {
+  static async cacheInsights(
+    userId: string,
+    insights: InsightCard[],
+    analytics: any,
+    period: string = 'past7'
+  ): Promise<void> {
     try {
-      const cacheKey = this.getInsightCacheKey(userId);
+      const cacheKey = this.getInsightCacheKey(userId, period);
       const cache: CacheItem<InsightCache> = {
         data: {
           insights,
-          analytics
+          analytics,
         },
         timestamp: Date.now(),
-        expiresAt: Date.now() + this.CACHE_EXPIRY
+        expiresAt: Date.now() + this.CACHE_EXPIRY,
       };
-      
+
       await AsyncStorage.setItem(cacheKey, JSON.stringify(cache));
     } catch (error) {
       console.error('Error writing cache:', error);
@@ -81,12 +89,17 @@ class CacheService {
   }
 
   /**
-   * Clear cache for user
+   * Clear cache for user (all periods)
    */
   static async clearCache(userId: string): Promise<void> {
     try {
-      const cacheKey = this.getInsightCacheKey(userId);
-      await AsyncStorage.removeItem(cacheKey);
+      await Promise.all([
+        ...this.PERIODS.map((period) =>
+          AsyncStorage.removeItem(this.getInsightCacheKey(userId, period))
+        ),
+        // Legacy key without period
+        AsyncStorage.removeItem(`insights_${userId}`),
+      ]);
     } catch (error) {
       console.error('Error clearing cache:', error);
     }
@@ -95,23 +108,26 @@ class CacheService {
   /**
    * Get cache status (for debugging)
    */
-  static async getCacheStatus(userId: string): Promise<{
+  static async getCacheStatus(
+    userId: string,
+    period: string = 'past7'
+  ): Promise<{
     exists: boolean;
     isValid: boolean;
     expiresIn: number | null;
   }> {
     try {
-      const cacheKey = this.getInsightCacheKey(userId);
+      const cacheKey = this.getInsightCacheKey(userId, period);
       const cached = await AsyncStorage.getItem(cacheKey);
-      
+
       if (!cached) {
         return { exists: false, isValid: false, expiresIn: null };
       }
-      
+
       const cache: CacheItem<InsightCache> = JSON.parse(cached);
       const isValid = this.isCacheValid(cache);
       const expiresIn = isValid ? cache.expiresAt - Date.now() : null;
-      
+
       return { exists: true, isValid, expiresIn };
     } catch (error) {
       console.error('Error checking cache status:', error);

@@ -256,7 +256,7 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
 
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#10B981" />
+              <ActivityIndicator size="large" color="#1f2937" />
               <Text style={styles.loadingText}>Loading your journey...</Text>
             </View>
           ) : allDays.length === 0 ? (

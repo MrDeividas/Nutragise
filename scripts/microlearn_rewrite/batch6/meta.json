@@ -1,0 +1,222 @@
+[
+  {
+    "id": "352ac395-3da3-4140-9230-47392e8e1106",
+    "title": "Unfu*k Yourself",
+    "duration_minutes": 25,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062803832-L.jpg",
+    "short_description": "Bishop\u2019s tough-love assertiveness \u2014 stop self-talk spirals, claim responsibility, and act before you feel ready.",
+    "chapter_titles": [
+      "Chapter 1: Tough love frame",
+      "Chapter 2: I am assertions",
+      "Chapter 3: Feelings are not bosses",
+      "Chapter 4: Love your imperfect situation",
+      "Chapter 5: Outside world vs you",
+      "Chapter 6: Relentless solutions",
+      "Chapter 7: Embrace uncertainty",
+      "Chapter 8: Kill unrealistic expectations",
+      "Chapter 9: Own your domains",
+      "Chapter 10: Uncomfortable by design",
+      "Chapter 11: Language audit",
+      "Chapter 12: Seven-day unfu*k plan"
+    ],
+    "questions": [
+      {
+        "id": "f242d502-d058-4e18-bd06-8b35c2c86e86",
+        "question_text": "What does Bishop emphasize about self-talk?",
+        "option_a": "It doesn\u2019t matter",
+        "option_b": "Assertive language plus action can interrupt stuck spirals",
+        "option_c": "Only feelings should lead forever",
+        "option_d": "Never take responsibility",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "2b227743-a46b-4d6f-bfa1-276a4cf4bf14",
+        "question_text": "What about feeling ready?",
+        "option_a": "Always wait for perfect feelings",
+        "option_b": "Act within safety before you feel ready \u2014 feelings often follow",
+        "option_c": "Ignore all safety",
+        "option_d": "Never act",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "09b517af-e68d-4b10-9c7e-2569bb13c610",
+        "question_text": "How treat uncertainty?",
+        "option_a": "Demand total certainty before any step",
+        "option_b": "Tolerate not knowing while taking small reviewed bets",
+        "option_c": "Freeze forever",
+        "option_d": "Pretend you know everything",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "20110bc5-ec3d-4126-bcfb-447703e0068d",
+        "question_text": "Domain ownership means?",
+        "option_a": "Blaming everyone else",
+        "option_b": "Taking responsibility for responses in health, money, relationships, craft",
+        "option_c": "Controlling other people",
+        "option_d": "Avoiding scorecards",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "7425b9e4-9207-4678-a8cc-c24145a365b6",
+        "question_text": "Growth requires?",
+        "option_a": "Endless comfort",
+        "option_b": "Productive discomfort beyond old self-stories \u2014 with recovery",
+        "option_c": "Only inspiration videos",
+        "option_d": "No action",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "deb712e5-ade5-4a15-aa84-6d94685c1e9b",
+    "title": "Ego Is the Enemy",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591847816-L.jpg",
+    "short_description": "Ryan Holiday on how ego sabotages aspiration, success, and failure \u2014 and how humility and reality keep you growing.",
+    "chapter_titles": [
+      "Chapter 1: Ego as the invisible opponent",
+      "Chapter 2: Talk less, do more",
+      "Chapter 3: The canvas strategy",
+      "Chapter 4: Live with purpose, not passion theater",
+      "Chapter 5: Success makes ego louder",
+      "Chapter 6: The peril of branding yourself",
+      "Chapter 7: Failure without ego collapse",
+      "Chapter 8: Dead time vs alive time",
+      "Chapter 9: Sobriety, stillness, observation",
+      "Chapter 10: Always love",
+      "Chapter 11: Egomania at work",
+      "Chapter 12: The endless student"
+    ],
+    "questions": [
+      {
+        "id": "38d84bd5-07a2-46c7-b384-bfe668cd76b1",
+        "question_text": "What does Holiday treat as the real enemy?",
+        "option_a": "Other people\u2019s success",
+        "option_b": "Ego \u2014 an unhealthy belief in your own importance",
+        "option_c": "Hard work",
+        "option_d": "Quiet practice",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "4dfff2cd-85a3-4156-ba1b-26480baf7b70",
+        "question_text": "What is the canvas strategy?",
+        "option_a": "Only paint for yourself forever",
+        "option_b": "Help others succeed while you learn and build skill",
+        "option_c": "Avoid all mentorship",
+        "option_d": "Demand credit first",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "603334aa-1088-451d-add7-8aded62d23b5",
+        "question_text": "What is alive time?",
+        "option_a": "Scrolling until you feel better",
+        "option_b": "Using delays and constraints to train and improve",
+        "option_c": "Waiting angrily for recognition",
+        "option_d": "Quitting when blocked",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "7945b23d-8ed0-4ace-9490-e7391650912a",
+        "question_text": "Why is success dangerous in this book?",
+        "option_a": "Money is evil",
+        "option_b": "Wins can inflate ego and stop learning",
+        "option_c": "Success never involves teams",
+        "option_d": "Humility ruins careers",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "f4e4abc4-d73c-4755-9363-ed022a423dc7",
+        "question_text": "What stance does Holiday recommend for life?",
+        "option_a": "Graduate and stop learning",
+        "option_b": "Remain a student so ego cannot declare you finished",
+        "option_c": "Talk more than you work",
+        "option_d": "Avoid all feedback",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "7a0ff8ea-e16c-49df-b3bf-d7b8db01f9a1",
+    "title": "Feel the Fear and Do It Anyway",
+    "duration_minutes": 26,
+    "cover_image_url": "https://covers.openlibrary.org/b/id/6498618-L.jpg",
+    "short_description": "Susan Jeffers on moving through fear \u2014 the fear will never fully go away, but you can act anyway.",
+    "chapter_titles": [
+      "Chapter 1: Fear never fully disappears",
+      "Chapter 2: The three levels of fear",
+      "Chapter 3: The fear will never go away as long as you grow",
+      "Chapter 4: How you talk to yourself matters",
+      "Chapter 5: The no-lose decision model",
+      "Chapter 6: Say yes to your bigger life",
+      "Chapter 7: Take responsibility without self-blame",
+      "Chapter 8: The upside of insecurity",
+      "Chapter 9: Peace with uncertainty",
+      "Chapter 10: Joy as a discipline",
+      "Chapter 11: Relationships without emotional blackmail",
+      "Chapter 12: Do it anyway as a life stance",
+      "Chapter 13: Practice field guide"
+    ],
+    "questions": [
+      {
+        "id": "67fae774-76c1-4926-8073-91cdfc80cf3a",
+        "question_text": "According to Jeffers, when does fear go away?",
+        "option_a": "As soon as you become successful",
+        "option_b": "Fear does not fully go away if you keep growing \u2014 you learn to act anyway",
+        "option_c": "Only after therapy ends",
+        "option_d": "When you avoid all risks",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "c0843cd6-1bfd-4f93-a3b1-3f4b8a5a87bd",
+        "question_text": "What is the deepest level of fear in Jeffers\u2019 model?",
+        "option_a": "Fear of spiders",
+        "option_b": "Fear that you cannot handle whatever happens",
+        "option_c": "Fear of traffic",
+        "option_d": "Fear of other people\u2019s hobbies",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "aa491dbc-7429-4701-953b-8f83896dd187",
+        "question_text": "What is the no-lose decision idea?",
+        "option_a": "Never decide anything",
+        "option_b": "Any chosen path can produce growth if you commit and learn",
+        "option_c": "Only one path is ever correct",
+        "option_d": "Decisions should be random",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "48f93062-d674-4fcc-b072-2e75e5b19e72",
+        "question_text": "How should you treat fear while growing?",
+        "option_a": "As a permanent stop sign",
+        "option_b": "As a companion signal \u2014 act while afraid when values say go",
+        "option_c": "As proof you must quit",
+        "option_d": "As something only weak people feel",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "d162f3c3-7370-42b0-8f9c-2a3456f1cd34",
+        "question_text": "What does taking responsibility mean here?",
+        "option_a": "Blaming yourself for everything forever",
+        "option_b": "Owning your responses and agency without erasing real limits",
+        "option_c": "Controlling other people",
+        "option_d": "Ignoring your feelings",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

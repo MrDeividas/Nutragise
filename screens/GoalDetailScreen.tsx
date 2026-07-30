@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Dimensions, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,13 +10,12 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { progressService, ProgressPhoto } from '../lib/progressService';
 import { useAuthStore } from '../state/authStore';
-import { useTheme } from '../state/themeStore';
 import CustomBackground from '../components/CustomBackground';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 
 // Define the navigation param list for the Goals stack
 export type GoalsStackParamList = {
-  GoalsList: undefined;
+  GoalsList: { openWorkout?: boolean } | undefined;
   NewGoal: undefined;
   GoalDetail: { goal: Goal; onCheckInDeleted?: () => void };
 };
@@ -26,7 +25,7 @@ type Props = NativeStackScreenProps<any, 'GoalDetail'> & {
 };
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const { width } = Dimensions.get('window');
+const DARK = '#1f2937';
 
 // Helper function to get category icon (same as profile page)
 const getCategoryIcon = (category: string) => {
@@ -55,7 +54,6 @@ const getCategoryIcon = (category: string) => {
 export default function GoalDetailScreen({ navigation, route }: Props) {
   const { goal, onCheckInDeleted } = route.params;
   const { user } = useAuthStore();
-  const { theme } = useTheme();
   const bottomNavPadding = useBottomNavPadding();
   const [progressPhotos, setProgressPhotos] = useState<ProgressPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,674 +236,458 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
 
   return (
     <CustomBackground>
-      <View style={styles.container}>
-        {/* Fixed Header */}
-        <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
+      <View style={[styles.container, { backgroundColor: '#F8F9FB' }]}>
+        <SafeAreaView edges={['top']} style={{ backgroundColor: '#FFFFFF' }}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="arrow-back" size={22} color={DARK} />
             </TouchableOpacity>
-            <View style={styles.headerTitleContainer}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Goal Details</Text>
-            </View>
+            <Text style={styles.headerTitle}>Goal</Text>
             <View style={styles.headerSpacer} />
           </View>
         </SafeAreaView>
 
-        <ScrollView 
-          style={styles.scrollView} 
+        <ScrollView
+          style={styles.scrollView}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: bottomNavPadding + 24 }}
+          contentContainerStyle={{ paddingBottom: bottomNavPadding + 28, paddingTop: 14 }}
+          keyboardShouldPersistTaps="handled"
         >
-        {/* Goal Overview Card */}
-        <View style={[styles.overviewCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-          <View style={styles.goalHeader}>
-            <Text style={styles.goalIcon}>{getCategoryIcon(goal.category || 'default')}</Text>
-            <View style={styles.goalInfo}>
-              <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>{goal.title}</Text>
-              <Text style={[styles.goalCategory, { color: theme.textSecondary }]}>{goal.category}</Text>
+          <View style={styles.card}>
+            <View style={styles.goalHeader}>
+              <View style={styles.goalIconWrap}>
+                <Text style={styles.goalIcon}>{getCategoryIcon(goal.category || 'default')}</Text>
+              </View>
+              <View style={styles.goalInfo}>
+                <Text style={styles.goalTitle}>{goal.title}</Text>
+                {!!goal.category && <Text style={styles.goalCategory}>{goal.category}</Text>}
+              </View>
             </View>
+            {!!goal.description && <Text style={styles.goalDescription}>{goal.description}</Text>}
           </View>
-          <Text style={[styles.goalDescription, { color: theme.textPrimary }]}>{goal.description}</Text>
-        </View>
 
-        {/* Update Box */}
-        <View style={[styles.updateCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-          <View style={styles.updateHeader}>
-            <Ionicons name="create-outline" size={20} color={theme.primary} />
-            <Text style={[styles.updateTitle, { color: theme.textPrimary }]}>Post an Update</Text>
-          </View>
-          
-          <TextInput
-            style={[styles.updateInput, { color: theme.textPrimary, borderColor: '#E5E7EB' }]}
-            placeholder="What progress have you made?"
-            placeholderTextColor={theme.textSecondary}
-            value={updateText}
-            onChangeText={handleUpdateTextChange}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            autoCapitalize="sentences"
-            autoCorrect={true}
-          />
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Post an update</Text>
+            <TextInput
+              style={styles.updateInput}
+              placeholder="What progress have you made?"
+              placeholderTextColor="#9CA3AF"
+              value={updateText}
+              onChangeText={handleUpdateTextChange}
+              multiline
+              textAlignVertical="top"
+              autoCapitalize="sentences"
+              autoCorrect
+            />
 
-          {/* Image Preview */}
-          {updateImage && (
-            <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: updateImage }} style={styles.imagePreview} />
-              <TouchableOpacity 
-                style={styles.removeImageButton}
-                onPress={() => setUpdateImage(null)}
-              >
-                <Ionicons name="close-circle" size={24} color="#EF4444" />
+            {updateImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: updateImage }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setUpdateImage(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close" size={16} color={DARK} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            <View style={styles.updateActions}>
+              <TouchableOpacity style={styles.secondaryChip} onPress={handlePickUpdateImage} activeOpacity={0.85}>
+                <Ionicons name="image-outline" size={16} color={DARK} />
+                <Text style={styles.secondaryChipText}>Add photo</Text>
               </TouchableOpacity>
+
+              {goal.milestones && goal.milestones.length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.secondaryChip, selectedMilestone ? styles.secondaryChipActive : null]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    Alert.alert(
+                      'Link to Milestone',
+                      'Select a milestone to link this update to:',
+                      goal.milestones!
+                        .map((milestone: string, index: number) => ({
+                          text: typeof milestone === 'string' ? milestone : `Milestone ${index + 1}`,
+                          onPress: () => setSelectedMilestone(String(index)),
+                        }))
+                        .concat([{ text: 'Cancel', style: 'cancel' } as any])
+                    );
+                  }}
+                >
+                  <Ionicons name="flag-outline" size={16} color={selectedMilestone ? '#FFFFFF' : DARK} />
+                  <Text style={[styles.secondaryChipText, selectedMilestone ? styles.secondaryChipTextActive : null]}>
+                    {selectedMilestone ? 'Milestone linked' : 'Link milestone'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
-          )}
 
-          {/* Action Buttons */}
-          <View style={styles.updateActions}>
-            <TouchableOpacity 
-              style={styles.updateActionButton}
-              onPress={handlePickUpdateImage}
-            >
-              <Ionicons name="image-outline" size={20} color={theme.primary} />
-              <Text style={[styles.updateActionText, { color: theme.primary }]}>Add Photo</Text>
-            </TouchableOpacity>
-
-            {goal.milestones && goal.milestones.length > 0 && (
-              <TouchableOpacity 
-                style={styles.updateActionButton}
-                onPress={() => {
-                  Alert.alert(
-                    'Link to Milestone',
-                    'Select a milestone to link this update to:',
-                    goal.milestones.map((milestone: any) => ({
-                      text: milestone.title,
-                      onPress: () => setSelectedMilestone(milestone.id)
-                    })).concat([{ text: 'Cancel', style: 'cancel' }])
-                  );
-                }}
-              >
-                <Ionicons name="flag-outline" size={20} color={theme.primary} />
-                <Text style={[styles.updateActionText, { color: theme.primary }]}>
-                  {selectedMilestone ? 'Milestone Linked' : 'Link Milestone'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity 
-              style={[
-                styles.postButton, 
-                { 
-                  backgroundColor: theme.primary,
-                  opacity: isPosting ? 0.6 : 1
-                }
-              ]}
+            <TouchableOpacity
+              style={[styles.primaryBtn, isPosting && { opacity: 0.55 }]}
               onPress={handlePostUpdate}
               disabled={isPosting}
+              activeOpacity={0.88}
             >
               {isPosting ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={styles.postButtonText}>Post</Text>
+                <Text style={styles.primaryBtnText}>Post update</Text>
               )}
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Goal Details Card */}
-        <View style={[styles.detailsCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Goal Details</Text>
-          
-          <View style={styles.detailRow}>
-            <View style={styles.detailItem}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Start Date</Text>
-              <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{goal.start_date}</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Details</Text>
+            <View style={styles.detailGrid}>
+              <View style={styles.detailTile}>
+                <Text style={styles.detailLabel}>Start</Text>
+                <Text style={styles.detailValue}>{goal.start_date || '—'}</Text>
+              </View>
+              <View style={styles.detailTile}>
+                <Text style={styles.detailLabel}>End</Text>
+                <Text style={styles.detailValue}>{goal.end_date || 'Ongoing'}</Text>
+              </View>
+              <View style={styles.detailTile}>
+                <Text style={styles.detailLabel}>Commitment</Text>
+                <Text style={styles.detailValue}>{goal.time_commitment || 'Not set'}</Text>
+              </View>
+              <View style={styles.detailTile}>
+                <Text style={styles.detailLabel}>Updates</Text>
+                <Text style={styles.detailValue}>{progressPhotos.length}</Text>
+              </View>
             </View>
-            <View style={styles.detailItem}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>End Date</Text>
-              <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{goal.end_date || 'Ongoing'}</Text>
-            </View>
-          </View>
 
-          <View style={styles.detailRow}>
-            <View style={styles.detailItem}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Time Commitment</Text>
-              <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{goal.time_commitment || 'Not specified'}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Updates</Text>
-              <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{progressPhotos.length}</Text>
-            </View>
-          </View>
-
-          <View style={styles.frequencySection}>
-            <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Frequency</Text>
+            <Text style={[styles.detailLabel, { marginTop: 14, marginBottom: 8 }]}>Frequency</Text>
             <View style={styles.frequencyDays}>
-              {daysOfWeek.map((day, index) => (
-                <View 
-                  key={day} 
-                  style={[
-                    styles.frequencyDay,
-                    { backgroundColor: 'rgba(128, 128, 128, 0.2)' },
-                    goal.frequency && goal.frequency[index] && { backgroundColor: theme.primary }
-                  ]}
-                >
-                  <Text style={[
-                    styles.frequencyDayText,
-                    { color: theme.textSecondary },
-                    goal.frequency && goal.frequency[index] && styles.activeFrequencyDayText
-                  ]}>
-                    {day.charAt(0)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Success Criteria Card */}
-        {(goal.success_criteria || (goal.milestones && goal.milestones.length > 0)) && (
-          <View style={[styles.detailsCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>Success Plan</Text>
-            
-            {goal.success_criteria && (
-              <View style={styles.criteriaSection}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Success Criteria</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{goal.success_criteria}</Text>
-              </View>
-            )}
-
-            {Array.isArray(goal.milestones) && goal.milestones.length > 0 && (
-              <View style={styles.milestonesSection}>
-                <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Milestones</Text>
-                {goal.milestones.map((milestone, index) => (
-                  <View key={index} style={styles.milestoneItem}>
-                    <View style={[styles.milestoneNumber, { backgroundColor: theme.primary }]}>
-                      <Text style={styles.milestoneNumberText}>{index + 1}</Text>
-                    </View>
-                    <Text style={[styles.milestoneText, { color: theme.textPrimary }]}>{milestone}</Text>
+              {daysOfWeek.map((day, index) => {
+                const active = !!(goal.frequency && goal.frequency[index]);
+                return (
+                  <View key={day} style={[styles.frequencyDay, active && styles.frequencyDayActive]}>
+                    <Text style={[styles.frequencyDayText, active && styles.frequencyDayTextActive]}>
+                      {day.charAt(0)}
+                    </Text>
                   </View>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Progress Card */}
-        <View style={[styles.progressPhotosCard, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 0 }]}>Progress</Text>
-            {progressPhotos.length > 0 && (
-              <Text style={[styles.photoCount, { color: theme.textSecondary }]}>{progressPhotos.length}</Text>
-            )}
-          </View>
-          
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
+                );
+              })}
             </View>
-          ) : progressPhotos.length > 0 ? (
-            <View style={styles.updatesList}>
-              {progressPhotos.map((photo, index) => (
-                <View 
-                  key={photo.id} 
-                  style={[
-                    styles.updateItem, 
-                    { 
-                      borderBottomColor: '#E5E7EB',
-                      borderBottomWidth: index === progressPhotos.length - 1 ? 0 : 1
-                    }
-                  ]}
-                >
-                  <View style={styles.updateContent}>
-                    <View style={styles.updateTextContainer}>
-                      <Text style={[styles.updateDate, { color: theme.textSecondary }]}>
-                        {photo.check_in_date 
-                          ? new Date(photo.check_in_date).toLocaleDateString(undefined, { 
-                              month: 'short', 
-                              day: 'numeric',
-                              year: 'numeric'
-                            })
-                          : new Date(photo.date_uploaded).toLocaleDateString(undefined, { 
-                              month: 'short', 
-                              day: 'numeric',
-                              year: 'numeric'
-                            })
-                        }
+          </View>
+
+          {(goal.success_criteria || (goal.milestones && goal.milestones.length > 0)) && (
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>Success plan</Text>
+              {goal.success_criteria ? (
+                <View style={{ marginBottom: goal.milestones?.length ? 14 : 0 }}>
+                  <Text style={styles.detailLabel}>Criteria</Text>
+                  <Text style={[styles.detailValue, { marginTop: 4 }]}>{goal.success_criteria}</Text>
+                </View>
+              ) : null}
+
+              {Array.isArray(goal.milestones) && goal.milestones.length > 0 ? (
+                <View style={{ gap: 10 }}>
+                  <Text style={styles.detailLabel}>Milestones</Text>
+                  {goal.milestones.map((milestone, index) => (
+                    <View key={index} style={styles.milestoneItem}>
+                      <View style={styles.milestoneNumber}>
+                        <Text style={styles.milestoneNumberText}>{index + 1}</Text>
+                      </View>
+                      <Text style={styles.milestoneText}>
+                        {typeof milestone === 'string' ? milestone : String(milestone)}
                       </Text>
-                      {photo.note && (
-                        <Text style={[styles.updateText, { color: theme.textPrimary }]}>
-                          {photo.note}
-                        </Text>
-                      )}
                     </View>
-                    {photo.photo_url && photo.photo_url !== 'no-photo' && (
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={[styles.cardLabel, { marginBottom: 0 }]}>Progress</Text>
+              {progressPhotos.length > 0 ? (
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{progressPhotos.length}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={DARK} />
+                <Text style={styles.loadingText}>Loading updates…</Text>
+              </View>
+            ) : progressPhotos.length > 0 ? (
+              <View style={styles.updatesList}>
+                {progressPhotos.map((photo, index) => (
+                  <View
+                    key={photo.id}
+                    style={[
+                      styles.updateItem,
+                      index === progressPhotos.length - 1 && { borderBottomWidth: 0, paddingBottom: 0 },
+                    ]}
+                  >
+                    <View style={styles.updateTextContainer}>
+                      <Text style={styles.updateDate}>
+                        {photo.check_in_date
+                          ? new Date(photo.check_in_date).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : new Date(photo.date_uploaded).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                      </Text>
+                      {photo.note ? <Text style={styles.updateBody}>{photo.note}</Text> : null}
+                    </View>
+
+                    {photo.photo_url && photo.photo_url !== 'no-photo' ? (
                       <View style={styles.updateImageContainer}>
-                      <Image 
-                        source={{ uri: photo.photo_url }} 
-                          style={styles.updateImage}
-                      />
+                        <Image source={{ uri: photo.photo_url }} style={styles.updateImage} />
                         <TouchableOpacity
                           style={styles.updateDeleteButton}
                           onPress={() => handleDeleteCheckIn(photo)}
                         >
-                          <Ionicons name="trash-outline" size={14} color="#ffffff" />
+                          <Ionicons name="trash-outline" size={14} color="#FFFFFF" />
                         </TouchableOpacity>
                       </View>
-                    )}
-                    {(!photo.photo_url || photo.photo_url === 'no-photo') && (
-                    <TouchableOpacity
-                        style={styles.updateDeleteButtonText}
-                      onPress={() => handleDeleteCheckIn(photo)}
-                    >
-                        <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
-                    </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.textDeleteBtn}
+                        onPress={() => handleDeleteCheckIn(photo)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
                     )}
                   </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  <Ionicons name="document-text-outline" size={22} color={DARK} />
                 </View>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>No updates yet</Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+                <Text style={styles.emptyTitle}>No updates yet</Text>
+                <Text style={styles.emptySubtitle}>Post your first check-in above</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </View>
     </CustomBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 10,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
-    padding: 4,
-    width: 32,
-  },
-  headerTitleContainer: {
-    flex: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    flex: 1,
     textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '700',
+    color: DARK,
   },
-  headerSpacer: {
-    width: 32,
-  },
-  overviewCard: {
-    marginHorizontal: 24,
-    marginTop: 16,
-    marginBottom: 8,
+  headerSpacer: { width: 36 },
+  card: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  updateCard: {
-    marginHorizontal: 24,
-    marginTop: 8,
-    marginBottom: 8,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  cardLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: DARK,
+    marginBottom: 12,
   },
-  updateHeader: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
-    gap: 8,
   },
-  updateTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  countPill: {
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
   },
+  countPillText: { fontSize: 12, fontWeight: '700', color: DARK },
+  goalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  goalIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goalIcon: { fontSize: 24 },
+  goalInfo: { flex: 1 },
+  goalTitle: { fontSize: 20, fontWeight: '800', color: DARK },
+  goalCategory: { marginTop: 2, fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  goalDescription: { marginTop: 12, fontSize: 14, fontWeight: '500', color: '#374151', lineHeight: 20 },
   updateInput: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
     minHeight: 100,
-    marginBottom: 12,
-  },
-  imagePreviewContainer: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  imagePreview: {
-    width: '100%',
-    height: 200,
     borderRadius: 12,
+    backgroundColor: '#F8F9FB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: DARK,
+    marginBottom: 12,
   },
+  imagePreviewContainer: { position: 'relative', marginBottom: 12 },
+  imagePreview: { width: '100%', height: 180, borderRadius: 14, backgroundColor: '#F3F4F6' },
   removeImageButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'white',
-    borderRadius: 12,
-  },
-  updateActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  updateActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    flexShrink: 1,
-  },
-  updateActionText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  postButton: {
-    marginLeft: 'auto',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    minWidth: 70,
-  },
-  postButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  goalIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  goalInfo: {
-    flex: 1,
-  },
-  goalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  goalCategory: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  goalDescription: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  detailsCard: {
-    marginHorizontal: 24,
-    marginVertical: 8,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  detailItem: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  frequencySection: {
-    marginTop: 8,
-  },
-  frequencyDays: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  frequencyDay: {
+    top: 10,
+    right: 10,
     width: 32,
     height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  updateActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  secondaryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  secondaryChipActive: { backgroundColor: DARK, borderColor: DARK },
+  secondaryChipText: { fontSize: 13, fontWeight: '700', color: DARK },
+  secondaryChipTextActive: { color: '#FFFFFF' },
+  primaryBtn: {
+    backgroundColor: DARK,
     borderRadius: 16,
-    justifyContent: 'center',
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  activeFrequencyDay: {
-    // backgroundColor is now set dynamically in the component
-  },
-  frequencyDayText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  activeFrequencyDayText: {
-    color: '#ffffff',
-  },
-  criteriaSection: {
-    marginBottom: 16,
-  },
-  milestonesSection: {
-    marginTop: 8,
-  },
-  milestoneItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  milestoneNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    // backgroundColor is now set dynamically in the component
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  milestoneNumberText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  milestoneText: {
-    flex: 1,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  loadingText: {
-    fontSize: 16,
-  },
-  photosGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  photoCard: {
-    width: (width - 88) / 2, // 2 photos per row with margins
-    marginBottom: 16,
-  },
-  photoContainer: {
-    position: 'relative',
-    marginBottom: 6,
-    width: '100%',
-    aspectRatio: 1,
-  },
-  progressPhoto: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 12,
-  },
-  noPhotoPlaceholder: {
-    width: '100%',
-    height: '100%',
+  primaryBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  detailTile: {
+    width: '48%',
+    flexGrow: 1,
+    backgroundColor: '#F8F9FB',
     borderRadius: 12,
     borderWidth: 1,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
+    borderColor: '#E5E7EB',
+    padding: 12,
+  },
+  detailLabel: { fontSize: 11, fontWeight: '700', color: '#6B7280', letterSpacing: 0.2 },
+  detailValue: { marginTop: 4, fontSize: 14, fontWeight: '700', color: DARK },
+  frequencyDays: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  frequencyDay: {
+    flex: 1,
+    aspectRatio: 1,
+    maxWidth: 40,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  noPhotoText: {
-    fontSize: 12,
-    marginTop: 4,
+  frequencyDayActive: { backgroundColor: DARK, borderColor: DARK },
+  frequencyDayText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  frequencyDayTextActive: { color: '#FFFFFF' },
+  milestoneItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  milestoneNumber: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
   },
-  deleteButton: {
+  milestoneNumberText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  milestoneText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#374151', lineHeight: 20 },
+  loadingContainer: { paddingVertical: 24, alignItems: 'center', gap: 10 },
+  loadingText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  updatesList: { marginTop: 4 },
+  updateItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
+  },
+  updateTextContainer: { flex: 1 },
+  updateDate: { fontSize: 12, fontWeight: '700', color: '#6B7280', marginBottom: 4 },
+  updateBody: { fontSize: 14, fontWeight: '500', color: DARK, lineHeight: 20 },
+  updateImageContainer: { position: 'relative' },
+  updateImage: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#F3F4F6' },
+  updateDeleteButton: {
     position: 'absolute',
     top: 4,
     right: 4,
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(17,24,39,0.72)',
+    alignItems: 'center',
     justifyContent: 'center',
+  },
+  textDeleteBtn: { padding: 6 },
+  emptyState: { alignItems: 'center', paddingVertical: 22 },
+  emptyIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
-  photoDate: {
-    fontSize: 11,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  photoNote: {
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  progressPhotosCard: {
-    marginHorizontal: 24,
-    marginVertical: 8,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  photoCount: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  photosScrollContent: {
-    gap: 12,
-    paddingRight: 8,
-  },
-  photoItem: {
-    width: 100,
-    alignItems: 'center',
-  },
-  updatesList: {
-    gap: 0,
-  },
-  updateItem: {
-    paddingVertical: 16,
-  },
-  updateContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  updateTextContainer: {
-    flex: 1,
-    gap: 6,
-  },
-  updateDate: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  updateText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  updateImageContainer: {
-    position: 'relative',
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  updateImage: {
-    width: '100%',
-    height: '100%',
-  },
-  updateDeleteButton: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  updateDeleteButtonText: {
-    padding: 4,
-  },
-}); 
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: DARK },
+  emptySubtitle: { marginTop: 4, fontSize: 13, fontWeight: '500', color: '#6B7280' },
+});

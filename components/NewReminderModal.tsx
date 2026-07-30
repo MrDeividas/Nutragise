@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRemindersStore } from '../state/remindersStore';
+import { pushNotificationService } from '../lib/pushNotificationService';
 
 interface NewReminderModalProps {
   visible: boolean;
@@ -66,6 +67,16 @@ export default function NewReminderModal({ visible, onClose }: NewReminderModalP
 
     setIsSaving(true);
     try {
+      if (hasNotification) {
+        const granted = await pushNotificationService.ensurePermissions();
+        if (!granted) {
+          Alert.alert(
+            'Notifications disabled',
+            'Enable notifications in Settings so reminder alerts can fire.'
+          );
+        }
+      }
+
       await addReminder({
         title: title.trim(),
         time: hasNotification ? date.toISOString() : null,
@@ -143,7 +154,7 @@ export default function NewReminderModal({ visible, onClose }: NewReminderModalP
         />
       </View>
 
-      <View style={styles.toggleRow}>
+      <View style={[styles.toggleRow, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}>
         <View style={styles.toggleLeft}>
           <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>Remind me with a notification</Text>
         </View>
@@ -155,7 +166,7 @@ export default function NewReminderModal({ visible, onClose }: NewReminderModalP
               setActivePicker(null);
             }
           }}
-          trackColor={{ false: 'rgba(128, 128, 128, 0.15)', true: theme.primary }}
+          trackColor={{ false: 'rgba(128, 128, 128, 0.35)', true: theme.primary }}
           thumbColor={Platform.OS === 'ios' ? '#FFFFFF' : hasNotification ? '#FFFFFF' : '#f4f3f4'}
         />
       </View>
@@ -403,7 +414,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
   },
   toggleLeft: {
     flex: 1,

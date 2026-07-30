@@ -82,11 +82,15 @@ export function parseWaterTargetLiters(goal: string | null | undefined): string 
 }
 
 function gymSessionName(h: DailyHabits): string | null {
-  if (h.gym_custom_type?.trim()) return h.gym_custom_type.trim();
-  if (h.gym_training_types && h.gym_training_types.length > 0) {
-    return h.gym_training_types.join(', ');
+  let name: string | null = null;
+  if (h.gym_custom_type?.trim()) name = h.gym_custom_type.trim();
+  else if (h.gym_training_types && h.gym_training_types.length > 0) {
+    name = h.gym_training_types.join(', ');
   }
-  return null;
+  if (!name) return null;
+  const duration = h.gym_duration?.trim();
+  if (duration) return truncateMetric(`${name} · ${duration}`, 22);
+  return name;
 }
 
 function exerciseSummary(h: DailyHabits): string | null {

@@ -341,7 +341,7 @@ export default function CommentModal({ visible, goalId, goalTitle, onClose }: Co
           {/* Comments List */}
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <ActivityIndicator size="large" color={"#1f2937"} />
               <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
                 Loading comments...
               </Text>

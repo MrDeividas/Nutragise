@@ -146,7 +146,7 @@ export default function OnboardingAnswersScreen() {
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <ActivityIndicator size="large" color={"#1f2937"} />
           </View>
         </SafeAreaView>
       </CustomBackground>

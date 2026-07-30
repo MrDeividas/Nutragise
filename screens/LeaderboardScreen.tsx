@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,14 @@ interface LeaderboardUser {
   avatar_url?: string;
 }
 
+type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly';
+
+const PERIODS: { key: LeaderboardPeriod; label: string }[] = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+];
+
 function getInitials(username: string) {
   const parts = username.trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -37,10 +46,32 @@ const DARK = '#1f2937';
 export default function LeaderboardScreen({ navigation }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<LeaderboardPeriod>('daily');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [segmentTrackWidth, setSegmentTrackWidth] = useState(0);
+  const segmentIndicatorX = useRef(new Animated.Value(0)).current;
+  const segmentHasPositioned = useRef(false);
+
+  const segmentIndex = PERIODS.findIndex((p) => p.key === leaderboardPeriod);
+  const segmentTabWidth = segmentTrackWidth > 0 ? segmentTrackWidth / PERIODS.length : 0;
+
+  useEffect(() => {
+    if (segmentTabWidth <= 0) return;
+    const toValue = Math.max(0, segmentIndex) * segmentTabWidth;
+    if (!segmentHasPositioned.current) {
+      segmentHasPositioned.current = true;
+      segmentIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(segmentIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 80,
+    }).start();
+  }, [segmentIndex, segmentTabWidth, segmentIndicatorX]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -74,6 +105,9 @@ export default function LeaderboardScreen({ navigation }: any) {
         return;
       }
 
+      const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
+      const profilesWithAvatars = await enrichProfilesWithAvatars(users);
+
       const today = new Date();
       const todayStr = today.toISOString().split('T')[0];
 
@@ -86,7 +120,7 @@ export default function LeaderboardScreen({ navigation }: any) {
       const lastMonthStr = lastMonth.toISOString().split('T')[0];
 
       const usersWithPoints = await Promise.all(
-        users.map(async (profileUser) => {
+        profilesWithAvatars.map(async (profileUser) => {
           try {
             let points = 0;
 
@@ -103,7 +137,7 @@ export default function LeaderboardScreen({ navigation }: any) {
               id: profileUser.id,
               username: profileUser.username || 'Unknown',
               points,
-              avatar_url: profileUser.avatar_url,
+              avatar_url: profileUser.avatar_url || undefined,
             };
           } catch (err) {
             console.error(`Error fetching points for user ${profileUser.id}:`, err);
@@ -111,7 +145,7 @@ export default function LeaderboardScreen({ navigation }: any) {
               id: profileUser.id,
               username: profileUser.username || 'Unknown',
               points: 0,
-              avatar_url: profileUser.avatar_url,
+              avatar_url: profileUser.avatar_url || undefined,
             };
           }
         })
@@ -179,31 +213,6 @@ export default function LeaderboardScreen({ navigation }: any) {
     );
   };
 
-  const renderLeaderboardTab = (period: 'daily' | 'weekly' | 'monthly', label: string) => {
-    const active = leaderboardPeriod === period;
-    return (
-      <TouchableOpacity
-        style={[
-          styles.leaderboardTab,
-          active
-            ? { backgroundColor: DARK }
-            : { backgroundColor: '#F1F3F5' },
-        ]}
-        onPress={() => setLeaderboardPeriod(period)}
-        activeOpacity={0.8}
-      >
-        <Text
-          style={[
-            styles.leaderboardTabText,
-            { color: active ? '#FFFFFF' : '#6B7280' },
-          ]}
-        >
-          {label}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
   const listUsers = leaderboardData.length > 3 ? leaderboardData.slice(3) : [];
 
   return (
@@ -218,10 +227,46 @@ export default function LeaderboardScreen({ navigation }: any) {
         </View>
 
         <View style={[styles.content, { backgroundColor: 'transparent' }]}>
-          <View style={styles.leaderboardTabs}>
-            {renderLeaderboardTab('daily', 'Daily')}
-            {renderLeaderboardTab('weekly', 'Weekly')}
-            {renderLeaderboardTab('monthly', 'Monthly')}
+          <View style={styles.segmentPad}>
+            <View
+              style={styles.segmentBar}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width - 8;
+                if (w > 0 && Math.abs(w - segmentTrackWidth) > 0.5) {
+                  setSegmentTrackWidth(w);
+                }
+              }}
+            >
+              {segmentTabWidth > 0 && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.segmentIndicator,
+                    {
+                      width: segmentTabWidth,
+                      transform: [{ translateX: segmentIndicatorX }],
+                    },
+                  ]}
+                />
+              )}
+              {PERIODS.map((period) => (
+                <TouchableOpacity
+                  key={period.key}
+                  style={styles.segment}
+                  onPress={() => setLeaderboardPeriod(period.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      leaderboardPeriod === period.key && styles.segmentTextActive,
+                    ]}
+                  >
+                    {period.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           {loading ? (
@@ -304,22 +349,48 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 16,
   },
-  leaderboardTabs: {
-    flexDirection: 'row',
-    marginBottom: 20,
+  segmentPad: {
     paddingHorizontal: 20,
-    gap: 8,
+    marginBottom: 20,
   },
-  leaderboardTab: {
+  segmentBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative',
+    overflow: 'visible',
+  },
+  segmentIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
+  },
+  segment: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 999,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    zIndex: 1,
   },
-  leaderboardTabText: {
-    fontSize: 13,
+  segmentText: {
+    color: '#6B7280',
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.3,
+  },
+  segmentTextActive: {
+    color: '#FFFFFF',
   },
   leaderboardScrollView: {
     flex: 1,
@@ -327,14 +398,30 @@ const styles = StyleSheet.create({
   leaderboardContentContainer: {
     paddingBottom: 32,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
   listContainer: {
-    paddingHorizontal: 20,
+    marginTop: 8,
+    paddingHorizontal: 16,
   },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    marginBottom: 10,
+    paddingBottom: 8,
   },
   listHeaderText: {
     fontSize: 11,
@@ -343,49 +430,45 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   listHeaderRank: {
-    width: 28,
+    width: 36,
   },
   listHeaderPlayer: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 52,
   },
   listHeaderPoints: {
+    width: 72,
     textAlign: 'right',
-    minWidth: 64,
   },
   leaderboardItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 12,
-    marginBottom: 8,
     borderRadius: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
+    marginBottom: 8,
   },
   rankText: {
-    width: 28,
-    fontSize: 18,
-    fontWeight: '800',
+    width: 36,
+    fontSize: 15,
+    fontWeight: '700',
   },
   avatar: {
     width: 40,
     height: 40,
-    borderRadius: 10,
-    marginRight: 10,
+    borderRadius: 12,
+    marginRight: 12,
   },
   avatarPlaceholder: {
-    backgroundColor: '#EEF2F7',
+    backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   avatarInitials: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#64748B',
+    color: DARK,
   },
   userInfo: {
     flex: 1,
@@ -397,22 +480,8 @@ const styles = StyleSheet.create({
   },
   pointsText: {
     fontSize: 15,
-    fontWeight: '800',
-    minWidth: 48,
+    fontWeight: '700',
+    minWidth: 56,
     textAlign: 'right',
-  },
-  loadingContainer: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
   },
 });

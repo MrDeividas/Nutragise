@@ -56,6 +56,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             bio: userData.bio,
             avatar_url: userData.avatar_url
           });
+        } else if (profileData && !profileData.avatar_url && userData?.avatar_url) {
+          // Keep profiles in sync so community/leaderboard can show avatars
+          await supabase
+            .from('profiles')
+            .update({ avatar_url: userData.avatar_url })
+            .eq('id', session.user.id);
         }
 
         const userToSet = userData || {
@@ -101,6 +107,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
               bio: userData.bio,
               avatar_url: userData.avatar_url
             });
+          } else if (profileData && !profileData.avatar_url && userData?.avatar_url) {
+            await supabase
+              .from('profiles')
+              .update({ avatar_url: userData.avatar_url })
+              .eq('id', session.user.id);
           }
 
           iapService.logIn(session.user.id).catch(() => {});
@@ -277,14 +288,17 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           .single();
 
         if (existingUser) {
-          // User exists, use UPDATE
+          // User exists, use UPDATE — omit avatar_url when not provided
+          const usersPayload: Record<string, any> = {
+            username: data.username,
+            bio: data.bio ?? user.bio ?? '',
+          };
+          if (data.avatar_url !== undefined) {
+            usersPayload.avatar_url = data.avatar_url;
+          }
           const { error: updateError } = await supabase
             .from('users')
-            .update({
-              username: data.username,
-              bio: data.bio,
-              avatar_url: data.avatar_url
-            })
+            .update(usersPayload)
             .eq('id', user.id);
 
           if (updateError) {
@@ -299,8 +313,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
               id: user.id,
               email: user.email,
               username: data.username,
-              bio: data.bio,
-              avatar_url: data.avatar_url
+              bio: data.bio ?? '',
+              ...(data.avatar_url !== undefined ? { avatar_url: data.avatar_url } : {}),
             });
           
           if (insertError) {
@@ -313,16 +327,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         usersError = usersTableError;
       }
 
-      // Update profiles table for social features (this is the critical one)
+      // Update profiles table for social features (this is the critical one).
+      // Only include avatar_url when provided so username/bio edits don't wipe it.
+      const profilePayload: Record<string, any> = {
+        id: user.id,
+        username: data.username,
+        display_name: data.username,
+        bio: data.bio ?? user.bio ?? '',
+      };
+      if (data.avatar_url !== undefined) {
+        profilePayload.avatar_url = data.avatar_url;
+      }
+
       const { error: profilesError } = await supabase
         .from('profiles')
-        .upsert({
-          id: user.id,
-          username: data.username,
-          display_name: data.username,
-          bio: data.bio,
-          avatar_url: data.avatar_url
-        });
+        .upsert(profilePayload);
 
       // Only fail if profiles update fails - users table is secondary
       if (profilesError) {
@@ -334,8 +353,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         user: {
           ...user,
           username: data.username,
-          bio: data.bio,
-          avatar_url: data.avatar_url
+          bio: data.bio ?? user.bio,
+          ...(data.avatar_url !== undefined ? { avatar_url: data.avatar_url } : {}),
         }
       });
 

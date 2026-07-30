@@ -174,7 +174,7 @@ export default function MeditationPlayerScreen({ route, navigation }: Meditation
         <View style={styles.content}>
           {isLoading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
+              <ActivityIndicator size="large" color={"#1f2937"} />
               <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
                 Loading meditation...
               </Text>

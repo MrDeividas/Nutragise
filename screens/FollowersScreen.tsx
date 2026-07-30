@@ -219,7 +219,7 @@ export default function FollowersScreen({ navigation, route }: Props) {
         {/* Content */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <ActivityIndicator size="large" color={"#1f2937"} />
             <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
               Loading...
             </Text>

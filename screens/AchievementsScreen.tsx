@@ -227,7 +227,7 @@ export default function AchievementsScreen() {
 
         {loading ? (
           <View style={styles.loading}>
-            <ActivityIndicator color={theme.primary} />
+            <ActivityIndicator color={"#1f2937"} />
           </View>
         ) : (
           <FlatList

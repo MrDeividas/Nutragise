@@ -215,7 +215,7 @@ export default function JoinPrivateChallengeModal({ visible, onClose, onSubmit }
                           </View>
                           {challenge.entry_fee && challenge.entry_fee > 0 && (
                             <Text style={[styles.feeNote, { color: theme.textSecondary }]}>
-                              This amount will be deducted from your wallet and held in escrow until the challenge completes.
+                              This amount will be taken from your wallet when you join. If your balance is short, you'll be asked to top up first.
                             </Text>
                           )}
                         </View>

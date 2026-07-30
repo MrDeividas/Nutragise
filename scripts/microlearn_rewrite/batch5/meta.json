@@ -1,0 +1,367 @@
+[
+  {
+    "id": "91ce6591-fbc7-4206-84bc-5bd124e822f9",
+    "title": "The Happiness Advantage",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780307591548-L.jpg",
+    "short_description": "Shawn Achor\u2019s positive psychology case that happiness fuels success \u2014 not the other way around.",
+    "chapter_titles": [
+      "Chapter 1: Success follows happiness more than we admit",
+      "Chapter 2: The fulcrum and the lever",
+      "Chapter 3: The Tetris effect",
+      "Chapter 4: Falling up",
+      "Chapter 5: The Zorro circle",
+      "Chapter 6: The 20-second rule",
+      "Chapter 7: Social investment",
+      "Chapter 8: Praise and storytelling",
+      "Chapter 9: Ripples on teams",
+      "Chapter 10: Sustain practices",
+      "Chapter 11: Realistic optimism at work",
+      "Chapter 12: Your thirty-day happiness sprint"
+    ],
+    "questions": [
+      {
+        "id": "2b2fc59b-c254-421e-b4bd-65bdbd634da7",
+        "question_text": "What is the happiness advantage idea?",
+        "option_a": "Success must come before any happiness",
+        "option_b": "Positive mindset and happiness skills help drive success now",
+        "option_c": "Only money causes happiness",
+        "option_d": "Emotions never affect performance",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "898dbc6a-f40b-4f58-aaae-a7d3471d432e",
+        "question_text": "What is the Tetris effect here?",
+        "option_a": "Only playing games at work",
+        "option_b": "Brains see more of what they practice noticing \u2014 train opportunity scanning",
+        "option_c": "Ignoring all problems forever",
+        "option_d": "Multitasking blocks",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "c3f008d9-b7e3-4517-a29c-84489956cc3b",
+        "question_text": "What is the 20-second rule?",
+        "option_a": "Wait twenty seconds before every decision forever",
+        "option_b": "Lower friction for good habits and raise friction for bad ones",
+        "option_c": "Exercise only twenty seconds",
+        "option_d": "Never prepare gear",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "fb48ea93-9768-4233-9d27-3f1874dcd5a8",
+        "question_text": "Why invest socially?",
+        "option_a": "Relationships do not matter",
+        "option_b": "Social support strongly predicts thriving and performance",
+        "option_c": "Only network for status",
+        "option_d": "Isolate to win",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "5920862a-310c-4d32-ba7f-566fe541eb78",
+        "question_text": "What is a Zorro circle?",
+        "option_a": "A fencing class only",
+        "option_b": "A small circle of control to master when overwhelmed, then expand",
+        "option_c": "A gossip circle",
+        "option_d": "Avoiding all goals",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "05a3f2a9-2a43-4175-b93c-72c1bf8fdd23",
+    "title": "Awaken the Giant Within",
+    "duration_minutes": 32,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780671791544-L.jpg",
+    "short_description": "Robbins on deciding your life \u2014 beliefs, neuro-associative conditioning, values, and raising standards.",
+    "chapter_titles": [
+      "Chapter 1: Raise your standards",
+      "Chapter 2: The triad of decision",
+      "Chapter 3: Beliefs as fuses",
+      "Chapter 4: Pain and pleasure levers",
+      "Chapter 5: Questions create experience",
+      "Chapter 6: Values clarity",
+      "Chapter 7: Identity upgrade",
+      "Chapter 8: Physical and emotional states",
+      "Chapter 9: Goal architecture",
+      "Chapter 10: Relationships and contribution",
+      "Chapter 11: Continuous improvement days",
+      "Chapter 12: Your giant 30 days"
+    ],
+    "questions": [
+      {
+        "id": "f1d99569-06a0-441b-8186-e2ee26de4baa",
+        "question_text": "What starts lasting change in Robbins\u2019 framing?",
+        "option_a": "Leaving everything as a vague should",
+        "option_b": "Raising standards so key actions become musts",
+        "option_c": "Never deciding",
+        "option_d": "Only wishing",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "476aa657-287d-4237-aba7-f594f3a00a09",
+        "question_text": "What is the decision triad?",
+        "option_a": "Sleep, snack, scroll",
+        "option_b": "Focus, meaning, and action",
+        "option_c": "Blame, delay, quit",
+        "option_d": "Only emotions",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "e6b78b1b-5177-416d-bb02-20fefadb2023",
+        "question_text": "NAC-style change uses?",
+        "option_a": "Ignoring pain and pleasure",
+        "option_b": "Linking pain to old patterns and pleasure to new empowering ones",
+        "option_c": "Only punishments forever",
+        "option_d": "Random associations",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "e6b59455-f4c9-4e08-ae06-be34361efd77",
+        "question_text": "Why clarify values?",
+        "option_a": "Values never conflict",
+        "option_b": "Hierarchies explain inner conflicts and guide decisions",
+        "option_c": "To impress strangers only",
+        "option_d": "To avoid action",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "f25a702a-1eec-4455-9306-a7a80ef8cf93",
+        "question_text": "CANI means?",
+        "option_a": "Quit improving",
+        "option_b": "Constant and never-ending improvement \u2014 small upgrades ongoing",
+        "option_c": "Only giant leaps rarely",
+        "option_d": "Ignore feedback",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "1c31408d-e6b7-4a23-bf84-c94cfcda5219",
+    "title": "Psycho-Cybernetics",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780399176135-L.jpg",
+    "short_description": "Maltz on self-image as the thermostat of performance \u2014 visualization, rational thinking, and intentional identity.",
+    "chapter_titles": [
+      "Chapter 1: Maltz\u2019s pivot",
+      "Chapter 2: Servomechanism metaphor",
+      "Chapter 3: Theater of the mind",
+      "Chapter 4: Dehypnotizing beliefs",
+      "Chapter 5: Forgiving the past",
+      "Chapter 6: Relaxation response",
+      "Chapter 7: Success mechanism daily",
+      "Chapter 8: Failure as feedback",
+      "Chapter 9: Environment mirrors",
+      "Chapter 10: Practice physical skills",
+      "Chapter 11: Crisis self-image",
+      "Chapter 12: Thirty-day self-image lab"
+    ],
+    "questions": [
+      {
+        "id": "fb65f1eb-7aac-405e-9543-e862fc6fce06",
+        "question_text": "What is self-image in Maltz\u2019s framing?",
+        "option_a": "Irrelevant to results",
+        "option_b": "A thermostat that governs what performance you allow yourself",
+        "option_c": "Only your social media bio",
+        "option_d": "Fixed forever at birth",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "b4f7a0f2-5b35-4e02-bf67-f2047f259f97",
+        "question_text": "What does the servo metaphor suggest?",
+        "option_a": "Goals don\u2019t matter",
+        "option_b": "Clear targets plus feedback help the mind steer behavior",
+        "option_c": "Never review results",
+        "option_d": "Only luck steers",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "4fc54909-59f0-4f0d-b401-7ece87ea5692",
+        "question_text": "How use visualization?",
+        "option_a": "As a replacement for all practice",
+        "option_b": "Calm sensory rehearsal of process \u2014 paired with real practice",
+        "option_c": "Only catastrophizing",
+        "option_d": "Never include mistakes",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "7b3a8136-8d7a-4e4f-a565-78040b63b792",
+        "question_text": "How loosen false beliefs?",
+        "option_a": "Never examine them",
+        "option_b": "Dehypnotize with evidence, questions, and small contrary actions",
+        "option_c": "Only shame yourself",
+        "option_d": "Believe every negative thought",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "fe9e4f1b-2a44-460f-bd39-958ca365ec86",
+        "question_text": "Why relaxation?",
+        "option_a": "Anxiety always improves imagery",
+        "option_b": "Calm states help the creative mechanism learn and rehearse",
+        "option_c": "Never rest",
+        "option_d": "Only hustle louder",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "04d6a6a0-d558-40d2-bbcb-61ac46a5ce0d",
+    "title": "The Millionaire Fastlane",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780984358106-L.jpg",
+    "short_description": "MJ DeMarco\u2019s wealth philosophy \u2014 escape the sidewalk and slow lane by building scalable value.",
+    "chapter_titles": [
+      "Chapter 1: Three roads to wealth",
+      "Chapter 2: The problem with trading time",
+      "Chapter 3: Wealth formulas and perceived value",
+      "Chapter 4: Control beats fragile permission",
+      "Chapter 5: The commandment of need",
+      "Chapter 6: Entry, scale, and time",
+      "Chapter 7: Passive income is engineered",
+      "Chapter 8: Lifestyle as strategy",
+      "Chapter 9: Execution speed and feedback",
+      "Chapter 10: Fastlane ethics",
+      "Chapter 11: Hybrid paths and risk",
+      "Chapter 12: Freedom as the point"
+    ],
+    "questions": [
+      {
+        "id": "f192b84f-bd59-4e26-9c07-87513a3f0f30",
+        "question_text": "What are DeMarco\u2019s three roads?",
+        "option_a": "Only stocks, bonds, and cash",
+        "option_b": "Sidewalk, Slowane, and Fastlane",
+        "option_c": "School, job, retirement only",
+        "option_d": "Luck, lottery, inheritance",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "ba1b1a80-8631-46f1-a287-bcd7ec56e5e9",
+        "question_text": "What is a Fastlane emphasis?",
+        "option_a": "Trade more hours forever",
+        "option_b": "Build scalable systems that separate income from personal hours",
+        "option_c": "Avoid all business risk always",
+        "option_d": "Never invest",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "bcd4499b-1897-4c97-b461-1e2d524d1184",
+        "question_text": "What does the need commandment stress?",
+        "option_a": "Build only hobbies",
+        "option_b": "Solve real needs people will pay for at scale",
+        "option_c": "Ignore customers",
+        "option_d": "Copy any viral app",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "6afb9d36-c0b8-40da-a2b3-74fb71e5e262",
+        "question_text": "Why does control matter?",
+        "option_a": "So you never hire anyone",
+        "option_b": "Ownership of key pieces reduces fragile permission dependence",
+        "option_c": "Control means micromanaging friends",
+        "option_d": "Bosses should own your brand",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "6aaf3bfe-0fb7-4307-b51f-cce204d9e42c",
+        "question_text": "What is the destination DeMarco stresses?",
+        "option_a": "Endless status spending",
+        "option_b": "Freedom and control over time, not scoreboard money alone",
+        "option_c": "Retiring joy as the only plan",
+        "option_d": "Quitting ethics",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "23762019-2b8a-4e79-9c86-b17d5d68bcc1",
+    "title": "Meditations",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780140449334-L.jpg",
+    "short_description": "Marcus Aurelius\u2019 private Stoic reflections on virtue, control, mortality, and living in accordance with nature.",
+    "chapter_titles": [
+      "Chapter 1: A private notebook for a public life",
+      "Chapter 2: What is up to you",
+      "Chapter 3: Death as advisor",
+      "Chapter 4: Virtue is enough",
+      "Chapter 5: People will be difficult",
+      "Chapter 6: Cooperate with nature",
+      "Chapter 7: Attention is moral",
+      "Chapter 8: Roles and duty",
+      "Chapter 9: Anger is expensive",
+      "Chapter 10: Simplicity and enough",
+      "Chapter 11: Cooperate, then let go",
+      "Chapter 12: Return again to principles"
+    ],
+    "questions": [
+      {
+        "id": "2073c8ee-df02-483e-b92f-c07c3c04920e",
+        "question_text": "What is the dichotomy of control?",
+        "option_a": "Control other people first",
+        "option_b": "Focus on your judgments and actions; release what is not up to you",
+        "option_c": "Ignore all duties",
+        "option_d": "Never feel emotion",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "8615244f-4e4d-4c6b-8f51-c01f514c2c1d",
+        "question_text": "How does Marcus use mortality?",
+        "option_a": "To justify cruelty",
+        "option_b": "To clarify priorities and shrink pettiness",
+        "option_c": "To avoid all action",
+        "option_d": "To chase more fame",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "1cb941bf-0364-46ea-9f74-c33a27475c0b",
+        "question_text": "What is the Stoic 'good' emphasized here?",
+        "option_a": "Wealth and purple robes",
+        "option_b": "Virtue \u2014 wisdom, courage, justice, temperance",
+        "option_c": "Never speaking",
+        "option_d": "Winning arguments online",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "eee85160-6009-4418-800c-aa759f7befaa",
+        "question_text": "How should you meet difficult people according to these notes?",
+        "option_a": "With matching injustice",
+        "option_b": "With expected patience and just responses \u2014 without abandoning boundaries",
+        "option_c": "By pretending everyone is kind",
+        "option_d": "By never leaving bad rooms",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "9368fb7d-00fa-498c-b84c-b1cb412f1f0d",
+        "question_text": "What practice fits Meditations best?",
+        "option_a": "Skim posters only",
+        "option_b": "Daily reflection returning to principles after failing",
+        "option_c": "One-time motivational binge",
+        "option_d": "Avoid self-examination",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

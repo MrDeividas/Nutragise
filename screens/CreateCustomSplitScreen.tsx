@@ -22,6 +22,8 @@ import { useAuthStore } from '../state/authStore';
 import { WorkoutSplitDay } from '../types/database';
 import { EXERCISE_DATA } from './GoalsScreen';
 
+const DARK = '#1f2937';
+
 interface CreateCustomSplitScreenProps {
   navigation: any;
 }
@@ -144,7 +146,7 @@ export default function CreateCustomSplitScreen({ navigation }: CreateCustomSpli
                 {
                   color: saving || !splitName.trim() || days.length === 0
                     ? theme.textTertiary
-                    : theme.primary,
+                    : DARK,
                 },
               ]}
             >
@@ -242,8 +244,8 @@ export default function CreateCustomSplitScreen({ navigation }: CreateCustomSpli
                 onPress={handleAddDay}
                 style={[styles.addDayButton, { borderColor: '#E5E7EB' }]}
               >
-                <Ionicons name="add" size={24} color={theme.primary} />
-                <Text style={[styles.addDayText, { color: theme.primary }]}>Add Day</Text>
+                <Ionicons name="add" size={24} color={DARK} />
+                <Text style={[styles.addDayText, { color: DARK }]}>Add Day</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

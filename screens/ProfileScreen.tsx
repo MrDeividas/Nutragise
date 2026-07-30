@@ -28,9 +28,11 @@ import { useSocialStore } from '../state/socialStore';
 import { useActionStore } from '../state/actionStore';
 import { useNotificationsStore } from '../state/notificationsStore';
 import { notificationService } from '../lib/notificationService';
+
+const DARK = '#1f2937';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
-import { pointsService } from '../lib/pointsService';
+import { pointsService, LEVEL_TITLES } from '../lib/pointsService';
 import { dmService } from '../lib/dmService';
 import Svg, { Circle, Line, Text as SvgText, Polygon, Defs, LinearGradient, Stop, Path, Filter, FeGaussianBlur, FeOffset, FeMerge, FeMergeNode } from 'react-native-svg';
 import JourneyPreview from '../components/JourneyPreview';
@@ -109,11 +111,13 @@ function ProfileScreen({ navigation }: any) {
     age: '',
     followings: '',
     completedCompetitions: '',
-    wonAwards: ''
+    wonAwards: '',
+    location: '',
   });
   const [challengeStats, setChallengeStats] = useState({
     wins: 0,
-    losses: 0
+    losses: 0,
+    entered: 0,
   });
   const [activeChallengeTitles, setActiveChallengeTitles] = useState<string[]>([]);
   const [leaderboardNeighbors, setLeaderboardNeighbors] = useState<LeaderboardPreviewUser[]>([]);
@@ -201,7 +205,7 @@ function ProfileScreen({ navigation }: any) {
       }
       
       if (!participations || participations.length === 0) {
-        setChallengeStats({ wins: 0, losses: 0 });
+        setChallengeStats({ wins: 0, losses: 0, entered: 0 });
         return;
       }
       
@@ -236,7 +240,7 @@ function ProfileScreen({ navigation }: any) {
         }
       });
       
-      setChallengeStats({ wins, losses });
+      setChallengeStats({ wins, losses, entered: participations.length });
     } catch (error) {
       // Error loading challenge stats
     }
@@ -1077,6 +1081,7 @@ function ProfileScreen({ navigation }: any) {
               if (user && notificationCount > 0) {
                 await notificationService.markAllAsRead(user.id);
                 useNotificationsStore.getState().clearCount();
+                await useNotificationsStore.getState().refresh(user.id);
               }
               navigation.navigate('Notifications');
             }} style={styles.headerIconButton}>
@@ -1152,7 +1157,7 @@ function ProfileScreen({ navigation }: any) {
                 )}
               </View>
               <Text style={[styles.profileLocation, { color: theme.textSecondary }]}>
-                England, London
+                {LEVEL_TITLES[Math.max(0, Math.min(LEVEL_TITLES.length - 1, currentLevel - 1))] || 'Beginner'}
               </Text>
             </View>
             <TouchableOpacity 
@@ -1194,15 +1199,15 @@ function ProfileScreen({ navigation }: any) {
               <View style={styles.expandedProfileInfo}>
                           <View style={styles.expandedProfileRow}>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Wins</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Challenges</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {challengeStats.wins}
+                  {challengeStats.entered}
                 </Text>
               </View>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Losses</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Completed</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {challengeStats.losses}
+                  {challengeStats.wins}
                 </Text>
               </View>
               <TouchableOpacity 
@@ -1226,25 +1231,32 @@ function ProfileScreen({ navigation }: any) {
             
             <View style={styles.expandedProfileRow}>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Competitions</Text>
-                <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {profileData.completedCompetitions || '0'}
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Location</Text>
+                <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]} numberOfLines={1}>
+                  {(userProfile as any)?.location || profileData.location || 'England, London'}
                 </Text>
               </View>
-              <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Awards</Text>
+              <TouchableOpacity
+                style={styles.expandedProfileItem}
+                onPress={() => {
+                  if (user) {
+                    navigation.navigate('Achievements', { userId: user.id });
+                  }
+                }}
+              >
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Achievements</Text>
                 <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                  {profileData.wonAwards || '0'}
+                  {badgeUnlockedCount}
                 </Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.expandedProfileItem}>
-                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>EXP</Text>
+                <Text style={[styles.expandedProfileLabel, { color: theme.textSecondary }]}>Level</Text>
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={() => navigation.navigate('ProfileStats')}
                 >
                   <Text style={[styles.expandedProfileValue, { color: theme.textPrimary }]}>
-                    {totalPoints}
+                    {currentLevel}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1265,18 +1277,28 @@ function ProfileScreen({ navigation }: any) {
             style={styles.goalsSectionHeader}
           >
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
-            <Ionicons name="chevron-forward-outline" size={20} color="#ffffff" />
+            <Ionicons name="chevron-forward-outline" size={20} color={DARK} />
           </TouchableOpacity>
           <View style={[styles.weeklyTrackerCard, { backgroundColor: theme.cardBackground }]}>
             <View style={styles.goalsContainer}>
               {activeGoals.length === 0 ? (
                 <View style={styles.noGoalsContainer}>
-                  <Text style={[styles.noGoalsText, { color: theme.textSecondary }]}>No active goals</Text>
-                  <TouchableOpacity 
-                    onPress={() => navigation.navigate('Goals')}
-                    style={[styles.createGoalButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
+                  <View style={styles.noGoalsIcon}>
+                    <Ionicons name="flag-outline" size={22} color={DARK} />
+                  </View>
+                  <Text style={styles.noGoalsText}>No active goals yet</Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('Goals', {
+                        screen: 'GoalsList',
+                        params: { openCreateGoal: true },
+                      })
+                    }
+                    style={styles.createGoalButton}
+                    activeOpacity={0.88}
                   >
-                    <Text style={styles.createGoalButtonText}>Create your first goal</Text>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.createGoalButtonText}>Set a goal!</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -2623,23 +2645,37 @@ const styles = StyleSheet.create({
   },
   noGoalsContainer: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+  },
+  noGoalsIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   noGoalsText: {
-    fontSize: 16,
-    color: '#6b7280',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
     marginBottom: 16,
   },
   createGoalButton: {
-    backgroundColor: '#129490',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: DARK,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   createGoalButtonText: {
-    color: '#ffffff',
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   noGoalsTracker: {
     alignItems: 'center',

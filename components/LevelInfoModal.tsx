@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -11,78 +11,85 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 
+const DARK = '#1f2937';
+const ACCENT = '#129490';
+const REWARD = '#D97706';
+
 const LEVELS = [
   {
     level: 1,
-    title: "Beginner",
+    title: 'Beginner',
     minPoints: 0,
     maxPoints: 1399,
-    unlocks: "Daily challenges + accountability score tracking",
-    rewards: ["Personalized weekly performance summary (AI coach)", "10% referral commission"]
+    unlocks: 'Join free challenges + daily challenges + accountability score tracking · 1 microlearn & 1 meditation per day',
+    rewards: ['Personalized weekly performance summary (AI coach)', '10% referral commission'],
   },
   {
     level: 2,
-    title: "Committed",
+    title: 'Committed',
     minPoints: 1400,
     maxPoints: 3199,
-    unlocks: "Streak tracker + habit analytics dashboard",
-    comingSoon: ["Create challenges between friends"],
-    rewards: ["1 free 'Accountability Boost' (double points for 1 day)", "15% referral commission"]
+    unlocks: 'Streak tracker + habit analytics dashboard · Keep 1 microlearn & 1 meditation per day',
+    comingSoon: ['Create challenges between friends'],
+    rewards: ["1 free 'Accountability Boost' (double points for 2 days)", '15% referral commission'],
   },
   {
     level: 3,
-    title: "Focused",
+    title: 'Focused',
     minPoints: 3200,
     maxPoints: 5499,
-    unlocks: "Access to advanced challenges + raffle ticket claims in Rewards",
-    comingSoon: ["Public challenges"],
+    unlocks: 'Access to advanced challenges + Rewards Store claims · 2 microlearns & 2 meditations per day',
+    comingSoon: ['Public challenges'],
     rewards: [
-      "Raffle tickets — reach Level 3 EXP to claim tickets from the Store (Pro required to enter)",
-      "Entry into the end-of-month prize draw (rewards up to £50)",
-    ]
+      '£150 monthly raffle entry unlocked (Pro required to enter)',
+    ],
   },
   {
     level: 4,
-    title: "Disciplined",
+    title: 'Disciplined',
     minPoints: 5500,
     maxPoints: 8599,
-    unlocks: "Custom progress report + leaderboard spotlight",
-    rewards: ["Priority support access", "20% referral commission"]
+    unlocks: 'Custom progress report + leaderboard spotlight · Keep 2 microlearns & 2 meditations per day',
+    rewards: ['Priority support access', '20% referral commission'],
   },
   {
     level: 5,
-    title: "Achiever",
+    title: 'Achiever',
     minPoints: 8600,
     maxPoints: 12499,
-    unlocks: "Exclusive community badge + advanced analytics",
-    comingSoon: ["Become a mentor - create events, sell courses etc"],
-    rewards: ["Entry into the end-of-month prize draw (rewards up to £75)", "2 free 'Accountability Boosts'"]
+    unlocks: 'Exclusive community badge + advanced analytics · 3 microlearns & 3 meditations per day',
+    comingSoon: ['Become a mentor - create events, sell courses etc'],
+    rewards: ['Entry into the end-of-month prize draw (rewards up to £75)', "2 free 'Accountability Boosts'"],
   },
   {
     level: 6,
-    title: "Challenger",
+    title: 'Challenger',
     minPoints: 12500,
     maxPoints: 17499,
-    unlocks: "Elite tier challenges + custom goal templates",
-    rewards: ["Entry into premium prize draw (rewards up to £100)", "25% referral commission"]
+    unlocks: 'Elite tier challenges + custom goal templates · Keep 3 microlearns & 3 meditations per day',
+    rewards: ['Entry into premium prize draw (rewards up to £100)', '25% referral commission'],
   },
   {
     level: 7,
-    title: "Relentless",
+    title: 'Relentless',
     minPoints: 17500,
     maxPoints: 23999,
-    unlocks: "Platinum status + featured profile spotlight",
-    rewards: ["Entry into premium prize draw (rewards up to £150)", "Exclusive merchandise"]
+    unlocks: 'Platinum status + featured profile spotlight · Keep 3 microlearns & 3 meditations per day',
+    rewards: ['Entry into premium prize draw (rewards up to £150)', 'Exclusive merchandise'],
   },
   {
     level: 8,
-    title: "Ascended",
+    title: 'Ascended',
     minPoints: 24000,
     maxPoints: Infinity,
-    unlocks: "Ultimate mastery badge + lifetime benefits",
-    comingSoon: ["VIP mentorship program"],
-    rewards: ["Entry into grand prize draw (rewards up to £250)", "30% referral commission", "Lifetime premium features"]
-  }
+    unlocks: 'Ultimate mastery badge + lifetime benefits · Keep 3 microlearns & 3 meditations per day (Pro still unlocks unlimited)',
+    comingSoon: ['VIP mentorship program'],
+    rewards: [
+      'Entry into grand prize draw (rewards up to £250)',
+      '30% referral commission',
+      'Lifetime premium features',
+    ],
+  },
 ];
 
 interface LevelInfoModalProps {
@@ -98,79 +105,80 @@ export default function LevelInfoModal({
   currentLevel,
   totalPoints,
 }: LevelInfoModalProps) {
-  const { theme, isDark } = useTheme();
-  const [showAllLevels, setShowAllLevels] = useState(true); // Start with all levels shown
+  const { theme } = useTheme();
 
-  const currentLevelData = LEVELS[currentLevel - 1];
-
-  const renderLevelCard = (levelData: typeof LEVELS[0], isCurrentLevel: boolean) => {
-    // Calculate progress for current level
+  const renderLevelCard = (levelData: (typeof LEVELS)[0], isCurrentLevel: boolean) => {
     let pointRangeText = '';
     if (isCurrentLevel && currentLevel < 8) {
       const pointsInLevel = totalPoints - levelData.minPoints;
       const nextLevelPoints = levelData.maxPoints + 1;
-      pointRangeText = `${pointsInLevel.toLocaleString()}/${(nextLevelPoints - levelData.minPoints).toLocaleString()} pts`;
+      pointRangeText = `${pointsInLevel.toLocaleString()} / ${(nextLevelPoints - levelData.minPoints).toLocaleString()} pts`;
     } else if (isCurrentLevel && currentLevel === 8) {
       pointRangeText = `${totalPoints.toLocaleString()}+ pts`;
     } else {
-      pointRangeText = `${levelData.minPoints.toLocaleString()}${levelData.maxPoints === Infinity ? '+' : `-${levelData.maxPoints.toLocaleString()}`} pts`;
+      pointRangeText = `${levelData.minPoints.toLocaleString()}${
+        levelData.maxPoints === Infinity ? '+' : `–${levelData.maxPoints.toLocaleString()}`
+      } pts`;
     }
 
     return (
-      <View 
-        key={levelData.level}
-        style={[
-          styles.levelCard, 
-          { 
-            backgroundColor: isCurrentLevel ? 'rgba(16, 185, 129, 0.15)' : 'rgba(128, 128, 128, 0.1)',
-            borderWidth: isCurrentLevel ? 2 : 1,
-            borderColor: isCurrentLevel ? '#10B981' : 'rgba(128, 128, 128, 0.2)'
-          }
-        ]}
-      >
-        <View style={styles.levelHeader}>
-          <Text style={[styles.levelTitle, { color: theme.textPrimary }]}>
-            LEVEL {levelData.level} — {levelData.title}
+      <View key={levelData.level} style={[styles.levelCard, isCurrentLevel && styles.levelCardCurrent]}>
+        {isCurrentLevel ? (
+          <View style={styles.currentBadge}>
+            <Text style={styles.currentBadgeText}>Current</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.titleRow}>
+          <View style={[styles.levelDot, isCurrentLevel && styles.levelDotCurrent]}>
+            <Text style={[styles.levelDotText, isCurrentLevel && styles.levelDotTextCurrent]}>
+              {levelData.level}
+            </Text>
+          </View>
+          <Text style={[styles.title, isCurrentLevel && styles.titleCurrent]} numberOfLines={1}>
+            {levelData.title}
           </Text>
-          {isCurrentLevel && (
-            <View style={[styles.currentBadge, { backgroundColor: '#10B981' }]}>
-              <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>CURRENT</Text>
-            </View>
-          )}
         </View>
-        
-        <Text style={[styles.levelPoints, { color: theme.textSecondary }]}>
-          ({pointRangeText})
+
+        <Text style={styles.description} numberOfLines={3}>
+          {levelData.unlocks}
         </Text>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>🔓 Unlocks:</Text>
-          <Text style={[styles.sectionContent, { color: theme.textSecondary }]}>
-            {levelData.unlocks}
+        <View style={styles.chipRow}>
+          {levelData.comingSoon?.length ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                {levelData.comingSoon.length} coming soon
+              </Text>
+            </View>
+          ) : null}
+          <View style={[styles.chip, styles.rewardChip]}>
+            <Text style={[styles.chipText, styles.rewardChipText]}>
+              {levelData.rewards.length} reward{levelData.rewards.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Ionicons name="flash" size={13} color={isCurrentLevel ? ACCENT : '#9CA3AF'} />
+          <Text style={[styles.metaText, isCurrentLevel && styles.metaTextCurrent]}>
+            {pointRangeText}
           </Text>
         </View>
 
-        {levelData.comingSoon && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>🚀 Coming Soon:</Text>
-            {levelData.comingSoon.map((feature, index) => (
-              <View key={index} style={styles.bulletItem}>
-                <Text style={[styles.bulletPoint, { color: theme.textSecondary }]}>•</Text>
-                <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{feature}</Text>
-              </View>
-            ))}
+        {levelData.rewards.map((reward, index) => (
+          <View key={`reward-${index}`} style={styles.detailRow}>
+            <Ionicons name="gift" size={13} color={REWARD} />
+            <Text style={styles.detailText}>{reward}</Text>
           </View>
-        )}
+        ))}
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>🎯 Rewards:</Text>
-          {levelData.rewards.map((reward, index) => (
-            <View key={index} style={styles.bulletItem}>
-              <Text style={[styles.bulletPoint, { color: theme.textSecondary }]}>•</Text>
-              <Text style={[styles.bulletText, { color: theme.textSecondary }]}>{reward}</Text>
-            </View>
-          ))}
-        </View>
+        {levelData.comingSoon?.map((feature, index) => (
+          <View key={`soon-${index}`} style={styles.detailRow}>
+            <Ionicons name="time-outline" size={13} color="#9CA3AF" />
+            <Text style={styles.detailText}>Soon · {feature}</Text>
+          </View>
+        ))}
       </View>
     );
   };
@@ -187,41 +195,20 @@ export default function LevelInfoModal({
       onRequestClose={onClose}
     >
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            Your Progress
-          </Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Your Progress</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color={theme.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView 
-          showsVerticalScrollIndicator={true}
+        <ScrollView
+          showsVerticalScrollIndicator
           contentContainerStyle={styles.scrollContent}
           style={styles.scrollView}
         >
-          <View style={styles.raffleNote}>
-            <Ionicons name="ticket-outline" size={18} color="#1f2937" />
-            <Text style={styles.raffleNoteText}>
-              Raffle tickets unlock at Level 3 EXP. Claim them in Rewards → Store (Pro needed to enter giveaways).
-            </Text>
-          </View>
-
-          {/* All Levels Section */}
-          <View style={styles.content}>
-            <View style={styles.allLevelsSection}>
-              <View style={styles.allLevelsHeader}>
-                <Text style={[styles.allLevelsTitle, { color: theme.textPrimary }]}>
-                  All Levels
-                </Text>
-              </View>
-              {LEVELS.map((level) => 
-                renderLevelCard(level, level.level === currentLevel)
-              )}
-            </View>
-          </View>
+          <Text style={styles.sectionLabel}>All Levels</Text>
+          {LEVELS.map((level) => renderLevelCard(level, level.level === currentLevel))}
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -229,19 +216,18 @@ export default function LevelInfoModal({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8F9FB',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
+    backgroundColor: '#FFFFFF',
   },
   headerTitle: {
     fontSize: 20,
@@ -254,105 +240,144 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
-  raffleNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginBottom: 16,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  raffleNoteText: {
-    flex: 1,
+  sectionLabel: {
     fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  content: {
-    flex: 1,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginBottom: 12,
+    marginLeft: 2,
+    letterSpacing: 0.3,
   },
   levelCard: {
-    padding: 16,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    marginBottom: 16,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    overflow: 'hidden',
   },
-  levelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  levelTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    flex: 1,
+  levelCardCurrent: {
+    borderColor: ACCENT,
+    borderWidth: 2,
+    backgroundColor: '#F4FBFA',
   },
   currentBadge: {
-    paddingHorizontal: 8,
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: ACCENT,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 999,
+    zIndex: 2,
   },
   currentBadgeText: {
-    fontSize: 10,
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+    paddingRight: 72,
+  },
+  levelDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelDotCurrent: {
+    backgroundColor: ACCENT,
+  },
+  levelDotText: {
+    color: DARK,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  levelDotTextCurrent: {
+    color: '#FFFFFF',
+  },
+  title: {
+    flex: 1,
+    color: DARK,
+    fontSize: 16,
     fontWeight: '700',
   },
-  levelPoints: {
-    fontSize: 14,
-    marginBottom: 12,
+  titleCurrent: {
+    color: ACCENT,
   },
-  section: {
-    marginTop: 12,
+  description: {
+    color: '#6B7280',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
   },
-  sectionTitle: {
-    fontSize: 16,
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  chip: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  chipText: {
+    color: DARK,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rewardChip: {
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.22)',
+  },
+  rewardChipText: {
+    color: REWARD,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  metaText: {
+    color: '#9CA3AF',
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 6,
   },
-  sectionContent: {
-    fontSize: 14,
-    lineHeight: 20,
+  metaTextCurrent: {
+    color: ACCENT,
   },
-  rewardItem: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginLeft: 8,
-  },
-  bulletItem: {
+  detailRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    gap: 6,
+    marginTop: 4,
   },
-  bulletPoint: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginRight: 8,
-    width: 12,
-  },
-  bulletText: {
-    fontSize: 14,
-    lineHeight: 20,
+  detailText: {
     flex: 1,
-  },
-  allLevelsSection: {
-    marginTop: 8,
-  },
-  allLevelsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  allLevelsTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
   },
 });
-

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import { pushNotificationService } from '../lib/pushNotificationService';
 import { supabase } from '../lib/supabase';
 
@@ -23,6 +24,31 @@ interface RemindersState {
   deleteReminder: (id: string) => Promise<void>;
 }
 
+function buildReminderTrigger(
+  triggerDate: Date,
+  repeat: 'none' | 'daily' | 'weekly'
+): Notifications.NotificationTriggerInput {
+  if (repeat === 'daily') {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: triggerDate.getHours(),
+      minute: triggerDate.getMinutes(),
+    };
+  }
+  if (repeat === 'weekly') {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: triggerDate.getDay() + 1, // 1=Sunday … 7=Saturday
+      hour: triggerDate.getHours(),
+      minute: triggerDate.getMinutes(),
+    };
+  }
+  return {
+    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    date: triggerDate,
+  };
+}
+
 export const useRemindersStore = create<RemindersState>()(
   persist(
     (set, get) => ({
@@ -38,10 +64,9 @@ export const useRemindersStore = create<RemindersState>()(
             .eq('user_id', user.id);
 
           if (error) throw error;
-          
+
           if (data) {
-            // Map db columns to frontend properties
-            const mappedReminders = data.map(r => ({
+            const mappedReminders = data.map((r) => ({
               id: r.id,
               user_id: r.user_id,
               title: r.title,
@@ -59,34 +84,23 @@ export const useRemindersStore = create<RemindersState>()(
       },
       addReminder: async (reminderData) => {
         const newId = Math.random().toString(36).substring(2, 9);
-        let notificationId;
+        let notificationId: string | undefined;
 
         if (reminderData.hasNotification && reminderData.time) {
           const triggerDate = new Date(reminderData.time);
-          
-          if (triggerDate > new Date() || reminderData.repeat !== 'none') {
-            const trigger: any = {};
-            
-            if (reminderData.repeat === 'daily') {
-              trigger.hour = triggerDate.getHours();
-              trigger.minute = triggerDate.getMinutes();
-              trigger.repeats = true;
-            } else if (reminderData.repeat === 'weekly') {
-              trigger.weekday = triggerDate.getDay() + 1; // 1-7 starting Sunday
-              trigger.hour = triggerDate.getHours();
-              trigger.minute = triggerDate.getMinutes();
-              trigger.repeats = true;
-            } else {
-              trigger.date = triggerDate;
-            }
 
+          if (triggerDate > new Date() || reminderData.repeat !== 'none') {
             try {
-              notificationId = await pushNotificationService.scheduleLocalNotification(
+              const scheduledId = await pushNotificationService.scheduleLocalNotification(
                 'Reminder',
                 reminderData.title,
-                { reminderId: newId },
-                trigger
+                { reminderId: newId, type: 'habit_reminder' },
+                buildReminderTrigger(triggerDate, reminderData.repeat)
               );
+              notificationId = scheduledId || undefined;
+              if (!scheduledId) {
+                console.warn('Reminder saved without notification — permission denied or schedule failed');
+              }
             } catch (e) {
               console.warn('Failed to schedule local notification:', e);
             }
@@ -95,37 +109,41 @@ export const useRemindersStore = create<RemindersState>()(
 
         const newReminder: Reminder = {
           ...reminderData,
-          id: newId, // Temporarily use local ID until Supabase syncs
+          id: newId,
           notificationId,
           completed: false,
         };
 
-        // Optimistic update
         set((state) => ({
           reminders: [...state.reminders, newReminder],
         }));
 
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
           if (user) {
             const { data, error } = await supabase
               .from('reminders')
-              .insert([{
-                user_id: user.id,
-                title: reminderData.title,
-                time: reminderData.time,
-                has_notification: reminderData.hasNotification,
-                repeat_type: reminderData.repeat,
-                notification_id: notificationId,
-                completed: false
-              }])
+              .insert([
+                {
+                  user_id: user.id,
+                  title: reminderData.title,
+                  time: reminderData.time,
+                  has_notification: reminderData.hasNotification,
+                  repeat_type: reminderData.repeat,
+                  notification_id: notificationId || null,
+                  completed: false,
+                },
+              ])
               .select()
               .single();
 
             if (!error && data) {
-              // Update with real ID from database
               set((state) => ({
-                reminders: state.reminders.map(r => r.id === newId ? { ...r, id: data.id } : r)
+                reminders: state.reminders.map((r) =>
+                  r.id === newId ? { ...r, id: data.id } : r
+                ),
               }));
             }
           }
@@ -134,9 +152,8 @@ export const useRemindersStore = create<RemindersState>()(
         }
       },
       toggleReminder: async (id) => {
-        // Optimistic update
         const state = get();
-        const reminder = state.reminders.find(r => r.id === id);
+        const reminder = state.reminders.find((r) => r.id === id);
         const newCompletedStatus = !reminder?.completed;
 
         set((state) => ({
@@ -146,7 +163,6 @@ export const useRemindersStore = create<RemindersState>()(
         }));
 
         try {
-          // Sync to db
           await supabase
             .from('reminders')
             .update({ completed: newCompletedStatus, updated_at: new Date().toISOString() })
@@ -158,12 +174,11 @@ export const useRemindersStore = create<RemindersState>()(
       deleteReminder: async (id) => {
         const { reminders } = get();
         const reminder = reminders.find((r) => r.id === id);
-        
+
         if (reminder?.notificationId) {
           await pushNotificationService.cancelScheduledNotification(reminder.notificationId);
         }
 
-        // Optimistic update
         set((state) => ({
           reminders: state.reminders.filter((r) => r.id !== id),
         }));

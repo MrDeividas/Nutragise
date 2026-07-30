@@ -301,7 +301,7 @@ export default function ChatWindowScreen() {
     return (
       <CustomBackground>
         <SafeAreaView style={styles.container}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <ActivityIndicator size="large" color={"#1f2937"} />
         </SafeAreaView>
       </CustomBackground>
     );

@@ -41,6 +41,51 @@ export interface HabitCompletionRate {
   weeklyCompleted: number;
 }
 
+export interface ThreeWeekPulse {
+  thisWeek: { label: string; completionRate: number; startDate: string; endDate: string };
+  lastWeek: {
+    label: string;
+    completionRate: number;
+    deltaVsPrevious: number;
+    startDate: string;
+    endDate: string;
+  };
+  twoWeeksAgo: {
+    label: string;
+    completionRate: number;
+    deltaVsPrevious: number;
+    startDate: string;
+    endDate: string;
+  };
+  highlights: string[];
+}
+
+export interface EnergyInsight {
+  average: number | null;
+  bestDay: string | null;
+  sampleDays: number;
+}
+
+export interface SleepSnapshot {
+  averageHours: number | null;
+  averageQuality: number | null;
+  bedtimeConsistency: number;
+  optimalBedtime: string;
+  optimalWakeTime: string;
+  nightsLogged: number;
+}
+
+export interface MovementSummary {
+  runActiveDays: number;
+  runSessions: number;
+  totalDistanceKm: number;
+  gymSessions: number;
+  topTrainingType: string | null;
+  restDayRatio: number | null;
+  daysInPeriod: number;
+  takeaway: string;
+}
+
 export interface WeeklySummary {
   currentWeek: {
     totalHabits: number;
@@ -82,23 +127,31 @@ export interface CrossHabitCorrelation {
 export interface CorrelationInsight {
   type: 'positive' | 'negative' | 'neutral';
   strength: 'strong' | 'moderate' | 'weak';
+  title: string;
+  habit1: string;
+  habit2: string;
   description: string;
   recommendation: string;
   dataPoints: number;
+  /** Pearson r, -1..1 */
+  coefficient: number;
 }
 
 class AnalyticsService {
   /**
-   * Calculate weekly patterns for a specific habit
+   * Calculate weekly patterns for a specific habit over the last N calendar days.
    */
-  async calculateWeeklyPatterns(userId: string, habitType: string, weeks: number = 4): Promise<WeeklyPattern> {
+  async calculateWeeklyPatterns(userId: string, habitType: string, days: number = 28): Promise<WeeklyPattern> {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (weeks * 7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      
-      const habitHistory = await dailyHabitsService.getHabitHistory(userId, habitType, startDate, endDate);
-      
-      // Initialize day counters
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - days + 1);
+      const endDate = TimePeriodUtils.toLocalDateString(end);
+      const startDate = TimePeriodUtils.toLocalDateString(start);
+
+      const allRows = await dailyHabitsService.getDailyHabitsRange(userId, startDate, endDate);
+      const byDate = new Map(allRows.map((r) => [r.date, r]));
+
       const dayCounts = {
         monday: { completed: 0, total: 0 },
         tuesday: { completed: 0, total: 0 },
@@ -106,57 +159,62 @@ class AnalyticsService {
         thursday: { completed: 0, total: 0 },
         friday: { completed: 0, total: 0 },
         saturday: { completed: 0, total: 0 },
-        sunday: { completed: 0, total: 0 }
+        sunday: { completed: 0, total: 0 },
       };
 
-      // Count completions by day of week
-      habitHistory.forEach(record => {
-        try {
-          // Validate date string format first
-          if (!record.date || typeof record.date !== 'string') {
-            return;
-          }
-          
-          const date = new Date(record.date);
-          
-          // Skip future dates and invalid dates
-          const today = new Date();
-          if (date > today || isNaN(date.getTime())) {
-            return;
-          }
-          
-          // Use getDay() instead of toLocaleDateString for better compatibility
-          const dayIndex = date.getDay();
-          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const dayOfWeek = dayNames[dayIndex] as keyof typeof dayCounts;
-          
-          if (dayCounts[dayOfWeek]) {
-            dayCounts[dayOfWeek].total++;
-            
-            if (this.isHabitCompleted(record, habitType)) {
-              dayCounts[dayOfWeek].completed++;
-            }
-          }
-        } catch (error) {
-          console.error('Error processing date:', record.date, error);
+      for (const dateStr of TimePeriodUtils.eachDate(startDate, endDate)) {
+        if (dateStr > endDate) continue;
+        const dayOfWeek = TimePeriodUtils.getLocalDayName(dateStr) as keyof typeof dayCounts;
+        if (!dayCounts[dayOfWeek]) continue;
+        dayCounts[dayOfWeek].total++;
+        const record = byDate.get(dateStr);
+        if (record && this.isHabitCompleted(record, habitType)) {
+          dayCounts[dayOfWeek].completed++;
         }
-      });
+      }
 
-      // Calculate completion rates
-      const patterns: WeeklyPattern = {
-        monday: { completionRate: this.calculateRate(dayCounts.monday), totalDays: dayCounts.monday.total, completedDays: dayCounts.monday.completed },
-        tuesday: { completionRate: this.calculateRate(dayCounts.tuesday), totalDays: dayCounts.tuesday.total, completedDays: dayCounts.tuesday.completed },
-        wednesday: { completionRate: this.calculateRate(dayCounts.wednesday), totalDays: dayCounts.wednesday.total, completedDays: dayCounts.wednesday.completed },
-        thursday: { completionRate: this.calculateRate(dayCounts.thursday), totalDays: dayCounts.thursday.total, completedDays: dayCounts.thursday.completed },
-        friday: { completionRate: this.calculateRate(dayCounts.friday), totalDays: dayCounts.friday.total, completedDays: dayCounts.friday.completed },
-        saturday: { completionRate: this.calculateRate(dayCounts.saturday), totalDays: dayCounts.saturday.total, completedDays: dayCounts.saturday.completed },
-        sunday: { completionRate: this.calculateRate(dayCounts.sunday), totalDays: dayCounts.sunday.total, completedDays: dayCounts.sunday.completed },
+      const habitHistory = allRows.filter((r) => this.isHabitCompleted(r, habitType));
+
+      return {
+        monday: {
+          completionRate: this.calculateRate(dayCounts.monday),
+          totalDays: dayCounts.monday.total,
+          completedDays: dayCounts.monday.completed,
+        },
+        tuesday: {
+          completionRate: this.calculateRate(dayCounts.tuesday),
+          totalDays: dayCounts.tuesday.total,
+          completedDays: dayCounts.tuesday.completed,
+        },
+        wednesday: {
+          completionRate: this.calculateRate(dayCounts.wednesday),
+          totalDays: dayCounts.wednesday.total,
+          completedDays: dayCounts.wednesday.completed,
+        },
+        thursday: {
+          completionRate: this.calculateRate(dayCounts.thursday),
+          totalDays: dayCounts.thursday.total,
+          completedDays: dayCounts.thursday.completed,
+        },
+        friday: {
+          completionRate: this.calculateRate(dayCounts.friday),
+          totalDays: dayCounts.friday.total,
+          completedDays: dayCounts.friday.completed,
+        },
+        saturday: {
+          completionRate: this.calculateRate(dayCounts.saturday),
+          totalDays: dayCounts.saturday.total,
+          completedDays: dayCounts.saturday.completed,
+        },
+        sunday: {
+          completionRate: this.calculateRate(dayCounts.sunday),
+          totalDays: dayCounts.sunday.total,
+          completedDays: dayCounts.sunday.completed,
+        },
         peakDay: this.findPeakDay(dayCounts),
         consistencyScore: this.calculateConsistencyScore(dayCounts),
-        trend: this.calculateTrend(habitHistory, habitType)
+        trend: this.calculateTrend(habitHistory, habitType),
       };
-
-      return patterns;
     } catch (error) {
       console.error('Error calculating weekly patterns:', error);
       return this.getDefaultWeeklyPattern();
@@ -168,11 +226,15 @@ class AnalyticsService {
    */
   async analyzeSleepCorrelations(userId: string, days: number = 30): Promise<SleepCorrelation> {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      
-      const habitHistory = await dailyHabitsService.getHabitHistory(userId, 'sleep', startDate, endDate);
-      const reflectHistory = await dailyHabitsService.getHabitHistory(userId, 'reflect', startDate, endDate);
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - days + 1);
+      const endDate = TimePeriodUtils.toLocalDateString(end);
+      const startDate = TimePeriodUtils.toLocalDateString(start);
+
+      const allRows = await dailyHabitsService.getDailyHabitsRange(userId, startDate, endDate);
+      const habitHistory = allRows.filter((r) => this.isHabitCompleted(r, 'sleep'));
+      const reflectHistory = allRows.filter((r) => this.isHabitCompleted(r, 'reflect'));
       
       // Filter records with both sleep and mood data
       const sleepMoodData = habitHistory.filter(sleep => {
@@ -232,54 +294,60 @@ class AnalyticsService {
   }
 
   /**
-   * Calculate habit completion rates
+   * Calculate habit completion rates for a period (calendar-day denominators).
    */
   async calculateHabitCompletionRate(userId: string, period: 'past7' | 'currentWeek' | 'last30' = 'past7'): Promise<HabitCompletionRate> {
     try {
       const timePeriod = TimePeriodUtils.getPeriodByType(period);
+      const today = TimePeriodUtils.toLocalDateString(new Date());
+      const effectiveEnd = timePeriod.endDate > today ? today : timePeriod.endDate;
+      const calendarDays = TimePeriodUtils.eachDate(timePeriod.startDate, effectiveEnd);
+      const daysInPeriod = calendarDays.length || 1;
+
       const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
+      const allRows = await dailyHabitsService.getDailyHabitsRange(
+        userId,
+        timePeriod.startDate,
+        effectiveEnd
+      );
+      const byDate = new Map(allRows.map((r) => [r.date, r]));
+
       const habitBreakdown: any = {};
       let totalCompleted = 0;
-      let totalPossible = 0;
 
-      // Calculate completion for each habit type
       for (const habitType of habitTypes) {
-        const history = await dailyHabitsService.getHabitHistory(userId, habitType, timePeriod.startDate, timePeriod.endDate);
-        const completed = history.filter(record => this.isHabitCompleted(record, habitType)).length;
+        let completed = 0;
+        for (const dateStr of calendarDays) {
+          const record = byDate.get(dateStr);
+          if (record && this.isHabitCompleted(record, habitType)) completed++;
+        }
         const streak = await dailyHabitsService.getHabitStreak(userId, habitType);
-        
+
         habitBreakdown[habitType] = {
-          completion: history.length > 0 ? (completed / history.length) * 100 : 0,
+          completion: (completed / daysInPeriod) * 100,
           streak: streak.current_streak,
-          goal: this.getHabitGoal(habitType)
+          goal: this.getHabitGoal(habitType),
         };
 
         totalCompleted += completed;
-        totalPossible += history.length;
       }
 
-      // Calculate total possible as days * habit types
-      const allHistory = await dailyHabitsService.getDailyHabitsRange(userId, timePeriod.startDate, timePeriod.endDate);
-      const uniqueDays = new Set(allHistory.map(record => record.date)).size;
-      totalPossible = uniqueDays * habitTypes.length;
+      const totalPossible = daysInPeriod * habitTypes.length;
 
-      // Debug log removed for production cleanliness
+      const sortedHabits = Object.entries(habitBreakdown).sort(
+        ([, a]: any, [, b]: any) => b.completion - a.completion
+      );
 
-      // Find top performing and needs attention habits
-      const sortedHabits = Object.entries(habitBreakdown)
-        .sort(([,a], [,b]) => b.completion - a.completion);
-      
       const topPerforming = sortedHabits.slice(0, 2).map(([habit]) => habit);
-      const needsAttention = sortedHabits.slice(-2).map(([habit]) => habit);
+      const needsAttention = sortedHabits.slice(-2).reverse().map(([habit]) => habit);
 
       return {
         overallCompletion: totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0,
         habitBreakdown,
         topPerforming,
         needsAttention,
-        weeklyGoal: totalPossible, // Use actual calculated total possible
+        weeklyGoal: totalPossible,
         weeklyCompleted: totalCompleted,
-        period: timePeriod
       };
     } catch (error) {
       console.error('Error calculating habit completion rate:', error);
@@ -314,55 +382,396 @@ class AnalyticsService {
   }
 
   /**
+   * Calendar week bounds: offsetWeeks 0 = this Mon→Sun, -1 = previous Mon–Sun, etc.
+   * For offset 0, endDate is capped at today.
+   */
+  getCalendarWeekRange(offsetWeeks: number = 0): { startDate: string; endDate: string; label: string } {
+    const today = new Date();
+    const thisWeekStart = TimePeriodUtils.getWeekStart(today);
+    const start = new Date(thisWeekStart);
+    start.setDate(start.getDate() + offsetWeeks * 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    const todayStr = TimePeriodUtils.toLocalDateString(today);
+    let endDate = TimePeriodUtils.toLocalDateString(end);
+    if (offsetWeeks === 0 && endDate > todayStr) endDate = todayStr;
+
+    const labels = ['This week', 'Last week', '2 weeks ago'];
+    const label =
+      offsetWeeks === 0 ? labels[0] : offsetWeeks === -1 ? labels[1] : offsetWeeks === -2 ? labels[2] : `Week ${offsetWeeks}`;
+
+    return {
+      startDate: TimePeriodUtils.toLocalDateString(start),
+      endDate,
+      label,
+    };
+  }
+
+  private async completionForDateRange(
+    userId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{
+    overallCompletion: number;
+    habitBreakdown: Record<string, number>;
+    daysInPeriod: number;
+    completedCount: number;
+    totalPossible: number;
+  }> {
+    const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
+    const calendarDays = TimePeriodUtils.eachDate(startDate, endDate);
+    const daysInPeriod = calendarDays.length || 1;
+    const allRows = await dailyHabitsService.getDailyHabitsRange(userId, startDate, endDate);
+    const byDate = new Map(allRows.map((r) => [r.date, r]));
+
+    const habitBreakdown: Record<string, number> = {};
+    let totalCompleted = 0;
+
+    for (const habitType of habitTypes) {
+      let completed = 0;
+      for (const dateStr of calendarDays) {
+        const record = byDate.get(dateStr);
+        if (record && this.isHabitCompleted(record, habitType)) completed++;
+      }
+      habitBreakdown[habitType] = (completed / daysInPeriod) * 100;
+      totalCompleted += completed;
+    }
+
+    const totalPossible = daysInPeriod * habitTypes.length;
+    return {
+      overallCompletion: totalPossible > 0 ? (totalCompleted / totalPossible) * 100 : 0,
+      habitBreakdown,
+      daysInPeriod,
+      completedCount: totalCompleted,
+      totalPossible,
+    };
+  }
+
+  /**
+   * Three calendar-week pulse: this Mon→today, previous Mon–Sun, week before that.
+   */
+  async getThreeWeekPulse(userId: string): Promise<ThreeWeekPulse> {
+    try {
+      const thisWeek = this.getCalendarWeekRange(0);
+      const lastWeek = this.getCalendarWeekRange(-1);
+      const twoWeeksAgo = this.getCalendarWeekRange(-2);
+
+      const [current, previous, older] = await Promise.all([
+        this.completionForDateRange(userId, thisWeek.startDate, thisWeek.endDate),
+        this.completionForDateRange(userId, lastWeek.startDate, lastWeek.endDate),
+        this.completionForDateRange(userId, twoWeeksAgo.startDate, twoWeeksAgo.endDate),
+      ]);
+
+      const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
+      const deltas = habitTypes
+        .map((habit) => ({
+          habit,
+          delta: (current.habitBreakdown[habit] || 0) - (previous.habitBreakdown[habit] || 0),
+        }))
+        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+      const highlights: string[] = [];
+      for (const item of deltas.slice(0, 2)) {
+        if (Math.abs(item.delta) < 1) continue;
+        const name = this.formatHabitLabel(item.habit);
+        const pts = Math.round(Math.abs(item.delta));
+        highlights.push(
+          item.delta >= 0
+            ? `${name} ↑${pts} pts vs last week`
+            : `${name} ↓${pts} pts vs last week`
+        );
+      }
+
+      return {
+        thisWeek: {
+          label: thisWeek.label,
+          completionRate: current.overallCompletion,
+          startDate: thisWeek.startDate,
+          endDate: thisWeek.endDate,
+        },
+        lastWeek: {
+          label: lastWeek.label,
+          completionRate: previous.overallCompletion,
+          deltaVsPrevious: current.overallCompletion - previous.overallCompletion,
+          startDate: lastWeek.startDate,
+          endDate: lastWeek.endDate,
+        },
+        twoWeeksAgo: {
+          label: twoWeeksAgo.label,
+          completionRate: older.overallCompletion,
+          deltaVsPrevious: previous.overallCompletion - older.overallCompletion,
+          startDate: twoWeeksAgo.startDate,
+          endDate: twoWeeksAgo.endDate,
+        },
+        highlights,
+      };
+    } catch (error) {
+      console.error('Error getting three-week pulse:', error);
+      return this.getDefaultThreeWeekPulse();
+    }
+  }
+
+  /**
+   * Energy insight for current calendar week (Mon → today).
+   */
+  async getEnergyInsight(userId: string): Promise<EnergyInsight> {
+    try {
+      const range = this.getCalendarWeekRange(0);
+      const rows = await dailyHabitsService.getDailyHabitsRange(
+        userId,
+        range.startDate,
+        range.endDate
+      );
+
+      const withEnergy = rows.filter((r) => r.reflect_energy != null && Number(r.reflect_energy) > 0);
+      if (withEnergy.length === 0) {
+        return { average: null, bestDay: null, sampleDays: 0 };
+      }
+
+      const sum = withEnergy.reduce((acc, r) => acc + Number(r.reflect_energy), 0);
+      const average = sum / withEnergy.length;
+
+      const byDay: Record<string, { total: number; count: number }> = {};
+      for (const r of withEnergy) {
+        const day = TimePeriodUtils.getLocalDayName(r.date);
+        if (!byDay[day]) byDay[day] = { total: 0, count: 0 };
+        byDay[day].total += Number(r.reflect_energy);
+        byDay[day].count += 1;
+      }
+
+      let bestDay: string | null = null;
+      let bestAvg = -1;
+      for (const [day, stats] of Object.entries(byDay)) {
+        const avg = stats.total / stats.count;
+        if (avg > bestAvg) {
+          bestAvg = avg;
+          bestDay = day;
+        }
+      }
+
+      return {
+        average: Math.round(average * 10) / 10,
+        bestDay,
+        sampleDays: withEnergy.length,
+      };
+    } catch (error) {
+      console.error('Error getting energy insight:', error);
+      return { average: null, bestDay: null, sampleDays: 0 };
+    }
+  }
+
+  /**
+   * Sleep snapshot for current calendar week (Mon → today).
+   */
+  async getSleepSnapshot(userId: string): Promise<SleepSnapshot> {
+    try {
+      const range = this.getCalendarWeekRange(0);
+      const rows = await dailyHabitsService.getDailyHabitsRange(
+        userId,
+        range.startDate,
+        range.endDate
+      );
+      const sleepRows = rows.filter((r) => this.isHabitCompleted(r, 'sleep'));
+
+      if (sleepRows.length === 0) {
+        return {
+          averageHours: null,
+          averageQuality: null,
+          bedtimeConsistency: 0,
+          optimalBedtime: '—',
+          optimalWakeTime: '—',
+          nightsLogged: 0,
+        };
+      }
+
+      const hours = sleepRows
+        .map((r) => (r.sleep_hours != null ? Number(r.sleep_hours) : null))
+        .filter((h): h is number => h != null && h > 0);
+      const qualities = sleepRows
+        .map((r) => (r.sleep_quality != null ? Number(r.sleep_quality) : null))
+        .filter((q): q is number => q != null);
+
+      const bedtimes = sleepRows
+        .filter((h) => h.sleep_bedtime_hours != null && h.sleep_bedtime_minutes != null)
+        .map((h) => h.sleep_bedtime_hours! * 60 + h.sleep_bedtime_minutes!);
+
+      return {
+        averageHours:
+          hours.length > 0
+            ? Math.round((hours.reduce((a, b) => a + b, 0) / hours.length) * 10) / 10
+            : null,
+        averageQuality:
+          qualities.length > 0
+            ? Math.round(qualities.reduce((a, b) => a + b, 0) / qualities.length)
+            : null,
+        bedtimeConsistency: bedtimes.length > 0 ? Math.round(this.calculateConsistency(bedtimes)) : 0,
+        optimalBedtime: this.findOptimalBedtime(sleepRows),
+        optimalWakeTime: this.findOptimalWakeTime(sleepRows),
+        nightsLogged: sleepRows.length,
+      };
+    } catch (error) {
+      console.error('Error getting sleep snapshot:', error);
+      return {
+        averageHours: null,
+        averageQuality: null,
+        bedtimeConsistency: 0,
+        optimalBedtime: '—',
+        optimalWakeTime: '—',
+        nightsLogged: 0,
+      };
+    }
+  }
+
+  /**
+   * Run + gym movement summary for current calendar week.
+   */
+  async getMovementSummary(userId: string): Promise<MovementSummary> {
+    try {
+      const range = this.getCalendarWeekRange(0);
+      const calendarDays = TimePeriodUtils.eachDate(range.startDate, range.endDate);
+      const daysInPeriod = calendarDays.length || 1;
+      const rows = await dailyHabitsService.getDailyHabitsRange(
+        userId,
+        range.startDate,
+        range.endDate
+      );
+      const byDate = new Map(rows.map((r) => [r.date, r]));
+
+      let runActiveDays = 0;
+      let runSessions = 0;
+      let totalDistanceKm = 0;
+      let gymSessions = 0;
+      let restDays = 0;
+      const typeCounts: Record<string, number> = {};
+
+      for (const dateStr of calendarDays) {
+        const record = byDate.get(dateStr);
+        const runActive = record ? this.isHabitCompleted(record, 'run') : false;
+        const gymActive = record ? this.isHabitCompleted(record, 'gym') : false;
+
+        if (runActive) {
+          runActiveDays++;
+          runSessions++;
+          if (record?.run_distance != null) {
+            totalDistanceKm += Number(record.run_distance) || 0;
+          }
+        }
+        if (gymActive) {
+          gymSessions++;
+          const types = record?.gym_training_types || [];
+          for (const t of types) {
+            const key = (t || 'Other').trim() || 'Other';
+            typeCounts[key] = (typeCounts[key] || 0) + 1;
+          }
+        }
+        if (
+          record &&
+          (record.run_day_type === 'rest' || record.gym_day_type === 'rest') &&
+          !runActive &&
+          !gymActive
+        ) {
+          restDays++;
+        }
+      }
+
+      let topTrainingType: string | null = null;
+      let topCount = 0;
+      for (const [type, count] of Object.entries(typeCounts)) {
+        if (count > topCount) {
+          topCount = count;
+          topTrainingType = type;
+        }
+      }
+
+      const activeMoveDays = new Set(
+        calendarDays.filter((d) => {
+          const r = byDate.get(d);
+          return r && (this.isHabitCompleted(r, 'run') || this.isHabitCompleted(r, 'gym'));
+        })
+      ).size;
+
+      let takeaway = 'Log a run or gym session to see your movement pattern.';
+      if (activeMoveDays > 0) {
+        if (topTrainingType) {
+          takeaway = `Most gym days are ${topTrainingType}.`;
+        } else if (runSessions > gymSessions) {
+          takeaway = `Running leads this week with ${runSessions} session${runSessions === 1 ? '' : 's'}.`;
+        } else if (gymSessions > 0) {
+          takeaway = `${gymSessions} gym session${gymSessions === 1 ? '' : 's'} this week.`;
+        } else {
+          takeaway = `${activeMoveDays} active move day${activeMoveDays === 1 ? '' : 's'} this week.`;
+        }
+      }
+
+      return {
+        runActiveDays,
+        runSessions,
+        totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
+        gymSessions,
+        topTrainingType,
+        restDayRatio: daysInPeriod > 0 ? Math.round((restDays / daysInPeriod) * 100) : null,
+        daysInPeriod,
+        takeaway,
+      };
+    } catch (error) {
+      console.error('Error getting movement summary:', error);
+      return {
+        runActiveDays: 0,
+        runSessions: 0,
+        totalDistanceKm: 0,
+        gymSessions: 0,
+        topTrainingType: null,
+        restDayRatio: null,
+        daysInPeriod: 0,
+        takeaway: 'Log a run or gym session to see your movement pattern.',
+      };
+    }
+  }
+
+  formatHabitLabel(habit: string): string {
+    return habit.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  /**
    * Generate weekly summary
    */
   async generateWeeklySummary(userId: string): Promise<WeeklySummary> {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const weekAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      const twoWeeksAgo = new Date(Date.now() - (14 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      const thisWeek = this.getCalendarWeekRange(0);
+      const lastWeek = this.getCalendarWeekRange(-1);
 
-      // Get current week data
-      const currentWeekData = await dailyHabitsService.getDailyHabitsRange(userId, weekAgo, today);
-      const previousWeekData = await dailyHabitsService.getDailyHabitsRange(userId, twoWeeksAgo, weekAgo);
+      const [current, previous] = await Promise.all([
+        this.completionForDateRange(userId, thisWeek.startDate, thisWeek.endDate),
+        this.completionForDateRange(userId, lastWeek.startDate, lastWeek.endDate),
+      ]);
 
-      // Calculate current week stats
-      const currentWeekCompleted = currentWeekData.filter(record => 
-        this.isAnyHabitCompleted(record)
-      ).length;
-      
-      const currentWeekTotal = currentWeekData.length * 6; // 6 habit types
-      const currentWeekRate = currentWeekTotal > 0 ? (currentWeekCompleted / currentWeekTotal) * 100 : 0;
-
-      // Calculate previous week stats
-      const previousWeekCompleted = previousWeekData.filter(record => 
-        this.isAnyHabitCompleted(record)
-      ).length;
-      
-      const previousWeekTotal = previousWeekData.length * 6;
-      const previousWeekRate = previousWeekTotal > 0 ? (previousWeekCompleted / previousWeekTotal) * 100 : 0;
-
-      // Get streaks
       const habitTypes = ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'];
       const streaks = await Promise.all(
-        habitTypes.map(habitType => dailyHabitsService.getHabitStreak(userId, habitType))
+        habitTypes.map((habitType) => dailyHabitsService.getHabitStreak(userId, habitType))
+      );
+
+      const currentWeekData = await dailyHabitsService.getDailyHabitsRange(
+        userId,
+        thisWeek.startDate,
+        thisWeek.endDate
       );
 
       return {
         currentWeek: {
-          totalHabits: currentWeekTotal,
-          completedHabits: currentWeekCompleted,
-          completionRate: currentWeekRate,
-          streaks: streaks.filter(s => s.current_streak > 0)
+          totalHabits: current.totalPossible,
+          completedHabits: current.completedCount,
+          completionRate: current.overallCompletion,
+          streaks: streaks.filter((s) => s.current_streak > 0),
         },
         previousWeek: {
-          totalHabits: previousWeekTotal,
-          completedHabits: previousWeekCompleted,
-          completionRate: previousWeekRate
+          totalHabits: previous.totalPossible,
+          completedHabits: previous.completedCount,
+          completionRate: previous.overallCompletion,
         },
-        improvement: currentWeekRate - previousWeekRate,
+        improvement: current.overallCompletion - previous.overallCompletion,
         highlights: this.generateHighlights(currentWeekData, streaks),
-        recommendations: this.generateRecommendations(currentWeekData, streaks)
+        recommendations: this.generateRecommendations(currentWeekData, streaks),
       };
     } catch (error) {
       console.error('Error generating weekly summary:', error);
@@ -375,10 +784,15 @@ class AnalyticsService {
    */
   async analyzeOptimalTimes(userId: string, habitType: string): Promise<OptimalTimes> {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - 29);
+      const endDate = TimePeriodUtils.toLocalDateString(end);
+      const startDate = TimePeriodUtils.toLocalDateString(start);
       
-      const habitHistory = await dailyHabitsService.getHabitHistory(userId, habitType, startDate, endDate);
+      const habitHistory = await dailyHabitsService.getHabitHistory(userId, habitType, startDate, endDate, {
+        completedOnly: false,
+      });
       
       // For sleep, analyze bedtime and wake time patterns
       if (habitType === 'sleep') {
@@ -420,17 +834,30 @@ class AnalyticsService {
   private isHabitCompleted(record: DailyHabits, habitType: string): boolean {
     switch (habitType) {
       case 'sleep':
-        // Check if sleep data exists (either calculated hours or bedtime/wake time)
-        return (record.sleep_hours !== null && record.sleep_hours > 0) ||
-               (record.sleep_bedtime_hours !== null && record.sleep_wakeup_hours !== null);
+        return (
+          (record.sleep_hours != null && Number(record.sleep_hours) > 0) ||
+          record.sleep_quality != null ||
+          record.sleep_bedtime_hours != null
+        );
       case 'water':
-        return record.water_intake !== null && record.water_intake > 0;
+        return record.water_intake != null && Number(record.water_intake) > 0;
       case 'run':
-        return record.run_day_type === 'active';
+        return (
+          record.run_day_type === 'active' ||
+          !!record.run_distance ||
+          !!record.run_duration
+        );
       case 'gym':
-        return record.gym_day_type === 'active';
+        return (
+          record.gym_day_type === 'active' ||
+          !!(record.gym_training_types && record.gym_training_types.length)
+        );
       case 'reflect':
-        return record.reflect_mood !== null;
+        return (
+          record.reflect_mood != null ||
+          !!record.reflect_what_went_well ||
+          !!record.reflect_nothing_to_change
+        );
       case 'cold_shower':
         return record.cold_shower_completed === true;
       default:
@@ -455,9 +882,16 @@ class AnalyticsService {
     try {
       const rates = Object.entries(dayCounts).map(([day, count]: [string, any]) => ({
         day,
-        rate: this.calculateRate(count)
+        rate: this.calculateRate(count),
+        completed: count.completed || 0,
+        total: count.total || 0,
       }));
-      return rates.reduce((max, current) => current.rate > max.rate ? current : max).day;
+      // Prefer highest completion rate; tie-break by most completed days
+      return rates.reduce((max, current) => {
+        if (current.rate > max.rate) return current;
+        if (current.rate === max.rate && current.completed > max.completed) return current;
+        return max;
+      }).day;
     } catch (error) {
       console.error('Error finding peak day:', error);
       return 'monday';
@@ -633,65 +1067,70 @@ class AnalyticsService {
   }
 
   /**
-   * Calculate cross-habit correlations
+   * Calculate cross-habit correlations over the last N calendar days.
    */
-  async calculateCrossHabitCorrelations(userId: string, days: number = 30): Promise<CrossHabitCorrelation> {
+  async calculateCrossHabitCorrelations(
+    userId: string,
+    days: number = 30
+  ): Promise<CrossHabitCorrelation & { dataPoints: number }> {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
-      
-      const habitHistory = await dailyHabitsService.getHabitHistory(userId, 'all', startDate, endDate);
-      
-      // Filter records with multiple data points
-      const validRecords = habitHistory.filter(record => 
-        (record.sleep_hours || record.sleep_quality) && 
-        (record.reflect_mood || record.reflect_energy) &&
-        record.date
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(start.getDate() - days + 1);
+      const endDate = TimePeriodUtils.toLocalDateString(end);
+      const startDate = TimePeriodUtils.toLocalDateString(start);
+
+      const habitHistory = await dailyHabitsService.getDailyHabitsRange(userId, startDate, endDate);
+
+      const validRecords = habitHistory.filter(
+        (record) =>
+          (record.sleep_hours || record.sleep_quality) &&
+          (record.reflect_mood || record.reflect_energy) &&
+          record.date
       );
 
       if (validRecords.length < 5) {
-        return this.getDefaultCrossHabitCorrelation();
+        return { ...this.getDefaultCrossHabitCorrelation(), dataPoints: validRecords.length };
       }
 
-      // Calculate correlations
       const sleepToMood = this.calculateCorrelation(
-        validRecords.map(r => r.sleep_quality || r.sleep_hours || 0),
-        validRecords.map(r => r.reflect_mood || 0)
+        validRecords.map((r) => r.sleep_quality || r.sleep_hours || 0),
+        validRecords.map((r) => r.reflect_mood || 0)
       );
 
       const sleepToEnergy = this.calculateCorrelation(
-        validRecords.map(r => r.sleep_quality || r.sleep_hours || 0),
-        validRecords.map(r => r.reflect_energy || 0)
+        validRecords.map((r) => r.sleep_quality || r.sleep_hours || 0),
+        validRecords.map((r) => r.reflect_energy || 0)
       );
 
       const sleepToExercise = this.calculateCorrelation(
-        validRecords.map(r => r.sleep_quality || r.sleep_hours || 0),
-        validRecords.map(r => (r.run_distance || 0) + (r.gym_day_type === 'active' ? 1 : 0))
+        validRecords.map((r) => r.sleep_quality || r.sleep_hours || 0),
+        validRecords.map((r) => (r.run_distance || 0) + (r.gym_day_type === 'active' ? 1 : 0))
       );
 
       const waterToEnergy = this.calculateCorrelation(
-        validRecords.map(r => r.water_intake || 0),
-        validRecords.map(r => r.reflect_energy || 0)
+        validRecords.map((r) => r.water_intake || 0),
+        validRecords.map((r) => r.reflect_energy || 0)
       );
 
       const waterToMood = this.calculateCorrelation(
-        validRecords.map(r => r.water_intake || 0),
-        validRecords.map(r => r.reflect_mood || 0)
+        validRecords.map((r) => r.water_intake || 0),
+        validRecords.map((r) => r.reflect_mood || 0)
       );
 
       const exerciseToSleep = this.calculateCorrelation(
-        validRecords.map(r => (r.run_distance || 0) + (r.gym_day_type === 'active' ? 1 : 0)),
-        validRecords.map(r => r.sleep_quality || r.sleep_hours || 0)
+        validRecords.map((r) => (r.run_distance || 0) + (r.gym_day_type === 'active' ? 1 : 0)),
+        validRecords.map((r) => r.sleep_quality || r.sleep_hours || 0)
       );
 
       const coldShowerToMood = this.calculateCorrelation(
-        validRecords.map(r => r.cold_shower_completed ? 1 : 0),
-        validRecords.map(r => r.reflect_mood || 0)
+        validRecords.map((r) => (r.cold_shower_completed ? 1 : 0)),
+        validRecords.map((r) => r.reflect_mood || 0)
       );
 
       const coldShowerToEnergy = this.calculateCorrelation(
-        validRecords.map(r => r.cold_shower_completed ? 1 : 0),
-        validRecords.map(r => r.reflect_energy || 0)
+        validRecords.map((r) => (r.cold_shower_completed ? 1 : 0)),
+        validRecords.map((r) => r.reflect_energy || 0)
       );
 
       return {
@@ -703,99 +1142,109 @@ class AnalyticsService {
         exerciseToSleep,
         coldShowerToMood,
         coldShowerToEnergy,
-        meditationToStress: 0, // Coming soon
-        meditationToFocus: 0, // Coming soon
+        meditationToStress: 0,
+        meditationToFocus: 0,
+        dataPoints: validRecords.length,
       };
     } catch (error) {
       console.error('Error calculating cross-habit correlations:', error);
-      return this.getDefaultCrossHabitCorrelation();
+      return { ...this.getDefaultCrossHabitCorrelation(), dataPoints: 0 };
     }
   }
 
+  private correlationStrength(value: number): 'strong' | 'moderate' | 'weak' {
+    const abs = Math.abs(value);
+    if (abs > 0.6) return 'strong';
+    if (abs > 0.3) return 'moderate';
+    return 'weak';
+  }
+
   /**
-   * Generate correlation insights
+   * Generate correlation insights for UI (includes title + habit labels).
    */
-  async generateCorrelationInsights(userId: string): Promise<CorrelationInsight[]> {
+  async generateCorrelationInsights(
+    userId: string,
+    days: number = 30
+  ): Promise<CorrelationInsight[]> {
     try {
-      const correlations = await this.calculateCrossHabitCorrelations(userId);
+      const correlations = await this.calculateCrossHabitCorrelations(userId, days);
+      const dataPoints = correlations.dataPoints;
       const insights: CorrelationInsight[] = [];
 
-      // Sleep to Mood correlation
-      if (Math.abs(correlations.sleepToMood) > 0.3) {
+      const pushInsight = (
+        value: number,
+        title: string,
+        habit1: string,
+        habit2: string,
+        positiveDesc: string,
+        negativeDesc: string,
+        positiveRec: string,
+        negativeRec: string
+      ) => {
+        if (Math.abs(value) <= 0.3) return;
+        const positive = value > 0;
         insights.push({
-          type: correlations.sleepToMood > 0 ? 'positive' : 'negative',
-          strength: Math.abs(correlations.sleepToMood) > 0.6 ? 'strong' : 'moderate',
-          description: `Sleep quality ${correlations.sleepToMood > 0 ? 'positively' : 'negatively'} affects your mood`,
-          recommendation: correlations.sleepToMood > 0 
-            ? 'Focus on maintaining good sleep habits for better mood'
-            : 'Consider adjusting your sleep routine to improve mood',
-          dataPoints: 30
+          type: positive ? 'positive' : 'negative',
+          strength: this.correlationStrength(value),
+          title,
+          habit1,
+          habit2,
+          description: positive ? positiveDesc : negativeDesc,
+          recommendation: positive ? positiveRec : negativeRec,
+          dataPoints,
+          coefficient: Math.round(value * 100) / 100,
         });
-      }
+      };
 
-      // Water to Energy correlation
-      if (Math.abs(correlations.waterToEnergy) > 0.3) {
-        insights.push({
-          type: correlations.waterToEnergy > 0 ? 'positive' : 'negative',
-          strength: Math.abs(correlations.waterToEnergy) > 0.6 ? 'strong' : 'moderate',
-          description: `Water intake ${correlations.waterToEnergy > 0 ? 'boosts' : 'reduces'} your energy levels`,
-          recommendation: correlations.waterToEnergy > 0 
-            ? 'Maintain consistent water intake throughout the day'
-            : 'Monitor your water consumption patterns',
-          dataPoints: 30
-        });
-      }
+      pushInsight(
+        correlations.sleepToMood,
+        'Sleep & Mood',
+        'Sleep',
+        'Mood',
+        'Better sleep quality tends to go with better mood.',
+        'Sleep quality and mood move in opposite directions in your data.',
+        'Keep prioritizing solid sleep for steadier mood.',
+        'Review bedtime and wind-down if mood dips after poor sleep.'
+      );
 
-      // Exercise to Sleep correlation
-      if (Math.abs(correlations.exerciseToSleep) > 0.3) {
-        insights.push({
-          type: correlations.exerciseToSleep > 0 ? 'positive' : 'negative',
-          strength: Math.abs(correlations.exerciseToSleep) > 0.6 ? 'strong' : 'moderate',
-          description: `Exercise ${correlations.exerciseToSleep > 0 ? 'improves' : 'affects'} your sleep quality`,
-          recommendation: correlations.exerciseToSleep > 0 
-            ? 'Regular exercise helps with better sleep'
-            : 'Consider timing of exercise relative to bedtime',
-          dataPoints: 30
-        });
-      }
+      pushInsight(
+        correlations.waterToEnergy,
+        'Water & Energy',
+        'Water',
+        'Energy',
+        'Higher water intake tends to go with higher energy.',
+        'Water intake and energy move in opposite directions in your data.',
+        'Keep hydration steady through the day.',
+        'Watch how timing of drinks relates to energy dips.'
+      );
 
-      // Cold Shower to Mood correlation
-      if (Math.abs(correlations.coldShowerToMood) > 0.3) {
-        insights.push({
-          type: correlations.coldShowerToMood > 0 ? 'positive' : 'negative',
-          strength: Math.abs(correlations.coldShowerToMood) > 0.6 ? 'strong' : 'moderate',
-          description: `Cold showers ${correlations.coldShowerToMood > 0 ? 'improve' : 'affect'} your mood`,
-          recommendation: correlations.coldShowerToMood > 0 
-            ? 'Cold showers may be beneficial for your mood'
-            : 'Consider the timing of cold showers',
-          dataPoints: 30
-        });
-      }
+      pushInsight(
+        correlations.exerciseToSleep,
+        'Exercise & Sleep',
+        'Exercise',
+        'Sleep',
+        'Exercise days tend to line up with better sleep.',
+        'Exercise and sleep quality move in opposite directions in your data.',
+        'Keep a regular move habit to support sleep.',
+        'Try earlier workouts if late sessions disrupt sleep.'
+      );
+
+      pushInsight(
+        correlations.coldShowerToMood,
+        'Cold Shower & Mood',
+        'Cold shower',
+        'Mood',
+        'Cold shower days tend to line up with better mood.',
+        'Cold showers and mood move in opposite directions in your data.',
+        'Cold showers may be a useful mood boost for you.',
+        'Experiment with timing if cold showers feel draining.'
+      );
 
       return insights;
     } catch (error) {
       console.error('Error generating correlation insights:', error);
       return [];
     }
-  }
-
-  /**
-   * Calculate Pearson correlation coefficient
-   */
-  private calculateCorrelation(x: number[], y: number[]): number {
-    if (x.length !== y.length || x.length === 0) return 0;
-    
-    const n = x.length;
-    const sumX = x.reduce((a, b) => a + b, 0);
-    const sumY = y.reduce((a, b) => a + b, 0);
-    const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
-    const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
-    const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
-    
-    const numerator = n * sumXY - sumX * sumY;
-    const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-    
-    return denominator === 0 ? 0 : numerator / denominator;
   }
 
   // Default return methods for error handling
@@ -841,6 +1290,16 @@ class AnalyticsService {
       needsAttention: [],
       weeklyGoal: 21,
       weeklyCompleted: 0
+    };
+  }
+
+  private getDefaultThreeWeekPulse(): ThreeWeekPulse {
+    const empty = { label: '', completionRate: 0, startDate: '', endDate: '' };
+    return {
+      thisWeek: { ...empty, label: 'This week' },
+      lastWeek: { ...empty, label: 'Last week', deltaVsPrevious: 0 },
+      twoWeeksAgo: { ...empty, label: '2 weeks ago', deltaVsPrevious: 0 },
+      highlights: [],
     };
   }
 

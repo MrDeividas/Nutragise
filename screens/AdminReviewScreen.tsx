@@ -314,7 +314,7 @@ export default function AdminReviewScreen() {
           >
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.primary} />
+                <ActivityIndicator size="large" color={"#1f2937"} />
               </View>
             ) : pendingChallenges.length === 0 ? (
               <View style={styles.emptyContainer}>

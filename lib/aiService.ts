@@ -94,9 +94,9 @@ class AIService {
       dailyHabitsService.getHabitStreak(userId, 'gym'),
       dailyHabitsService.getHabitStreak(userId, 'reflect'),
       dailyHabitsService.getHabitStreak(userId, 'cold_shower'),
-      analyticsService.calculateWeeklyPatterns(userId, 'sleep', 4),
-      analyticsService.calculateWeeklyPatterns(userId, 'water', 4),
-      analyticsService.generateCorrelationInsights(userId),
+      analyticsService.calculateWeeklyPatterns(userId, 'sleep', 28),
+      analyticsService.calculateWeeklyPatterns(userId, 'water', 28),
+      analyticsService.generateCorrelationInsights(userId, 30),
       analyticsService.calculateHabitCompletionRate(userId, 'past7'),
       supabase.from('profiles').select('display_name, username').eq('id', userId).single(),
     ]);

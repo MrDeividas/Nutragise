@@ -278,7 +278,7 @@ export default function InviteFriendModal({
                     No users found. Try searching for a username.
                   </Text>
                 ) : (
-                  <ActivityIndicator size="small" color={theme.primary} style={{ marginTop: 20 }} />
+                  <ActivityIndicator size="small" color={"#1f2937"} style={{ marginTop: 20 }} />
                 )
               }
             />

@@ -48,6 +48,26 @@ import TimePeriodUtils from '../lib/timePeriodUtils';
 import ScreenTimeGraph from '../components/ScreenTimeGraph';
 import MoodStatistic from '../components/MoodStatistic';
 import UpgradeToProModal from '../components/UpgradeToProModal';
+import { HabitScoreboard, WeekPulsePanel, EnergyPanel, SleepSnapshotPanel, MovementPanel } from '../components/Stage1InsightPanels';
+import {
+  MeditationInsightPanel,
+  MicrolearnInsightPanel,
+  GoalsInsightPanel,
+  PillarsInsightPanel,
+  LoginInsightPanel,
+  ChallengesInsightPanel,
+  ScreenTimeInsightPanel,
+} from '../components/Stage3InsightPanels';
+import {
+  AchievementMomentsPanel,
+  WeekdayInsightPanel,
+  ColdShowerRatePanel,
+  PartnerAccountabilityPanel,
+  CorrelationNumbersPanel,
+} from '../components/Stage4InsightPanels';
+import { analyticsService, HabitCompletionRate, ThreeWeekPulse, EnergyInsight, SleepSnapshot, MovementSummary } from '../lib/analyticsService';
+import { stage3InsightService, Stage3Dashboard } from '../lib/stage3InsightService';
+import { stage4InsightService, Stage4Dashboard } from '../lib/stage4InsightService';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 
@@ -89,6 +109,14 @@ export default function InsightsScreen({ route }: any) {
     dominantMood: string;
     dominantDays: number;
   }>({ happy: 65, sad: 22, angry: 13, dominantMood: 'happy', dominantDays: 5 });
+  const [scoreboard, setScoreboard] = useState<HabitCompletionRate | null>(null);
+  const [weekPulse, setWeekPulse] = useState<ThreeWeekPulse | null>(null);
+  const [energyInsight, setEnergyInsight] = useState<EnergyInsight | null>(null);
+  const [sleepSnapshot, setSleepSnapshot] = useState<SleepSnapshot | null>(null);
+  const [movementSummary, setMovementSummary] = useState<MovementSummary | null>(null);
+  const [stage3, setStage3] = useState<Stage3Dashboard | null>(null);
+  const [stage4, setStage4] = useState<Stage4Dashboard | null>(null);
+  const [isLoadingStage1, setIsLoadingStage1] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -356,22 +384,22 @@ export default function InsightsScreen({ route }: any) {
   }, [isHeaderExpanded, chatBoxMaxHeight, keyboardHeight]);
 
 
-  // Combined useEffect for initialization
+  // Initialize AI / chat once per user
   useEffect(() => {
     if (user) {
       initializeAI();
-      loadInsights();
       loadSmartSuggestions();
+      loadStage1Dashboard();
       if (messages.length === 0) {
         initializeChat();
       }
     }
   }, [user]);
 
-  // Reload insights when period changes
+  // Load insights on mount and when period changes (single fetch path)
   useEffect(() => {
     if (user) {
-      loadInsights(true);
+      loadInsights(false);
     }
   }, [selectedPeriod, user]);
 
@@ -386,6 +414,33 @@ export default function InsightsScreen({ route }: any) {
     }
   };
 
+  const loadStage1Dashboard = async () => {
+    if (!user) return;
+    setIsLoadingStage1(true);
+    try {
+      const [board, pulse, energy, sleep, movement, stage3Data, stage4Data] = await Promise.all([
+        analyticsService.calculateHabitCompletionRate(user.id, 'currentWeek'),
+        analyticsService.getThreeWeekPulse(user.id),
+        analyticsService.getEnergyInsight(user.id),
+        analyticsService.getSleepSnapshot(user.id),
+        analyticsService.getMovementSummary(user.id),
+        stage3InsightService.getDashboard(user.id),
+        stage4InsightService.getDashboard(user.id),
+      ]);
+      setScoreboard(board);
+      setWeekPulse(pulse);
+      setEnergyInsight(energy);
+      setSleepSnapshot(sleep);
+      setMovementSummary(movement);
+      setStage3(stage3Data);
+      setStage4(stage4Data);
+    } catch (error) {
+      console.error('Error loading stage 1 insights:', error);
+    } finally {
+      setIsLoadingStage1(false);
+    }
+  };
+
   const loadInsights = async (forceRefresh = false) => {
     if (!user) return;
     
@@ -394,10 +449,10 @@ export default function InsightsScreen({ route }: any) {
     setLoadingPhase('initial');
     
     try {
-      // Check cache first (unless forcing refresh)
+      // Check period-scoped cache first (unless forcing refresh)
       if (!forceRefresh) {
         setIsLoadingFromCache(true);
-        const cached = await CacheService.getCachedInsights(user.id);
+        const cached = await CacheService.getCachedInsights(user.id, selectedPeriod);
         
         if (cached) {
           setInsights(cached.insights);
@@ -405,8 +460,7 @@ export default function InsightsScreen({ route }: any) {
           setIsLoadingInsights(false);
           setIsLoadingFromCache(false);
           
-          // Update cache status
-          const status = await CacheService.getCacheStatus(user.id);
+          const status = await CacheService.getCacheStatus(user.id, selectedPeriod);
           setCacheStatus(status);
           
           return;
@@ -420,7 +474,7 @@ export default function InsightsScreen({ route }: any) {
       
       // Phase 1: Load basic insights immediately
       setLoadingPhase('basic');
-      const basicInsights = await insightService.generateBasicInsights(user.id);
+      const basicInsights = await insightService.generateBasicInsights(user.id, selectedPeriod);
       setInsights(basicInsights);
       
       // Phase 2: Load detailed insights progressively
@@ -435,13 +489,11 @@ export default function InsightsScreen({ route }: any) {
       
       setInsights(insightsWithExpansion);
       
-      // Cache the results
-      await CacheService.cacheInsights(user.id, insightsWithExpansion, {});
+      await CacheService.cacheInsights(user.id, insightsWithExpansion, {}, selectedPeriod);
       
       setLoadingPhase('complete');
       
-      // Update cache status
-      const status = await CacheService.getCacheStatus(user.id);
+      const status = await CacheService.getCacheStatus(user.id, selectedPeriod);
       setCacheStatus(status);
       
     } catch (error) {
@@ -468,7 +520,7 @@ export default function InsightsScreen({ route }: any) {
     if (user) {
       await CacheService.clearCache(user.id);
     }
-    await loadInsights(true);
+    await Promise.all([loadInsights(true), loadStage1Dashboard()]);
   };
 
   const toggleInsightExpansion = useCallback((insightIndex: number) => {
@@ -758,6 +810,7 @@ export default function InsightsScreen({ route }: any) {
               if (user && unreadNotifCount > 0) {
                 await notificationService.markAllAsRead(user.id);
                 useNotificationsStore.getState().clearCount();
+                await useNotificationsStore.getState().refresh(user.id);
               }
               (navigation as any).navigate('Notifications');
             }}
@@ -818,7 +871,7 @@ export default function InsightsScreen({ route }: any) {
                     onPress={() => (navigation as any).navigate('ProgressCharts')}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="analytics" size={20} color={primary} />
+                    <Ionicons name="analytics" size={20} color="#1f2937" />
                     <Text style={[styles.dropdownHeaderText, { color: textPrimary }]}>
                       Progress Charts
                     </Text>
@@ -844,7 +897,7 @@ export default function InsightsScreen({ route }: any) {
                     <Ionicons 
                       name="refresh" 
                       size={20} 
-                      color={isLoadingInsights ? textSecondary : primary} 
+                      color={isLoadingInsights ? textSecondary : '#1f2937'} 
                     />
                   </TouchableOpacity>
                 </View>
@@ -855,7 +908,7 @@ export default function InsightsScreen({ route }: any) {
                     <Ionicons 
                       name={cacheStatus.isValid ? "checkmark-circle" : "time"} 
                       size={16} 
-                      color={cacheStatus.isValid ? "#10B981" : textSecondary} 
+                      color={cacheStatus.isValid ? '#1f2937' : textSecondary} 
                     />
                     <Text style={[styles.cacheStatusText, { color: textSecondary }]}>
                       {cacheStatus.isValid 
@@ -869,21 +922,21 @@ export default function InsightsScreen({ route }: any) {
                   <View style={styles.loadingContainer}>
                     {isLoadingFromCache ? (
                       <>
-                        <ActivityIndicator size="large" color={primary} />
+                        <ActivityIndicator size="large" color={"#1f2937"} />
                         <Text style={[styles.loadingText, { color: textSecondary }]}>
                           Loading cached insights...
                         </Text>
                       </>
                     ) : loadingPhase === 'initial' ? (
                       <>
-                        <ActivityIndicator size="large" color={primary} />
+                        <ActivityIndicator size="large" color={"#1f2937"} />
                         <Text style={[styles.loadingText, { color: textSecondary }]}>
                           Checking for cached data...
                         </Text>
                       </>
                     ) : loadingPhase === 'basic' ? (
                       <>
-                        <ActivityIndicator size="large" color={primary} />
+                        <ActivityIndicator size="large" color={"#1f2937"} />
                         <Text style={[styles.loadingText, { color: textSecondary }]}>
                           Loading basic insights...
                         </Text>
@@ -891,7 +944,7 @@ export default function InsightsScreen({ route }: any) {
                       </>
                     ) : loadingPhase === 'detailed' ? (
                       <>
-                        <ActivityIndicator size="large" color={primary} />
+                        <ActivityIndicator size="large" color={"#1f2937"} />
                         <Text style={[styles.loadingText, { color: textSecondary }]}>
                           Analyzing detailed patterns...
                         </Text>
@@ -899,7 +952,7 @@ export default function InsightsScreen({ route }: any) {
                       </>
                     ) : (
                       <>
-                        <ActivityIndicator size="large" color={primary} />
+                        <ActivityIndicator size="large" color={"#1f2937"} />
                         <Text style={[styles.loadingText, { color: textSecondary }]}>
                           Analyzing your wellness data...
                         </Text>
@@ -913,7 +966,7 @@ export default function InsightsScreen({ route }: any) {
                       {insightError}
                     </Text>
                                     <TouchableOpacity 
-                      style={[styles.retryButton, { backgroundColor: primary }]}
+                      style={[styles.retryButton, { backgroundColor: '#1f2937' }]}
                       onPress={refreshInsights}
                     >
                     <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>
@@ -941,7 +994,7 @@ export default function InsightsScreen({ route }: any) {
                     activeOpacity={insight.expandable ? 0.7 : 1}
                   >
                     <View style={styles.insightHeader}>
-                      <Ionicons name={insight.icon as any} size={20} color={primary} />
+                      <Ionicons name={insight.icon as any} size={20} color="#1f2937" />
                                             <Text style={[styles.insightTitle, { color: textPrimary }]}>
                         {insight.title || 'Insight'}
                       </Text>
@@ -1023,8 +1076,138 @@ export default function InsightsScreen({ route }: any) {
             
             {/* Two Column Layout */}
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 4, alignItems: 'flex-start' }}>
-              <ScreenTimeGraph halfWidth={true} />
+              <ScreenTimeGraph
+                halfWidth={true}
+                data={
+                  stage3?.screenTime?.hasData
+                    ? stage3.screenTime.dailyHours
+                    : undefined
+                }
+              />
               <MoodStatistic halfWidth={true} data={moodData} />
+            </View>
+
+            {/* Stats stack — bottom of Insights */}
+            <View style={{ marginTop: 20 }}>
+              <HabitScoreboard
+                data={scoreboard}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <WeekPulsePanel
+                data={weekPulse}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <EnergyPanel
+                data={energyInsight}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <SleepSnapshotPanel
+                data={sleepSnapshot}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <MovementPanel
+                data={movementSummary}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <MeditationInsightPanel
+                data={stage3?.meditation ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <MicrolearnInsightPanel
+                data={stage3?.microlearn ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <GoalsInsightPanel
+                data={stage3?.goals ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <PillarsInsightPanel
+                data={stage3?.pillars ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <LoginInsightPanel
+                data={stage3?.login ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <ChallengesInsightPanel
+                data={stage3?.challenges ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <ScreenTimeInsightPanel
+                data={stage3?.screenTime ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <AchievementMomentsPanel
+                data={stage4?.achievements ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <WeekdayInsightPanel
+                data={stage4?.weekday ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <ColdShowerRatePanel
+                data={stage4?.coldShower ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <PartnerAccountabilityPanel
+                data={stage4?.partner ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
+              <CorrelationNumbersPanel
+                data={stage4?.correlations ?? null}
+                loading={isLoadingStage1}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+                primary={primary}
+              />
             </View>
           </ScrollView>
         </View>

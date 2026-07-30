@@ -55,7 +55,17 @@ class AchievementsService {
   async setFlag(userId: string, key: string): Promise<void> {
     await AsyncStorage.setItem(`${FLAG_PREFIX}${userId}_${key}`, '1');
     // Re-evaluate so flag-based badges unlock promptly
-    this.evaluateAndUnlock(userId).catch(() => {});
+    this.scheduleEvaluate(userId);
+  }
+
+  private evaluateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Debounced unlock check — safe to call after every habit/action save. */
+  scheduleEvaluate(userId: string): void {
+    if (this.evaluateTimer) clearTimeout(this.evaluateTimer);
+    this.evaluateTimer = setTimeout(() => {
+      this.evaluateAndUnlock(userId).catch(() => {});
+    }, 600);
   }
 
   async getFlag(userId: string, key: string): Promise<boolean> {
@@ -215,19 +225,51 @@ class AchievementsService {
       const existing = await this.getUnlocked(userId);
       const unlockedSet = new Set(existing.map((u) => u.achievement_id));
       const stats = await this.collectStats(userId);
-      const newly: string[] = [];
+      const candidates: string[] = [];
 
       for (const def of ACHIEVEMENT_DEFINITIONS) {
         if (unlockedSet.has(def.id)) continue;
-        if (this.meets(def.criteria, stats)) newly.push(def.id);
+        if (this.meets(def.criteria, stats)) candidates.push(def.id);
       }
 
-      if (!newly.length) return [];
-      await this.unlockMany(userId, newly);
+      if (!candidates.length) return [];
+      const newly = await this.unlockMany(userId, candidates);
+      if (newly.length) {
+        this.notifyUnlocks(userId, newly).catch(() => {});
+      }
       return newly;
     } catch (e) {
       console.warn('evaluateAndUnlock failed:', e);
       return [];
+    }
+  }
+
+  private async notifyUnlocks(userId: string, achievementIds: string[]): Promise<void> {
+    const { notificationService } = await import('./notificationService');
+    const { useNotificationsStore } = await import('../state/notificationsStore');
+
+    for (let i = 0; i < achievementIds.length; i++) {
+      const id = achievementIds[i];
+      const def = ACHIEVEMENT_DEFINITIONS.find((d) => d.id === id);
+      if (!def) continue;
+
+      await notificationService.createNotification({
+        user_id: userId,
+        notification_type: 'achievement_unlocked',
+        habit_type: id,
+      });
+
+      const delay = i * 4000;
+      const bannerId = `achievement-${id}-${Date.now()}-${i}`;
+      setTimeout(() => {
+        useNotificationsStore.getState().showBanner({
+          id: bannerId,
+          type: 'achievement_unlocked',
+          title: 'Achievement unlocked',
+          body: def.title,
+          habitType: id,
+        });
+      }, delay);
     }
   }
 

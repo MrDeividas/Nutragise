@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Nutrapp",
+    "name": "nutragise",
     "slug": "nutrapp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -56,6 +56,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-font",
       "expo-audio",
       [
         "expo-notifications",

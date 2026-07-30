@@ -160,6 +160,17 @@ class PushNotificationService {
   }
 
   /**
+   * Ensure notification permission is granted (needed for local reminder alerts too).
+   */
+  async ensurePermissions(): Promise<boolean> {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    if (existingStatus === 'granted') return true;
+
+    const { status } = await Notifications.requestPermissionsAsync();
+    return status === 'granted';
+  }
+
+  /**
    * Schedule a local notification (e.g. habit reminder).
    */
   async scheduleLocalNotification(
@@ -167,9 +178,29 @@ class PushNotificationService {
     body: string,
     data: Record<string, any> = {},
     trigger: Notifications.NotificationTriggerInput = null
-  ): Promise<string> {
+  ): Promise<string | null> {
+    const granted = await this.ensurePermissions();
+    if (!granted) {
+      console.warn('Local notification permission not granted');
+      return null;
+    }
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('reminders', {
+        name: 'Reminders',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+      });
+    }
+
     return Notifications.scheduleNotificationAsync({
-      content: { title, body, data, sound: true },
+      content: {
+        title,
+        body,
+        data,
+        sound: true,
+        ...(Platform.OS === 'android' ? { channelId: 'reminders' } : {}),
+      },
       trigger,
     });
   }

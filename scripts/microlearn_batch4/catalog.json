@@ -1,0 +1,102 @@
+[
+  {
+    "title": "Breath",
+    "author": "James Nestor",
+    "isbn": "9780735213616",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780735213616-L.jpg",
+    "cover_status": 200,
+    "short_description": "James Nestor on how we breathe \u2014 nose vs mouth, CO2, ancient techniques, and why breathing is a missing pillar of health.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "The Miracle Morning",
+    "author": "Hal Elrod",
+    "isbn": "9780979019715",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780979019715-L.jpg",
+    "cover_status": 200,
+    "short_description": "Hal Elrod\u2019s SAVERS morning routine \u2014 silence, affirmations, visualization, exercise, reading, and scribing to transform your day before it starts.",
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "Man's Search for Meaning",
+    "author": "Viktor E. Frankl",
+    "isbn": "9780807014295",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780807014295-L.jpg",
+    "cover_status": 200,
+    "short_description": "Viktor Frankl\u2019s Holocaust memoir and logotherapy \u2014 finding meaning even in suffering, and freedom in choosing one\u2019s attitude.",
+    "target_words": 5400,
+    "duration_minutes": 31
+  },
+  {
+    "title": "The Daily Stoic",
+    "author": "Ryan Holiday & Stephen Hanselman",
+    "isbn": "9780735211735",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780735211735-L.jpg",
+    "cover_status": 200,
+    "short_description": "A year of Stoic meditations \u2014 clarity, action, and acceptance drawn from Marcus, Epictetus, and Seneca.",
+    "target_words": 4800,
+    "duration_minutes": 27
+  },
+  {
+    "title": "Start With Why",
+    "author": "Simon Sinek",
+    "isbn": "9781591846444",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591846444-L.jpg",
+    "cover_status": 200,
+    "short_description": "Simon Sinek\u2019s Golden Circle \u2014 great leaders inspire action by starting with why, then how, then what.",
+    "target_words": 5000,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The Slight Edge",
+    "author": "Jeff Olson",
+    "isbn": "9781626340466",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781626340466-L.jpg",
+    "cover_status": 200,
+    "short_description": "Jeff Olson on how simple daily disciplines compound \u2014 success and failure are usually slight edges repeated.",
+    "target_words": 4500,
+    "duration_minutes": 26
+  },
+  {
+    "title": "Never Split the Difference",
+    "author": "Chris Voss",
+    "isbn": "9780062407801",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780062407801-L.jpg",
+    "cover_status": 200,
+    "short_description": "FBI negotiator Chris Voss on tactical empathy \u2014 mirroring, labeling, calibrated questions, and never splitting the difference.",
+    "target_words": 5400,
+    "duration_minutes": 31
+  },
+  {
+    "title": "So Good They Can't Ignore You",
+    "author": "Cal Newport",
+    "isbn": "9781455509126",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781455509126-L.jpg",
+    "cover_status": 200,
+    "short_description": "Cal Newport\u2019s craft-skills career advice \u2014 skip passion-first, build rare skills, and turn capital into control.",
+    "target_words": 4900,
+    "duration_minutes": 28
+  },
+  {
+    "title": "The Courage to Be Disliked",
+    "author": "Ichiro Kishimi & Fumitake Koga",
+    "isbn": "9781501137273",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781501137273-L.jpg",
+    "cover_status": 200,
+    "short_description": "Adlerian psychology as dialogue \u2014 separate tasks, discard the desire for recognition, and live in the present community.",
+    "target_words": 5200,
+    "duration_minutes": 30
+  },
+  {
+    "title": "Born to Run",
+    "author": "Christopher McDougall",
+    "isbn": "9780307279187",
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780307279187-L.jpg",
+    "cover_status": 200,
+    "short_description": "McDougall\u2019s Tarahumara odyssey \u2014 ultrarunning, barefoot biomechanics, and the joy of running as a human birthright.",
+    "target_words": 5300,
+    "duration_minutes": 30
+  }
+]

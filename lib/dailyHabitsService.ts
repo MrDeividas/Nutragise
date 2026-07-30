@@ -116,6 +116,11 @@ class DailyHabitsService {
           console.warn('Error syncing habits to challenges:', err);
         }
       });
+
+      // Check for newly unlocked achievements (non-blocking)
+      import('./achievementsService').then(({ achievementsService }) => {
+        achievementsService.scheduleEvaluate(userId);
+      }).catch(() => {});
       
       return result;
     } catch (error) {
@@ -413,14 +418,27 @@ class DailyHabitsService {
   /**
    * Get habit history for a specific habit type
    */
-  async getHabitHistory(userId: string, habitType: string, startDate: string, endDate: string): Promise<DailyHabits[]> {
+  /**
+   * Get habit history for a date range.
+   * @param completedOnly - when true (default), only rows where that habit is completed
+   *   (used by streak math). Pass false for analytics rates/patterns.
+   */
+  async getHabitHistory(
+    userId: string,
+    habitType: string,
+    startDate: string,
+    endDate: string,
+    options: { completedOnly?: boolean } = {}
+  ): Promise<DailyHabits[]> {
+    const completedOnly = options.completedOnly !== false;
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       
       // Ensure endDate doesn't exceed today
       const effectiveEndDate = endDate > today ? today : endDate;
       
-      let query = supabase
+      const { data, error } = await supabase
         .from('daily_habits')
         .select('*')
         .eq('user_id', userId)
@@ -428,30 +446,30 @@ class DailyHabitsService {
         .lte('date', effectiveEndDate)
         .order('date', { ascending: false });
 
-      // Filter by habit type - only get records where the habit is actually completed
-      const { data, error } = await query;
-
       if (error) {
         console.error('Error fetching habit history:', error);
         throw error;
       }
 
-      // Filter for actually completed habits using the isHabitCompleted logic
-      const completedHabits = (data || []).filter(record => {
+      const rows = (data || []).filter((record) => record.date <= today);
+
+      if (!completedOnly) {
+        if (habitType === 'all') return rows;
+        // Return rows that have any signal for this habit OR empty — analytics
+        // counts calendar days separately; keep all rows in range for joins.
+        return rows;
+      }
+
+      const completedHabits = rows.filter((record) => {
         if (habitType === 'all') {
-          // For 'all', return any record that has at least one completed habit
-          return ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'].some(habit => 
+          return ['sleep', 'water', 'run', 'gym', 'reflect', 'cold_shower'].some((habit) =>
             this.isHabitCompleted(record, habit)
           );
-        } else {
-          return this.isHabitCompleted(record, habitType);
         }
+        return this.isHabitCompleted(record, habitType);
       });
-      
-      // Filter out any future dates that might have slipped through
-      const filteredData = completedHabits.filter(record => record.date <= today);
-      
-      return filteredData;
+
+      return completedHabits;
     } catch (error) {
       console.error('Error in getHabitHistory:', error);
       return [];
@@ -804,16 +822,30 @@ class DailyHabitsService {
   private isHabitCompleted(record: DailyHabits, habitType: string): boolean {
     switch (habitType) {
       case 'sleep':
-        return (record.sleep_hours !== null && record.sleep_hours > 0) ||
-               (record.sleep_bedtime_hours !== null && record.sleep_wakeup_hours !== null);
+        return (
+          (record.sleep_hours != null && Number(record.sleep_hours) > 0) ||
+          record.sleep_quality != null ||
+          record.sleep_bedtime_hours != null
+        );
       case 'water':
-        return record.water_intake !== null && record.water_intake > 0;
+        return record.water_intake != null && Number(record.water_intake) > 0;
       case 'run':
-        return record.run_day_type === 'active';
+        return (
+          record.run_day_type === 'active' ||
+          !!record.run_distance ||
+          !!record.run_duration
+        );
       case 'gym':
-        return record.gym_day_type === 'active';
+        return (
+          record.gym_day_type === 'active' ||
+          !!(record.gym_training_types && record.gym_training_types.length)
+        );
       case 'reflect':
-        return record.reflect_mood !== null;
+        return (
+          record.reflect_mood != null ||
+          !!record.reflect_what_went_well ||
+          !!record.reflect_nothing_to_change
+        );
       case 'cold_shower':
         return record.cold_shower_completed === true;
       default:

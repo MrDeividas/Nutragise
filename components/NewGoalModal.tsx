@@ -23,21 +23,6 @@ interface NewGoalModalProps {
   onGoalCreated: (goalId: string) => void;
 }
 
-const CATEGORIES = [
-  'Health',
-  'Learning', 
-  'Productivity',
-  'Finance',
-  'Relationships',
-  'Fitness',
-  'Gym',
-  'Nutrition',
-  'Habits',
-  'Career',
-  'Personal Growth',
-  'Other'
-];
-
 const TIME_COMMITMENTS = [
   '10 minutes',
   '15 minutes',
@@ -81,7 +66,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
       setTitle(text);
     }
   };
-  const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
@@ -99,7 +83,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
   const [milestoneCount, setMilestoneCount] = useState(0);
   const [milestones, setMilestones] = useState<string[]>([]);
 
-  const [showCategories, setShowCategories] = useState(false);
   const [showTimeCommitments, setShowTimeCommitments] = useState(false);
   const [showCheckInSchedules, setShowCheckInSchedules] = useState(false);
   const [showSharingOptions, setShowSharingOptions] = useState(false);
@@ -115,7 +98,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
   const isFormValidForUI = () => {
     return (
       title.trim().length > 0 &&
-      category.trim().length > 0 &&
       description.trim().length > 0 &&
       startDate.trim().length > 0 &&
       endDate.trim().length > 0 &&
@@ -140,7 +122,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
     
     return (
       title.trim().length > 0 &&
-      category.trim().length > 0 &&
       description.trim().length > 0 &&
       startDate.trim().length > 0 &&
       endDate.trim().length > 0 &&
@@ -158,7 +139,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
     const goalData: CreateGoalData = {
       title: title.trim(),
       description: description.trim() || undefined,
-      category: category || undefined,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
       frequency: frequency,
@@ -201,7 +181,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
 
   const resetForm = () => {
     setTitle('');
-    setCategory('');
     setDescription('');
     setStartDate(() => {
       const today = new Date();
@@ -218,7 +197,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
     setSuccessCriteria('');
     setMilestoneCount(0);
     setMilestones([]);
-    setShowCategories(false);
     setShowTimeCommitments(false);
     setShowCheckInSchedules(false);
     setShowSharingOptions(false);
@@ -385,18 +363,6 @@ export default function NewGoalModal({ visible, onClose, onGoalCreated }: NewGoa
                 />
                 <Text style={[styles.characterCount, { color: theme.textSecondary }]}>{title.length}/100 characters</Text>
               </View>
-
-              {/* Goal Category */}
-              <DropdownSection
-                title="Goal Category"
-                value={category}
-                placeholder="Select a category"
-                options={CATEGORIES}
-                onSelect={setCategory}
-                showDropdown={showCategories}
-                setShowDropdown={setShowCategories}
-                required
-              />
 
               {/* Description */}
               <View style={styles.section}>

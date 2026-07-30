@@ -82,7 +82,7 @@ export default function JourneyPreview({
         <View style={styles.journeyHeader}>
           <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
-        <ActivityIndicator size="small" color={theme.primary} />
+        <ActivityIndicator size="small" color={"#1f2937"} />
       </View>
     );
   }

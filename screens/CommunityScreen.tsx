@@ -68,6 +68,8 @@ interface PostWithUser {
   user_id: string;
   content: string;
   goal_id?: string;
+  challenge_id?: string;
+  challenge_title?: string;
   date: string;
   photos: string[];
   habits_completed: string[];
@@ -770,9 +772,12 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
         if (profilesError) {
           console.error('Error fetching profiles:', profilesError);
         } else {
+          const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
+          const enrichedProfiles = await enrichProfilesWithAvatars(profiles || []);
+
           // Create a map of user ID to profile data
           const profileMap = new Map();
-          profiles?.forEach(profile => {
+          enrichedProfiles.forEach(profile => {
             profileMap.set(profile.id, profile);
           });
 
@@ -1090,10 +1095,12 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
     if (!user) return;
     try {
       const suggested = await socialService.getSuggestedUsers(user.id, 5);
-      setYouMayLikeUsers(suggested);
+      const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
+      const withAvatars = await enrichProfilesWithAvatars(suggested);
+      setYouMayLikeUsers(withAvatars);
       // Fetch follower counts for suggested users
-      if (suggested.length > 0) {
-        await fetchFollowerCounts(suggested);
+      if (withAvatars.length > 0) {
+        await fetchFollowerCounts(withAvatars);
       }
     } catch (error) {
       console.error('Error loading suggested users:', error);
@@ -1289,9 +1296,12 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
         if (profilesError) {
           console.error('Error fetching profiles for posts:', profilesError);
         } else {
+          const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
+          const enrichedProfiles = await enrichProfilesWithAvatars(profiles || []);
+
           // Create a map of user ID to profile data
           const profileMap = new Map();
-          profiles?.forEach(profile => {
+          enrichedProfiles.forEach(profile => {
             profileMap.set(profile.id, profile);
           });
 
@@ -1744,36 +1754,57 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
         <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={[styles.actionModal, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-                <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>
+              <View style={styles.actionModal}>
+                <View style={styles.actionModalHandle} />
+                <Text style={styles.actionModalTitle}>
                   What would you like to do?
+                </Text>
+                <Text style={styles.actionModalSubtitle}>
+                  Choose an action to continue
                 </Text>
                 
                 <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  style={styles.actionOption}
                   onPress={() => {
                     setShowActionModal(false);
                     setShowNewGoalModal(true);
                   }}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.actionButtonText}>Create Goal</Text>
+                  <View style={styles.actionOptionIcon}>
+                    <Ionicons name="flag-outline" size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.actionOptionTextCol}>
+                    <Text style={styles.actionOptionTitle}>Create Goal</Text>
+                    <Text style={styles.actionOptionDesc}>Set a new goal to track</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
 
                 <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
+                  style={styles.actionOption}
                   onPress={() => {
                     setShowActionModal(false);
                     setShowCreatePostModal(true);
                   }}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.actionButtonText}>Update Daily Post</Text>
+                  <View style={styles.actionOptionIcon}>
+                    <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.actionOptionTextCol}>
+                    <Text style={styles.actionOptionTitle}>Update Daily Post</Text>
+                    <Text style={styles.actionOptionDesc}>Share today’s progress</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
 
                 <TouchableOpacity 
-                  style={[styles.cancelButton, { borderColor: '#E5E7EB' }]}
+                  style={styles.cancelButton}
                   onPress={() => setShowActionModal(false)}
+                  activeOpacity={0.85}
                 >
-                  <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -1879,37 +1910,42 @@ function PostFeedContent({
     <View style={styles.content}>
       {/* Post Creation Box */}
       <View style={styles.createPostContainer}>
-        <View style={styles.postInputRow}>
-          <TextInput
-            style={[styles.postInputSimple, { 
-              color: theme.textPrimary, 
-              backgroundColor: '#FFFFFF',
-              borderColor: '#E5E7EB' 
-            }]}
-            placeholder="Share tips, tricks and motivation!"
-            placeholderTextColor={theme.textSecondary}
-            value={postContent}
-            onChangeText={setPostContent}
-            autoCapitalize="sentences"
-            autoCorrect={true}
-          />
+        <TextInput
+          style={[styles.postInputSimple, { 
+            color: '#1f2937', 
+            backgroundColor: '#F9FAFB',
+            borderColor: '#E5E7EB' 
+          }]}
+          placeholder="Share tips, tricks and motivation!"
+          placeholderTextColor="#9CA3AF"
+          value={postContent}
+          onChangeText={setPostContent}
+          autoCapitalize="sentences"
+          autoCorrect={true}
+          multiline
+          textAlignVertical="top"
+        />
 
+        <View style={styles.postActionsRow}>
           <TouchableOpacity 
             onPress={handleSelectPhoto}
             style={styles.iconButton}
           >
-            <Ionicons name="image-outline" size={24} color={postPhoto ? theme.primary : theme.textSecondary} />
+            <Ionicons name="image-outline" size={24} color={postPhoto ? '#1f2937' : '#6B7280'} />
           </TouchableOpacity>
 
           <TouchableOpacity 
             onPress={handleSubmitPost}
-            style={styles.iconButton}
+            style={[
+              styles.sendButton,
+              (!postContent.trim() && !postPhoto) && styles.sendButtonDisabled,
+            ]}
             disabled={isSubmitting || (!postContent.trim() && !postPhoto)}
           >
             {isSubmitting ? (
-              <ActivityIndicator size="small" color={theme.primary} />
+              <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Ionicons name="send" size={24} color={(!postContent.trim() && !postPhoto) ? theme.textTertiary : theme.primary} />
+              <Ionicons name="send" size={18} color="#FFFFFF" />
             )}
           </TouchableOpacity>
         </View>
@@ -1963,6 +1999,12 @@ function PostFeedContent({
                     </View>
                   </View>
                 </View>
+
+                {!!post.challenge_title && (
+                  <Text style={styles.challengePostLabel}>
+                    Posted in {post.challenge_title} challenge
+                  </Text>
+                )}
 
                 {/* Post Content */}
                 {post.content && (
@@ -2384,6 +2426,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
   },
   avatarInitial: {
     fontSize: 16,
@@ -3298,23 +3341,78 @@ const styles = StyleSheet.create({
   // Action Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
     alignItems: 'center',
   },
   actionModal: {
     width: '100%',
-    maxWidth: 300,
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
     borderWidth: 1,
-    alignItems: 'center',
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  actionModalHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D5DB',
+    marginBottom: 16,
   },
   actionModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 24,
-    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 4,
+    textAlign: 'left',
+  },
+  actionModalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  actionOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  actionOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  actionOptionTextCol: {
+    flex: 1,
+  },
+  actionOptionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  actionOptionDesc: {
+    fontSize: 13,
+    color: '#6B7280',
   },
   actionButton: {
     flexDirection: 'row',
@@ -3333,15 +3431,18 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     width: '100%',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
     borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
+    backgroundColor: '#FFFFFF',
   },
   cancelButtonText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#6B7280',
   },
   createPostContainer: {
     marginHorizontal: 16,
@@ -3360,19 +3461,39 @@ const styles = StyleSheet.create({
   },
   postInputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 12,
   },
   postInputSimple: {
-    flex: 1,
-    height: 48,
+    width: '100%',
+    minHeight: 88,
+    maxHeight: 160,
     borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
+    lineHeight: 21,
     borderWidth: 1,
+  },
+  postActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
   iconButton: {
     padding: 4,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#9CA3AF',
   },
   photoPreview: {
     marginTop: 12,
@@ -3392,6 +3513,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  challengePostLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#10B981',
+    marginBottom: 8,
   },
   postImage: {
     width: '100%',

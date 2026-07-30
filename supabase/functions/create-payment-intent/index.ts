@@ -3,13 +3,14 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-// Stripe client is created per-request so updated STRIPE_SECRET_KEY in Supabase
-// is used immediately without redeploying the function.
+const FREE_DEPOSIT_FEE = 3
+const PRO_DEPOSIT_FEE = 0
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
 const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || ""
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
 
 serve(async (req: Request) => {
-  // Handle CORS
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: {
@@ -20,19 +21,17 @@ serve(async (req: Request) => {
     })
   }
 
-  // Check if Stripe key is configured and is a real key (not a placeholder)
   const stripeKey = Deno.env.get("STRIPE_SECRET_KEY")
-  // Safe diagnostic: log first 8 chars so you can confirm which key the function sees (check Supabase → Edge Functions → create-payment-intent → Logs)
   console.log("STRIPE_SECRET_KEY from env:", stripeKey ? `${stripeKey.slice(0, 8)}...` : "(empty)")
   const isPlaceholder = !stripeKey ||
     stripeKey.includes("your_") ||
     stripeKey.includes("sk_") === false ||
     (stripeKey.startsWith("sk_test_") === false && stripeKey.startsWith("sk_live_") === false)
   if (isPlaceholder) {
-    console.error("STRIPE_SECRET_KEY is not set or is a placeholder. Set it in Supabase Dashboard → Project Settings → Edge Functions → Secrets.")
+    console.error("STRIPE_SECRET_KEY is not set or is a placeholder.")
     return new Response(
       JSON.stringify({
-        error: "Stripe secret key not configured. Set STRIPE_SECRET_KEY in Supabase Edge Function secrets (Dashboard → Project Settings → Edge Functions → Secrets) to your Stripe secret key (sk_test_... or sk_live_...).",
+        error: "Stripe secret key not configured. Set STRIPE_SECRET_KEY in Supabase Edge Function secrets.",
       }),
       {
         headers: {
@@ -44,19 +43,17 @@ serve(async (req: Request) => {
     )
   }
 
-  // Create Stripe client with current secret (so dashboard secret updates apply without redeploy)
   const stripe = new Stripe(stripeKey, {
     apiVersion: "2023-10-16",
     httpClient: Stripe.createFetchHttpClient(),
   })
 
-  // Validate JWT authentication
   const authHeader = req.headers.get("Authorization")
   if (!authHeader) {
     return new Response(
       JSON.stringify({ error: "Unauthorized: Missing authorization header" }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
@@ -65,13 +62,12 @@ serve(async (req: Request) => {
     )
   }
 
-  // Extract token from "Bearer <token>"
   const token = authHeader.replace("Bearer ", "")
   if (!token) {
     return new Response(
       JSON.stringify({ error: "Unauthorized: Invalid authorization header" }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
@@ -80,7 +76,6 @@ serve(async (req: Request) => {
     )
   }
 
-  // Validate token and get authenticated user
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: {
       headers: { Authorization: authHeader },
@@ -94,7 +89,7 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: "Unauthorized: Invalid or expired token" }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
@@ -103,18 +98,17 @@ serve(async (req: Request) => {
     )
   }
 
-  // Use authenticated user ID (don't trust userId from request body)
   const authenticatedUserId = user.id
+  const adminSupabase = createClient(supabaseUrl, supabaseServiceKey)
 
   try {
-    const { amount, currency = "gbp", includeStripeFee = true } = await req.json()
+    const { amount, currency = "gbp" } = await req.json()
 
-    // Input validation
     if (amount === undefined || amount === null) {
       return new Response(
         JSON.stringify({ error: "Missing required field: amount" }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -123,12 +117,11 @@ serve(async (req: Request) => {
       )
     }
 
-    // Validate amount is a number
-    if (typeof amount !== 'number' || isNaN(amount)) {
+    if (typeof amount !== "number" || isNaN(amount)) {
       return new Response(
         JSON.stringify({ error: "Invalid amount: must be a number" }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -137,12 +130,11 @@ serve(async (req: Request) => {
       )
     }
 
-    // Validate amount is positive and within reasonable limits
     if (amount <= 0) {
       return new Response(
         JSON.stringify({ error: "Amount must be greater than 0" }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -151,13 +143,12 @@ serve(async (req: Request) => {
       )
     }
 
-    // Maximum amount limit (e.g., £10,000)
     const MAX_AMOUNT = 10000
     if (amount > MAX_AMOUNT) {
       return new Response(
         JSON.stringify({ error: `Amount cannot exceed £${MAX_AMOUNT.toLocaleString()}` }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -166,13 +157,12 @@ serve(async (req: Request) => {
       )
     }
 
-    // Validate currency
-    const validCurrencies = ['gbp', 'usd', 'eur']
-    if (typeof currency !== 'string' || !validCurrencies.includes(currency.toLowerCase())) {
+    const validCurrencies = ["gbp", "usd", "eur"]
+    if (typeof currency !== "string" || !validCurrencies.includes(currency.toLowerCase())) {
       return new Response(
-        JSON.stringify({ error: `Invalid currency. Supported currencies: ${validCurrencies.join(', ')}` }),
+        JSON.stringify({ error: `Invalid currency. Supported currencies: ${validCurrencies.join(", ")}` }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -181,44 +171,24 @@ serve(async (req: Request) => {
       )
     }
 
-    // Validate includeStripeFee is boolean
-    if (typeof includeStripeFee !== 'boolean') {
-      return new Response(
-        JSON.stringify({ error: "includeStripeFee must be a boolean" }),
-        {
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-          status: 400,
-        }
-      )
-    }
+    // Platform deposit fee by tier (Free £3, Pro £0)
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("is_pro")
+      .eq("id", authenticatedUserId)
+      .single()
 
-    // Calculate Stripe fee if user is covering fees (default: true)
-    let finalAmount = amount;
-    let stripeFee = 0;
-    
-    if (includeStripeFee) {
-      // Calculate total amount including Stripe fee
-      // Formula: total = (amount + fixedFee) / (1 - percentageFee)
-      // UK cards: 1.4% + £0.20
-      const percentageFee = 0.014; // 1.4%
-      const fixedFee = 0.20; // £0.20
-      finalAmount = (amount + fixedFee) / (1 - percentageFee);
-      stripeFee = finalAmount - amount;
-      
-      console.log(`💰 Wallet deposit - Stripe fee calculated: £${stripeFee.toFixed(2)} (total: £${finalAmount.toFixed(2)})`);
-    }
+    const isPro = profile?.is_pro === true
+    const platformFee = isPro ? PRO_DEPOSIT_FEE : FREE_DEPOSIT_FEE
+    const finalAmount = Math.round((amount + platformFee) * 100) / 100
 
-    // Convert to pence (Stripe uses smallest currency unit)
     const amountInPence = Math.round(finalAmount * 100)
 
     if (amountInPence < 50) {
       return new Response(
         JSON.stringify({ error: "Amount must be at least £0.50" }),
         {
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           },
@@ -227,24 +197,24 @@ serve(async (req: Request) => {
       )
     }
 
-    // Create payment intent
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInPence,
       currency: currency.toLowerCase(),
       metadata: {
-        userId: authenticatedUserId, // Use authenticated user ID, not from request
+        userId: authenticatedUserId,
         purpose: "wallet_deposit",
-        originalAmount: (amount * 100).toString(), // Original amount in pence (before fee)
-        stripeFee: (stripeFee * 100).toString(), // Stripe fee in pence
-        includeStripeFee: includeStripeFee ? "true" : "false",
+        originalAmount: (amount * 100).toString(),
+        platformFee: (platformFee * 100).toString(),
+        isPro: isPro ? "true" : "false",
       },
     })
 
     console.log("✅ Created wallet deposit payment intent:", {
       paymentIntentId: paymentIntent.id,
       originalAmount: amount,
-      stripeFee: stripeFee,
+      platformFee,
       totalAmount: finalAmount,
+      isPro,
       userId: authenticatedUserId,
     })
 
@@ -252,12 +222,14 @@ serve(async (req: Request) => {
       JSON.stringify({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
-        originalAmount: amount, // Amount before fee
-        stripeFee: stripeFee, // Fee amount
-        totalAmount: finalAmount, // Total amount user pays
+        originalAmount: amount,
+        platformFee,
+        stripeFee: platformFee, // backward-compatible alias for clients
+        totalAmount: finalAmount,
+        isPro,
       }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
@@ -267,13 +239,12 @@ serve(async (req: Request) => {
   } catch (error: any) {
     console.error("Error creating payment intent:", error)
     const errorMessage = error.message || error.toString() || "Failed to create payment intent"
-    // Don't expose stack traces in production
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage
+      JSON.stringify({
+        error: errorMessage,
       }),
       {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },

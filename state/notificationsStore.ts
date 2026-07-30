@@ -22,7 +22,7 @@ interface NotificationsState {
   banner: InAppBanner | null;
   subscribe: (userId: string) => void;
   unsubscribe: () => void;
-  refresh: () => Promise<void>;
+  refresh: (forUserId?: string) => Promise<void>;
   clearCount: () => void;
   showBanner: (banner: InAppBanner) => void;
   hideBanner: () => void;
@@ -31,7 +31,9 @@ interface NotificationsState {
 let channel: RealtimeChannel | null = null;
 let bannerTimer: ReturnType<typeof setTimeout> | null = null;
 
-const QUIET_TYPES = new Set(['habit_reward']);
+const QUIET_TYPES = new Set(['habit_reward', 'achievement_unlocked']);
+/** Types that should never contribute to the tab badge */
+const BADGE_EXCLUDED_TYPES = new Set(['habit_reward']);
 
 function formatBannerCopy(n: {
   notification_type: string;
@@ -74,6 +76,11 @@ function formatBannerCopy(n: {
       return { title: 'Challenge update', body: 'Your challenge needs changes' };
     case 'submission_invalidated':
       return { title: 'Submission update', body: 'A challenge submission was invalidated' };
+    case 'achievement_unlocked':
+      return {
+        title: 'Achievement unlocked',
+        body: n.habit_type ? String(n.habit_type) : 'You unlocked a new achievement',
+      };
     default:
       return { title: 'Notification', body: `${n.fromName} interacted with you` };
   }
@@ -147,7 +154,14 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          set((s) => ({ unreadCount: s.unreadCount + 1 }));
+          const type = (payload.new as any)?.notification_type as string | undefined;
+          if (type && BADGE_EXCLUDED_TYPES.has(type)) {
+            return;
+          }
+          // Re-sync from DB so the badge can't drift from optimistic +1
+          notificationService.getUnreadCount(userId).then((count) => {
+            set({ unreadCount: count });
+          });
 
           // Only show drop-down banner while app is foregrounded
           if (AppState.currentState !== 'active') return;
@@ -186,9 +200,12 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     set({ unreadCount: 0, userId: null, banner: null });
   },
 
-  refresh: async () => {
-    const { userId } = get();
-    if (!userId) return;
+  refresh: async (forUserId?: string) => {
+    const userId = forUserId || get().userId;
+    if (!userId) {
+      set({ unreadCount: 0 });
+      return;
+    }
     const count = await notificationService.getUnreadCount(userId);
     set({ unreadCount: count });
   },

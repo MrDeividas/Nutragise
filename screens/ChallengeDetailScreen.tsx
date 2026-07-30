@@ -21,6 +21,7 @@ import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { challengesService } from '../lib/challengesService';
 import { walletService } from '../lib/walletService';
+import { stripeService } from '../lib/stripeService';
 import { challengePotService } from '../lib/challengePotService';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
@@ -37,8 +38,9 @@ import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
 import UpgradeToProModal from '../components/UpgradeToProModal';
-import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero, challengeAllowsGalleryProofUpload } from '../lib/challengeTitleUtils';
-import { localDeviceCalendarYmd } from '../lib/timeService';
+import { postsService } from '../lib/postsService';
+import { getDailyPostDate, localDeviceCalendarYmd } from '../lib/timeService';
+import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero, challengeAllowsGalleryProofUpload, stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 
 const { width, height: windowHeight } = Dimensions.get('window');
 
@@ -446,119 +448,110 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
-  /** 7-day paid join when wallet is short: card hold (SetupIntent + sheet). */
-  const runSevenDayCardHoldJoin = async () => {
+  /** Top up wallet by `amount`, then join challenge by debiting entry fee from wallet. */
+  const chargeWalletThenJoin = async (topUpAmount: number, entryFee: number) => {
     if (!user || !challenge) return;
-    try {
-      setJoining(true);
-      const { setupIntentClientSecret, setupIntentId, entryFee: fee } =
-        await challengesService.initiateChallengeJoinWithHold(challenge.id, user.id);
 
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'NutrApp',
-        setupIntentClientSecret,
-        defaultBillingDetails: {
-          name: user.email?.split('@')[0] || 'User',
-          email: user.email || undefined,
-        },
-        returnURL: 'nutrapp://stripe-redirect',
+    const { clientSecret, paymentIntentId, stripeFee, totalAmount } =
+      await stripeService.createPaymentIntent(topUpAmount, user.id, {
+        userId: user.id,
+        purpose: 'wallet_deposit',
       });
 
-      if (initError) throw new Error(initError.message);
-
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        if (presentError.code === 'Canceled') return;
-        throw new Error(presentError.message);
-      }
-
-      await challengesService.completeHoldChallengeJoin(
-        challenge.id,
-        user.id,
-        setupIntentId,
-        setupIntentId
-      );
-
-      Alert.alert(
-        'Joined!',
-        `Your card has been saved for this challenge.\n\n£${fee.toFixed(2)} will be held (not charged) when the challenge starts. If you complete the challenge, the hold is released and you won't be charged. If you don't complete it, the hold is captured.`
-      );
-      setIsParticipating(true);
-      await loadChallengeDetails();
-    } catch (error: any) {
-      console.error('❌ [ChallengeDetailScreen] Card hold join error:', error);
-      Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
-    } finally {
-      setJoining(false);
+    if (!clientSecret) {
+      throw new Error('Failed to create payment');
     }
+
+    const { error: initError } = await initPaymentSheet({
+      merchantDisplayName: 'Nutragise',
+      paymentIntentClientSecret: clientSecret,
+      defaultBillingDetails: {
+        name: user.email?.split('@')[0] || 'User',
+        email: user.email || undefined,
+      },
+      returnURL: 'nutrapp://stripe-redirect',
+    });
+    if (initError) throw new Error(initError.message);
+
+    const { error: presentError } = await presentPaymentSheet();
+    if (presentError) {
+      if (presentError.code === 'Canceled') return;
+      throw new Error(presentError.message);
+    }
+
+    await walletService.depositToWallet(user.id, topUpAmount, paymentIntentId);
+    const newBalance = await walletService.getBalance(user.id);
+    setWalletBalance(newBalance);
+
+    if (newBalance < entryFee) {
+      throw new Error('Wallet top-up succeeded but balance is still too low. Please try again.');
+    }
+
+    const { paymentIntentId: transferId } =
+      await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
+    await challengesService.completeChallengeJoin(challenge.id, user.id, transferId);
+
+    const feeNote =
+      stripeFee && stripeFee > 0
+        ? `\n\nCard charged: £${(totalAmount || topUpAmount).toFixed(2)} (includes £${stripeFee.toFixed(2)} deposit fee)`
+        : '\n\nNo deposit fee (Pro)';
+
+    Alert.alert(
+      'Joined!',
+      `£${topUpAmount.toFixed(2)} added to your wallet, then £${entryFee.toFixed(2)} taken for this challenge.${feeNote}`
+    );
+    setIsParticipating(true);
+    await loadChallengeDetails();
   };
 
   const executePaidChallengeJoin = async () => {
     if (!user || !challenge) return;
 
     const entryFee = challenge.entry_fee || 0;
-    const isSevenDayChallenge = (challenge.duration_weeks || 1) <= 1;
     const feeLabel = `£${entryFee.toFixed(2)}`;
 
     try {
       setJoining(true);
 
-      if (isSevenDayChallenge) {
-        const freshBalance = await walletService.getBalance(user.id);
-        setWalletBalance(freshBalance);
+      const freshBalance = await walletService.getBalance(user.id);
+      setWalletBalance(freshBalance);
 
-        if (freshBalance >= entryFee) {
-          const { paymentIntentId } =
-            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
-          await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
-          Alert.alert(
-            'Joined!',
-            `${feeLabel} moved to escrow from your wallet. It's returned if you complete the challenge, kept if you don't.`
-          );
-        } else {
-          setJoining(false);
-          const shortBy = Math.max(0, entryFee - freshBalance);
-          Alert.alert(
-            'Not enough wallet balance',
-            `You need ${feeLabel} to pay from your wallet. Your balance is £${freshBalance.toFixed(2)} (about £${shortBy.toFixed(2)} short).\n\nTop up your wallet first, or continue with a card hold (no charge until the challenge starts).`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Top up', onPress: () => navigation.navigate('Wallet') },
-              { text: 'Use card hold', onPress: () => void runSevenDayCardHoldJoin() },
-            ]
-          );
-          return;
-        }
-      } else {
-        const freshBalanceLong = await walletService.getBalance(user.id);
-        setWalletBalance(freshBalanceLong);
-        const hasSufficientBalance = freshBalanceLong >= entryFee;
-
-        if (hasSufficientBalance) {
-          const { paymentIntentId } =
-            await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
-          await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
-          Alert.alert(
-            'Joined!',
-            `${feeLabel} moved to escrow. It's returned if you complete the challenge, kept if you don't.`
-          );
-        } else {
-          setJoining(false);
-          Alert.alert(
-            'Not enough wallet balance',
-            `You need ${feeLabel} in your wallet to join this challenge.\n\nYour balance: £${freshBalanceLong.toFixed(2)}\n\nTop up your wallet, then join again.`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Top up', onPress: () => navigation.navigate('Wallet') },
-            ]
-          );
-          return;
-        }
+      if (freshBalance >= entryFee) {
+        const { paymentIntentId } =
+          await challengesService.initiateChallengeJoinWithWallet(challenge.id, user.id, entryFee);
+        await challengesService.completeChallengeJoin(challenge.id, user.id, paymentIntentId);
+        Alert.alert('Joined!', `${feeLabel} taken from your wallet for this challenge.`);
+        setIsParticipating(true);
+        await loadChallengeDetails();
+        return;
       }
 
-      setIsParticipating(true);
-      await loadChallengeDetails();
+      const shortBy = Math.max(0.01, Math.ceil((entryFee - freshBalance) * 100) / 100);
+      setJoining(false);
+
+      Alert.alert(
+        'Top up to join',
+        `Entry is ${feeLabel}. Your wallet has £${freshBalance.toFixed(2)}.\n\nCharge £${shortBy.toFixed(2)} to your wallet, then we'll take ${feeLabel} to join.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: `Charge £${shortBy.toFixed(2)} & Join`,
+            onPress: () => {
+              void (async () => {
+                try {
+                  setJoining(true);
+                  await chargeWalletThenJoin(shortBy, entryFee);
+                } catch (error: any) {
+                  console.error('❌ [ChallengeDetailScreen] Charge & join error:', error);
+                  Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+                } finally {
+                  setJoining(false);
+                }
+              })();
+            },
+          },
+        ]
+      );
     } catch (error: any) {
       console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
       Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
@@ -581,7 +574,6 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
 
     const entryFee = challenge.entry_fee || 0;
-    const isSevenDayChallenge = (challenge.duration_weeks || 1) <= 1;
 
     if (entryFee <= 0) {
       try {
@@ -601,13 +593,10 @@ export default function ChallengeDetailScreen({ route }: any) {
 
     const feeLabel = `£${entryFee.toFixed(2)}`;
     const titleName = getChallengeDisplayTitle(challenge.title);
-    const payExplain = isSevenDayChallenge
-      ? `Entry is ${feeLabel}. If your wallet has enough, we'll take it from there. If not, you can top up—or use a card hold (nothing charged until the challenge starts).`
-      : `Entry is ${feeLabel}, paid from your in-app wallet. You need at least ${feeLabel} available—top up first if you're short.`;
 
     Alert.alert(
       'Challenge entry',
-      `You're joining "${titleName}".\n\n${payExplain}\n\nThat amount is your stake: complete the challenge rules to get it back; otherwise it goes to the pot.`,
+      `You're joining "${titleName}".\n\nEntry is ${feeLabel}, paid from your wallet. If you don't have enough, we'll ask to charge your card to top up, then take ${feeLabel} from your wallet.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Continue', onPress: () => void executePaidChallengeJoin() },
@@ -726,7 +715,7 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
-  const handleSubmitPhoto = async (photoUrl: string, notes?: string) => {
+  const handleSubmitPhoto = async (photoUrl: string, notes?: string, shareToCommunity?: boolean) => {
     if (!user || !challenge) return;
     
     try {
@@ -742,6 +731,7 @@ export default function ChallengeDetailScreen({ route }: any) {
           isRecurring: isRecurringChallenge(challenge),
           weekNumber,
           userId: user.id,
+          shareToCommunity: !!shareToCommunity,
         });
       }
       
@@ -756,6 +746,30 @@ export default function ChallengeDetailScreen({ route }: any) {
       if (success) {
         if (__DEV__) {
           console.log('✅ Photo submitted successfully');
+        }
+
+        if (shareToCommunity) {
+          try {
+            const displayTitle = getChallengeDisplayTitle(challenge.title);
+            const challengeLabel = stripTrailingChallengeWord(displayTitle);
+            const noteText = notes?.trim() || '';
+            await postsService.createPost({
+              content: noteText,
+              date: getDailyPostDate(new Date()),
+              photos: [photoUrl],
+              habits_completed: [],
+              caption: noteText || undefined,
+              is_public: true,
+              challenge_id: challenge.id,
+              challenge_title: challengeLabel,
+            });
+          } catch (shareError) {
+            console.error('Error sharing challenge proof to community:', shareError);
+            Alert.alert(
+              'Proof submitted',
+              'Your challenge proof was saved, but sharing to the community feed failed.'
+            );
+          }
         }
 
         const submittedAt = new Date().toISOString();

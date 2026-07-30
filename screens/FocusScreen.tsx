@@ -13,30 +13,30 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePreventRemove } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useActionStore } from '../state/actionStore';
 import CustomBackground from '../components/CustomBackground';
 import Svg, { Circle } from 'react-native-svg';
 
+const DARK = '#1f2937';
+const PAGE_BG = '#F8F9FB';
+const PRESETS = ['20', '30', '40'] as const;
+
 function FocusScreen({ navigation }: any) {
-  const { theme } = useTheme();
-  const { user } = useAuthStore();
   const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-  
-  // Timer state
-  const [duration, setDuration] = useState<string>('30'); // Default 30 minutes
-  const [timeRemaining, setTimeRemaining] = useState<number>(0); // in seconds
+
+  const [duration, setDuration] = useState<string>('30');
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [notes, setNotes] = useState('');
-  
-  // Timer refs
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
@@ -46,24 +46,20 @@ function FocusScreen({ navigation }: any) {
   const totalPausedTimeRef = useRef<number>(0);
   const isPausedRef = useRef<boolean>(false);
   const appStateRef = useRef(AppState.currentState);
-  
-  // Animation refs
-  const progressAnimation = useRef(new Animated.Value(0)).current; // Start at 0 (empty ring, will fill up)
+
+  const progressAnimation = useRef(new Animated.Value(0)).current;
   const RING_RADIUS = 150;
   const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
   const canExitRef = useRef<boolean>(false);
-  
-  // Convert duration string to seconds
+
   const durationInSeconds = parseInt(duration) * 60;
-  
-  // Format time display (MM:SS)
+
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
-  
-  // Start timer
+
   const startTimer = () => {
     const durationNum = parseInt(duration);
     if (isNaN(durationNum) || durationNum < 10) {
@@ -74,7 +70,7 @@ function FocusScreen({ navigation }: any) {
       Alert.alert('Invalid Duration', 'Please enter a valid duration in minutes.');
       return;
     }
-    
+
     setIsRunning(true);
     setIsPaused(false);
     isPausedRef.current = false;
@@ -84,89 +80,74 @@ function FocusScreen({ navigation }: any) {
     endMsRef.current = startMsRef.current + durationInSeconds * 1000;
     pausedTimeRef.current = 0;
     totalPausedTimeRef.current = 0;
-    
-    // Start progress animation at 0 (empty ring, will fill up as time passes)
+
     progressAnimation.setValue(0);
-    
+
     const updateTimer = () => {
-      if (isPausedRef.current) return; // Don't update if paused
-      
+      if (isPausedRef.current) return;
+
       const now = Date.now();
       const remainingMs = Math.max(0, endMsRef.current - now);
       const remainingSec = Math.floor(remainingMs / 1000);
       setTimeRemaining(remainingSec);
-      
-      // Calculate elapsed fraction (0 = no time elapsed, 1 = all time elapsed)
-      const elapsedMs = (durationInSeconds * 1000) - remainingMs;
-      const elapsedFraction = durationInSeconds > 0 
-        ? Math.max(0, Math.min(1, elapsedMs / (durationInSeconds * 1000))) 
-        : 0;
-      
-      // Smoothly animate to the new value (ring fills up as elapsedFraction increases)
+
+      const elapsedMs = durationInSeconds * 1000 - remainingMs;
+      const elapsedFraction =
+        durationInSeconds > 0 ? Math.max(0, Math.min(1, elapsedMs / (durationInSeconds * 1000))) : 0;
+
       Animated.timing(progressAnimation, {
         toValue: elapsedFraction,
-        duration: 100, // Short duration for smooth updates
+        duration: 100,
         useNativeDriver: false,
       }).start();
-      
+
       if (remainingSec === 0) {
         completeFocus();
       }
     };
-    
-    intervalRef.current = setInterval(updateTimer, 50); // Update every 50ms for very smooth animation
+
+    intervalRef.current = setInterval(updateTimer, 50);
   };
-  
-  // Pause timer
+
   const pauseTimer = useCallback(() => {
     if (!isRunning || isPaused || isCompleted) return;
-    
     setIsPaused(true);
     isPausedRef.current = true;
     pausedAtRef.current = Date.now();
-    
-    // Don't clear interval, just let it check the ref
   }, [isRunning, isPaused, isCompleted]);
-  
-  // Resume timer
+
   const resumeTimer = useCallback(() => {
     if (!isRunning || !isPaused || isCompleted) return;
-    
     const pausedDuration = Date.now() - pausedAtRef.current;
     totalPausedTimeRef.current += pausedDuration;
-    
-    // Adjust end time by the paused duration
     endMsRef.current += pausedDuration;
-    
     setIsPaused(false);
     isPausedRef.current = false;
   }, [isRunning, isPaused, isCompleted]);
-  
-  // Complete focus session
+
   const completeFocus = async () => {
     setIsRunning(false);
     setIsPaused(false);
     isPausedRef.current = false;
     setIsCompleted(true);
-    
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    
+
     try {
       const { user: authUser } = useAuthStore.getState();
       const userId = authUser?.id;
-      
+
       if (!userId) {
         Alert.alert('Error', 'You must be logged in. Please try restarting the app.');
         return;
       }
-      
+
       const startTime = new Date(startTimeRef.current).toISOString();
       const endTime = new Date().toISOString();
-      
-      // Save focus session data
+
       const habitData = {
         date: new Date().toISOString().split('T')[0],
         focus_duration: parseInt(duration),
@@ -175,20 +156,13 @@ function FocusScreen({ navigation }: any) {
         focus_notes: notes.trim(),
         focus_completed: true,
       };
-      
+
       const success = await useActionStore.getState().saveDailyHabits(habitData);
-      
+
       if (success) {
-        Alert.alert(
-          'Focus Complete! 🎉',
-          `Great job! You focused for ${duration} minutes.`,
-          [
-            {
-              text: 'Continue',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        Alert.alert('Focus Complete', `Great job! You focused for ${duration} minutes.`, [
+          { text: 'Continue', onPress: () => navigation.goBack() },
+        ]);
       } else {
         Alert.alert('Error', 'Failed to save focus session. Please try again.');
       }
@@ -197,20 +171,13 @@ function FocusScreen({ navigation }: any) {
       Alert.alert('Error', 'Failed to save focus session. Please try again.');
     }
   };
-  
-  // Cancel focus session
+
   const cancelFocus = useCallback(() => {
     Alert.alert(
       'Cancel Focus Session?',
       'Are you sure you want to cancel this focus session? This will mark it as incomplete.',
       [
-        {
-          text: 'Keep Focusing',
-          style: 'cancel',
-          onPress: () => {
-            // Resume: do nothing; keep interval and endMsRef as-is
-          },
-        },
+        { text: 'Keep Focusing', style: 'cancel' },
         {
           text: 'Cancel Session',
           style: 'destructive',
@@ -219,56 +186,38 @@ function FocusScreen({ navigation }: any) {
             setIsPaused(false);
             isPausedRef.current = false;
             setTimeRemaining(0);
-            
-            // Stop animation
             progressAnimation.stopAnimation();
-            
+
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-            // Allow screen to exit without being blocked by preventRemove
             canExitRef.current = true;
-            // Defer navigation to next tick so state updates propagate
             setTimeout(() => {
               try {
                 navigation.goBack();
-              } catch (e) {
-                // no-op fallback
+              } catch {
+                // no-op
               }
             }, 0);
           },
         },
       ]
     );
-  }, [navigation]);
-  
-  // Handle app state changes for background timer
+  }, [navigation, progressAnimation]);
+
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (appStateRef.current.match(/active/) && nextAppState.match(/inactive|background/)) {
-        // App is going to background - pause timer if running
         if (isRunning && !isPaused && !isCompleted) {
           pauseTimer();
         }
       } else if (appStateRef.current.match(/inactive|background/) && nextAppState.match(/active/)) {
-        // App is coming to foreground - show resume option if paused
         if (isRunning && isPaused && !isCompleted) {
-          Alert.alert(
-            'Focus Session Paused',
-            'Your focus session was paused. Would you like to continue?',
-            [
-              {
-                text: 'Resume',
-                onPress: resumeTimer,
-              },
-              {
-                text: 'Cancel Session',
-                style: 'destructive',
-                onPress: cancelFocus,
-              },
-            ]
-          );
+          Alert.alert('Focus Session Paused', 'Your focus session was paused. Would you like to continue?', [
+            { text: 'Resume', onPress: resumeTimer },
+            { text: 'Cancel Session', style: 'destructive', onPress: cancelFocus },
+          ]);
         }
       }
       appStateRef.current = nextAppState;
@@ -276,19 +225,13 @@ function FocusScreen({ navigation }: any) {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
   }, [isRunning, isPaused, isCompleted, pauseTimer, resumeTimer, cancelFocus]);
-  
-  // Prevent back navigation using official hook to avoid native-stack mismatch
-  usePreventRemove(
-    isRunning && !isCompleted && !canExitRef.current,
-    ({ data }) => {
-      // Handle the navigation action if needed
-      if (isRunning && !isCompleted) {
-        cancelFocus();
-      }
+
+  usePreventRemove(isRunning && !isCompleted && !canExitRef.current, () => {
+    if (isRunning && !isCompleted) {
+      cancelFocus();
     }
-  );
-  
-  // Cleanup on unmount
+  });
+
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -296,13 +239,12 @@ function FocusScreen({ navigation }: any) {
       }
     };
   }, []);
-  
+
   return (
     <CustomBackground>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
+      <View style={[styles.root, { backgroundColor: PAGE_BG }]}>
+        <SafeAreaView edges={['top']} style={styles.headerSafe}>
+          <View style={styles.header}>
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => {
@@ -312,433 +254,376 @@ function FocusScreen({ navigation }: any) {
                   navigation.goBack();
                 }
               }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+              <Ionicons name="arrow-back" size={22} color={DARK} />
             </TouchableOpacity>
-            
-            <View style={styles.titleContainer}>
-              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-                Focus Duration
+            <View style={styles.headerTextCol}>
+              <Text style={styles.headerTitle}>Focus Duration</Text>
+              <Text style={styles.headerSubtitle}>
+                {isRunning || isCompleted ? 'Stay with the session' : 'Set a block and start'}
               </Text>
             </View>
-            <View style={{ width: 40 }} />
+            <View style={styles.headerSpacer} />
           </View>
-        </View>
-        
-        {/* Content */}
+        </SafeAreaView>
+
         <KeyboardAvoidingView
           style={styles.content}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={{ flex: 1 }}>
-          {!isRunning && !isCompleted && (
-            <View style={styles.setupSection}>
-              {/* Info Card */}
-              <View style={[styles.infoCard, { 
-                backgroundColor: theme.cardBackground,
-                borderColor: theme.borderSecondary,
-              }]}>
-                <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-                  Set your focus duration and eliminate distractions for deep, productive work
-                </Text>
-              </View>
-              
-              {/* Preset Durations */}
-              <View style={styles.presetsContainer}>
-              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                  Quick Select
-                </Text>
-                <View style={styles.presetButtonsGrid}>
-                  <TouchableOpacity
-                    style={[
-                      styles.presetButton,
-                      { 
-                        backgroundColor: duration === '20' ? '#10B981' : theme.cardBackground,
-                        borderColor: duration === '20' ? '#10B981' : theme.borderSecondary,
-                      }
-                    ]}
-                    onPress={() => setDuration('20')}
-                  >
-                    <Ionicons 
-                      name="time-outline" 
-                      size={20} 
-                      color={duration === '20' ? '#FFFFFF' : theme.textSecondary} 
-                    />
-                    <Text style={[
-                      styles.presetButtonText,
-                      { color: duration === '20' ? '#FFFFFF' : theme.textPrimary }
-                    ]}>
-                      20 min
+              {!isRunning && !isCompleted && (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={styles.setupScroll}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  <View style={styles.card}>
+                    <Text style={styles.cardHint}>
+                      Set your focus duration and eliminate distractions for deep, productive work.
                     </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.presetButton,
-                      { 
-                        backgroundColor: duration === '30' ? '#10B981' : theme.cardBackground,
-                        borderColor: duration === '30' ? '#10B981' : theme.borderSecondary,
-                      }
-                    ]}
-                    onPress={() => setDuration('30')}
-                  >
-                    <Ionicons 
-                      name="time-outline" 
-                      size={20} 
-                      color={duration === '30' ? '#FFFFFF' : theme.textSecondary} 
-                    />
-                    <Text style={[
-                      styles.presetButtonText,
-                      { color: duration === '30' ? '#FFFFFF' : theme.textPrimary }
-                    ]}>
-                      30 min
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.presetButton,
-                      { 
-                        backgroundColor: duration === '40' ? '#10B981' : theme.cardBackground,
-                        borderColor: duration === '40' ? '#10B981' : theme.borderSecondary,
-                      }
-                    ]}
-                    onPress={() => setDuration('40')}
-                  >
-                    <Ionicons 
-                      name="time-outline" 
-                      size={20} 
-                      color={duration === '40' ? '#FFFFFF' : theme.textSecondary} 
-                    />
-                    <Text style={[
-                      styles.presetButtonText,
-                      { color: duration === '40' ? '#FFFFFF' : theme.textPrimary }
-                    ]}>
-                      40 min
-              </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              {/* Custom Duration */}
-              <View style={styles.customContainer}>
-                <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                  Custom Duration
-                </Text>
-                <View style={[styles.customInputCard, { 
-                  backgroundColor: theme.cardBackground,
-                  borderColor: theme.borderSecondary,
-                }]}>
-                <TextInput
-                  style={[styles.durationTextInput, { 
-                    color: theme.textPrimary, 
-                  }]}
-                  value={duration}
-                    onChangeText={(text) => {
-                      const numericValue = text.replace(/[^0-9]/g, '');
-                      if (numericValue === '' || parseInt(numericValue) >= 10) {
-                        setDuration(numericValue);
-                      }
-                    }}
-                    placeholder="30"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="numeric"
-                  maxLength={3}
-                />
-                <Text style={[styles.durationLabel, { color: theme.textSecondary }]}>
-                  minutes
-                  </Text>
-                </View>
-                <Text style={[styles.helperText, { color: theme.textSecondary }]}>
-                  Minimum 10 minutes
-                </Text>
-              </View>
-              
-              {/* Start Button */}
-              <TouchableOpacity
-                style={styles.startButton}
-                onPress={startTimer}
-              >
-                <View style={styles.startButtonContent}>
-                  <Ionicons name="play-circle" size={28} color="#FFFFFF" />
-                  <Text style={styles.startButtonText}>Begin Focus Session</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {(isRunning || isCompleted) && (
-            <View style={styles.timerSection}>
-              {/* Timer Ring */}
-              <View style={styles.timerContainer}>
-                <View style={styles.timerRingWrapper}>
-                  <Svg width={320} height={320} style={styles.timerSvg}>
-                  {/* Background circle */}
-                  <Circle
-                      cx={160}
-                      cy={160}
-                      r={150}
-                    stroke={theme.borderSecondary}
-                      strokeWidth={12}
-                    fill="none"
-                      opacity={0.2}
-                  />
-                    {/* Progress circle - fills up clockwise from top as time passes */}
-                  <AnimatedCircle
-                      cx={160}
-                      cy={160}
-                    r={RING_RADIUS}
-                      stroke={isCompleted ? '#10B981' : '#10B981'}
-                      strokeWidth={12}
-                    fill="none"
-                    strokeDasharray={RING_CIRCUMFERENCE}
-                    strokeDashoffset={progressAnimation.interpolate({
-                      inputRange: [0, 1],
-                        outputRange: [RING_CIRCUMFERENCE, 0], // When elapsedFraction is 0 (no time), offset is full (no circle). When 1 (all time), offset is 0 (full circle)
-                    })}
-                    strokeLinecap="round"
-                      transform="rotate(-90 160 160)" // Start from top (12 o'clock), clockwise
-                  />
-                </Svg>
-                
-                  {/* Timer Display */}
-                  <View style={styles.timerDisplay}>
-                <View style={styles.timerTextContainer}>
-                  <Text style={[styles.timerText, { color: theme.textPrimary }]}>
-                    {formatTime(timeRemaining)}
-                  </Text>
-                  <Text style={[styles.timerLabel, { color: theme.textSecondary }]}>
-                        {isCompleted ? '🎉 Complete!' : isPaused ? '⏸ Paused' : 'remaining'}
-                  </Text>
+                  </View>
+
+                  <View style={styles.card}>
+                    <Text style={styles.cardLabel}>Quick select</Text>
+                    <View style={styles.presetRow}>
+                      {PRESETS.map((mins) => {
+                        const selected = duration === mins;
+                        return (
+                          <TouchableOpacity
+                            key={mins}
+                            style={[styles.presetBtn, selected && styles.presetBtnSelected]}
+                            onPress={() => setDuration(mins)}
+                            activeOpacity={0.88}
+                          >
+                            <Text style={[styles.presetMins, selected && styles.presetTextSelected]}>
+                              {mins}
+                            </Text>
+                            <Text style={[styles.presetUnit, selected && styles.presetTextSelected]}>
+                              min
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
-                </View>
-              </View>
-              
-              {/* Notes Card */}
-              <View style={[styles.notesCard, { 
-                backgroundColor: theme.cardBackground,
-                borderColor: theme.borderSecondary,
-              }]}>
-                <View style={styles.notesHeader}>
-                  <Ionicons name="create-outline" size={20} color={theme.textSecondary} />
-                <Text style={[styles.notesLabel, { color: theme.textPrimary }]}>
-                    Focus Task
-                </Text>
-                </View>
-                <TextInput
-                  style={[styles.notesInput, { 
-                    color: theme.textPrimary, 
-                  }]}
-                  value={notes}
-                  onChangeText={(text) => {
-                    // Capitalize first letter if text exists
-                    if (text.length > 0) {
-                      const firstChar = text[0].toUpperCase();
-                      const rest = text.slice(1);
-                      setNotes(firstChar + rest);
-                    } else {
-                      setNotes(text);
-                    }
-                  }}
-                  placeholder="What are you working on?"
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  numberOfLines={2}
-                  editable={!isCompleted && !isPaused}
-                  autoCapitalize="sentences"
-                  autoCorrect={true}
-                  blurOnSubmit
-                  returnKeyType="done"
-                  onSubmitEditing={Keyboard.dismiss}
-                />
-              </View>
-              
-              {/* Pause/Resume Button */}
-              {isRunning && !isCompleted && (
-                <TouchableOpacity
-                  style={[styles.pauseButton, { 
-                    backgroundColor: isPaused ? '#10B981' : '#F59E0B',
-                  }]}
-                  onPress={isPaused ? resumeTimer : pauseTimer}
-                >
-                  <Ionicons 
-                    name={isPaused ? "play-circle" : "pause-circle"} 
-                    size={24} 
-                    color="#FFFFFF" 
-                  />
-                  <Text style={styles.pauseButtonText}>
-                    {isPaused ? 'Resume' : 'Pause'}
-                  </Text>
-                </TouchableOpacity>
+
+                  <View style={styles.card}>
+                    <Text style={styles.cardLabel}>Custom duration</Text>
+                    <View style={styles.customRow}>
+                      <TextInput
+                        style={styles.durationInput}
+                        value={duration}
+                        onChangeText={(text) => {
+                          const numericValue = text.replace(/[^0-9]/g, '');
+                          if (numericValue === '' || parseInt(numericValue) >= 10) {
+                            setDuration(numericValue);
+                          }
+                        }}
+                        placeholder="30"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                        maxLength={3}
+                      />
+                      <Text style={styles.durationUnit}>minutes</Text>
+                    </View>
+                    <Text style={styles.helperText}>Minimum 10 minutes</Text>
+                  </View>
+
+                  <TouchableOpacity style={styles.primaryBtn} onPress={startTimer} activeOpacity={0.88}>
+                    <Ionicons name="play" size={18} color="#FFFFFF" />
+                    <Text style={styles.primaryBtnText}>Begin Focus Session</Text>
+                  </TouchableOpacity>
+                </ScrollView>
               )}
-              
-              {/* Cancel Button */}
-              {isRunning && (
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={cancelFocus}
-                >
-                  <Ionicons name="stop-circle-outline" size={24} color="#FFFFFF" />
-                  <Text style={styles.cancelButtonText}>End Session</Text>
-                </TouchableOpacity>
+
+              {(isRunning || isCompleted) && (
+                <View style={styles.timerSection}>
+                  <View style={styles.timerContainer}>
+                    <View style={styles.timerRingWrapper}>
+                      <Svg width={320} height={320} style={styles.timerSvg}>
+                        <Circle
+                          cx={160}
+                          cy={160}
+                          r={150}
+                          stroke="#E5E7EB"
+                          strokeWidth={12}
+                          fill="none"
+                        />
+                        <AnimatedCircle
+                          cx={160}
+                          cy={160}
+                          r={RING_RADIUS}
+                          stroke={isCompleted ? '#16A34A' : DARK}
+                          strokeWidth={12}
+                          fill="none"
+                          strokeDasharray={RING_CIRCUMFERENCE}
+                          strokeDashoffset={progressAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [RING_CIRCUMFERENCE, 0],
+                          })}
+                          strokeLinecap="round"
+                          transform="rotate(-90 160 160)"
+                        />
+                      </Svg>
+
+                      <View style={styles.timerDisplay}>
+                        <Text style={styles.timerText}>{formatTime(timeRemaining)}</Text>
+                        <Text style={styles.timerLabel}>
+                          {isCompleted ? 'Complete' : isPaused ? 'Paused' : 'remaining'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.card}>
+                    <Text style={styles.cardLabel}>Focus task</Text>
+                    <TextInput
+                      style={styles.notesInput}
+                      value={notes}
+                      onChangeText={(text) => {
+                        if (text.length > 0) {
+                          setNotes(text[0].toUpperCase() + text.slice(1));
+                        } else {
+                          setNotes(text);
+                        }
+                      }}
+                      placeholder="What are you working on?"
+                      placeholderTextColor="#9CA3AF"
+                      multiline
+                      numberOfLines={2}
+                      editable={!isCompleted && !isPaused}
+                      autoCapitalize="sentences"
+                      autoCorrect
+                      blurOnSubmit
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                  </View>
+
+                  {isRunning && !isCompleted && (
+                    <TouchableOpacity
+                      style={[styles.secondaryBtn, isPaused && styles.primaryBtn]}
+                      onPress={isPaused ? resumeTimer : pauseTimer}
+                      activeOpacity={0.88}
+                    >
+                      <Ionicons
+                        name={isPaused ? 'play' : 'pause'}
+                        size={18}
+                        color={isPaused ? '#FFFFFF' : DARK}
+                      />
+                      <Text style={[styles.secondaryBtnText, isPaused && styles.primaryBtnText]}>
+                        {isPaused ? 'Resume' : 'Pause'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isRunning && (
+                    <TouchableOpacity style={styles.endBtn} onPress={cancelFocus} activeOpacity={0.88}>
+                      <Text style={styles.endBtnText}>End Session</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
-            </View>
-          )}
             </View>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     </CustomBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
+  },
+  headerSafe: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
   backButton: {
-    padding: 8,
-  },
-  titleContainer: {
-    flex: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextCol: {
+    flex: 1,
+    paddingHorizontal: 12,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    textAlign: 'center',
+    color: DARK,
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  headerSpacer: {
+    width: 36,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
   },
-  
-  // Setup Section Styles
-  setupSection: {
-    flex: 1,
-    paddingTop: 20,
-  },
-  infoCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  setupScroll: {
     padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 32,
+    paddingBottom: 40,
+    gap: 12,
   },
-  infoText: {
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  cardLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: DARK,
+    marginBottom: 12,
+  },
+  cardHint: {
     fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
     lineHeight: 20,
     textAlign: 'center',
   },
-  presetsContainer: {
-    marginBottom: 28,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  presetButtonsGrid: {
+  presetRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
-  presetButton: {
+  presetBtn: {
     flex: 1,
-    flexDirection: 'column',
+    minHeight: 72,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 2,
-    gap: 6,
+    paddingVertical: 12,
   },
-  presetButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
+  presetBtnSelected: {
+    backgroundColor: DARK,
+    borderColor: DARK,
   },
-  customContainer: {
-    marginBottom: 32,
+  presetMins: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: DARK,
   },
-  customInputCard: {
+  presetUnit: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  presetTextSelected: {
+    color: '#FFFFFF',
+  },
+  customRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    backgroundColor: '#F8F9FB',
     borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 8,
+    borderColor: '#E5E7EB',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 10,
   },
-  durationTextInput: {
+  durationInput: {
     fontSize: 36,
     fontWeight: '800',
+    color: DARK,
     textAlign: 'center',
-    width: 80,
-    letterSpacing: 1,
+    minWidth: 72,
+    padding: 0,
   },
-  durationLabel: {
+  durationUnit: {
     fontSize: 15,
     fontWeight: '600',
-    marginLeft: 8,
+    color: '#6B7280',
   },
   helperText: {
-    fontSize: 13,
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9CA3AF',
     textAlign: 'center',
-    opacity: 0.7,
   },
-  startButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#10B981',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  startButtonContent: {
+  primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    gap: 12,
+    gap: 8,
+    backgroundColor: DARK,
+    paddingVertical: 16,
+    borderRadius: 16,
   },
-  startButtonText: {
+  primaryBtnText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
-  
-  // Timer Section Styles
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
+  secondaryBtnText: {
+    color: DARK,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  endBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  endBtnText: {
+    color: '#DC2626',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   timerSection: {
     flex: 1,
-    paddingTop: 20,
+    padding: 16,
+    paddingBottom: 28,
   },
   timerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginBottom: 20,
   },
   timerRingWrapper: {
     position: 'relative',
@@ -757,93 +642,29 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  timerTextContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   timerText: {
-    fontSize: 56,
-    fontWeight: '900',
-    textAlign: 'center',
-    letterSpacing: 2,
+    fontSize: 52,
+    fontWeight: '800',
+    color: DARK,
+    letterSpacing: 1,
   },
   timerLabel: {
-    fontSize: 16,
-    marginTop: 8,
-    opacity: 0.7,
+    marginTop: 6,
+    fontSize: 14,
     fontWeight: '600',
-    textTransform: 'lowercase',
-  },
-  notesCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  notesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  notesLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    color: '#6B7280',
   },
   notesInput: {
-    fontSize: 15,
-    lineHeight: 22,
-    minHeight: 70,
+    minHeight: 64,
+    borderRadius: 12,
+    backgroundColor: '#F8F9FB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: DARK,
     textAlignVertical: 'top',
-  },
-  pauseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    gap: 10,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  pauseButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    gap: 10,
-    shadowColor: '#EF4444',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  cancelButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
   },
 });
 

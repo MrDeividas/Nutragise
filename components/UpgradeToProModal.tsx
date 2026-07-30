@@ -23,9 +23,23 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onUpgrade?: () => void;
+  /** Optional context line shown under the header (e.g. daily limit copy). */
+  subtitle?: string;
 }
 
 const proFeatures = [
+  {
+    icon: 'book',
+    title: 'Unlimited Microlearns',
+    description: 'Start as many books as you want — free is 1/day, Level 3 = 2, Level 5 = 3',
+    color: '#2563EB',
+  },
+  {
+    icon: 'leaf',
+    title: 'Unlimited Meditations',
+    description: 'Meditate anytime — free is 1/day, Level 3 = 2, Level 5 = 3',
+    color: '#10B981',
+  },
   {
     icon: 'analytics',
     title: 'Insights & Analytics',
@@ -35,7 +49,7 @@ const proFeatures = [
   {
     icon: 'gift',
     title: 'Raffle Access',
-    description: 'Enter the end-of-month giveaway and win prizes (raffle tickets from Level 3 EXP)',
+    description: 'Enter the end-of-month giveaway and win prizes (tickets from Level 3)',
     color: '#EC4899',
   },
   {
@@ -49,7 +63,7 @@ const proFeatures = [
 const DEFAULT_PRICE_LABEL = '£15';
 const DEFAULT_PERIOD_LABEL = '/month';
 
-export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props) {
+export default function UpgradeToProModal({ visible, onClose, onUpgrade, subtitle }: Props) {
   const { user } = useAuthStore();
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
@@ -208,6 +222,9 @@ export default function UpgradeToProModal({ visible, onClose, onUpgrade }: Props
 
               {/* Content */}
               <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {subtitle ? (
+                  <Text style={styles.subtitle}>{subtitle}</Text>
+                ) : null}
                 <View style={styles.featuresContainer}>
                   {proFeatures.map((feature, index) => (
                     <View
@@ -353,6 +370,14 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     maxHeight: 500,
     backgroundColor: 'white',
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   featuresContainer: {
     marginBottom: 20,

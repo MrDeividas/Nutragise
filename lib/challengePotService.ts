@@ -501,21 +501,20 @@ class ChallengePotService {
       }
 
       // Distribute to each winner.
-      // For hold-based participants (payment_capture_method = 'hold'), the Stripe
-      // capture/cancel was already handled by settle-challenge-payments. We only
-      // need to credit their in-app wallets here.
-      // For wallet-escrow and immediate-capture participants, use the existing
-      // Stripe Connect transfer (transferChallengeWinnings).
+      // Wallet joins (and legacy holds after settle): credit in-app wallet.
+      // Only attempt Stripe Connect transfer for real Stripe payment intent ids.
       for (const participant of participants) {
         const isHoldParticipant = participant.payment_capture_method === 'hold';
+        const isWalletParticipant =
+          participant.payment_capture_method === 'wallet' ||
+          (typeof participant.stripe_payment_intent_id === 'string' &&
+            participant.stripe_payment_intent_id.startsWith('wallet_transfer_'));
 
         try {
-          if (isHoldParticipant) {
-            // Hold was already cancelled in settle-challenge-payments (Stripe side done).
-            // Just credit the winnings share to the wallet.
+          if (isHoldParticipant || isWalletParticipant) {
             await walletService.creditWinnings(participant.user_id, payoutPerWinner, challengeId);
           } else {
-            // Legacy path: wallet-escrow or immediately-captured card payment.
+            // Legacy immediate-capture card payment.
             const { data: allParticipantsForIds } = await supabase
               .from('challenge_participants')
               .select('stripe_payment_intent_id')
@@ -524,7 +523,7 @@ class ChallengePotService {
 
             const paymentIntentIds = allParticipantsForIds
               ?.map((p: any) => p.stripe_payment_intent_id)
-              .filter(Boolean) || [];
+              .filter((id: string) => id && !id.startsWith('wallet_transfer_')) || [];
 
             const { stripeService } = await import('./stripeService');
             await stripeService.transferChallengeWinnings(

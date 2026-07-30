@@ -1,0 +1,367 @@
+[
+  {
+    "id": "75501fd9-31f5-4cc7-aa6f-02df6a9413d3",
+    "title": "Open",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780307388407-L.jpg",
+    "short_description": "Andre Agassi\u2019s raw memoir \u2014 hating tennis, loving the fight, image vs self, and finding meaning beyond the ranking.",
+    "chapter_titles": [
+      "Chapter 1: A champion who wanted out",
+      "Chapter 2: The wig and the image",
+      "Chapter 3: Parental furnace",
+      "Chapter 4: Perry and purpose",
+      "Chapter 5: Love as turning point",
+      "Chapter 6: Drugs and denial era",
+      "Chapter 7: Gilfriends of craft",
+      "Chapter 8: Retirement identity cliff",
+      "Chapter 9: Honesty as performance edge",
+      "Chapter 10: Pressure rituals",
+      "Chapter 11: Generosity after fury",
+      "Chapter 12: Your open chapter"
+    ],
+    "questions": [
+      {
+        "id": "1f7c6568-8696-4087-8329-88725b117984",
+        "question_text": "What central tension does Open explore?",
+        "option_a": "Only trophy speeches",
+        "option_b": "Excelling while resenting the path \u2014 image vs authentic self",
+        "option_c": "Ignoring all coaching",
+        "option_d": "Never competing",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "04a0521f-1538-493e-989b-d7cd1130618b",
+        "question_text": "What does the image era illustrate?",
+        "option_a": "Brands never matter",
+        "option_b": "Public packaging can imprison private truth and cost energy",
+        "option_c": "Always maximize fake image",
+        "option_d": "Avoid all media forever",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "bf7ce9c3-a243-496a-bfe4-86a4dbf73aad",
+        "question_text": "What should coaches of kids learn?",
+        "option_a": "Love should equal rankings only",
+        "option_b": "Separate love from metrics \u2014 pressure can forge and wound",
+        "option_c": "Shame is the best teacher always",
+        "option_d": "Ignore discipline",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "6fedfb0b-715a-4a7c-b725-f670c94850ae",
+        "question_text": "What helps after a scoreboard career?",
+        "option_a": "Only live in past rankings",
+        "option_b": "Build identity and service beyond the ranking before the cliff",
+        "option_c": "Never plan",
+        "option_d": "Avoid all relationships",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "7884e796-84e0-4d0c-8347-b3f8e4ae8fc9",
+        "question_text": "What paradox does honesty create in the memoir\u2019s arc?",
+        "option_a": "Honesty always ruins careers",
+        "option_b": "Radical honesty can free energy for better performance and life",
+        "option_c": "Lying is always optimal",
+        "option_d": "Ignore accountability",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "f11cfbbd-9611-4943-b095-5c27f3c24a12",
+    "title": "Legacy",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/id/10491486-L.jpg",
+    "short_description": "James Kerr on All Blacks culture \u2014 humility, high standards, sweeping the sheds, and leaving the jersey greater.",
+    "chapter_titles": [
+      "Chapter 1: All Blacks as case study",
+      "Chapter 2: Sweep the sheds",
+      "Chapter 3: Be a good ancestor",
+      "Chapter 4: Whakapapa and belonging",
+      "Chapter 5: Pressure is a privilege",
+      "Chapter 6: Go for the gap",
+      "Chapter 7: Champions do extra",
+      "Chapter 8: Keep a blue head",
+      "Chapter 9: Inventors invent",
+      "Chapter 10: Select character",
+      "Chapter 11: Language creates culture",
+      "Chapter 12: Your legacy week"
+    ],
+    "questions": [
+      {
+        "id": "29c4a7ba-3730-4d9f-9409-42ceed485c93",
+        "question_text": "What does \u2018sweep the sheds\u2019 teach?",
+        "option_a": "Leaders skip menial work",
+        "option_b": "No one is too important for humble environment work",
+        "option_c": "Only juniors clean",
+        "option_d": "Ignore culture",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "86fc22c0-30ee-4154-b2e8-ba643f3a3fa9",
+        "question_text": "\u2018Leave the jersey greater\u2019 means?",
+        "option_a": "Hunt only personal highlights",
+        "option_b": "Steward the team/system better than you found it",
+        "option_c": "Avoid mentoring",
+        "option_d": "Never change tactics",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "7e30339c-182a-4a3a-b6e7-c768f364ffc5",
+        "question_text": "Blue head vs red head?",
+        "option_a": "Colors of jerseys only",
+        "option_b": "Clear focused state vs flooded emotional state under pressure",
+        "option_c": "Ignore emotions forever",
+        "option_d": "Always rage",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "9ffcc113-86de-40e7-be50-2222e81c931f",
+        "question_text": "What should selection emphasize?",
+        "option_a": "Talent without character checks",
+        "option_b": "Character and work rate alongside skill",
+        "option_c": "Only social media fame",
+        "option_d": "Nepotism",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "5d03fe47-adc3-4494-b4e4-091ecb76e8e9",
+        "question_text": "Pressure is a privilege means?",
+        "option_a": "Avoid all expectation",
+        "option_b": "Big-stage expectancy is earned trust to reframe and meet",
+        "option_c": "Privilege means no work",
+        "option_d": "Quit when expected to perform",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "02170a88-23b9-47f0-b083-a9fa34a5372b",
+    "title": "Relentless",
+    "duration_minutes": 28,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781476710938-L.jpg",
+    "short_description": "Tim Grover\u2019s elite performer mindset \u2014 Cleaners vs Contenders, dark side drive, and staying uncomfortably excellent.",
+    "chapter_titles": [
+      "Chapter 1: Coolers, Closers, Cleaners",
+      "Chapter 2: Dark side controlled",
+      "Chapter 3: You don\u2019t get to like it",
+      "Chapter 4: Pressure is where Cleaners live",
+      "Chapter 5: Trust few, trust deep",
+      "Chapter 6: Cleaner preparation",
+      "Chapter 7: Keep going when ugly",
+      "Chapter 8: Language of standards",
+      "Chapter 9: Relentless beyond sport",
+      "Chapter 10: Ego vs standard",
+      "Chapter 11: Recovery as part of war",
+      "Chapter 12: Hard to compete against"
+    ],
+    "questions": [
+      {
+        "id": "951b2f06-4593-443d-8162-0fb373b053f6",
+        "question_text": "What are Grover\u2019s three types?",
+        "option_a": "Starters, bench, fans",
+        "option_b": "Coolers, Closers, and Cleaners",
+        "option_c": "Loud, louder, loudest",
+        "option_d": "Winners only",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "9acb27fb-0168-41c6-9d96-357fb358d17f",
+        "question_text": "What is the dark side here?",
+        "option_a": "Abuse",
+        "option_b": "Controlled intensity that refuses soft self-bargains",
+        "option_c": "No recovery ever",
+        "option_d": "Ignoring all coaches",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "6f6c3407-3dad-4f5d-a810-2db75cf7251d",
+        "question_text": "How should Cleaners treat pressure?",
+        "option_a": "Avoid it",
+        "option_b": "Seek it as privilege and train to stay steady",
+        "option_c": "Only complain",
+        "option_d": "Outsource always",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "a3cc5cab-a33d-4132-bca8-5d0ff9704f7d",
+        "question_text": "Why trust few?",
+        "option_a": "Friends are useless",
+        "option_b": "Deep truth-tellers protect standards; noise dilutes them",
+        "option_c": "Isolation maximizes ego helpfully always",
+        "option_d": "Never accept critique",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "c05e58a8-e26f-4a25-88b7-e1d8febd58dc",
+        "question_text": "What makes you hard to compete against?",
+        "option_a": "Trash talk",
+        "option_b": "Dangerously consistent average days and prep",
+        "option_c": "Only highlights",
+        "option_d": "Skipping recovery forever",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "51fc0bbb-ebb4-40e2-83e9-fb3d35e7a726",
+    "title": "Winning",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/id/11149740-L.jpg",
+    "short_description": "Tim Grover on what winning actually costs \u2014 clarity, obsession, and refusing the soft middle.",
+    "chapter_titles": [
+      "Chapter 1: Winning is not a vibe",
+      "Chapter 2: Burn ambiguity",
+      "Chapter 3: Mindset under watch",
+      "Chapter 4: Soft day problem",
+      "Chapter 5: When ahead, tighten",
+      "Chapter 6: Losing without becoming a loser",
+      "Chapter 7: Pressure and loneliness",
+      "Chapter 8: Weapons: focus, craft, body",
+      "Chapter 9: No spare people",
+      "Chapter 10: Winning ethics",
+      "Chapter 11: After the trophy",
+      "Chapter 12: Start tomorrow morning"
+    ],
+    "questions": [
+      {
+        "id": "3faf33bb-dd9f-45a5-be02-0ad0a5441d87",
+        "question_text": "What does Grover emphasize about winning?",
+        "option_a": "It should cost nothing",
+        "option_b": "Winning has real costs you must accept consciously",
+        "option_c": "Only vibes",
+        "option_d": "Ambiguity helps",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "7fde977e-5528-4902-bfb3-2570b5d4d684",
+        "question_text": "What is the soft day problem?",
+        "option_a": "Rest is forbidden",
+        "option_b": "Faking work instead of truly training or recovering",
+        "option_c": "Weekends only",
+        "option_d": "Calendars are bad",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "a70cff8f-1d9c-49f5-b99a-392b291f7ea5",
+        "question_text": "How should you treat losing?",
+        "option_a": "As permanent identity",
+        "option_b": "As information \u2014 mourn briefly, then fix controllables",
+        "option_c": "Blame forever",
+        "option_d": "Ignore it",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "262446c3-8e17-4fbe-88cd-9ad6c1f3d70c",
+        "question_text": "Which weapons are highlighted?",
+        "option_a": "Trash talk and luck",
+        "option_b": "Focus, craft, and body",
+        "option_c": "Talent only",
+        "option_d": "Branding only",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "735b7990-6158-417b-9e20-d84f6847b950",
+        "question_text": "What should you do when ahead?",
+        "option_a": "Relax standards",
+        "option_b": "Tighten details \u2014 softness starts collapses",
+        "option_c": "Only hunt highlights",
+        "option_d": "Ignore basics",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "4b205b3b-79ed-409a-8c40-ce05116df625",
+    "title": "The Miracle Morning",
+    "duration_minutes": 26,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780979019715-L.jpg",
+    "short_description": "Hal Elrod\u2019s SAVERS morning routine \u2014 silence, affirmations, visualization, exercise, reading, and scribing to transform your day before it starts.",
+    "chapter_titles": [
+      "Chapter 1: Why mornings",
+      "Chapter 2: Silence",
+      "Chapter 3: Affirmations",
+      "Chapter 4: Visualization",
+      "Chapter 5: Exercise",
+      "Chapter 6: Reading",
+      "Chapter 7: Scribing",
+      "Chapter 8: The 6-minute Miracle",
+      "Chapter 9: Snooze and identity",
+      "Chapter 10: Customization",
+      "Chapter 11: From morning to life",
+      "Chapter 12: Stay on the wagon"
+    ],
+    "questions": [
+      {
+        "id": "cdb77aa1-5c95-4d31-8b6d-442abff579bc",
+        "question_text": "What does SAVERS stand for?",
+        "option_a": "Sleep, Apps, Videos, Email, Rest, Shopping",
+        "option_b": "Silence, Affirmations, Visualization, Exercise, Reading, Scribing",
+        "option_c": "Sprint, Attack, Vanish, Escape, Run, Stop",
+        "option_d": "Only stretching and running",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "a848b034-20b5-46ef-bd5c-3cd9745d5f33",
+        "question_text": "What is the 6-minute Miracle idea?",
+        "option_a": "Skip mornings forever",
+        "option_b": "Do about one minute per SAVER when time is scarce rather than skipping",
+        "option_c": "Only meditate six hours",
+        "option_d": "Snooze six times",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "a72acaa2-aa86-44de-98ba-cd2160873eb1",
+        "question_text": "How should affirmations be used?",
+        "option_a": "As magical denial with no action",
+        "option_b": "As honest intentional self-talk tied to behaviors you will practice",
+        "option_c": "Only as Instagram captions",
+        "option_d": "Never update them",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "8341badf-2ad1-413b-abcc-16bbc37a74be",
+        "question_text": "What kind of reading fits Miracle Morning?",
+        "option_a": "Doomscrolling news only",
+        "option_b": "A few pages of growth reading with one apply-today idea",
+        "option_c": "Skipping reading always",
+        "option_d": "Only fiction at midnight",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "3a4a5ace-5c45-4d18-9271-dd2ec0205043",
+        "question_text": "What matters most for adherence?",
+        "option_a": "Perfect 2-hour mornings or nothing",
+        "option_b": "Consistency \u2014 including short versions \u2014 plus prep and accountability",
+        "option_c": "Only weekends",
+        "option_d": "Public shame",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

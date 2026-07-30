@@ -653,7 +653,7 @@ export default function CompeteScreen({ navigation }: any) {
               <View style={styles.challengesContent}>
               {challengesLoading ? (
                 <View style={styles.challengesLoadingContainer}>
-                  <ActivityIndicator size="large" color="#10B981" />
+                  <ActivityIndicator size="large" color="#1f2937" />
                 </View>
               ) : privateChallenges.length === 0 ? (
                 <View style={[styles.emptyChallengesContainer, { backgroundColor: theme.cardBackground }]}>
@@ -780,7 +780,7 @@ export default function CompeteScreen({ navigation }: any) {
               <View style={styles.challengesContent}>
                 {challengesLoading ? (
                   <View style={styles.challengesLoadingContainer}>
-                    <ActivityIndicator size="large" color={theme.primary} />
+                    <ActivityIndicator size="large" color={"#1f2937"} />
                   </View>
                 ) : (
                   <ScrollView
@@ -830,7 +830,7 @@ export default function CompeteScreen({ navigation }: any) {
             <View style={styles.challengesContent}>
               {challengesLoading ? (
                 <View style={styles.challengesLoadingContainer}>
-                  <ActivityIndicator size="large" color={theme.primary} />
+                  <ActivityIndicator size="large" color={"#1f2937"} />
                 </View>
               ) : (
                 <ScrollView
@@ -879,7 +879,7 @@ export default function CompeteScreen({ navigation }: any) {
           <View style={styles.challengesContent}>
             {challengesLoading ? (
               <View style={styles.challengesLoadingContainer}>
-                <ActivityIndicator size="large" color={theme.primary} />
+                <ActivityIndicator size="large" color={"#1f2937"} />
               </View>
             ) : freeChallenges.length === 0 ? (
               <View style={styles.emptyChallengesContainer}>
@@ -933,7 +933,7 @@ export default function CompeteScreen({ navigation }: any) {
               <View style={styles.challengesContent}>
               {challengesLoading ? (
                 <View style={styles.challengesLoadingContainer}>
-                  <ActivityIndicator size="large" color="#10B981" />
+                  <ActivityIndicator size="large" color="#1f2937" />
                 </View>
               ) : (
                 <View style={[styles.emptyChallengesContainer, { backgroundColor: theme.cardBackground }]}>

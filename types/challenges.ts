@@ -180,7 +180,7 @@ export interface ChallengeSubmissionModalProps {
   challenge: Challenge;
   weekNumber: number;
   onClose: () => void;
-  onSubmit: (photoUrl: string, notes?: string) => void;
+  onSubmit: (photoUrl: string, notes?: string, shareToCommunity?: boolean) => void | Promise<void>;
   existingSubmission?: ChallengeSubmission;
 }
 

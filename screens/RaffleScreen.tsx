@@ -2,7 +2,7 @@
  * Rewards Hub — game-style Raffles / Store / Inventory in one screen
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Alert,
   RefreshControl,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
@@ -21,7 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { raffleService, Raffle, getEndOfMonthDeadline, getCountdownParts, CountdownParts, RAFFLE_ENTRY_TOKEN_COST } from '../lib/raffleService';
-import { storeService, StoreItem, InventoryItem } from '../lib/storeService';
+import { storeService, StoreItem, InventoryItem, ACCOUNTABILITY_BOOST_TYPE, ActiveBoostStatus } from '../lib/storeService';
 import CustomBackground from '../components/CustomBackground';
 import UpgradeToProModal from '../components/UpgradeToProModal';
 
@@ -52,6 +53,9 @@ export default function RaffleScreen() {
       : 'raffles';
 
   const [tab, setTab] = useState<HubTab>(initialTab);
+  const [tabTrackWidth, setTabTrackWidth] = useState(0);
+  const tabIndicatorX = useRef(new Animated.Value(0)).current;
+  const tabHasPositioned = useRef(false);
 
   // Shared
   const [tokenBalance, setTokenBalance] = useState(0);
@@ -75,12 +79,39 @@ export default function RaffleScreen() {
   const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
+  const [claimedBoost, setClaimedBoost] = useState(false);
+  const [activeBoost, setActiveBoost] = useState<ActiveBoostStatus>({
+    active: false,
+    expiresAt: null,
+    remainingMs: 0,
+  });
+  const [activatingBoost, setActivatingBoost] = useState(false);
 
   useEffect(() => {
     if (route.params?.tab && route.params.tab !== tab) {
       setTab(route.params.tab);
     }
   }, [route.params?.tab]);
+
+  const tabIndex = Math.max(0, TABS.findIndex((t) => t.key === tab));
+  const tabWidth = tabTrackWidth > 0 ? tabTrackWidth / TABS.length : 0;
+
+  useEffect(() => {
+    if (tabWidth <= 0) return;
+    const toValue = tabIndex * tabWidth;
+    if (!tabHasPositioned.current) {
+      tabHasPositioned.current = true;
+      tabIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(tabIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      stiffness: 230,
+      damping: 24,
+      mass: 0.9,
+    }).start();
+  }, [tabIndex, tabWidth, tabIndicatorX]);
 
   const getUserProfile = async () => {
     if (!user) return { level: 1, is_pro: false };
@@ -102,12 +133,13 @@ export default function RaffleScreen() {
     try {
       await raffleService.syncActiveRaffleDrawToMonthEnd();
 
-      const [raffle, tokens, profileData, items, inv] = await Promise.all([
+      const [raffle, tokens, profileData, items, inv, boostStatus] = await Promise.all([
         raffleService.getCurrentRaffle(),
         storeService.getUserTokens(user.id),
         getUserProfile(),
         storeService.getStoreItems(),
         storeService.getUserInventory(user.id),
+        storeService.getActiveBoostStatus(user.id),
       ]);
 
       setCurrentRaffle(raffle);
@@ -116,6 +148,8 @@ export default function RaffleScreen() {
       setUserLevel(profileData.level || 1);
       setStoreItems(items);
       setInventory(inv.filter((i) => i.quantity > 0));
+      setClaimedBoost(inv.some((i) => i.item?.type === ACCOUNTABILITY_BOOST_TYPE));
+      setActiveBoost(boostStatus);
 
       const raffleTicketItem = items.find((i) => i.type === 'raffle_ticket');
       let qty = 0;
@@ -229,6 +263,10 @@ export default function RaffleScreen() {
       Alert.alert('Level Required', `Reach level ${item.level_required} to claim this.`);
       return;
     }
+    if (item.type === ACCOUNTABILITY_BOOST_TYPE && claimedBoost) {
+      Alert.alert('Already Claimed', 'You already claimed your Accountability Boost.');
+      return;
+    }
     if (tokenBalance < item.price_tokens) {
       Alert.alert(
         'Not enough tokens',
@@ -237,50 +275,101 @@ export default function RaffleScreen() {
       return;
     }
 
-    Alert.alert(
-      'Claim Item',
-      `Claim ${item.name} for ${item.price_tokens} token${item.price_tokens > 1 ? 's' : ''}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Claim',
-          onPress: async () => {
-            try {
-              setClaiming(item.id);
-              const result = await storeService.claimItem(user.id, item.id);
-              if (result.success) {
-                Alert.alert('Claimed!', result.message);
-                setTokenBalance(result.newTokenBalance || 0);
-                loadAll();
-              } else {
-                Alert.alert('Failed', result.message);
+    const priceLabel =
+      item.price_tokens <= 0
+        ? 'for free'
+        : `for ${item.price_tokens} token${item.price_tokens > 1 ? 's' : ''}`;
+
+    Alert.alert('Claim Item', `Claim ${item.name} ${priceLabel}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Claim',
+        onPress: async () => {
+          try {
+            setClaiming(item.id);
+            const result = await storeService.claimItem(user.id, item.id);
+            if (result.success) {
+              Alert.alert(
+                'Claimed!',
+                item.type === ACCOUNTABILITY_BOOST_TYPE
+                  ? 'Boost added to Inventory. Activate it when you want double points for 2 days.'
+                  : result.message
+              );
+              if (typeof result.newTokenBalance === 'number') {
+                setTokenBalance(result.newTokenBalance);
               }
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to claim item');
-            } finally {
-              setClaiming(null);
+              loadAll();
+            } else {
+              Alert.alert('Failed', result.message);
             }
-          },
+          } catch (error: any) {
+            Alert.alert('Error', error.message || 'Failed to claim item');
+          } finally {
+            setClaiming(null);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleUseInventoryItem = (item: InventoryItem) => {
+    if (!user) return;
+
     if (item.item?.type === 'raffle_ticket') {
       setTab('raffles');
-    } else {
-      Alert.alert('Item', `You have ${item.quantity}× ${item.item?.name || 'item'}`);
+      return;
     }
+
+    if (item.item?.type === ACCOUNTABILITY_BOOST_TYPE) {
+      Alert.alert(
+        'Activate Accountability Boost?',
+        'Double all habit and action points for 2 days. This uses 1 boost from your inventory.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Activate',
+            onPress: async () => {
+              try {
+                setActivatingBoost(true);
+                const result = await storeService.activateAccountabilityBoost(user.id);
+                if (result.success) {
+                  Alert.alert('Boost Active!', result.message);
+                  loadAll();
+                } else {
+                  Alert.alert('Failed', result.message);
+                }
+              } catch (error: any) {
+                Alert.alert('Error', error.message || 'Failed to activate boost');
+              } finally {
+                setActivatingBoost(false);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert('Item', `You have ${item.quantity}× ${item.item?.name || 'item'}`);
+  };
+
+  const storeIconName = (type: string): keyof typeof Ionicons.glyphMap => {
+    if (type === 'raffle_ticket') return 'ticket';
+    if (type === ACCOUNTABILITY_BOOST_TYPE) return 'flash';
+    return 'gift';
   };
 
   const renderHud = () => (
-    <View style={styles.hud}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
-        <Ionicons name="arrow-back" size={22} color={DARK} />
-      </TouchableOpacity>
+    <View style={styles.hudBlock}>
+      <View style={styles.hud}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerLeftButton} hitSlop={10}>
+          <Ionicons name="arrow-back" size={24} color={DARK} />
+        </TouchableOpacity>
 
-      <Text style={styles.hudTitle}>Rewards</Text>
+        <Text style={styles.headerTitle}>Rewards</Text>
+
+        <View style={styles.headerRightSpacer} />
+      </View>
 
       <View style={styles.resourceRow}>
         <View style={styles.resourcePill}>
@@ -301,13 +390,33 @@ export default function RaffleScreen() {
   );
 
   const renderTabs = () => (
-    <View style={styles.tabBar}>
+    <View
+      style={styles.tabBar}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width - 8; // padding
+        if (w > 0 && Math.abs(w - tabTrackWidth) > 0.5) {
+          setTabTrackWidth(w);
+        }
+      }}
+    >
+      {tabWidth > 0 && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.tabIndicator,
+            {
+              width: tabWidth,
+              transform: [{ translateX: tabIndicatorX }],
+            },
+          ]}
+        />
+      )}
       {TABS.map((t) => {
         const active = tab === t.key;
         return (
           <TouchableOpacity
             key={t.key}
-            style={[styles.tab, active && styles.tabActive]}
+            style={styles.tab}
             onPress={() => setTab(t.key)}
             activeOpacity={0.85}
           >
@@ -441,9 +550,14 @@ export default function RaffleScreen() {
   };
 
   const renderStoreItem = ({ item }: { item: StoreItem }) => {
+    const alreadyClaimedBoost = item.type === ACCOUNTABILITY_BOOST_TYPE && claimedBoost;
     const canClaim =
-      (!item.is_pro_only || isPro) && userLevel >= item.level_required && tokenBalance >= item.price_tokens;
+      !alreadyClaimedBoost &&
+      (!item.is_pro_only || isPro) &&
+      userLevel >= item.level_required &&
+      tokenBalance >= item.price_tokens;
     const claimingThis = claiming === item.id;
+    const isBoost = item.type === ACCOUNTABILITY_BOOST_TYPE;
 
     return (
       <TouchableOpacity
@@ -453,11 +567,11 @@ export default function RaffleScreen() {
         activeOpacity={0.88}
       >
         <View style={styles.storeTileTop}>
-          <View style={styles.storeIconWrap}>
+          <View style={[styles.storeIconWrap, isBoost && styles.boostIconWrap]}>
             <Ionicons
-              name={item.type === 'raffle_ticket' ? 'ticket' : 'gift'}
+              name={storeIconName(item.type)}
               size={28}
-              color={DARK}
+              color={isBoost ? '#129490' : DARK}
             />
           </View>
           {item.is_pro_only && (
@@ -469,20 +583,31 @@ export default function RaffleScreen() {
         <Text style={styles.storeName} numberOfLines={2}>
           {item.name}
         </Text>
+        {item.description ? (
+          <Text style={styles.storeDesc} numberOfLines={2}>
+            {item.description}
+          </Text>
+        ) : null}
         {item.level_required > 1 && (
           <Text style={styles.storeReq}>Lvl {item.level_required}</Text>
         )}
         <View style={styles.storeFooter}>
           <View style={styles.priceChip}>
-            <Ionicons name="diamond" size={12} color={GOLD} />
-            <Text style={styles.priceChipText}>{item.price_tokens}</Text>
+            {item.price_tokens <= 0 ? (
+              <Text style={styles.priceChipText}>Free</Text>
+            ) : (
+              <>
+                <Ionicons name="diamond" size={12} color={GOLD} />
+                <Text style={styles.priceChipText}>{item.price_tokens}</Text>
+              </>
+            )}
           </View>
           <View style={[styles.claimChip, canClaim ? styles.claimChipOn : styles.claimChipOff]}>
             {claimingThis ? (
               <ActivityIndicator size="small" color="#FFF" />
             ) : (
               <Text style={[styles.claimChipText, !canClaim && { color: '#9CA3AF' }]}>
-                {canClaim ? 'Claim' : 'Locked'}
+                {alreadyClaimedBoost ? 'Claimed' : canClaim ? 'Claim' : 'Locked'}
               </Text>
             )}
           </View>
@@ -504,9 +629,25 @@ export default function RaffleScreen() {
           <View style={styles.levelNoteLight}>
             <Ionicons name="information-circle-outline" size={16} color={DARK} />
             <Text style={styles.levelNoteText}>
-              Raffle tickets unlock at Level 3 EXP. Reach level 3, then claim tickets here.
+              Accountability Boost unlocks free at Level 2. Raffle tickets unlock at Level 3.
             </Text>
           </View>
+          {activeBoost.active ? (
+            <View style={styles.boostBanner}>
+              <Ionicons name="flash" size={16} color="#129490" />
+              <Text style={styles.boostBannerText}>
+                2× points active · ends{' '}
+                {activeBoost.expiresAt
+                  ? new Date(activeBoost.expiresAt).toLocaleString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })
+                  : 'soon'}
+              </Text>
+            </View>
+          ) : null}
           {!isPro ? (
             <TouchableOpacity
               style={styles.proBanner}
@@ -528,30 +669,38 @@ export default function RaffleScreen() {
     />
   );
 
-  const renderInventoryItem = ({ item }: { item: InventoryItem }) => (
-    <TouchableOpacity
-      style={styles.invTile}
-      onPress={() => handleUseInventoryItem(item)}
-      activeOpacity={0.88}
-    >
-      <View style={styles.qtyBadge}>
-        <Text style={styles.qtyBadgeText}>×{item.quantity}</Text>
-      </View>
-      <View style={styles.invIconWrap}>
-        <Ionicons
-          name={item.item?.type === 'raffle_ticket' ? 'ticket' : 'gift'}
-          size={30}
-          color={DARK}
-        />
-      </View>
-      <Text style={styles.invName} numberOfLines={2}>
-        {item.item?.name || 'Item'}
-      </Text>
-      <Text style={styles.invUse}>
-        {item.item?.type === 'raffle_ticket' ? 'Use in Raffles' : 'Tap for info'}
-      </Text>
-    </TouchableOpacity>
-  );
+  const renderInventoryItem = ({ item }: { item: InventoryItem }) => {
+    const isBoost = item.item?.type === ACCOUNTABILITY_BOOST_TYPE;
+    return (
+      <TouchableOpacity
+        style={styles.invTile}
+        onPress={() => !activatingBoost && handleUseInventoryItem(item)}
+        activeOpacity={0.88}
+        disabled={activatingBoost}
+      >
+        <View style={styles.qtyBadge}>
+          <Text style={styles.qtyBadgeText}>×{item.quantity}</Text>
+        </View>
+        <View style={[styles.invIconWrap, isBoost && styles.boostIconWrap]}>
+          <Ionicons
+            name={storeIconName(item.item?.type || '')}
+            size={30}
+            color={isBoost ? '#129490' : DARK}
+          />
+        </View>
+        <Text style={styles.invName} numberOfLines={2}>
+          {item.item?.name || 'Item'}
+        </Text>
+        <Text style={styles.invUse}>
+          {item.item?.type === 'raffle_ticket'
+            ? 'Use in Raffles'
+            : isBoost
+              ? 'Tap to activate'
+              : 'Tap for info'}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   const renderInventory = () => (
     <FlatList
@@ -561,6 +710,24 @@ export default function RaffleScreen() {
       columnWrapperStyle={{ gap: STORE_GAP }}
       contentContainerStyle={styles.gridContent}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DARK} />}
+      ListHeaderComponent={
+        activeBoost.active ? (
+          <View style={styles.boostBanner}>
+            <Ionicons name="flash" size={16} color="#129490" />
+            <Text style={styles.boostBannerText}>
+              2× points active · ends{' '}
+              {activeBoost.expiresAt
+                ? new Date(activeBoost.expiresAt).toLocaleString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })
+                : 'soon'}
+            </Text>
+          </View>
+        ) : null
+      }
       renderItem={renderInventoryItem}
       ListEmptyComponent={
         <View style={styles.emptyWrap}>
@@ -622,13 +789,41 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
+  hudBlock: {
+    paddingBottom: 8,
+  },
   hud: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 12,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 16,
+    position: 'relative',
+  },
+  headerLeftButton: {
+    width: 36,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    zIndex: 10,
+  },
+  headerRightSpacer: {
+    width: 36,
+    height: 24,
+    zIndex: 1,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: DARK,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    zIndex: 0,
+    top: '50%',
+    transform: [{ translateY: -10 }],
   },
   backBtn: {
     width: 36,
@@ -639,6 +834,11 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   hudTitle: {
     flex: 1,
@@ -647,17 +847,28 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  resourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  resourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   resourcePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   resourceText: { color: DARK, fontWeight: '700', fontSize: 13 },
   proPill: { backgroundColor: DARK, borderColor: DARK },
@@ -668,11 +879,25 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 4,
-    gap: 4,
+    gap: 0,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
   },
   tab: {
     flex: 1,
@@ -681,7 +906,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 10,
-    borderRadius: 11,
+    borderRadius: 12,
+    zIndex: 1,
   },
   tabActive: {
     backgroundColor: DARK,
@@ -703,13 +929,17 @@ const styles = StyleSheet.create({
 
   stage: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: 16,
     padding: 24,
     alignItems: 'center',
-    overflow: 'hidden',
     marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   stageGlow: {
     position: 'absolute',
@@ -763,8 +993,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     alignSelf: 'stretch',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   countdownLabel: {
     color: '#6B7280',
@@ -788,6 +1025,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
   },
   countdownValue: {
     color: DARK,
@@ -813,10 +1055,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   enteredChip: {
     backgroundColor: 'rgba(31,41,55,0.08)',
@@ -846,10 +1095,15 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   levelNoteText: {
     flex: 1,
@@ -864,10 +1118,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#FFF',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   quickLinkText: { flex: 1, color: DARK, fontWeight: '700', fontSize: 14 },
 
@@ -876,22 +1135,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
     marginBottom: 4,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   proBannerText: { color: DARK, fontSize: 13, fontWeight: '600', flex: 1 },
 
   storeTile: {
     width: STORE_CELL,
     backgroundColor: '#FFF',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     minHeight: 168,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   storeTileLocked: { opacity: 0.72 },
   storeTileTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
@@ -912,7 +1181,29 @@ const styles = StyleSheet.create({
   },
   miniBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900' },
   storeName: { color: DARK, fontSize: 14, fontWeight: '800', minHeight: 36 },
+  storeDesc: { color: '#6B7280', fontSize: 11, lineHeight: 15, marginTop: 2, marginBottom: 4 },
   storeReq: { color: '#6B7280', fontSize: 11, marginTop: 2, marginBottom: 8 },
+  boostIconWrap: {
+    backgroundColor: 'rgba(18, 148, 144, 0.12)',
+  },
+  boostBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(18, 148, 144, 0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(18, 148, 144, 0.25)',
+  },
+  boostBannerText: {
+    flex: 1,
+    color: '#129490',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   storeFooter: {
     marginTop: 'auto',
     flexDirection: 'row',
@@ -943,12 +1234,17 @@ const styles = StyleSheet.create({
   invTile: {
     width: STORE_CELL,
     backgroundColor: '#FFF',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     alignItems: 'center',
     minHeight: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   qtyBadge: {
     position: 'absolute',

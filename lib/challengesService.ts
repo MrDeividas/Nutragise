@@ -334,8 +334,7 @@ class ChallengesService {
   }
 
   /**
-   * Initiate challenge join using wallet balance
-   * Deducts from wallet and transfers to Stripe escrow (Platform account)
+   * Pay challenge entry fee from wallet balance (debit wallet + pot tracking id).
    */
   async initiateChallengeJoinWithWallet(
     challengeId: string,
@@ -346,10 +345,7 @@ class ChallengesService {
     clientSecret: string;
   }> {
     try {
-      // Transfer from wallet to Stripe escrow
-      // This handles both wallet deduction and Stripe Payment Intent creation/confirmation
-      // Funds are moved from user wallet DB to Stripe Platform account (conceptually escrow)
-      const { paymentIntentId } = await stripeService.transferWalletToEscrow(
+      const { paymentIntentId } = await stripeService.payChallengeFromWallet(
         userId,
         challengeId,
         entryFee
@@ -357,7 +353,7 @@ class ChallengesService {
       
       return {
         paymentIntentId,
-        clientSecret: '', // Not needed for wallet payment (already confirmed)
+        clientSecret: '',
       };
     } catch (error) {
       console.error('Error initiating challenge join with wallet:', error);
@@ -387,145 +383,38 @@ class ChallengesService {
   }
 
   /**
-   * Initiate a hold-based challenge join (7-day challenges).
-   * Creates a Stripe SetupIntent so the user can save their card.
-   * The actual hold (PaymentIntent, manual capture) is placed at challenge start.
-   * Returns setupIntentClientSecret for the Stripe Setup Sheet.
+   * @deprecated Hold escrow removed — use wallet join (initiateChallengeJoinWithWallet).
    */
   async initiateChallengeJoinWithHold(
-    challengeId: string,
-    userId: string
+    _challengeId: string,
+    _userId: string
   ): Promise<{
     setupIntentClientSecret: string;
     setupIntentId: string;
     entryFee: number;
   }> {
-    await this.validateUserId(userId);
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) {
-        throw new Error('User not authenticated. Please log in again.');
-      }
-
-      const { data: challenge } = await supabase
-        .from('challenges')
-        .select('id, title, entry_fee, duration_weeks, status')
-        .eq('id', challengeId)
-        .single();
-
-      if (!challenge) throw new Error('Challenge not found');
-
-      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
-
-      if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
-        throw new Error('Challenge is not open for joining');
-      }
-
-      const { data: existing } = await supabase
-        .from('challenge_participants')
-        .select('id, status')
-        .eq('challenge_id', challengeId)
-        .eq('user_id', userId)
-        .single();
-
-      if (existing?.status === 'active') throw new Error('Already joined this challenge');
-
-      const { url: supabaseUrl } = (stripeService as any).getSupabaseConfig();
-      const response = await fetch(`${supabaseUrl}/functions/v1/setup-challenge-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ challengeId }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to set up payment hold');
-      }
-
-      const data = await response.json();
-      return {
-        setupIntentClientSecret: data.setupIntentClientSecret,
-        setupIntentId: data.setupIntentId,
-        entryFee: data.entryFee,
-      };
-    } catch (error) {
-      console.error('Error initiating hold-based challenge join:', error);
-      throw error;
-    }
+    throw new Error(
+      'Card hold escrow has been removed. Join by paying from your wallet (top up if needed).'
+    );
   }
 
   /**
-   * Complete a hold-based challenge join after the SetupIntent succeeds.
-   * Saves the payment method ID to challenge_participants so the hold can be
-   * placed when the challenge starts.
+   * @deprecated Hold escrow removed — use completeChallengeJoin after wallet payment.
    */
   async completeHoldChallengeJoin(
-    challengeId: string,
-    userId: string,
-    setupIntentId: string,
-    paymentMethodId: string
+    _challengeId: string,
+    _userId: string,
+    _setupIntentId: string,
+    _paymentMethodId: string
   ): Promise<void> {
-    await this.validateUserId(userId);
-    try {
-      const { data: challenge } = await supabase
-        .from('challenges')
-        .select('entry_fee')
-        .eq('id', challengeId)
-        .single();
-
-      const entryFee = challenge?.entry_fee || 0;
-
-      const { data: existing } = await supabase
-        .from('challenge_participants')
-        .select('id')
-        .eq('challenge_id', challengeId)
-        .eq('user_id', userId)
-        .single();
-
-      if (existing) {
-        await supabase
-          .from('challenge_participants')
-          .update({
-            payment_capture_method: entryFee > 0 ? 'hold' : 'free',
-            stripe_setup_intent_id: setupIntentId,
-            stripe_payment_method_id: paymentMethodId,
-            payment_status: 'pending',
-          })
-          .eq('id', existing.id);
-      } else {
-        await supabase.from('challenge_participants').insert({
-          challenge_id: challengeId,
-          user_id: userId,
-          status: 'active',
-          payment_status: entryFee > 0 ? 'pending' : 'paid',
-          completion_percentage: 0,
-          payment_capture_method: entryFee > 0 ? 'hold' : 'free',
-          stripe_setup_intent_id: setupIntentId,
-          stripe_payment_method_id: paymentMethodId,
-          payment_settled: false,
-        });
-      }
-
-      if (entryFee > 0) {
-        await challengePotService.addInvestment(challengeId, userId, entryFee);
-      }
-
-      apiCache.delete(apiCache.generateKey('challenges', 'all'));
-      apiCache.delete(apiCache.generateKey('challenges', 'active'));
-    } catch (error) {
-      console.error('Error completing hold challenge join:', error);
-      throw error;
-    }
+    throw new Error(
+      'Card hold escrow has been removed. Join by paying from your wallet (top up if needed).'
+    );
   }
 
   /**
-   * Initiate challenge join - creates Stripe Payment Intent for escrow
-   * Returns payment intent details for UI to show Stripe Payment Sheet
-   * Includes Stripe fee calculation (user covers fees)
-   * NOTE: This is kept for Pro users on longer challenges (immediate capture).
+   * Initiate challenge join - legacy immediate card capture path (unused by UI).
+   * Prefer wallet flow: initiateChallengeJoinWithWallet + completeChallengeJoin.
    */
   async initiateChallengeJoin(challengeId: string, userId: string): Promise<{
     paymentIntentId: string;
@@ -544,7 +433,6 @@ class ChallengesService {
 
       if (!challenge) throw new Error('Challenge not found');
 
-      // Enforce free-user restriction
       await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
 
       const { data: existing } = await supabase
@@ -563,20 +451,13 @@ class ChallengesService {
       const entryFee = challenge.entry_fee || 0;
 
       if (entryFee > 0) {
-        const { clientSecret, paymentIntentId, originalAmount, stripeFee, totalAmount } =
-          await stripeService.createChallengePaymentIntent(entryFee, userId, challengeId);
-
-        return {
-          paymentIntentId,
-          clientSecret,
-          entryFee: originalAmount || entryFee,
-          stripeFee: stripeFee || 0,
-          totalAmount: totalAmount || entryFee,
-        };
-      } else {
-        await this.completeChallengeJoin(challengeId, userId, null);
-        return { paymentIntentId: '', clientSecret: '', entryFee: 0, stripeFee: 0, totalAmount: 0 };
+        throw new Error(
+          'Please join from the challenge screen so entry can be paid from your wallet.'
+        );
       }
+
+      await this.completeChallengeJoin(challengeId, userId, null);
+      return { paymentIntentId: '', clientSecret: '', entryFee: 0, stripeFee: 0, totalAmount: 0 };
     } catch (error) {
       console.error('Error initiating challenge join:', error);
       throw error;
@@ -625,6 +506,8 @@ class ChallengesService {
             payment_status: entryFee > 0 && paymentIntentId ? 'paid' : 'pending',
             investment_amount: entryFee,
             stripe_payment_intent_id: paymentIntentId,
+            payment_capture_method: entryFee > 0 ? 'wallet' : 'free',
+            payment_settled: entryFee > 0,
           })
           .eq('id', existing.id);
 
@@ -642,6 +525,8 @@ class ChallengesService {
             payment_status: entryFee > 0 && paymentIntentId ? 'paid' : 'pending',
             investment_amount: entryFee,
             stripe_payment_intent_id: paymentIntentId,
+            payment_capture_method: entryFee > 0 ? 'wallet' : 'free',
+            payment_settled: entryFee > 0,
           });
 
         if (error) {
@@ -649,7 +534,7 @@ class ChallengesService {
         }
       }
 
-      // Update challenge pot (for tracking, funds are in Stripe escrow)
+      // Update challenge pot tracking
       if (entryFee > 0) {
         try {
           await challengePotService.addInvestment(challengeId, userId, entryFee);

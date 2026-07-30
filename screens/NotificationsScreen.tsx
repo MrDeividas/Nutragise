@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Image, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../state/authStore';
 import { useActionStore } from '../state/actionStore';
 import { supabase } from '../lib/supabase';
@@ -11,6 +11,12 @@ import { notificationService, Notification } from '../lib/notificationService';
 import { useNotificationsStore } from '../state/notificationsStore';
 import { habitInviteService } from '../lib/habitInviteService';
 import CustomBackground from '../components/CustomBackground';
+import { ACHIEVEMENT_DEFINITIONS } from '../lib/achievementDefinitions';
+
+function achievementTitle(id?: string | null): string {
+  if (!id) return 'a new achievement';
+  return ACHIEVEMENT_DEFINITIONS.find((d) => d.id === id)?.title ?? 'a new achievement';
+}
 
 export default function NotificationsScreen() {
   const navigation = useNavigation();
@@ -20,7 +26,7 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [habitRewardsCollapsed, setHabitRewardsCollapsed] = useState(true); // Collapsed by default
   const [habitRewards, setHabitRewards] = useState<any[]>([]);
-  const [habitRewardsViewed, setHabitRewardsViewed] = useState(false); // Track if user has viewed rewards
+  const [habitRewardsViewed, setHabitRewardsViewed] = useState(true);
   const [recentActivityCollapsed, setRecentActivityCollapsed] = useState(true);
   const [actionTipsCollapsed, setActionTipsCollapsed] = useState(true);
 
@@ -39,11 +45,6 @@ export default function NotificationsScreen() {
       
       // Set habit rewards
       setHabitRewards(habitRewardNotifications);
-      
-      // Reset viewed state if there are new rewards (more than before)
-      if (habitRewardNotifications.length > habitRewards.length) {
-        setHabitRewardsViewed(false);
-      }
 
       // Fetch partnership statuses for habit invites to determine current status
       const inviteNotifications = otherNotifications.filter(n => n.notification_type === 'habit_invite');
@@ -70,29 +71,16 @@ export default function NotificationsScreen() {
       }
       
       // Transform other notifications into the expected format
-      // Filter out notifications where the user profile doesn't exist (deleted users)
-      // Also filter out notifications that have no from_user_id (orphaned notifications)
+      // Filter out orphaned social notifications (no from_user), but keep system types
       const transformedNotifications = otherNotifications
         .filter((notification: Notification) => {
-          // Only keep notifications that have a from_user_id AND a valid user profile
-          // Filter out orphaned notifications (no from_user_id) and deleted users (from_user_id but no profile)
+          if (notification.notification_type === 'achievement_unlocked') {
+            return true;
+          }
           if (!notification.from_user_id) {
-            // Log for debugging
-            console.log('Filtering out notification with no from_user_id:', {
-              id: notification.id,
-              type: notification.notification_type,
-              created_at: notification.created_at
-            });
             return false;
           }
           if (!notification.from_user) {
-            // Log for debugging
-            console.log('Filtering out notification with missing user profile:', {
-              id: notification.id,
-              type: notification.notification_type,
-              from_user_id: notification.from_user_id,
-              created_at: notification.created_at
-            });
             return false;
           }
           return true;
@@ -158,6 +146,9 @@ export default function NotificationsScreen() {
               ? `nudged you to complete "${notification.habit_type}"`
               : 'nudged you about a habit';
             break;
+          case 'achievement_unlocked':
+            message = `You unlocked "${achievementTitle(notification.habit_type)}"`;
+            break;
           default:
             message = 'interacted with your content';
         }
@@ -165,7 +156,10 @@ export default function NotificationsScreen() {
         return {
           id: notification.id,
           type: type,
-          name: notification.from_user?.display_name || notification.from_user?.username || 'Unknown',
+          name:
+            notification.notification_type === 'achievement_unlocked'
+              ? 'Achievement unlocked'
+              : notification.from_user?.display_name || notification.from_user?.username || 'Unknown',
           avatar: notification.from_user?.avatar_url || null,
           message: message,
           time: getTimeAgo(notification.created_at),
@@ -382,6 +376,11 @@ export default function NotificationsScreen() {
       return;
     }
 
+    if (item.type === 'achievement_unlocked') {
+      nav.navigate('Achievements');
+      return;
+    }
+
     if (item.goal_id) {
       nav.navigate('GoalDetail', { goalId: item.goal_id });
       return;
@@ -409,6 +408,8 @@ export default function NotificationsScreen() {
         return 'hand-left';
       case 'follow':
         return 'person-add';
+      case 'achievement_unlocked':
+        return 'trophy';
       default:
         return 'notifications';
     }
@@ -447,13 +448,201 @@ export default function NotificationsScreen() {
     return groups;
   };
 
-  useEffect(() => {
-    fetchNotifications();
-    if (user) {
-      notificationService.markAllAsRead(user.id);
-      useNotificationsStore.getState().clearCount();
-    }
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchNotifications();
+      // Opening the page clears Habit Rewards "new" badge
+      setHabitRewardsViewed(true);
+      if (!user) return;
+      (async () => {
+        useNotificationsStore.getState().clearCount();
+        await notificationService.markAllAsRead(user.id);
+        await useNotificationsStore.getState().refresh(user.id);
+      })();
+    }, [user])
+  );
+
+  const renderExtrasFooter = () => (
+    <View style={styles.extrasFooter}>
+      {/* Habit Rewards Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 20 }]}>
+        <TouchableOpacity
+          style={styles.collapsibleHeader}
+          onPress={() => {
+            const newCollapsed = !habitRewardsCollapsed;
+            setHabitRewardsCollapsed(newCollapsed);
+            if (!newCollapsed) {
+              setHabitRewardsViewed(true);
+            }
+          }}
+        >
+          <View style={styles.headerWithBadge}>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Habit Rewards</Text>
+            {(() => {
+              const unreadRewards = habitRewards.filter((r) => r.is_read === false).length;
+              if (unreadRewards <= 0 || habitRewardsViewed) return null;
+              return (
+                <View style={[styles.habitRewardBadge, { backgroundColor: '#10B981' }]}>
+                  <Text style={styles.habitRewardBadgeText}>{unreadRewards}</Text>
+                </View>
+              );
+            })()}
+          </View>
+          <Ionicons
+            name={habitRewardsCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={16}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+      {!habitRewardsCollapsed && (
+        <View style={styles.habitRewardsContainer}>
+          {habitRewards.length === 0 ? (
+            <View style={styles.emptyRewardsContainer}>
+              <Text style={[styles.emptyRewardsText, { color: theme.textSecondary }]}>
+                Complete habits to earn rewards!
+              </Text>
+            </View>
+          ) : (
+            habitRewards.map((item) => {
+              const habitIcons: { [key: string]: string } = {
+                gym: 'barbell',
+                run: 'walk',
+                cold_shower: 'water',
+                water: 'water-outline',
+                reflect: 'bulb',
+                focus: 'eye',
+                sleep: 'moon',
+                meditation: 'leaf',
+                microlearn: 'book',
+                like: 'heart',
+                comment: 'chatbubble',
+                share: 'share-social',
+                update_goal: 'trophy',
+              };
+
+              const pillarNames: { [key: string]: string } = {
+                strength_fitness: 'Strength & Fitness',
+                growth_wisdom: 'Growth & Wisdom',
+                discipline: 'Discipline',
+                team_spirit: 'Team Spirit',
+              };
+
+              return (
+                <View key={item.id} style={styles.rewardItem}>
+                  <View style={[styles.rewardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                    <Ionicons
+                      name={(habitIcons[item.habit_type] as any) || 'star'}
+                      size={20}
+                      color="#10B981"
+                    />
+                  </View>
+                  <View style={styles.rewardContent}>
+                    <Text style={[styles.rewardTitle, { color: theme.textPrimary }]}>
+                      +{item.points_gained} points
+                    </Text>
+                    {item.pillar_type && (
+                      <Text style={[styles.rewardSubtitle, { color: theme.textSecondary }]}>
+                        {pillarNames[item.pillar_type]} +{item.pillar_progress}%
+                      </Text>
+                    )}
+                    <Text style={[styles.rewardTime, { color: theme.textTertiary }]}>
+                      {getTimeAgo(item.created_at)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+      )}
+
+      {/* Recent Activity Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 20 }]}>
+        <TouchableOpacity
+          style={styles.collapsibleHeader}
+          onPress={() => setRecentActivityCollapsed(!recentActivityCollapsed)}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Recent Activity</Text>
+          <Ionicons
+            name={recentActivityCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={16}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+      {!recentActivityCollapsed && (
+        <View style={styles.activityList}>
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Completed workout goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>2 hours ago</Text>
+            </View>
+          </View>
+
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="camera-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Added photo to meditation goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>5 hours ago</Text>
+            </View>
+          </View>
+
+          <View style={styles.activityItem}>
+            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
+              <Ionicons name="add-outline" size={20} color="#ffffff" />
+            </View>
+            <View style={styles.activityContent}>
+              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Created new reading goal</Text>
+              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>1 day ago</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Action Tips Section */}
+      <View style={[styles.sectionHeader, { paddingLeft: 20 }]}>
+        <TouchableOpacity
+          style={styles.collapsibleHeader}
+          onPress={() => setActionTipsCollapsed(!actionTipsCollapsed)}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
+          <Ionicons
+            name={actionTipsCollapsed ? 'chevron-down' : 'chevron-up'}
+            size={16}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+      </View>
+      {!actionTipsCollapsed && (
+        <View style={styles.tipsContainer}>
+          <View style={styles.tipCard}>
+            <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
+              Break big goals into smaller, manageable tasks
+            </Text>
+          </View>
+          <View style={styles.tipCard}>
+            <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
+              Set specific time blocks for your goals
+            </Text>
+          </View>
+          <View style={styles.tipCard}>
+            <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
+            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
+              Celebrate small wins to stay motivated
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <CustomBackground>
@@ -473,7 +662,7 @@ export default function NotificationsScreen() {
       {/* Notification List */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
+          <ActivityIndicator size="large" color={"#1f2937"} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
             Loading notifications...
           </Text>
@@ -482,7 +671,7 @@ export default function NotificationsScreen() {
         <FlatList
           data={notifications}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 12 }}
+          contentContainerStyle={{ padding: 12, paddingBottom: 40, flexGrow: 1 }}
           refreshControl={
             <RefreshControl
               refreshing={loading}
@@ -491,6 +680,7 @@ export default function NotificationsScreen() {
               colors={[theme.primary]}
             />
           }
+          ListFooterComponent={renderExtrasFooter}
           renderItem={({ item, index }) => {
             const groups = groupNotificationsByTime(notifications);
             const notificationDate = new Date(item.created_at);
@@ -549,7 +739,11 @@ export default function NotificationsScreen() {
                     onPress={() => handleNotificationPress(item)}
                   >
                     <View>
-                      {item.avatar ? (
+                      {item.type === 'achievement_unlocked' ? (
+                        <View style={[styles.avatar, { backgroundColor: '#1f2937', alignItems: 'center', justifyContent: 'center' }]}>
+                          <Ionicons name="trophy" size={20} color="#F5C542" />
+                        </View>
+                      ) : item.avatar ? (
                         <Image source={{ uri: item.avatar }} style={styles.avatar} />
                       ) : (
                         <View style={[styles.avatar, { backgroundColor: theme.textTertiary }]}>
@@ -619,180 +813,6 @@ export default function NotificationsScreen() {
           }
         />
       )}
-
-      {/* Habit Rewards Section */}
-      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
-        <TouchableOpacity 
-          style={styles.collapsibleHeader}
-          onPress={() => {
-            const newCollapsed = !habitRewardsCollapsed;
-            setHabitRewardsCollapsed(newCollapsed);
-            // Mark as viewed when expanded
-            if (!newCollapsed) {
-              setHabitRewardsViewed(true);
-            }
-          }}
-        >
-          <View style={styles.headerWithBadge}>
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Habit Rewards</Text>
-            {habitRewards.length > 0 && !habitRewardsViewed && (
-              <View style={[styles.habitRewardBadge, { backgroundColor: '#10B981' }]}>
-                <Text style={styles.habitRewardBadgeText}>{habitRewards.length}</Text>
-              </View>
-            )}
-          </View>
-          <Ionicons 
-            name={habitRewardsCollapsed ? "chevron-down" : "chevron-up"} 
-            size={16} 
-            color={theme.textSecondary} 
-          />
-        </TouchableOpacity>
-      </View>
-      {!habitRewardsCollapsed && (
-        <View style={styles.habitRewardsContainer}>
-          <FlatList
-            data={habitRewards}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={true}
-            nestedScrollEnabled={true}
-            renderItem={({ item }) => {
-            const habitIcons: {[key: string]: string} = {
-              gym: 'barbell',
-              run: 'walk',
-              cold_shower: 'water',
-              water: 'water-outline',
-              reflect: 'bulb',
-              focus: 'eye',
-              sleep: 'moon',
-              meditation: 'leaf',
-              microlearn: 'book',
-              like: 'heart',
-              comment: 'chatbubble',
-              share: 'share-social',
-              update_goal: 'trophy'
-            };
-
-            const pillarNames: {[key: string]: string} = {
-              strength_fitness: 'Strength & Fitness',
-              growth_wisdom: 'Growth & Wisdom',
-              discipline: 'Discipline',
-              team_spirit: 'Team Spirit'
-            };
-
-            return (
-              <View style={styles.rewardItem}>
-                <View style={[styles.rewardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                  <Ionicons 
-                    name={habitIcons[item.habit_type] as any || 'star'} 
-                    size={20} 
-                    color="#10B981" 
-                  />
-                </View>
-                <View style={styles.rewardContent}>
-                  <Text style={[styles.rewardTitle, { color: theme.textPrimary }]}>
-                    +{item.points_gained} points
-                  </Text>
-                  {item.pillar_type && (
-                    <Text style={[styles.rewardSubtitle, { color: theme.textSecondary }]}>
-                      {pillarNames[item.pillar_type]} +{item.pillar_progress}%
-                    </Text>
-                  )}
-                  <Text style={[styles.rewardTime, { color: theme.textTertiary }]}>
-                    {getTimeAgo(item.created_at)}
-                  </Text>
-                </View>
-              </View>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={styles.emptyRewardsContainer}>
-              <Text style={[styles.emptyRewardsText, { color: theme.textSecondary }]}>
-                Complete habits to earn rewards!
-              </Text>
-            </View>
-          }
-        />
-        </View>
-      )}
-
-      {/* Recent Activity Section */}
-      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
-        <TouchableOpacity 
-          style={styles.collapsibleHeader}
-          onPress={() => setRecentActivityCollapsed(!recentActivityCollapsed)}
-        >
-          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Recent Activity</Text>
-          <Ionicons 
-            name={recentActivityCollapsed ? "chevron-down" : "chevron-up"} 
-            size={16} 
-            color={theme.textSecondary} 
-          />
-        </TouchableOpacity>
-      </View>
-      {!recentActivityCollapsed && (
-        <View style={styles.activityList}>
-          <View style={styles.activityItem}>
-            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-              <Ionicons name="checkmark-outline" size={20} color="#ffffff" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Completed workout goal</Text>
-              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>2 hours ago</Text>
-            </View>
-          </View>
-
-          <View style={styles.activityItem}>
-            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-              <Ionicons name="camera-outline" size={20} color="#ffffff" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Added photo to meditation goal</Text>
-              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>5 hours ago</Text>
-            </View>
-          </View>
-
-          <View style={styles.activityItem}>
-            <View style={[styles.activityIcon, { backgroundColor: theme.backgroundTertiary }]}>
-              <Ionicons name="add-outline" size={20} color="#ffffff" />
-            </View>
-            <View style={styles.activityContent}>
-              <Text style={[styles.activityTitle, { color: theme.textPrimary }]}>Created new reading goal</Text>
-              <Text style={[styles.activityTime, { color: theme.textTertiary }]}>1 day ago</Text>
-            </View>
-          </View>
-        </View>
-      )}
-
-      {/* Action Tips Section */}
-      <View style={[styles.sectionHeader, { paddingLeft: 32 }]}>
-        <TouchableOpacity 
-          style={styles.collapsibleHeader}
-          onPress={() => setActionTipsCollapsed(!actionTipsCollapsed)}
-        >
-          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
-          <Ionicons 
-            name={actionTipsCollapsed ? "chevron-down" : "chevron-up"} 
-            size={16} 
-            color={theme.textSecondary} 
-          />
-        </TouchableOpacity>
-      </View>
-      {!actionTipsCollapsed && (
-        <View style={styles.tipsContainer}>
-          <View style={styles.tipCard}>
-            <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Break big goals into smaller, manageable tasks</Text>
-          </View>
-          <View style={styles.tipCard}>
-            <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Set specific time blocks for your goals</Text>
-          </View>
-          <View style={styles.tipCard}>
-            <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>Celebrate small wins to stay motivated</Text>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
     </CustomBackground>
   );
@@ -802,12 +822,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  extrasFooter: {
+    marginTop: 8,
+    paddingBottom: 24,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
@@ -817,11 +842,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    padding: 8,
-    marginRight: 8,
+    width: 40,
+    paddingVertical: 0,
+    marginRight: 0,
+    justifyContent: 'center',
   },
   headerSpacer: {
-    width: 40, // Same width as back button for centering
+    width: 40,
   },
   headerIcons: {
     position: 'absolute',

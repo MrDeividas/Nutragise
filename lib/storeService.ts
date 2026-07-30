@@ -5,6 +5,10 @@
 
 import { supabase } from './supabase';
 
+export const ACCOUNTABILITY_BOOST_TYPE = 'accountability_boost';
+export const ACCOUNTABILITY_BOOST_DURATION_MS = 2 * 24 * 60 * 60 * 1000;
+export const ACCOUNTABILITY_BOOST_ITEM_ID = 'a1000000-0000-4000-8000-0000000000b1';
+
 export interface StoreItem {
   id: string;
   name: string;
@@ -23,6 +27,12 @@ export interface InventoryItem {
   quantity: number;
   acquired_at: string;
   item?: StoreItem; // Joined data
+}
+
+export interface ActiveBoostStatus {
+  active: boolean;
+  expiresAt: string | null;
+  remainingMs: number;
 }
 
 class StoreService {
@@ -193,6 +203,41 @@ class StoreService {
   }
 
   /**
+   * Active Accountability Boost status (double points window)
+   */
+  async getActiveBoostStatus(userId: string): Promise<ActiveBoostStatus> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('points_boost_expires_at')
+        .eq('id', userId)
+        .single();
+
+      if (error || !data?.points_boost_expires_at) {
+        return { active: false, expiresAt: null, remainingMs: 0 };
+      }
+
+      const expiresAt = data.points_boost_expires_at as string;
+      const remainingMs = new Date(expiresAt).getTime() - Date.now();
+      if (remainingMs <= 0) {
+        return { active: false, expiresAt, remainingMs: 0 };
+      }
+
+      return { active: true, expiresAt, remainingMs };
+    } catch {
+      return { active: false, expiresAt: null, remainingMs: 0 };
+    }
+  }
+
+  /**
+   * Points multiplier while Accountability Boost is active
+   */
+  async getPointsMultiplier(userId: string): Promise<number> {
+    const status = await this.getActiveBoostStatus(userId);
+    return status.active ? 2 : 1;
+  }
+
+  /**
    * Claim an item from the store (deducts tokens, adds to inventory)
    */
   async claimItem(userId: string, itemId: string): Promise<{ success: boolean; message: string; newTokenBalance?: number }> {
@@ -225,75 +270,91 @@ class StoreService {
       }
 
       // 4. Check if user meets level requirement
-      if (profile.level < item.level_required) {
+      if ((profile.level || 1) < item.level_required) {
         return { success: false, message: `You need to be level ${item.level_required} to claim this item` };
       }
 
-      // 5. Check if user has enough tokens
-      if (profile.tokens < item.price_tokens) {
-        return { success: false, message: `Insufficient tokens. You need ${item.price_tokens} tokens` };
+      // 5. One-time free Accountability Boost claim
+      if (item.type === ACCOUNTABILITY_BOOST_TYPE) {
+        const { data: existingBoost } = await supabase
+          .from('user_inventory')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('item_id', itemId)
+          .maybeSingle();
+
+        if (existingBoost) {
+          return { success: false, message: 'You already claimed your Accountability Boost' };
+        }
       }
 
-      // 6. Deduct tokens
-      const newTokenBalance = profile.tokens - item.price_tokens;
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ tokens: newTokenBalance })
-        .eq('id', userId);
-
-      if (updateError) {
-        console.error('Error deducting tokens:', updateError);
-        return { success: false, message: 'Failed to deduct tokens' };
+      // 6. Check if user has enough tokens (0 = free)
+      const price = item.price_tokens || 0;
+      const currentTokens = profile.tokens ?? 0;
+      if (currentTokens < price) {
+        return { success: false, message: `Insufficient tokens. You need ${price} tokens` };
       }
 
-      // 7. Add to inventory (or update quantity)
+      // 7. Deduct tokens
+      const newTokenBalance = currentTokens - price;
+      if (price > 0) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ tokens: newTokenBalance })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Error deducting tokens:', updateError);
+          return { success: false, message: 'Failed to deduct tokens' };
+        }
+      }
+
+      // 8. Add to inventory (or update quantity)
       const { data: existingItem } = await supabase
         .from('user_inventory')
         .select('*')
         .eq('user_id', userId)
         .eq('item_id', itemId)
-        .single();
+        .maybeSingle();
 
       if (existingItem) {
-        // Update existing
         const { error: inventoryError } = await supabase
           .from('user_inventory')
-          .update({ 
+          .update({
             quantity: existingItem.quantity + 1,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq('id', existingItem.id);
 
         if (inventoryError) {
           console.error('Error updating inventory:', inventoryError);
-          // Rollback tokens
-          await supabase.from('profiles').update({ tokens: profile.tokens }).eq('id', userId);
+          if (price > 0) {
+            await supabase.from('profiles').update({ tokens: currentTokens }).eq('id', userId);
+          }
           return { success: false, message: 'Failed to update inventory' };
         }
       } else {
-        // Create new
         const { error: inventoryError } = await supabase
           .from('user_inventory')
           .insert({
             user_id: userId,
             item_id: itemId,
-            quantity: 1
+            quantity: 1,
           });
 
         if (inventoryError) {
           console.error('Error adding to inventory:', inventoryError);
-          // Rollback tokens
-          await supabase.from('profiles').update({ tokens: profile.tokens }).eq('id', userId);
+          if (price > 0) {
+            await supabase.from('profiles').update({ tokens: currentTokens }).eq('id', userId);
+          }
           return { success: false, message: 'Failed to add to inventory' };
         }
       }
 
-      console.log('✅ Item claimed successfully:', { userId, itemId, newTokenBalance });
-
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: `${item.name} claimed successfully!`,
-        newTokenBalance
+        newTokenBalance,
       };
     } catch (error) {
       console.error('Error in claimItem:', error);
@@ -321,12 +382,11 @@ class StoreService {
         return { success: false, message: 'No items remaining' };
       }
 
-      // Decrement quantity
       const { error: updateError } = await supabase
         .from('user_inventory')
-        .update({ 
+        .update({
           quantity: inventoryItem.quantity - 1,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
         .eq('id', inventoryItem.id);
 
@@ -335,19 +395,83 @@ class StoreService {
         return { success: false, message: 'Failed to use item' };
       }
 
-      console.log('✅ Item used successfully:', { userId, itemId });
-
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: 'Item used successfully',
-        inventoryId: inventoryItem.id
+        inventoryId: inventoryItem.id,
       };
     } catch (error) {
       console.error('Error in useItem:', error);
       return { success: false, message: 'Failed to use item' };
     }
   }
+
+  /**
+   * Activate Accountability Boost from inventory (double points for 2 days)
+   */
+  async activateAccountabilityBoost(
+    userId: string
+  ): Promise<{ success: boolean; message: string; expiresAt?: string }> {
+    try {
+      const { data: invRows, error } = await supabase
+        .from('user_inventory')
+        .select('id, quantity, item_id, item:store_items(id, type, name)')
+        .eq('user_id', userId);
+
+      if (error) {
+        return { success: false, message: 'Could not load inventory' };
+      }
+
+      const boostRow = (invRows || []).find((row: any) => {
+        const item = Array.isArray(row.item) ? row.item[0] : row.item;
+        return item?.type === ACCOUNTABILITY_BOOST_TYPE && (row.quantity || 0) > 0;
+      });
+
+      if (!boostRow) {
+        return { success: false, message: 'No Accountability Boost in inventory' };
+      }
+
+      const used = await this.useItem(userId, boostRow.item_id);
+      if (!used.success) {
+        return { success: false, message: used.message };
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('points_boost_expires_at')
+        .eq('id', userId)
+        .single();
+
+      const now = Date.now();
+      const currentExpiry = profile?.points_boost_expires_at
+        ? new Date(profile.points_boost_expires_at).getTime()
+        : 0;
+      const base = Math.max(now, currentExpiry);
+      const expiresAt = new Date(base + ACCOUNTABILITY_BOOST_DURATION_MS).toISOString();
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ points_boost_expires_at: expiresAt })
+        .eq('id', userId);
+
+      if (updateError) {
+        await supabase
+          .from('user_inventory')
+          .update({ quantity: boostRow.quantity || 1 })
+          .eq('id', boostRow.id);
+        return { success: false, message: 'Failed to activate boost' };
+      }
+
+      return {
+        success: true,
+        message: 'Accountability Boost activated — double points for 2 days!',
+        expiresAt,
+      };
+    } catch (error) {
+      console.error('Error in activateAccountabilityBoost:', error);
+      return { success: false, message: 'Failed to activate boost' };
+    }
+  }
 }
 
 export const storeService = new StoreService();
-

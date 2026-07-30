@@ -8,7 +8,8 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,20 @@ import { dmService } from '../lib/dmService';
 import { socialService } from '../lib/socialService';
 import { ChatWithProfile } from '../types/database';
 import CustomBackground from '../components/CustomBackground';
+
+const DARK = '#1f2937';
+
+type MessageFilter = 'all' | 'following' | 'others';
+
+const FILTER_TABS: {
+  key: MessageFilter;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { key: 'all', label: 'All', icon: 'chatbubbles' },
+  { key: 'following', label: 'Following', icon: 'people' },
+  { key: 'others', label: 'Others', icon: 'person' },
+];
 
 export default function DMScreen() {
   const navigation = useNavigation<any>();
@@ -31,8 +46,11 @@ export default function DMScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [filter, setFilter] = useState<'all' | 'following' | 'others'>('all');
+  const [filter, setFilter] = useState<MessageFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [tabTrackWidth, setTabTrackWidth] = useState(0);
+  const tabIndicatorX = useRef(new Animated.Value(0)).current;
+  const tabHasPositioned = useRef(false);
   
   // Use ref to avoid subscription recreation on filter change
   const filterRef = useRef(filter);
@@ -43,6 +61,26 @@ export default function DMScreen() {
 
   // Track if chats have been loaded initially
   const chatsLoadedRef = useRef(false);
+
+  const tabIndex = Math.max(0, FILTER_TABS.findIndex((t) => t.key === filter));
+  const tabWidth = tabTrackWidth > 0 ? tabTrackWidth / FILTER_TABS.length : 0;
+
+  useEffect(() => {
+    if (tabWidth <= 0) return;
+    const toValue = tabIndex * tabWidth;
+    if (!tabHasPositioned.current) {
+      tabHasPositioned.current = true;
+      tabIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(tabIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      stiffness: 230,
+      damping: 24,
+      mass: 0.9,
+    }).start();
+  }, [tabIndex, tabWidth, tabIndicatorX]);
 
   // Load chats - only loads once on mount
   const loadChats = useCallback(async () => {
@@ -203,11 +241,12 @@ export default function DMScreen() {
 
     return (
       <TouchableOpacity
-        style={[styles.chatItem, { borderBottomColor: theme.border }]}
+        style={styles.chatItem}
         onPress={() => navigation.navigate('ChatWindow' as never, { 
           chatId: item.id, 
           otherUserId: item.other_user?.id 
         } as never)}
+        activeOpacity={0.88}
       >
         <Image
           source={{ uri: item.other_user?.avatar_url || 'https://via.placeholder.com/50' }}
@@ -215,7 +254,7 @@ export default function DMScreen() {
         />
         <View style={styles.chatInfo}>
           <View style={styles.chatHeader}>
-            <Text style={[styles.username, { color: theme.textPrimary }]}>
+            <Text style={[styles.username, { color: theme.textPrimary }]} numberOfLines={1}>
               {item.other_user?.display_name || item.other_user?.username || 'Unknown User'}
             </Text>
             <Text style={[styles.timestamp, { color: theme.textSecondary }]}>
@@ -246,8 +285,9 @@ export default function DMScreen() {
 
   const renderSearchResult = ({ item }: { item: any }) => (
     <TouchableOpacity
-      style={[styles.searchItem, { borderBottomColor: theme.border }]}
+      style={styles.searchItem}
       onPress={() => startChat(item.id)}
+      activeOpacity={0.88}
     >
       <Image
         source={{ uri: item.avatar_url || 'https://via.placeholder.com/50' }}
@@ -282,8 +322,8 @@ export default function DMScreen() {
 
         {/* Search Bar */}
         {showSearch && (
-          <View style={[styles.searchContainer, { backgroundColor: '#F3F4F6' }]}>
-            <Ionicons name="search" size={20} color={theme.textSecondary} />
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#6B7280" />
             <TextInput
               style={[styles.searchInput, { color: theme.textPrimary }]}
               placeholder="Search users..."
@@ -295,74 +335,59 @@ export default function DMScreen() {
           </View>
         )}
 
-        {/* Filter tabs — same pattern as Followers / Following screen */}
-        {!showSearch && chats.length > 0 && (
-          <View style={[styles.tabRow, { borderBottomColor: theme.border }]}>
-            <TouchableOpacity
-              style={[styles.tab, filter === 'all' && { borderBottomColor: theme.textPrimary }]}
-              onPress={() => {
-                setFilter('all');
-                applyFilter(chats, 'all');
-              }}
-              activeOpacity={0.7}
-            >
-              <Text
+        {/* Filter tabs — same pill style as Rewards (Raffles / Store / Inventory) */}
+        {!showSearch && (
+          <View
+            style={styles.tabBar}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width - 8;
+              if (w > 0 && Math.abs(w - tabTrackWidth) > 0.5) {
+                setTabTrackWidth(w);
+              }
+            }}
+          >
+            {tabWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
                 style={[
-                  styles.tabText,
-                  { color: filter === 'all' ? theme.textPrimary : theme.textSecondary },
-                  filter === 'all' && styles.tabTextActive,
+                  styles.tabIndicator,
+                  {
+                    width: tabWidth,
+                    transform: [{ translateX: tabIndicatorX }],
+                  },
                 ]}
-              >
-                All
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, filter === 'following' && { borderBottomColor: theme.textPrimary }]}
-              onPress={() => {
-                setFilter('following');
-                applyFilter(chats, 'following');
-              }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  { color: filter === 'following' ? theme.textPrimary : theme.textSecondary },
-                  filter === 'following' && styles.tabTextActive,
-                ]}
-              >
-                Following
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, filter === 'others' && { borderBottomColor: theme.textPrimary }]}
-              onPress={() => {
-                setFilter('others');
-                applyFilter(chats, 'others');
-              }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  { color: filter === 'others' ? theme.textPrimary : theme.textSecondary },
-                  filter === 'others' && styles.tabTextActive,
-                ]}
-              >
-                Others
-              </Text>
-            </TouchableOpacity>
+              />
+            )}
+            {FILTER_TABS.map((t) => {
+              const active = filter === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  style={styles.tab}
+                  onPress={() => {
+                    setFilter(t.key);
+                    applyFilter(chats, t.key);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name={t.icon} size={16} color={active ? '#FFFFFF' : '#6B7280'} />
+                  <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
         {/* Content */}
         {loading ? (
-          <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+          <ActivityIndicator size="large" color={"#1f2937"} style={styles.loader} />
         ) : showSearch && searchQuery.length >= 2 ? (
           <FlatList
             data={searchResults}
             renderItem={renderSearchResult}
             keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.chatListContent}
+            keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
@@ -376,6 +401,7 @@ export default function DMScreen() {
             data={filteredChats}
             renderItem={renderChatItem}
             keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.chatListContent}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -419,74 +445,123 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 28,
     fontWeight: '700',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
   },
-  /** Matches FollowersScreen tab row */
-  tabRow: {
+  tabBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    marginHorizontal: 24,
-    marginBottom: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    zIndex: 1,
   },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  tabTextActive: {
+  tabLabel: {
+    color: '#6B7280',
+    fontSize: 13,
     fontWeight: '700',
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+  },
+  chatListContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 10,
   },
   chatItem: {
     flexDirection: 'row',
-    padding: 16,
-    borderBottomWidth: 1,
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   avatar: {
     width: 50,
     height: 50,
-    borderRadius: 8,
+    borderRadius: 12,
     marginRight: 12,
   },
   chatInfo: {
     flex: 1,
+    minWidth: 0,
   },
   chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 4,
+    gap: 8,
   },
   username: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   timestamp: {
     fontSize: 12,
+    fontWeight: '600',
   },
   messagePreview: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   lastMessage: {
     fontSize: 14,
@@ -494,9 +569,10 @@ const styles = StyleSheet.create({
   },
   unreadMessage: {
     fontWeight: '600',
+    color: '#1f2937',
   },
   unreadBadge: {
-    backgroundColor: '#ff5a5f',
+    backgroundColor: '#1f2937',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -512,8 +588,16 @@ const styles = StyleSheet.create({
   searchItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   usernameSecondary: {
     fontSize: 14,

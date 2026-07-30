@@ -1,0 +1,367 @@
+[
+  {
+    "id": "f469db41-c4d0-4acc-807b-8f9d743f1658",
+    "title": "The Slight Edge",
+    "duration_minutes": 26,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781626340466-L.jpg",
+    "short_description": "Jeff Olson on how simple daily disciplines compound \u2014 success and failure are usually slight edges repeated.",
+    "chapter_titles": [
+      "Chapter 1: The slight edge defined",
+      "Chapter 2: The success curve",
+      "Chapter 3: The failure curve",
+      "Chapter 4: Philosophy first",
+      "Chapter 5: The book of lifetimes",
+      "Chapter 6: Momentum",
+      "Chapter 7: People and environments",
+      "Chapter 8: Time and patience",
+      "Chapter 9: Health, money, relationships",
+      "Chapter 10: Reflection practice",
+      "Chapter 11: Teach the edge",
+      "Chapter 12: Start smaller than ego wants"
+    ],
+    "questions": [
+      {
+        "id": "8be869d5-e768-41d9-9d22-b60556870239",
+        "question_text": "What is the slight edge idea?",
+        "option_a": "Only dramatic breakthroughs matter",
+        "option_b": "Small daily disciplines or neglects compound into success or failure",
+        "option_c": "Skip boring basics",
+        "option_d": "Luck alone",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "2111eac4-8c1e-4797-9935-8afcfc7ee389",
+        "question_text": "Why is the beginning of the success curve hard?",
+        "option_a": "Results appear instantly always",
+        "option_b": "Results lag while reps feel pointless \u2014 people quit in the flat part",
+        "option_c": "Compounding never works",
+        "option_d": "Only genetics matter",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "3d3ad9ac-aa97-4843-9875-8398b4bb4fba",
+        "question_text": "What does \u2018easy to do, easy not to do\u2019 mean?",
+        "option_a": "Hard things only matter",
+        "option_b": "The valuable little actions are optional-feeling, so people skip them",
+        "option_c": "Never do easy things",
+        "option_d": "Avoid all choices",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "88ea3e0f-06c6-42f0-bd31-8f805be7469c",
+        "question_text": "What helps adherence?",
+        "option_a": "Only solo secrecy",
+        "option_b": "Philosophy, momentum, environment, reflection, and teaching others",
+        "option_c": "Microwave transformations only",
+        "option_d": "Ignoring health money and relationships",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "18a348e8-9ec7-4624-a9fc-1c77bb18a4fc",
+        "question_text": "How should you size a new slight edge?",
+        "option_a": "Heroic and unsustainable",
+        "option_b": "Smaller than ego wants \u2014 unbeatable consistency first",
+        "option_c": "Random intensity",
+        "option_d": "Never start",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "4e77e0cc-caba-4fb7-aafb-acb1473ff4d0",
+    "title": "The Richest Man in Babylon",
+    "duration_minutes": 26,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780451205360-L.jpg",
+    "short_description": "Clason\u2019s Babylonian parables of money \u2014 pay yourself first, make money work, and protect capital.",
+    "chapter_titles": [
+      "Chapter 1: Parables of money",
+      "Chapter 2: A part of all you earn is yours to keep",
+      "Chapter 3: Make money work",
+      "Chapter 4: Guard against loss",
+      "Chapter 5: Own where you live theme",
+      "Chapter 6: Increase capacity to earn",
+      "Chapter 7: Debt discipline",
+      "Chapter 8: Consistency over windfalls",
+      "Chapter 9: Counsel of the wise",
+      "Chapter 10: Generosity and legacy",
+      "Chapter 11: Modern translation checklist",
+      "Chapter 12: Start tonight"
+    ],
+    "questions": [
+      {
+        "id": "f79dfde4-59a2-42fc-bc31-c416c36efe12",
+        "question_text": "Pay yourself first means?",
+        "option_a": "Spend then hope leftovers remain",
+        "option_b": "Save a portion before lifestyle spending",
+        "option_c": "Never enjoy money",
+        "option_d": "Only tip others",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "3a5549f6-28f6-4f9b-bfe5-c92d55389c59",
+        "question_text": "How should you invest per the spirit of the book?",
+        "option_a": "Follow random tipsters",
+        "option_b": "Put money to work carefully in understandable ways; protect capital",
+        "option_c": "Risk everything always",
+        "option_d": "Hide cash forever only",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "2ea4d53f-11cf-4f03-8a28-8c07e7f38ff9",
+        "question_text": "Besides saving, what raises wealth?",
+        "option_a": "Only luck",
+        "option_b": "Increasing ability to earn via skill and reliability",
+        "option_c": "Ignoring reputation",
+        "option_d": "More consumer debt",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "acb32ee9-73e4-43ca-b6ec-62d2796d3c42",
+        "question_text": "Guard against loss emphasizes?",
+        "option_a": "Ignoring downside",
+        "option_b": "Protecting capital from foolish unexplained risks",
+        "option_c": "Always max leverage",
+        "option_d": "Tips from strangers",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "45bee22f-c8aa-45ca-abfa-b2124a26a381",
+        "question_text": "Best modernity check?",
+        "option_a": "Lottery tickets as plan",
+        "option_b": "Automated saving, debt control, emergency fund, skill growth, prudent investing",
+        "option_c": "No tracking ever",
+        "option_d": "Only gold coins under mattress without plan",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "9f498276-1e94-44c1-aec3-80efed1416e3",
+    "title": "Peak",
+    "duration_minutes": 31,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780544456235-L.jpg",
+    "short_description": "Ericsson\u2019s science of expertise \u2014 deliberate practice, mental representations, and why greatness is grown.",
+    "chapter_titles": [
+      "Chapter 1: The expert blueprint",
+      "Chapter 2: Deliberate practice defined",
+      "Chapter 3: Mental representations",
+      "Chapter 4: The ugliness of improvement",
+      "Chapter 5: Hours with structure",
+      "Chapter 6: From naive to purposeful",
+      "Chapter 7: Plateaus",
+      "Chapter 8: Knowledge work application",
+      "Chapter 9: Kids and early start",
+      "Chapter 10: Homeostatis of identity",
+      "Chapter 11: Build a practice week",
+      "Chapter 12: Peak lifetime"
+    ],
+    "questions": [
+      {
+        "id": "27eb65fc-bebc-4e01-8b11-e69a3b2154c1",
+        "question_text": "What characterizes deliberate practice?",
+        "option_a": "Mindless repetition of easy skills",
+        "option_b": "Stretch goals, focus, feedback, and refined repetition",
+        "option_c": "Only playing for fun forever",
+        "option_d": "Avoiding coaches",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "9bd54c10-98d6-4ccc-a531-a2030a06e5c0",
+        "question_text": "What are mental representations?",
+        "option_a": "Random daydreams",
+        "option_b": "Expert pattern models that compress complexity",
+        "option_c": "Only photographic memory myths",
+        "option_d": "Ignoring structure",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "695f8b63-067b-4be1-bc24-2c824660959e",
+        "question_text": "What does Peak say about prodigies?",
+        "option_a": "Only born genius matters",
+        "option_b": "Early advantage is largely accumulated structured practice \u2014 greatness is grown",
+        "option_c": "Practice never matters",
+        "option_d": "Skip all coaching",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "4bd63f8b-09ae-4532-bf37-5db76b347142",
+        "question_text": "How handle plateaus?",
+        "option_a": "Only grind the same error harder blindly",
+        "option_b": "Redesign drills and challenges to update representations",
+        "option_c": "Quit permanently",
+        "option_d": "Avoid feedback",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "51423d71-cfd9-4ad5-8995-dc66e8c91870",
+        "question_text": "10,000 hours slogan?",
+        "option_a": "Exact magic number for all domains always",
+        "option_b": "Oversimplifies \u2014 quality, coaching, and structure matter more than raw hours",
+        "option_c": "Hours are irrelevant always",
+        "option_d": "Only weekends count",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "de8a3115-c72f-4186-8a96-d230e5f83a96",
+    "title": "Man's Search for Meaning",
+    "duration_minutes": 31,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780807014295-L.jpg",
+    "short_description": "Viktor Frankl\u2019s Holocaust memoir and logotherapy \u2014 finding meaning even in suffering, and freedom in choosing one\u2019s attitude.",
+    "chapter_titles": [
+      "Chapter 1: The camp and the question",
+      "Chapter 2: Everything can be taken\u2026",
+      "Chapter 3: Logotherapy in brief",
+      "Chapter 4: The existential vacuum",
+      "Chapter 5: Meaning of the moment",
+      "Chapter 6: Love as meaning",
+      "Chapter 7: Suffering with purpose",
+      "Chapter 8: Conscience and uniqueness",
+      "Chapter 9: Tragic optimism",
+      "Chapter 10: Freedom and responsibility",
+      "Chapter 11: Applying logotherapy lightly",
+      "Chapter 12: Live as if"
+    ],
+    "questions": [
+      {
+        "id": "5968751f-c1c2-4d03-b8ca-edab9ae4d831",
+        "question_text": "What freedom does Frankl emphasize even in extremes?",
+        "option_a": "Freedom to escape any camp at will",
+        "option_b": "Freedom to choose one\u2019s attitude and response",
+        "option_c": "Freedom from all responsibility",
+        "option_d": "Freedom to seek suffering",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "67683364-64a0-465c-bf5e-f7f090aa7a67",
+        "question_text": "What is logotherapy primarily concerned with?",
+        "option_a": "Pleasure maximization only",
+        "option_b": "Helping people find meaning",
+        "option_c": "Ignore suffering always",
+        "option_d": "Power over others",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "5b3897d6-24e3-41e4-ae62-f414a9971d14",
+        "question_text": "When is suffering meaningfully engaged in Frankl\u2019s sense?",
+        "option_a": "Always seek maximal pain",
+        "option_b": "When unavoidable \u2014 seek dignity/meaning; when avoidable, change the cause",
+        "option_c": "Never feel pain",
+        "option_d": "Only pretend positivity",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "7dba9cbf-1e31-40f1-88fb-c66a63ad77bb",
+        "question_text": "What is the existential vacuum?",
+        "option_a": "A physical machine",
+        "option_b": "Emptiness and boredom when meaning is lacking, often filled poorly by stimulation",
+        "option_c": "Too much meaning",
+        "option_d": "Only a camp condition",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "f3900814-4921-4f8f-acbe-d3deed3e727b",
+        "question_text": "What does tragic optimism include?",
+        "option_a": "Denying pain exists",
+        "option_b": "Facing pain, guilt, and death honestly while still saying yes to meaning",
+        "option_c": "Nihilism only",
+        "option_d": "Avoiding all responsibility",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "47d5adbf-885a-455c-ac56-bd72be837c45",
+    "title": "Breath",
+    "duration_minutes": 30,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780735213616-L.jpg",
+    "short_description": "James Nestor on how we breathe \u2014 nose vs mouth, CO2, ancient techniques, and why breathing is a missing pillar of health.",
+    "chapter_titles": [
+      "Chapter 1: The forgotten organ of focus",
+      "Chapter 2: Nose vs mouth",
+      "Chapter 3: The chemistry of calm",
+      "Chapter 4: Ancient techniques, modern labs",
+      "Chapter 5: Mouth, face, and sleep",
+      "Chapter 6: Chewing, soft food, and airways",
+      "Chapter 7: Overbreathing culture",
+      "Chapter 8: Breath as athletic fuel",
+      "Chapter 9: Emotional regulation tool",
+      "Chapter 10: Environment and posture",
+      "Chapter 11: Build a breath stack",
+      "Chapter 12: Breathe like it matters"
+    ],
+    "questions": [
+      {
+        "id": "ad318416-223a-468d-a5b4-f66037affd66",
+        "question_text": "What breathing default does Breath emphasize for most daily life?",
+        "option_a": "Chronic mouth breathing",
+        "option_b": "Nasal breathing when safe",
+        "option_c": "Only holding breath all day",
+        "option_d": "Hyperventilating for energy",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "93390014-a271-4d3e-a85a-89392ead8d75",
+        "question_text": "Why does CO2 matter in Nestor\u2019s framing?",
+        "option_a": "It is irrelevant to calm",
+        "option_b": "Breath chemistry and comfort relate partly to carbon dioxide balance; overbreathing can worsen air hunger",
+        "option_c": "More breathing is always better",
+        "option_d": "Only oxygen counts",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "e848d34e-9b6e-4726-9ef0-e6c9b591b914",
+        "question_text": "What should you do if you suspect sleep apnea?",
+        "option_a": "Ignore it",
+        "option_b": "Seek medical evaluation \u2014 summaries are not diagnoses",
+        "option_c": "Only breathe through the mouth harder",
+        "option_d": "Stop sleeping",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "844027b1-329c-4130-95cf-d3d903ec698b",
+        "question_text": "What is a practical daily approach?",
+        "option_a": "Exotic technique hopping every hour",
+        "option_b": "A simple morning\u2013midday\u2013night breath stack with tracking",
+        "option_c": "Never practice when calm",
+        "option_d": "Only breathe at races",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "9cd1916a-642b-4d05-a9b4-82cc034d0ad5",
+        "question_text": "For easy athletic work, what does the summary suggest?",
+        "option_a": "Always mouth-breathe maximally",
+        "option_b": "Train nasal breathing in easy zones; mouth when intensity demands",
+        "option_c": "Hold breath while running always",
+        "option_d": "Avoid all cardio",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

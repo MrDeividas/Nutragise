@@ -11,7 +11,7 @@ export interface UserWallet {
 export interface WalletTransaction {
   id: string;
   wallet_id: string;
-  type: 'deposit' | 'challenge_payment' | 'refund' | 'payout' | 'fee';
+  type: 'deposit' | 'challenge_payment' | 'refund' | 'payout' | 'fee' | 'withdrawal';
   amount: number;
   stripe_payment_intent_id?: string;
   challenge_id?: string;

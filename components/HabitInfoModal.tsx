@@ -51,7 +51,8 @@ const habitConfig = {
     icon: 'barbell',
     fields: [
       { key: 'gym_training_types', label: 'Training Types', format: (value: string[]) => value?.join(', ') || 'None selected' },
-      { key: 'gym_custom_type', label: 'Custom Type', format: (value: string) => value || 'None' }
+      { key: 'gym_custom_type', label: 'Custom Type', format: (value: string) => value || 'None' },
+      { key: 'gym_duration', label: 'Duration', format: (value: string) => value || 'Not recorded' },
     ]
   },
   reflect: {

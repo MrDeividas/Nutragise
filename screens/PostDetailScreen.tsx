@@ -154,7 +154,7 @@ export default function PostDetailScreen() {
 
         {loading ? (
           <View style={styles.centered}>
-            <ActivityIndicator size="large" color={theme.primary} />
+            <ActivityIndicator size="large" color={"#1f2937"} />
           </View>
         ) : !post ? (
           <View style={styles.centered}>

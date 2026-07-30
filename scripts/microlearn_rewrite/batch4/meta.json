@@ -1,0 +1,367 @@
+[
+  {
+    "id": "4e5d7b33-6759-445b-8813-3be78f50a740",
+    "title": "Why We Sleep",
+    "duration_minutes": 32,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781501144318-L.jpg",
+    "short_description": "Matthew Walker\u2019s science of sleep \u2014 why it matters for health, learning, emotion, and longevity.",
+    "chapter_titles": [
+      "Chapter 1: Sleep or else",
+      "Chapter 2: Two worlds of sleep",
+      "Chapter 3: Learning while you sleep",
+      "Chapter 4: Emotion and the tired brain",
+      "Chapter 5: Body systems on the line",
+      "Chapter 6: Caffeine\u2019s half-life",
+      "Chapter 7: Alcohol and so-called sleep",
+      "Chapter 8: Light, temperature, and timing",
+      "Chapter 9: Kids, schools, and sleep",
+      "Chapter 10: Sleep myths and aids",
+      "Chapter 11: Minimum viable night",
+      "Chapter 12: Sleep as competitive edge"
+    ],
+    "questions": [
+      {
+        "id": "02aea97f-3f16-4695-a692-008a401b278a",
+        "question_text": "What is Walker\u2019s core claim?",
+        "option_a": "Sleep is optional for high performers",
+        "option_b": "Sleep is essential biological maintenance for brain and body",
+        "option_c": "Only REM matters",
+        "option_d": "Caffeine replaces sleep",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "7bff0781-e454-4335-b26d-6b0ed811d6a2",
+        "question_text": "Why do NREM and REM both matter?",
+        "option_a": "They do identical jobs",
+        "option_b": "Different stages support different restoration, memory, and emotional processes",
+        "option_c": "Only total hours matter, never stages",
+        "option_d": "REM is harmful",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "e52ea68f-3bcd-4ea3-8e91-8c366ff3a17b",
+        "question_text": "How can caffeine hurt sleep?",
+        "option_a": "It never lasts past thirty minutes",
+        "option_b": "It can linger for hours and fragment night sleep",
+        "option_c": "It always improves deep sleep",
+        "option_d": "It only affects taste",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "294a9a6a-1a44-4c37-b23d-0232845f7671",
+        "question_text": "What is a problem with alcohol and sleep?",
+        "option_a": "Alcohol creates perfect REM",
+        "option_b": "Sedation is not the same as restorative sleep architecture",
+        "option_c": "Alcohol has no sleep effect",
+        "option_d": "Late drinking always helps learning",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "29779884-41fb-4dc9-a5d2-26962c045fbb",
+        "question_text": "What circadian tip is emphasized?",
+        "option_a": "Bright screens late help sleep",
+        "option_b": "Morning light and dim cool nights support the body clock",
+        "option_c": "Ignore timing entirely",
+        "option_d": "Vary bedtime wildly each day",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "8290993e-92c6-46c1-a36c-6f4c5c5fc63d",
+    "title": "So Good They Can't Ignore You",
+    "duration_minutes": 28,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781455509126-L.jpg",
+    "short_description": "Cal Newport\u2019s craft-skills career advice \u2014 skip passion-first, build rare skills, and turn capital into control.",
+    "chapter_titles": [
+      "Chapter 1: Passion is not a plan",
+      "Chapter 2: Craftsman vs passion mindset",
+      "Chapter 3: Career capital",
+      "Chapter 4: Deliberate practice",
+      "Chapter 5: Control trap",
+      "Chapter 6: Avoiding the dream job trap",
+      "Chapter 7: Mission after capital",
+      "Chapter 8: Remarkable work signals",
+      "Chapter 9: Right projects",
+      "Chapter 10: Mentors and scenes",
+      "Chapter 11: Autonomy ladders",
+      "Chapter 12: Ignore-proof plan"
+    ],
+    "questions": [
+      {
+        "id": "8f9f4f1f-a672-4cfa-9e79-fdf056652e89",
+        "question_text": "What does Newport argue about passion?",
+        "option_a": "Always follow passion before any skill",
+        "option_b": "Passion often follows mastery and rare skills more than it leads",
+        "option_c": "Skills never matter",
+        "option_d": "Ignore all markets",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "56e67e85-fcc0-4316-bb97-6610fcbd3aa2",
+        "question_text": "What is career capital?",
+        "option_a": "Only cash savings",
+        "option_b": "Rare, valuable skills that buy leverage",
+        "option_c": "Job titles alone",
+        "option_d": "Social media followers only",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "d1b3d2fa-42c2-48e8-8587-2e7910a8a0f5",
+        "question_text": "Craftsman mindset focuses on?",
+        "option_a": "What the world owes your feelings",
+        "option_b": "Becoming so good they can\u2019t ignore you \u2014 what you offer",
+        "option_c": "Quitting whenever bored",
+        "option_d": "Avoiding feedback",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "0cbc7380-b9d4-4b80-9803-705a27f1e3a7",
+        "question_text": "When to push for control?",
+        "option_a": "Before any skills",
+        "option_b": "After earning career capital that gives leverage",
+        "option_c": "Never",
+        "option_d": "Only via complaining",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "da0a34c2-3c4b-45e0-bd4d-9b663f5464d8",
+        "question_text": "How does capital grow fastest?",
+        "option_a": "Autopilot comfort loops",
+        "option_b": "Deliberate practice with stretch goals and feedback",
+        "option_c": "Only networking parties",
+        "option_d": "Avoiding shipping",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "f76a6ca9-fd32-4928-869d-700748aa8fe7",
+    "title": "Start With Why",
+    "duration_minutes": 28,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781591846444-L.jpg",
+    "short_description": "Simon Sinek\u2019s Golden Circle \u2014 great leaders inspire action by starting with why, then how, then what.",
+    "chapter_titles": [
+      "Chapter 1: Golden Circle",
+      "Chapter 2: Buy why",
+      "Chapter 3: Diffusion",
+      "Chapter 4: Clarity discipline consistency",
+      "Chapter 5: Manipulation vs inspiration",
+      "Chapter 6: Finding why",
+      "Chapter 7: Hows as rules",
+      "Chapter 8: Hiring",
+      "Chapter 9: Scale",
+      "Chapter 10: Careers",
+      "Chapter 11: Communication drill",
+      "Chapter 12: Keep it true"
+    ],
+    "questions": [
+      {
+        "id": "1f3db741-a73a-41c0-bca3-340c6468bf24",
+        "question_text": "Golden Circle order?",
+        "option_a": "What \u2192 How \u2192 Why",
+        "option_b": "Why \u2192 How \u2192 What",
+        "option_c": "How only",
+        "option_d": "Price \u2192 Fear",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "10738a86-7e7b-4d9c-b410-fd7838720d8a",
+        "question_text": "People buy into?",
+        "option_a": "Only lowest price always",
+        "option_b": "Why you do it \u2014 shared beliefs \u2014 then what",
+        "option_c": "Random features",
+        "option_d": "Fear only",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "a0da4105-f184-43df-a2a6-909a3378a54d",
+        "question_text": "Manipulation vs inspiration?",
+        "option_a": "Identical",
+        "option_b": "Manipulation for short transactions; inspiration for lasting loyalty",
+        "option_c": "Inspiration never sells",
+        "option_d": "Only discounts inspire",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "451c0746-6ae6-463f-b755-03168c7efceb",
+        "question_text": "Hows are?",
+        "option_a": "Ignored niceties",
+        "option_b": "Values/methods that enact why in decisions",
+        "option_c": "Fonts",
+        "option_d": "Competitor copy",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "d1a828c3-5769-4a37-ae09-0ead0a41ee1a",
+        "question_text": "Win first?",
+        "option_a": "Most skeptical mass market day one",
+        "option_b": "Early believers who share why",
+        "option_c": "No one",
+        "option_d": "Only bots",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "07c2fe5f-75f2-460d-bc37-6fe4d41f6d3d",
+    "title": "The Daily Stoic",
+    "duration_minutes": 27,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9780735211735-L.jpg",
+    "short_description": "A year of Stoic meditations \u2014 clarity, action, and acceptance drawn from Marcus, Epictetus, and Seneca.",
+    "chapter_titles": [
+      "Chapter 1: A page a day",
+      "Chapter 2: Discipline of perception",
+      "Chapter 3: Discipline of action",
+      "Chapter 4: Discipline of will",
+      "Chapter 5: Memento mori",
+      "Chapter 6: Control inventory",
+      "Chapter 7: Ego and applause",
+      "Chapter 8: Social stoicism",
+      "Chapter 9: Anger costs",
+      "Chapter 10: Study and stillness",
+      "Chapter 11: Failure curriculum",
+      "Chapter 12: A year of character"
+    ],
+    "questions": [
+      {
+        "id": "792e5a73-f0db-49d3-87ac-cb6eb6679bc8",
+        "question_text": "What is The Daily Stoic for?",
+        "option_a": "One binge only",
+        "option_b": "Daily practice of Stoic ideas across a year",
+        "option_c": "Numbing all emotion forever",
+        "option_d": "Online arguing",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "90dbd21e-a052-4225-b178-b34b1500d3cc",
+        "question_text": "Which three disciplines are emphasized?",
+        "option_a": "Fame, money, status",
+        "option_b": "Perception, action, and will",
+        "option_c": "Snacks, naps, scrolling",
+        "option_d": "Only retreats",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "377ecd55-8c4d-4284-aa95-6eff07f13c94",
+        "question_text": "How treat applause and insults?",
+        "option_a": "Let them own you",
+        "option_b": "Work to standard; treat both as weather",
+        "option_c": "Chase applause only",
+        "option_d": "Reply to every insult instantly",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "432ffb61-2552-4de8-a12a-71284774e1b6",
+        "question_text": "What is the control inventory?",
+        "option_a": "Control everyone",
+        "option_b": "Invest in what is up to you; release what is not",
+        "option_c": "Never act",
+        "option_d": "Only worry outcomes",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "3da1807c-2683-41e0-8427-5ebec38cc356",
+        "question_text": "After a miss you should?",
+        "option_a": "Declare permanent failure",
+        "option_b": "Begin again next moment with correction, not self-hatred",
+        "option_c": "Quit the year",
+        "option_d": "Ignore ethics",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  },
+  {
+    "id": "8c59fc60-fa2d-47c5-878e-9dde413e166b",
+    "title": "Discipline Equals Freedom",
+    "duration_minutes": 26,
+    "cover_image_url": "https://covers.openlibrary.org/b/isbn/9781250156952-L.jpg",
+    "short_description": "Jocko Willink\u2019s field manual for discipline \u2014 ownership, daily standards, and freedom through structure.",
+    "chapter_titles": [
+      "Chapter 1: Freedom is on the far side of discipline",
+      "Chapter 2: Own everything you can",
+      "Chapter 3: Default: aggressive",
+      "Chapter 4: Detach, then decide",
+      "Chapter 5: Daily materials machine",
+      "Chapter 6: Do hard things now",
+      "Chapter 7: Adapt when broken",
+      "Chapter 8: Language and attention",
+      "Chapter 9: Lead with standards",
+      "Chapter 10: Walk toward fear",
+      "Chapter 11: Sustain for decades",
+      "Chapter 12: Build freedom tonight"
+    ],
+    "questions": [
+      {
+        "id": "de7b428a-e7fc-4349-9030-29acebcecb7f",
+        "question_text": "What does discipline equals freedom mean?",
+        "option_a": "Avoid all constraints",
+        "option_b": "Chosen constraints create more real options later",
+        "option_c": "Never train",
+        "option_d": "Only military people need discipline",
+        "correct_answer": "B",
+        "question_order": 1
+      },
+      {
+        "id": "acbc704e-44e9-4985-a4cf-140fc874b2e6",
+        "question_text": "What is default aggressive here?",
+        "option_a": "Cruelty",
+        "option_b": "Bias toward mission-focused action on problems",
+        "option_c": "No planning",
+        "option_d": "Yelling",
+        "correct_answer": "B",
+        "question_order": 2
+      },
+      {
+        "id": "a0310476-9c77-4c0b-bc2d-faf165be68e8",
+        "question_text": "Which daily materials matter most in the book\u2019s ethos?",
+        "option_a": "Only social media",
+        "option_b": "Sleep, training, nutrition, focused work",
+        "option_c": "Skipping sleep forever",
+        "option_d": "Ignoring the body",
+        "correct_answer": "B",
+        "question_order": 3
+      },
+      {
+        "id": "b70f4140-7803-4f09-9ab4-f0a596e61b73",
+        "question_text": "How should you treat ownership?",
+        "option_a": "Blame first",
+        "option_b": "Own responses and fixes to keep power",
+        "option_c": "Never debrief",
+        "option_d": "Avoid apologies",
+        "correct_answer": "B",
+        "question_order": 4
+      },
+      {
+        "id": "4c428274-5d1d-487a-8eeb-deffc13ab619",
+        "question_text": "What sustains discipline?",
+        "option_a": "One heroic weekend",
+        "option_b": "Sustainable rituals, deloads, and fast returns after disruption",
+        "option_c": "Endless all-nighters",
+        "option_d": "Dropping standards after a win",
+        "correct_answer": "B",
+        "question_order": 5
+      }
+    ]
+  }
+]

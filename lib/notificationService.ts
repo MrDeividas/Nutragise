@@ -330,14 +330,15 @@ class NotificationService {
     }
   }
 
-  // Get unread notification count
+  // Get unread notification count (habit rewards are history, not badge alerts)
   async getUnreadCount(userId: string): Promise<number> {
     try {
       const { count, error } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .neq('notification_type', 'habit_reward');
 
       if (error) {
         console.error('Error fetching unread count:', error);
@@ -605,6 +606,7 @@ class NotificationService {
           pillar_type: data.pillar_type,
           pillar_progress: data.pillar_progress,
           habit_type: data.habit_type,
+          is_read: true, // history feed only — never badge
         });
 
       if (error) {

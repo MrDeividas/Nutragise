@@ -13,7 +13,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSpring,
   runOnJS,
   Easing,
 } from 'react-native-reanimated';
@@ -39,6 +38,8 @@ function bannerIcon(type: string): keyof typeof Ionicons.glyphMap {
       return 'hand-left';
     case 'follow':
       return 'person-add';
+    case 'achievement_unlocked':
+      return 'trophy';
     default:
       return 'notifications';
   }
@@ -54,14 +55,17 @@ export default function InAppNotificationBanner({ onPressBanner }: Props) {
 
   useEffect(() => {
     if (banner) {
-      translateY.value = withSpring(0, { damping: 18, stiffness: 180 });
-      opacity.value = withTiming(1, { duration: 180 });
+      translateY.value = withTiming(0, {
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+      });
+      opacity.value = withTiming(1, { duration: 220 });
     } else {
       translateY.value = withTiming(-140, {
-        duration: 220,
+        duration: 260,
         easing: Easing.in(Easing.cubic),
       });
-      opacity.value = withTiming(0, { duration: 180 });
+      opacity.value = withTiming(0, { duration: 200 });
     }
   }, [banner?.id]);
 
@@ -78,12 +82,18 @@ export default function InAppNotificationBanner({ onPressBanner }: Props) {
     })
     .onEnd((e) => {
       if (e.translationY < -40 || e.velocityY < -500) {
-        translateY.value = withTiming(-140, { duration: 180 });
-        opacity.value = withTiming(0, { duration: 160 }, () => {
+        translateY.value = withTiming(-140, {
+          duration: 220,
+          easing: Easing.in(Easing.cubic),
+        });
+        opacity.value = withTiming(0, { duration: 180 }, () => {
           runOnJS(hideBanner)();
         });
       } else {
-        translateY.value = withSpring(0, { damping: 18, stiffness: 180 });
+        translateY.value = withTiming(0, {
+          duration: 240,
+          easing: Easing.out(Easing.cubic),
+        });
       }
     });
 

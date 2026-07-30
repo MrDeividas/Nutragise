@@ -1,0 +1,12 @@
+---
+description: Always run Supabase migrations/SQL via MCP when created
+alwaysApply: true
+---
+
+# Supabase access
+
+This project has live Supabase MCP access (`user-nurtragise`).
+
+- When you create or change a SQL migration/script, **run it** with `apply_migration` (or `execute_sql` for one-off queries) — do not only leave the file on disk.
+- Prefer applying remote changes after writing the matching file under `supabase/migrations/`.
+- Use MCP for schema checks, advisors, and debugging when relevant.

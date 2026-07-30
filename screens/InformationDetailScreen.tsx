@@ -7,16 +7,20 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import RenderHtml from 'react-native-render-html';
+import { ensureMicrolearnStart, getMicrolearnLimitHint } from '../lib/microlearnAccess';
+import UpgradeToProModal from '../components/UpgradeToProModal';
+
+const DARK = '#1f2937';
+const PAGE_BG = '#F8F9FB';
 
 export default function InformationDetailScreen({ route, navigation }: any) {
-  const { theme } = useTheme();
   const { user } = useAuthStore();
   const { information } = route.params;
 
@@ -29,6 +33,13 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   const [userAnswers, setUserAnswers] = useState<{[key: string]: string}>({});
   const [loading, setLoading] = useState(true);
   const [quizLoading, setQuizLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [limitHint, setLimitHint] = useState(
+    '1 microlearn per day · Level 3 unlocks 2 · Level 5 unlocks 3 · Pro is unlimited'
+  );
   const [userProgress, setUserProgress] = useState<{
     hasCompleted: boolean;
     passed: boolean;
@@ -46,10 +57,18 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   const [loadingAnswers, setLoadingAnswers] = useState(false);
 
   // Book/Lesson state
-  const isBook = memoizedInformation.category === 'Books' || memoizedInformation.is_book;
+  const isLessonContent =
+    memoizedInformation.category === 'Books' ||
+    memoizedInformation.category === 'Core Habits' ||
+    memoizedInformation.is_book;
+  const isBook = isLessonContent;
   const [lessons, setLessons] = useState<any[]>([]);
   const [currentLessonIndex, setCurrentLessonIndex] = useState(0);
   const pageScrollViewRef = useRef<any>(null);
+  const lessonScrollViewRef = useRef<ScrollView>(null);
+  const [lessonScrollProgress, setLessonScrollProgress] = useState(0);
+  const [lessonContentHeight, setLessonContentHeight] = useState(0);
+  const [lessonViewportHeight, setLessonViewportHeight] = useState(0);
 
   // Parse lessons from book content
   const parseLessons = () => {
@@ -85,19 +104,23 @@ export default function InformationDetailScreen({ route, navigation }: any) {
       const part2Title = part2Content.match(/<h1>(PART 2[^<]*)<\/h1>/)?.[1]?.trim() || 'Part 2';
       const part2Subtitle = part2Content.match(/<h2>([^<]+)<\/h2>/)?.[1]?.trim() || '';
       
-      // Find all h3 sections
-      const h3Matches = part2Content.match(/<h3>[^<]+<\/h3>/g);
+      // Split Part 2 into sequential h3 sections (avoid indexOf so duplicate titles stay distinct)
+      const h3Regex = /<h3>[^<]+<\/h3>/g;
+      const h3Matches: { match: string; index: number }[] = [];
+      let h3Match: RegExpExecArray | null;
+      while ((h3Match = h3Regex.exec(part2Content)) !== null) {
+        h3Matches.push({ match: h3Match[0], index: h3Match.index });
+      }
       
-      if (h3Matches && h3Matches.length > 0) {
-        h3Matches.forEach((match: string, index: number) => {
-          const sectionStart = part2Content.indexOf(match);
-          const nextMatch = index < h3Matches.length - 1 ? h3Matches[index + 1] : null;
-          const sectionEnd = nextMatch 
-            ? part2Content.indexOf(nextMatch, sectionStart + 1)
+      if (h3Matches.length > 0) {
+        h3Matches.forEach((entry, index) => {
+          const sectionStart = entry.index;
+          const sectionEnd = index < h3Matches.length - 1
+            ? h3Matches[index + 1].index
             : part2Content.length;
           
           const sectionContent = part2Content.substring(sectionStart, sectionEnd);
-          const sectionTitle = match.match(/<h3>([^<]+)<\/h3>/)?.[1]?.trim() || `Section ${index + 1}`;
+          const sectionTitle = entry.match.match(/<h3>([^<]+)<\/h3>/)?.[1]?.trim() || `Section ${index + 1}`;
           
           // Include Part 2 header on first section only
           const fullContent = index === 0 
@@ -126,8 +149,11 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     return lessons;
   };
 
-  // Auto-scroll to center the active page dot
+  // Auto-scroll page dots to center the active page, and reset reading scroll to top
   useEffect(() => {
+    lessonScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    setLessonScrollProgress(0);
+
     if (pageScrollViewRef.current && lessons.length > 0) {
       // Small delay to ensure ScrollView is rendered
       setTimeout(() => {
@@ -160,47 +186,41 @@ export default function InformationDetailScreen({ route, navigation }: any) {
 
   // Optimized initialization - move heavy operations to background
   useEffect(() => {
-    // Set initial loading state immediately
     setLoading(true);
-    
-    // Parse lessons if it's a book
+
     if (isBook) {
-      const parsedLessons = parseLessons();
-      setLessons(parsedLessons);
-      // If no preview needed, go straight to reading
-      if (parsedLessons.length === 0) {
-        setCurrentStep('reading');
-      }
-    } else {
-      setCurrentStep('reading');
+      setLessons(parseLessons());
     }
-    
-    // Use setTimeout to move heavy operations to next tick
+
+    // Always land on preview first. Auto-enter reading only after access check
+    // (non-books / books with no parseable lessons), so free-tier limits apply.
     const timer = setTimeout(() => {
       const initializeScreen = async () => {
         try {
-          // Run operations in parallel for better performance
-          const [questionsResult, progressResult] = await Promise.allSettled([
+          const [, progress] = await Promise.all([
             fetchQuestions(),
-            checkUserProgress()
+            checkUserProgress(),
           ]);
-          
-          // Handle results independently
-          if (questionsResult.status === 'fulfilled') {
-            // Questions already handled in fetchQuestions
-          }
-          
-          if (progressResult.status === 'fulfilled') {
-            // Progress already handled in checkUserProgress
+          setLimitHint(await getMicrolearnLimitHint(user?.id));
+
+          const parsed = isBook ? parseLessons() : [];
+          const shouldAutoEnter = !isBook || parsed.length === 0;
+
+          if (shouldAutoEnter) {
+            if (progress?.hasStarted) {
+              setCurrentStep('reading');
+            } else {
+              await enterReading({ silentLimit: true });
+            }
           }
         } catch (error) {
           console.error('Error during initialization:', error);
         }
       };
-      
+
       initializeScreen();
     }, 0);
-    
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -255,8 +275,8 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     }
   };
 
-  const checkUserProgress = async () => {
-    if (!user) return;
+  const checkUserProgress = async (): Promise<{ hasStarted: boolean; hasCompleted: boolean } | null> => {
+    if (!user) return null;
 
     try {
       const { data, error } = await supabase
@@ -264,22 +284,61 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         .select('*')
         .eq('user_id', user.id)
         .eq('information_id', memoizedInformation.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      if (error && error.code !== 'PGRST116') {
         throw error;
       }
 
       if (data) {
+        const started = !!(data.started_at || data.id);
+        setHasStarted(started);
+        setStartedAt(data.started_at || data.created_at || null);
         setUserProgress({
-          hasCompleted: true,
-          passed: data.passed,
-          score: data.score_percentage,
-          attempts_count: data.attempts_count || 0
+          hasCompleted: !!data.completed,
+          passed: !!data.passed,
+          score: data.score_percentage || 0,
+          attempts_count: data.attempts_count || 0,
         });
+        return { hasStarted: started, hasCompleted: !!data.completed };
       }
+
+      setHasStarted(false);
+      setStartedAt(null);
+      return { hasStarted: false, hasCompleted: false };
     } catch (error) {
       console.error('Error checking user progress:', error);
+      return null;
+    }
+  };
+
+  const enterReading = async (opts?: { silentLimit?: boolean }) => {
+    if (!user) {
+      Alert.alert('Sign in required', 'You must be logged in to start a microlearn.');
+      return false;
+    }
+
+    setStarting(true);
+    try {
+      const result = await ensureMicrolearnStart(user.id, memoizedInformation.id);
+      if (!result.allowed) {
+        if (result.reason === 'daily_limit') {
+          // Open shared Pro modal on explicit Start; stay on preview for silent auto-enter
+          if (!opts?.silentLimit) {
+            setShowUpgradeModal(true);
+          }
+        } else if (!opts?.silentLimit) {
+          Alert.alert('Unable to start', result.message);
+        }
+        return false;
+      }
+
+      setHasStarted(true);
+      if (!startedAt) setStartedAt(new Date().toISOString());
+      setCurrentStep('reading');
+      return true;
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -312,8 +371,9 @@ export default function InformationDetailScreen({ route, navigation }: any) {
       const { correct, percentage } = calculateScore();
       const isPassed = percentage >= 80; // 4/5 or 5/5 = pass
 
-      // Save user progress (removed points_earned)
+      // Save user progress — keep started_at so free users can always reopen this item
       if (user) {
+        const now = new Date().toISOString();
         const { error } = await supabase
           .from('user_progress')
           .upsert({
@@ -323,11 +383,12 @@ export default function InformationDetailScreen({ route, navigation }: any) {
             passed: isPassed,
             score_percentage: percentage,
             correct_answers: correct,
-            user_answers: userAnswers, // Save the actual user answers
-            completed_at: new Date().toISOString(),
-            attempts_count: (userProgress.attempts_count || 0) + 1, // Increment attempts
+            user_answers: userAnswers,
+            completed_at: now,
+            started_at: startedAt || now,
+            attempts_count: (userProgress.attempts_count || 0) + 1,
           }, {
-            onConflict: 'user_id,information_id' // Specify the conflict resolution
+            onConflict: 'user_id,information_id'
           });
 
         if (error) throw error;
@@ -392,51 +453,77 @@ export default function InformationDetailScreen({ route, navigation }: any) {
 
   const renderPreview = () => {
     const bookLessons = parseLessons();
-    
+    const coverUri = memoizedInformation.cover_image_url || null;
+    const description =
+      memoizedInformation.short_description ||
+      `${memoizedInformation.duration_minutes || 15}-minute summary of key ideas from ${memoizedInformation.title}.`;
+
     return (
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.previewContainer}>
-          <View style={styles.previewHeader}>
-            <Text style={[styles.previewTitle, { color: theme.textPrimary }]}>
-              {memoizedInformation.title}
-            </Text>
-            <Text style={[styles.previewSubtitle, { color: theme.textSecondary }]}>
-              {memoizedInformation.duration_minutes} min read
-            </Text>
-          </View>
-
-          <View style={styles.previewDescription}>
-            <Text style={[styles.previewDescriptionText, { color: theme.textPrimary }]}>
-              A comprehensive guide to financial literacy and wealth building. Learn the fundamental principles that separate the rich from the poor and discover how to make money work for you.
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.startReadingButton, { backgroundColor: theme.primary }]}
-            onPress={() => setCurrentStep('reading')}
-          >
-            <Text style={styles.startReadingButtonText}>Start Reading</Text>
-            <Ionicons name="arrow-forward" size={20} color="white" />
-          </TouchableOpacity>
-
-          {bookLessons.length > 0 && (
-            <View style={styles.lessonsPreview}>
-              <Text style={[styles.lessonsPreviewTitle, { color: theme.textPrimary }]}>
-                Pages
-              </Text>
-              {bookLessons.map((lesson, index) => (
-                <View key={lesson.id} style={styles.lessonPreviewItem}>
-                  <Text style={[styles.lessonPreviewNumber, { color: theme.primary }]}>
-                    {index + 1}
-                  </Text>
-                  <Text style={[styles.lessonPreviewTitle, { color: theme.textPrimary }]}>
-                    {lesson.title}
-                  </Text>
-                </View>
-              ))}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPad}>
+        <View style={styles.previewCard}>
+          {coverUri ? (
+            <View style={styles.coverWrap}>
+              <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+            </View>
+          ) : (
+            <View style={styles.coverPlaceholder}>
+              <Ionicons name="book-outline" size={28} color="#FFFFFF" />
             </View>
           )}
+          <Text style={styles.previewTitle}>{memoizedInformation.title}</Text>
+          <Text style={styles.previewSubtitle}>
+            {memoizedInformation.duration_minutes} min read
+            {memoizedInformation.category ? ` · ${memoizedInformation.category}` : ''}
+          </Text>
+          <Text style={styles.previewDescriptionText}>
+            {description}
+          </Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, starting && styles.disabledButton]}
+            onPress={() => enterReading()}
+            disabled={starting}
+            activeOpacity={0.88}
+          >
+            {starting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.primaryBtnText}>
+                  {hasStarted || userProgress.hasCompleted ? 'Continue Reading' : 'Start Reading'}
+                </Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </>
+            )}
+          </TouchableOpacity>
+          {!hasStarted && !userProgress.hasCompleted && (
+            <Text style={styles.limitHint}>
+              {limitHint} · Started items stay unlocked
+            </Text>
+          )}
         </View>
+
+        {bookLessons.length > 0 && (
+          <View style={styles.previewCard}>
+            <Text style={styles.cardLabel}>Pages</Text>
+            {bookLessons.map((lesson, index) => (
+              <View
+                key={lesson.id}
+                style={[
+                  styles.lessonPreviewItem,
+                  index === bookLessons.length - 1 && { marginBottom: 0 },
+                ]}
+              >
+                <View style={styles.lessonPreviewNumberWrap}>
+                  <Text style={styles.lessonPreviewNumber}>{index + 1}</Text>
+                </View>
+                <Text style={styles.lessonPreviewTitle} numberOfLines={2}>
+                  {lesson.title}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
     );
   };
@@ -446,41 +533,83 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     if (isBook && lessons.length > 0) {
       const currentLesson = lessons[currentLessonIndex];
       
+      const canScrollLesson = lessonContentHeight > lessonViewportHeight + 8;
+      const thumbHeight = canScrollLesson
+        ? Math.max(28, (lessonViewportHeight / lessonContentHeight) * lessonViewportHeight)
+        : lessonViewportHeight;
+      const thumbTravel = Math.max(lessonViewportHeight - thumbHeight, 0);
+      const thumbOffset = lessonScrollProgress * thumbTravel;
+
       return (
         <View style={styles.content}>
+          {/* Chapter reading progress (how far through this page) */}
+          <View style={styles.readProgressTrack}>
+            <View
+              style={[
+                styles.readProgressFill,
+                { width: `${Math.min(100, Math.max(0, lessonScrollProgress * 100))}%` },
+              ]}
+            />
+          </View>
+
           {/* Lesson Content */}
-          <ScrollView 
-            style={styles.lessonContent} 
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.lessonScrollContent}
-          >
-            <View style={styles.readingContainer}>
-              <RenderHtml
-                contentWidth={300}
-                source={{ html: currentLesson.content }}
-                baseStyle={{
-                  color: theme.textPrimary,
-                  fontSize: 16,
-                  lineHeight: 24,
-                }}
-                tagsStyles={{
-                  h1: { fontSize: 20, fontWeight: 'bold', marginBottom: 16, marginTop: 0 },
-                  h2: { fontSize: 18, fontWeight: '600', marginBottom: 12, marginTop: 16 },
-                  h3: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, marginTop: 14 },
-                  p: { marginBottom: 12 },
-                  ul: { marginBottom: 12, paddingLeft: 0, listStyleType: 'none' },
-                  ol: { marginBottom: 12, paddingLeft: 20 },
-                  li: { marginBottom: 4 },
-                  strong: { fontWeight: 'bold' },
-                  em: { fontStyle: 'italic' },
-                  u: { textDecorationLine: 'underline' },
-                }}
-              />
-            </View>
-          </ScrollView>
+          <View style={styles.lessonContentWrap}>
+            <ScrollView 
+              ref={lessonScrollViewRef}
+              style={styles.lessonContent} 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.lessonScrollContent}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                const maxScroll = contentSize.height - layoutMeasurement.height;
+                setLessonScrollProgress(maxScroll > 0 ? Math.min(1, Math.max(0, contentOffset.y / maxScroll)) : 1);
+              }}
+              onContentSizeChange={(_w, h) => setLessonContentHeight(h)}
+              onLayout={(e) => setLessonViewportHeight(e.nativeEvent.layout.height)}
+            >
+              <View style={styles.readingContainer}>
+                <RenderHtml
+                  contentWidth={300}
+                  source={{ html: currentLesson.content }}
+                  baseStyle={{
+                    color: DARK,
+                    fontSize: 16,
+                    lineHeight: 24,
+                  }}
+                  tagsStyles={{
+                    h1: { fontSize: 20, fontWeight: '700', marginBottom: 16, marginTop: 0, color: DARK },
+                    h2: { fontSize: 18, fontWeight: '700', marginBottom: 12, marginTop: 16, color: DARK },
+                    h3: { fontSize: 17, fontWeight: '700', marginBottom: 10, marginTop: 14, color: DARK },
+                    p: { marginBottom: 12, color: '#374151' },
+                    ul: { marginBottom: 12, paddingLeft: 0, listStyleType: 'none' },
+                    ol: { marginBottom: 12, paddingLeft: 20 },
+                    li: { marginBottom: 4, color: '#374151' },
+                    strong: { fontWeight: '700' },
+                    em: { fontStyle: 'italic' },
+                    u: { textDecorationLine: 'underline' },
+                  }}
+                />
+              </View>
+            </ScrollView>
+
+            {canScrollLesson && (
+              <View style={styles.scrollBarTrack} pointerEvents="none">
+                <View
+                  style={[
+                    styles.scrollBarThumb,
+                    {
+                      height: thumbHeight,
+                      transform: [{ translateY: thumbOffset }],
+                    },
+                  ]}
+                />
+              </View>
+            )}
+          </View>
 
           {/* Fixed Navigation at Bottom */}
-          <View style={[styles.fixedBottomNav, { backgroundColor: theme.background }]}>
+          <View style={styles.fixedBottomNav}>
             {/* Page Navigation Dots */}
             <View style={styles.pageNavigationFixed}>
               <ScrollView 
@@ -495,15 +624,13 @@ export default function InformationDetailScreen({ route, navigation }: any) {
                     style={[
                       styles.pageDot,
                       index === currentLessonIndex && styles.pageDotActive,
-                      { 
-                        backgroundColor: index === currentLessonIndex ? theme.primary : 'rgba(128, 128, 128, 0.3)',
-                      }
                     ]}
                     onPress={() => setCurrentLessonIndex(index)}
+                    activeOpacity={0.88}
                   >
                     <Text style={[
                       styles.pageDotText,
-                      { color: index === currentLessonIndex ? 'white' : theme.textSecondary }
+                      index === currentLessonIndex && styles.pageDotTextActive,
                     ]}>
                       {index + 1}
                     </Text>
@@ -516,13 +643,12 @@ export default function InformationDetailScreen({ route, navigation }: any) {
             <View style={styles.lessonActions}>
               {currentLessonIndex > 0 ? (
                 <TouchableOpacity
-                  style={[styles.lessonNavButton, { borderColor: theme.primary }]}
+                  style={styles.secondaryBtn}
                   onPress={() => setCurrentLessonIndex(currentLessonIndex - 1)}
+                  activeOpacity={0.88}
                 >
-                  <Ionicons name="arrow-back" size={20} color={theme.primary} />
-                  <Text style={[styles.lessonNavButtonText, { color: theme.primary }]}>
-                    Previous
-                  </Text>
+                  <Ionicons name="arrow-back" size={18} color={DARK} />
+                  <Text style={styles.secondaryBtnText}>Previous</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.lessonNavButtonPlaceholder} />
@@ -530,19 +656,21 @@ export default function InformationDetailScreen({ route, navigation }: any) {
               
               {currentLessonIndex < lessons.length - 1 ? (
                 <TouchableOpacity
-                  style={[styles.lessonNavButton, { backgroundColor: theme.primary }]}
+                  style={styles.primaryBtnFlex}
                   onPress={() => setCurrentLessonIndex(currentLessonIndex + 1)}
+                  activeOpacity={0.88}
                 >
-                  <Text style={styles.lessonNavButtonTextWhite}>Next</Text>
-                  <Ionicons name="arrow-forward" size={20} color="white" />
+                  <Text style={styles.primaryBtnText}>Next</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={[styles.startQuizButton, { backgroundColor: theme.primary }]}
+                  style={styles.primaryBtnFlex}
                   onPress={() => setCurrentStep('quiz')}
+                  activeOpacity={0.88}
                 >
-                  <Text style={styles.startQuizButtonText}>Start Quiz</Text>
-                  <Ionicons name="arrow-forward" size={20} color="white" />
+                  <Text style={styles.primaryBtnText}>Start Quiz</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </TouchableOpacity>
               )}
             </View>
@@ -556,33 +684,31 @@ export default function InformationDetailScreen({ route, navigation }: any) {
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.readingContainer}>
         <View style={styles.metaInfo}>
-          <Text style={[styles.duration, { color: theme.textSecondary }]}>
+          <Text style={styles.duration}>
             {memoizedInformation.duration_minutes} min read
           </Text>
-          <Text style={[styles.category, { color: theme.textTertiary }]}>
+          <Text style={styles.category}>
             {information.category || 'General'}
           </Text>
         </View>
-
-
 
         <RenderHtml
           contentWidth={300}
           source={{ html: memoizedInformation.content_text }}
           baseStyle={{
-            color: theme.textPrimary,
+            color: DARK,
             fontSize: 16,
             lineHeight: 24,
           }}
           tagsStyles={{
-            h1: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, marginTop: 20 },
-            h2: { fontSize: 20, fontWeight: 'bold', marginBottom: 12, marginTop: 16 },
-            h3: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, marginTop: 14 },
-            p: { marginBottom: 12 },
+            h1: { fontSize: 22, fontWeight: '700', marginBottom: 16, marginTop: 12, color: DARK },
+            h2: { fontSize: 18, fontWeight: '700', marginBottom: 12, marginTop: 16, color: DARK },
+            h3: { fontSize: 17, fontWeight: '700', marginBottom: 10, marginTop: 14, color: DARK },
+            p: { marginBottom: 12, color: '#374151' },
             ul: { marginBottom: 12, paddingLeft: 20 },
             ol: { marginBottom: 12, paddingLeft: 20 },
-            li: { marginBottom: 4 },
-            strong: { fontWeight: 'bold' },
+            li: { marginBottom: 4, color: '#374151' },
+            strong: { fontWeight: '700' },
             em: { fontStyle: 'italic' },
             u: { textDecorationLine: 'underline' },
           }}
@@ -592,58 +718,37 @@ export default function InformationDetailScreen({ route, navigation }: any) {
           {userProgress.hasCompleted ? (
             <>
               {userProgress.passed ? (
-                <View style={[
-                  styles.completedContainer, 
-                  { backgroundColor: 'rgba(34, 197, 94, 0.2)' }
-                ]}>
-                  <Ionicons 
-                    name="checkmark-circle" 
-                    size={24} 
-                    color="#22C55E" 
-                  />
-                  <Text style={[
-                    styles.completedText, 
-                    { color: '#22C55E' }
-                  ]}>
-                    Completed
-                  </Text>
+                <View style={[styles.statusPill, styles.statusPassed]}>
+                  <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+                  <Text style={[styles.statusPillText, { color: '#16A34A' }]}>Completed</Text>
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[
-                    styles.completedContainer, 
-                    { backgroundColor: 'rgba(239, 68, 68, 0.2)' }
-                  ]}
+                  style={[styles.statusPill, styles.statusFailed]}
                   onPress={() => setCurrentStep('quiz')}
+                  activeOpacity={0.88}
                 >
-                  <Ionicons 
-                    name="refresh" 
-                    size={24} 
-                    color="#EF4444" 
-                  />
-                  <Text style={[
-                    styles.completedText, 
-                    { color: '#EF4444' }
-                  ]}>
-                    Try Again
-                  </Text>
+                  <Ionicons name="refresh" size={20} color="#DC2626" />
+                  <Text style={[styles.statusPillText, { color: '#DC2626' }]}>Try Again</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.reviewButton, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}
+                style={styles.secondaryBtnFull}
                 onPress={() => setCurrentStep('review')}
+                activeOpacity={0.88}
               >
-                <Text style={[styles.reviewButtonText, { color: theme.textPrimary }]}>Review Questions</Text>
-                <Ionicons name="eye-outline" size={20} color={theme.textPrimary} />
+                <Text style={styles.secondaryBtnText}>Review Questions</Text>
+                <Ionicons name="eye-outline" size={18} color={DARK} />
               </TouchableOpacity>
             </>
           ) : (
             <TouchableOpacity
-              style={[styles.startQuizButton, { backgroundColor: theme.primary }]}
+              style={styles.primaryBtn}
               onPress={() => setCurrentStep('quiz')}
+              activeOpacity={0.88}
             >
-              <Text style={styles.startQuizButtonText}>Start Quiz</Text>
-              <Ionicons name="arrow-forward" size={20} color="white" />
+              <Text style={styles.primaryBtnText}>Start Quiz</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
             </TouchableOpacity>
           )}
         </View>
@@ -653,114 +758,97 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   };
 
   const renderQuiz = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.quizContainer}>
-        <Text style={[styles.quizTitle, { color: theme.textPrimary }]}>
-          Quiz: {memoizedInformation.title}
-        </Text>
-        <Text style={[styles.quizSubtitle, { color: theme.textSecondary }]}>
-          Answer all 5 questions to test your knowledge
-        </Text>
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPad}>
+      <View style={styles.quizHeaderCard}>
+        <Text style={styles.quizTitle}>Quiz: {memoizedInformation.title}</Text>
+        <Text style={styles.quizSubtitle}>Answer all 5 questions to test your knowledge</Text>
+      </View>
 
-        {questions.map((question, index) => (
-          <View key={question.id} style={styles.questionContainer}>
-            <Text style={[styles.questionNumber, { color: theme.textSecondary }]}>
-              Question {index + 1} of {questions.length}
-            </Text>
-            <Text style={[styles.questionText, { color: theme.textPrimary }]}>
-              {question.question_text}
-            </Text>
+      {questions.map((question, index) => (
+        <View key={question.id} style={styles.questionCard}>
+          <Text style={styles.questionNumber}>
+            Question {index + 1} of {questions.length}
+          </Text>
+          <Text style={styles.questionText}>{question.question_text}</Text>
 
-            <View style={styles.optionsContainer}>
-              {['A', 'B', 'C', 'D'].map((option) => (
+          <View style={styles.optionsContainer}>
+            {['A', 'B', 'C', 'D'].map((option) => {
+              const selected = userAnswers[question.id] === option;
+              return (
                 <TouchableOpacity
                   key={option}
-                  style={[
-                    styles.optionButton,
-                    userAnswers[question.id] === option && styles.selectedOption
-                  ]}
+                  style={[styles.optionButton, selected && styles.selectedOption]}
                   onPress={() => handleAnswerSelect(question.id, option)}
+                  activeOpacity={0.88}
                 >
-                  <Text style={[
-                    styles.optionText,
-                    { color: theme.textPrimary },
-                    userAnswers[question.id] === option && styles.selectedOptionText
-                  ]}>
+                  <Text style={[styles.optionText, selected && styles.selectedOptionText]}>
                     {option}. {question[`option_${option.toLowerCase()}`]}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              );
+            })}
           </View>
-        ))}
-
-        <View style={styles.quizActions}>
-          <TouchableOpacity
-            style={styles.backToReadingButton}
-            onPress={() => setCurrentStep('reading')}
-          >
-            <Text style={[styles.backToReadingText, { color: theme.textSecondary }]}>
-              Back to Reading
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.submitQuizButton,
-              { backgroundColor: theme.primary },
-              quizLoading && styles.disabledButton
-            ]}
-            onPress={submitQuiz}
-            disabled={quizLoading}
-          >
-            {quizLoading ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.submitQuizButtonText}>Submit Quiz</Text>
-            )}
-          </TouchableOpacity>
         </View>
+      ))}
+
+      <View style={styles.quizActions}>
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() => setCurrentStep('reading')}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.secondaryBtnText}>Back to Reading</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.primaryBtnFlex, quizLoading && styles.disabledButton]}
+          onPress={submitQuiz}
+          disabled={quizLoading}
+          activeOpacity={0.88}
+        >
+          {quizLoading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Submit Quiz</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
 
   const renderResults = () => (
-    <View style={styles.content}>
-      <View style={styles.resultsContainer}>
-        <Text style={[styles.resultsTitle, { color: theme.textPrimary }]}>
-          Quiz Results
-        </Text>
+    <View style={[styles.content, styles.scrollPad]}>
+      <View style={styles.resultsCard}>
+        <Text style={styles.resultsTitle}>Quiz Results</Text>
 
         <View style={styles.scoreContainer}>
-          <Text style={[styles.scoreText, { color: theme.textPrimary }]}>
-            {userProgress.score}%
+          <Text style={styles.scoreText}>{userProgress.score}%</Text>
+          <Text
+            style={[
+              styles.passFailText,
+              userProgress.passed ? { color: '#16A34A' } : { color: '#DC2626' },
+            ]}
+          >
+            {userProgress.passed ? 'Passed' : 'Not passed'}
           </Text>
-          <Text style={[
-            styles.passFailText,
-            userProgress.passed ? { color: '#10B981' } : { color: '#EF4444' }
-          ]}>
-            {userProgress.passed ? 'PASSED! 🎉' : 'FAILED ❌'}
-          </Text>
-          <Text style={[styles.pointsText, { color: theme.textSecondary }]}>
-            {userProgress.passed ? `You earned ${memoizedInformation.points_reward || 1} point!` : 'You need 80% or higher to pass (4/5 or 5/5 correct).'}
+          <Text style={styles.pointsText}>
+            {userProgress.passed
+              ? `You earned ${memoizedInformation.points_reward || 1} point!`
+              : 'You need 80% or higher to pass (4/5 or 5/5 correct).'}
           </Text>
         </View>
 
         <View style={styles.resultsActions}>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={resetQuiz}
-          >
-            <Text style={[styles.retryButtonText, { color: theme.textSecondary }]}>
-              Try Again
-            </Text>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={resetQuiz} activeOpacity={0.88}>
+            <Text style={styles.secondaryBtnText}>Try Again</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.backToMicrolearningButton, { backgroundColor: theme.primary }]}
+            style={styles.primaryBtnFlex}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.88}
           >
-            <Text style={styles.backToMicrolearningButtonText}>Back to Microlearning</Text>
+            <Text style={styles.primaryBtnText}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -769,50 +857,42 @@ export default function InformationDetailScreen({ route, navigation }: any) {
 
     const renderReview = () => {
     return (
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.reviewContainer}>
-          <Text style={[styles.reviewTitle, { color: theme.textPrimary }]}>
-            Quiz Review: {memoizedInformation.title}
-          </Text>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPad}>
+        <View style={styles.quizHeaderCard}>
+          <Text style={styles.quizTitle}>Quiz Review</Text>
+          <Text style={styles.quizSubtitle}>{memoizedInformation.title}</Text>
+        </View>
           
           {loadingAnswers ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.primary} />
-              <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                Loading review data...
-              </Text>
+              <ActivityIndicator size="large" color={DARK} />
+              <Text style={styles.loadingText}>Loading review data...</Text>
             </View>
           ) : Object.keys(previousAnswers).length === 0 ? (
-            <View style={styles.noReviewContainer}>
-              <Ionicons name="information-circle-outline" size={48} color={theme.textSecondary} />
-              <Text style={[styles.noReviewTitle, { color: theme.textPrimary }]}>
-                Review Not Available
-              </Text>
-              <Text style={[styles.noReviewText, { color: theme.textSecondary }]}>
+            <View style={styles.previewCard}>
+              <Ionicons name="information-circle-outline" size={40} color="#6B7280" />
+              <Text style={[styles.emptyTitle, { marginTop: 12 }]}>Review Not Available</Text>
+              <Text style={styles.emptySubtext}>
                 This quiz was completed before the review feature was added. 
                 Future quizzes will include detailed review information.
               </Text>
             </View>
           ) : (
             <>
-              <Text style={[styles.reviewSubtitle, { color: theme.textSecondary }]}>
-                Your answers and the correct answers
-              </Text>
+              <Text style={styles.reviewHint}>Your answers and the correct answers</Text>
 
               {questions.map((question, index) => {
                 const userAnswer = previousAnswers[question.id];
                 const isCorrect = userAnswer === question.correct_answer;
                 
                 return (
-                  <View key={question.id} style={styles.reviewQuestionContainer}>
-                    <Text style={[styles.reviewQuestionNumber, { color: theme.textSecondary }]}>
+                  <View key={question.id} style={styles.questionCard}>
+                    <Text style={styles.questionNumber}>
                       Question {index + 1} of {questions.length}
                     </Text>
-                    <Text style={[styles.reviewQuestionText, { color: theme.textPrimary }]}>
-                      {question.question_text}
-                    </Text>
+                    <Text style={styles.questionText}>{question.question_text}</Text>
 
-                    <View style={styles.reviewOptionsContainer}>
+                    <View style={styles.optionsContainer}>
                       {['A', 'B', 'C', 'D'].map((option) => {
                         const optionText = question[`option_${option.toLowerCase()}`];
                         const isUserAnswer = userAnswer === option;
@@ -830,7 +910,6 @@ export default function InformationDetailScreen({ route, navigation }: any) {
                           >
                             <Text style={[
                               styles.reviewOptionText,
-                              { color: theme.textPrimary },
                               isUserAnswer && isCorrectAnswer && styles.correctAnswerText,
                               isUserAnswer && !isCorrectAnswer && styles.incorrectAnswerText,
                               !isUserAnswer && isCorrectAnswer && styles.correctAnswerText
@@ -840,12 +919,12 @@ export default function InformationDetailScreen({ route, navigation }: any) {
                             {isUserAnswer && (
                               <Ionicons 
                                 name={isCorrect ? "checkmark-circle" : "close-circle"} 
-                                size={20} 
-                                color={isCorrect ? "#22C55E" : "#EF4444"} 
+                                size={18} 
+                                color={isCorrect ? "#16A34A" : "#DC2626"} 
                               />
                             )}
                             {!isUserAnswer && isCorrectAnswer && (
-                              <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+                              <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
                             )}
                           </View>
                         );
@@ -855,61 +934,64 @@ export default function InformationDetailScreen({ route, navigation }: any) {
                 );
               })}
 
-              <View style={styles.reviewActions}>
-                <TouchableOpacity
-                  style={[styles.backToReadingButton, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}
-                  onPress={() => setCurrentStep('reading')}
-                >
-                  <Text style={[styles.backToReadingText, { color: theme.textSecondary }]}>
-                    Back to Reading
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.secondaryBtnFull}
+                onPress={() => setCurrentStep('reading')}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.secondaryBtnText}>Back to Reading</Text>
+              </TouchableOpacity>
             </>
           )}
-        </View>
       </ScrollView>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Header */}
+    <SafeAreaView style={[styles.container, { backgroundColor: PAGE_BG }]} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity 
-            onPress={handleBackPress}
-            style={styles.backButton}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-            {currentStep === 'preview' ? memoizedInformation.title :
-             currentStep === 'reading' ? memoizedInformation.title :
-             currentStep === 'quiz' ? 'Quiz' : 
-             currentStep === 'results' ? 'Results' :
-             currentStep === 'review' ? 'Review' : memoizedInformation.title}
-          </Text>
-          {userProgress.hasCompleted && (
-            <View style={[
+        <TouchableOpacity
+          onPress={handleBackPress}
+          style={styles.backButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="arrow-back" size={22} color={DARK} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {currentStep === 'preview'
+            ? memoizedInformation.title
+            : currentStep === 'reading'
+              ? memoizedInformation.title
+              : currentStep === 'quiz'
+                ? 'Quiz'
+                : currentStep === 'results'
+                  ? 'Results'
+                  : currentStep === 'review'
+                    ? 'Review'
+                    : memoizedInformation.title}
+        </Text>
+        {userProgress.hasCompleted ? (
+          <View
+            style={[
               styles.completionBadge,
-              userProgress.passed ? { backgroundColor: '#10B981' } : { backgroundColor: '#EF4444' }
-            ]}>
-              <Text style={styles.completionBadgeText}>
-                {userProgress.passed ? '✓' : '✗'}
-              </Text>
-            </View>
-          )}
-        </View>
+              userProgress.passed ? styles.badgePassed : styles.badgeFailed,
+            ]}
+          >
+            <Ionicons
+              name={userProgress.passed ? 'checkmark' : 'close'}
+              size={14}
+              color="#FFFFFF"
+            />
+          </View>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
-      {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading content...
-          </Text>
+          <ActivityIndicator size="large" color={DARK} />
+          <Text style={styles.loadingText}>Loading content...</Text>
         </View>
       ) : (
         <>
@@ -920,6 +1002,16 @@ export default function InformationDetailScreen({ route, navigation }: any) {
           {currentStep === 'review' && renderReview()}
         </>
       )}
+
+      <UpgradeToProModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        subtitle="You've hit today's new-microlearn limit. Level up for more daily starts, or upgrade to Pro for unlimited — anything you've already started stays unlocked."
+        onUpgrade={async () => {
+          setShowUpgradeModal(false);
+          await enterReading();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -929,55 +1021,67 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128, 128, 128, 0.2)',
-  },
-  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
-    padding: 8,
-    position: 'absolute',
-    left: 0,
-    zIndex: 1,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    flex: 1,
+    marginHorizontal: 12,
+    fontSize: 17,
+    fontWeight: '700',
+    color: DARK,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 36,
   },
   completionBadge: {
-    width: 24,
-    height: 24,
+    width: 36,
+    height: 36,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  completionBadgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
+  badgePassed: {
+    backgroundColor: '#16A34A',
+  },
+  badgeFailed: {
+    backgroundColor: '#DC2626',
   },
   content: {
     flex: 1,
+  },
+  scrollPad: {
+    padding: 16,
+    paddingBottom: 40,
+    gap: 12,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 40,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
+    marginTop: 14,
+    fontSize: 14,
+    fontWeight: '500',
     color: '#6B7280',
   },
   readingContainer: {
-    padding: 24,
+    padding: 20,
   },
   metaInfo: {
     flexDirection: 'row',
@@ -985,362 +1089,171 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   duration: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   category: {
-    fontSize: 14,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 20,
-    lineHeight: 32,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  contentText: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 32,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
   actionContainer: {
-    alignItems: 'center',
-  },
-  startQuizButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  startQuizButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  quizContainer: {
-    padding: 24,
-  },
-  quizTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  quizSubtitle: {
-    fontSize: 14,
-    marginBottom: 24,
-  },
-  questionContainer: {
-    marginBottom: 32,
-  },
-  questionNumber: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  questionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-    lineHeight: 22,
-  },
-  optionsContainer: {
-    gap: 12,
-  },
-  optionButton: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(128, 128, 128, 0.3)',
-  },
-  selectedOption: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-    borderColor: '#3B82F6',
-  },
-  optionText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  selectedOptionText: {
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  quizActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginTop: 24,
+    gap: 10,
   },
-  backToReadingButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  backToReadingText: {
-    fontSize: 14,
-  },
-  submitQuizButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  submitQuizButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  resultsContainer: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  resultsTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 32,
-  },
-  scoreContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  scoreText: {
-    fontSize: 48,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  passFailText: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  pointsText: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  resultsActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  retryButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(128, 128, 128, 0.3)',
-  },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backToMicrolearningButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backToMicrolearningButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  completedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 8,
-    gap: 8,
-  },
-  completedText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  reviewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  reviewButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  reviewContainer: {
-    flex: 1,
-    padding: 24,
-  },
-  reviewTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  reviewSubtitle: {
-    fontSize: 16,
-    marginBottom: 32,
-  },
-  reviewQuestionContainer: {
-    marginBottom: 32,
-  },
-  reviewQuestionNumber: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  reviewQuestionText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-    lineHeight: 24,
-  },
-  reviewOptionsContainer: {
-    gap: 8,
-  },
-  reviewOptionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  previewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(128, 128, 128, 0.3)',
-  },
-  correctAnswer: {
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    borderColor: '#22C55E',
-  },
-  incorrectAnswer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderColor: '#EF4444',
-  },
-  reviewOptionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    flex: 1,
-  },
-  correctAnswerText: {
-    color: '#22C55E',
-    fontWeight: '600',
-  },
-  incorrectAnswerText: {
-    color: '#EF4444',
-    fontWeight: '600',
-  },
-  reviewActions: {
-    marginTop: 32,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
   },
-  noReviewContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
+  coverWrap: {
+    width: 120,
+    height: 168,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  noReviewTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
+  coverImage: {
+    width: '100%',
+    height: '100%',
   },
-  noReviewText: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  tryAgainButton: {
-    flexDirection: 'row',
+  coverPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 16,
+    backgroundColor: DARK,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  tryAgainButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'white',
-  },
-  previewContainer: {
-    padding: 24,
-  },
-  previewHeader: {
-    marginBottom: 24,
-    alignItems: 'center',
+    marginBottom: 16,
   },
   previewTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
-    marginBottom: 8,
+    color: DARK,
     textAlign: 'center',
   },
   previewSubtitle: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  previewDescription: {
-    marginBottom: 32,
-  },
-  previewDescriptionText: {
-    fontSize: 16,
-    lineHeight: 24,
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
     textAlign: 'center',
   },
-  startReadingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-    marginBottom: 32,
+  previewDescriptionText: {
+    marginTop: 14,
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+    color: '#4B5563',
+    textAlign: 'center',
   },
-  lessonsPreview: {
-    marginBottom: 32,
+  limitHint: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 16,
   },
-  lessonsPreviewTitle: {
-    fontSize: 20,
+  cardLabel: {
+    alignSelf: 'flex-start',
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 16,
+    color: DARK,
+    marginBottom: 12,
   },
   lessonPreviewItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+    width: '100%',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: '#F8F9FB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 8,
+    gap: 10,
+  },
+  lessonPreviewNumberWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lessonPreviewNumber: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '700',
-    marginRight: 12,
-    width: 32,
-    textAlign: 'center',
+    color: '#FFFFFF',
   },
   lessonPreviewTitle: {
-    fontSize: 16,
-    fontWeight: '600',
     flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: DARK,
   },
-  startReadingButtonText: {
-    color: 'white',
-    fontSize: 18,
+  primaryBtn: {
+    marginTop: 18,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: DARK,
+    paddingVertical: 16,
+    borderRadius: 16,
+  },
+  primaryBtnFlex: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: DARK,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '700',
+  },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  secondaryBtnFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  secondaryBtnText: {
+    color: DARK,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  lessonContentWrap: {
+    flex: 1,
+    position: 'relative',
   },
   lessonContent: {
     flex: 1,
@@ -1348,70 +1261,254 @@ const styles = StyleSheet.create({
   lessonScrollContent: {
     paddingBottom: 20,
   },
+  readProgressTrack: {
+    height: 3,
+    backgroundColor: '#E5E7EB',
+    width: '100%',
+  },
+  readProgressFill: {
+    height: 3,
+    backgroundColor: DARK,
+  },
+  scrollBarTrack: {
+    position: 'absolute',
+    right: 4,
+    top: 8,
+    bottom: 8,
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(31, 41, 55, 0.12)',
+    overflow: 'hidden',
+  },
+  scrollBarThumb: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(31, 41, 55, 0.45)',
+  },
   fixedBottomNav: {
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(128, 128, 128, 0.2)',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 20,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   pageNavigationFixed: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   pageDotsContainer: {
-    gap: 10,
-    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
   },
   pageDot: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
   },
   pageDotActive: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    backgroundColor: DARK,
   },
   pageDotText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    color: '#6B7280',
   },
-  lessonTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 20,
-    lineHeight: 32,
+  pageDotTextActive: {
+    color: '#FFFFFF',
   },
   lessonActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
   lessonNavButtonPlaceholder: {
     flex: 1,
   },
-  lessonNavButton: {
+  quizHeaderCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quizTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DARK,
+  },
+  quizSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  questionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  questionNumber: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  questionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: DARK,
+    marginBottom: 14,
+    lineHeight: 22,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F8F9FB',
+  },
+  selectedOption: {
+    backgroundColor: DARK,
+    borderColor: DARK,
+  },
+  optionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: DARK,
+    lineHeight: 20,
+  },
+  selectedOptionText: {
+    color: '#FFFFFF',
+  },
+  quizActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  disabledButton: {
+    opacity: 0.55,
+  },
+  resultsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  resultsTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: DARK,
+    marginBottom: 20,
+  },
+  scoreContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  scoreText: {
+    fontSize: 48,
+    fontWeight: '800',
+    color: DARK,
+    marginBottom: 6,
+  },
+  passFailText: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  pointsText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  resultsActions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    gap: 8,
-    flex: 1,
     justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 8,
   },
-  lessonNavButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  statusPassed: {
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
   },
-  lessonNavButtonTextWhite: {
-    color: 'white',
-    fontSize: 16,
+  statusFailed: {
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+  },
+  statusPillText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  reviewHint: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  reviewOptionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F8F9FB',
+    gap: 8,
+  },
+  correctAnswer: {
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+    borderColor: '#16A34A',
+  },
+  incorrectAnswer: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderColor: '#DC2626',
+  },
+  reviewOptionText: {
+    fontSize: 14,
     fontWeight: '600',
+    color: DARK,
+    lineHeight: 20,
+    flex: 1,
+  },
+  correctAnswerText: {
+    color: '#16A34A',
+  },
+  incorrectAnswerText: {
+    color: '#DC2626',
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: DARK,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
- 
+

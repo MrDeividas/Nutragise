@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,8 @@ import { workoutSplitService } from '../lib/workoutSplitService';
 import { useAuthStore } from '../state/authStore';
 import { WorkoutSplit } from '../types/database';
 
+const DARK = '#1f2937';
+
 interface WorkoutSplitScreenProps {
   navigation: any;
   route?: any;
@@ -27,10 +30,33 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
   const { theme } = useTheme();
   const bottomNavPadding = useBottomNavPadding();
   const [activeTab, setActiveTab] = useState<'premade' | 'custom'>('premade');
+  const [segmentTrackWidth, setSegmentTrackWidth] = useState(0);
+  const segmentIndicatorX = useRef(new Animated.Value(0)).current;
+  const segmentHasPositioned = useRef(false);
   const [customSplits, setCustomSplits] = useState<WorkoutSplit[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedSplitIndex, setExpandedSplitIndex] = useState<number | null>(null);
   const [currentActiveSplit, setCurrentActiveSplit] = useState<WorkoutSplit | null>(null);
+
+  const segmentIndex = activeTab === 'premade' ? 0 : 1;
+  const segmentTabWidth = segmentTrackWidth > 0 ? segmentTrackWidth / 2 : 0;
+
+  useEffect(() => {
+    if (segmentTabWidth <= 0) return;
+    const toValue = segmentIndex * segmentTabWidth;
+    if (!segmentHasPositioned.current) {
+      segmentHasPositioned.current = true;
+      segmentIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(segmentIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      stiffness: 230,
+      damping: 24,
+      mass: 0.9,
+    }).start();
+  }, [segmentIndex, segmentTabWidth, segmentIndicatorX]);
 
   useEffect(() => {
     if (user) {
@@ -184,40 +210,58 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
           <View style={styles.headerRightSpacer} />
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            onPress={() => setActiveTab('premade')}
-            style={[
-              styles.tab,
-              activeTab === 'premade' && { borderBottomWidth: 2, borderBottomColor: theme.primary },
-            ]}
+        {/* Tabs — same segment control as Goals Active / Completed */}
+        <View style={styles.segmentWrap}>
+          <View
+            style={styles.segmentBar}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width - 8;
+              if (w > 0 && Math.abs(w - segmentTrackWidth) > 0.5) {
+                setSegmentTrackWidth(w);
+              }
+            }}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'premade' ? theme.primary : theme.textSecondary },
-              ]}
+            {segmentTabWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.segmentIndicator,
+                  {
+                    width: segmentTabWidth,
+                    transform: [{ translateX: segmentIndicatorX }],
+                  },
+                ]}
+              />
+            )}
+            <TouchableOpacity
+              style={styles.segment}
+              onPress={() => setActiveTab('premade')}
+              activeOpacity={0.85}
             >
-              Premade
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setActiveTab('custom')}
-            style={[
-              styles.tab,
-              activeTab === 'custom' && { borderBottomWidth: 2, borderBottomColor: theme.primary },
-            ]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'custom' ? theme.primary : theme.textSecondary },
-              ]}
+              <Text
+                style={[
+                  styles.segmentText,
+                  activeTab === 'premade' && styles.segmentTextActive,
+                ]}
+              >
+                Premade
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.segment}
+              onPress={() => setActiveTab('custom')}
+              activeOpacity={0.85}
             >
-              Custom
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.segmentText,
+                  activeTab === 'custom' && styles.segmentTextActive,
+                ]}
+              >
+                Custom
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -297,7 +341,7 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
             <View style={styles.content}>
               <TouchableOpacity
                 onPress={() => navigation.navigate('CreateCustomSplit')}
-                style={[styles.createButton, { backgroundColor: theme.primary }]}
+                style={[styles.createButton, { backgroundColor: DARK }]}
                 activeOpacity={0.8}
               >
                 <Ionicons name="add" size={24} color="#FFFFFF" />
@@ -308,7 +352,7 @@ export default function WorkoutSplitScreen({ navigation, route }: WorkoutSplitSc
                 <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading...</Text>
               ) : customSplits.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="fitness-outline" size={64} color="#d1d5db" />
+                  <Ionicons name="barbell-outline" size={64} color="#d1d5db" />
                   <Text style={[styles.emptyStateText, { color: theme.textSecondary }]}>
                     No custom splits yet
                   </Text>
@@ -364,20 +408,48 @@ const styles = StyleSheet.create({
   headerRightSpacer: {
     width: 32,
   },
-  tabsContainer: {
+  segmentWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  segmentBar: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    gap: 0,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative',
   },
-  tab: {
+  segmentIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
+  },
+  segment: {
     flex: 1,
-    paddingVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    zIndex: 1,
   },
-  tabText: {
-    fontSize: 16,
-    fontWeight: '600',
+  segmentText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  segmentTextActive: {
+    color: '#FFFFFF',
   },
   scrollView: {
     flex: 1,

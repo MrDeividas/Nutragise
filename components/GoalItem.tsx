@@ -3,112 +3,281 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Goal } from '../types/database';
 
+const DARK = '#1f2937';
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 interface GoalItemProps {
   goal: Goal;
-  theme: any;
   navigation: any;
   onToggle: (id: string) => void;
-  onDelete: (goal: Goal) => void;
-  styles: any;
 }
 
-const formatDate = (dateString: string) => {
+const formatShortDate = (dateString: string) => {
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
 const getDaysUntilTarget = (endDate: string) => {
   const end = new Date(endDate);
   const now = new Date();
   const diffTime = end.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-const GoalItem = React.memo(({ goal, theme, navigation, onToggle, onDelete, styles }: GoalItemProps) => {
-  const daysUntilTarget = goal.end_date ? getDaysUntilTarget(goal.end_date) : null;
-  
+const dueLabel = (
+  endDate: string | null | undefined
+): { text: string; tone: 'overdue' | 'soon' | 'ok' } | null => {
+  if (!endDate) return null;
+  const days = getDaysUntilTarget(endDate);
+  if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: 'overdue' };
+  if (days === 0) return { text: 'Due today', tone: 'soon' };
+  if (days === 1) return { text: '1 day left', tone: 'soon' };
+  if (days <= 7) return { text: `${days} days left`, tone: 'soon' };
+  return { text: `${days} days left`, tone: 'ok' };
+};
+
+const frequencyLabel = (frequency?: boolean[]): string | null => {
+  if (!frequency || frequency.length === 0) return null;
+  const activeDays = frequency
+    .map((on, i) => (on ? DAY_LABELS[i] : null))
+    .filter(Boolean) as string[];
+  if (activeDays.length === 0) return null;
+  if (activeDays.length === 7) return 'Daily';
+  if (activeDays.length >= 5) return `${activeDays.length}x / week`;
+  return activeDays.join(' · ');
+};
+
+const GoalItem = React.memo(({ goal, navigation, onToggle }: GoalItemProps) => {
+  const due = !goal.completed ? dueLabel(goal.end_date) : null;
+  const schedule = frequencyLabel(goal.frequency);
+  const milestoneCount = goal.milestone_count || goal.milestones?.length || 0;
+  const finishedDate = goal.completed
+    ? goal.last_updated_at || goal.created_at
+    : null;
+  const hasChips = !!(goal.category || goal.completed || due || goal.time_commitment || milestoneCount > 0);
+  const hasDates = !!(goal.start_date || goal.end_date || finishedDate);
+
   return (
-    <View style={styles.goalCard}>
-      <TouchableOpacity
-        onPress={() => {
-          navigation.navigate('GoalDetail', { goal });
-        }}
-        activeOpacity={0.85}
-      >
-        <View>
-          <View style={styles.goalHeader}>
-            <View style={styles.goalTitleContainer}>
-              <Text style={[styles.goalTitle, { color: theme.textPrimary }, goal.completed && styles.completedGoalTitle]}>
-                {goal.title}
-              </Text>
-              {goal.category && (
-                <Text style={[styles.goalCategory, { color: theme.primary }]}>
-                  {goal.category}
+    <TouchableOpacity
+      style={[styles.card, goal.completed && styles.cardDone]}
+      onPress={() => navigation.navigate('GoalDetail', { goal })}
+      activeOpacity={0.88}
+    >
+      <View style={styles.body}>
+        <Text style={[styles.title, goal.completed && styles.titleDone]} numberOfLines={2}>
+          {goal.title}
+        </Text>
+
+        {goal.description ? (
+          <Text style={[styles.description, goal.completed && styles.descriptionDone]} numberOfLines={2}>
+            {goal.description}
+          </Text>
+        ) : null}
+
+        {hasChips ? (
+          <View style={styles.chipRow}>
+            {goal.category ? (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>{goal.category}</Text>
+              </View>
+            ) : null}
+            {goal.completed ? (
+              <View style={[styles.chip, styles.doneChip]}>
+                <Text style={[styles.chipText, styles.doneChipText]}>Done</Text>
+              </View>
+            ) : null}
+            {due ? (
+              <View
+                style={[
+                  styles.chip,
+                  due.tone === 'overdue' && styles.overdueChip,
+                  due.tone === 'soon' && styles.soonChip,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    due.tone === 'overdue' && styles.overdueChipText,
+                    due.tone === 'soon' && styles.soonChipText,
+                  ]}
+                >
+                  {due.text}
                 </Text>
-              )}
-            </View>
-            <View style={styles.goalActions}>
-              <TouchableOpacity
-                onPress={() => onToggle(goal.id)}
-                style={[styles.checkboxContainer, goal.completed && styles.checkboxCompleted]}
-              >
-                {goal.completed && (
-                  <Ionicons name="checkmark-outline" size={16} color="#ffffff" />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => onDelete(goal)}
-                style={styles.deleteButton}
-              >
-                <Ionicons name="trash-outline" size={18} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </View>
+              </View>
+            ) : null}
+            {goal.time_commitment ? (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>{goal.time_commitment}</Text>
+              </View>
+            ) : null}
+            {milestoneCount > 0 ? (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>
+                  {milestoneCount} milestone{milestoneCount === 1 ? '' : 's'}
+                </Text>
+              </View>
+            ) : null}
           </View>
+        ) : null}
 
-          {goal.description && (
-            <Text style={[styles.goalDescription, { color: theme.textSecondary }]}>
-              {goal.description}
+        {schedule ? (
+          <View style={styles.scheduleRow}>
+            <Ionicons name="calendar-outline" size={13} color="#9CA3AF" />
+            <Text style={styles.metaText} numberOfLines={1}>
+              {schedule}
             </Text>
-          )}
-
-          <View style={styles.goalDateContainer}>
-            <Text style={styles.goalDate}>
-              Started: {goal.start_date ? formatDate(goal.start_date) : 'Not set'}
-            </Text>
-            {goal.end_date && (
-              <Text style={[
-                styles.goalDate,
-                styles.goalTargetDate,
-                daysUntilTarget !== null && daysUntilTarget < 0 && styles.overdue,
-                daysUntilTarget !== null && daysUntilTarget <= 7 && daysUntilTarget >= 0 && styles.dueSoon
-              ]}>
-                {daysUntilTarget !== null && daysUntilTarget < 0 
-                  ? `${Math.abs(daysUntilTarget)} days overdue`
-                  : daysUntilTarget !== null && daysUntilTarget === 0
-                  ? 'Due today'
-                  : daysUntilTarget !== null && daysUntilTarget === 1
-                  ? '1 day left'
-                  : daysUntilTarget !== null
-                  ? `${daysUntilTarget} days left`
-                  : 'No target date'
-                }
-              </Text>
-            )}
           </View>
+        ) : null}
 
-          {goal.completed && (
-            <View style={styles.completedIndicator}>
-              <Text style={styles.completedText}>
-                ✅ Completed
-              </Text>
-            </View>
-          )}
-        </View>
+        {hasDates ? (
+          <View style={styles.datesRow}>
+            <Text style={styles.metaText}>
+              Started {goal.start_date ? formatShortDate(goal.start_date) : '—'}
+            </Text>
+            <Text style={styles.metaDot}>·</Text>
+            <Text style={styles.metaText}>
+              Ends {goal.end_date ? formatShortDate(goal.end_date) : '—'}
+            </Text>
+            <Text style={styles.metaDot}>·</Text>
+            <Text style={styles.metaText}>
+              Finished {finishedDate ? formatShortDate(finishedDate) : '—'}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      <TouchableOpacity
+        onPress={() => onToggle(goal.id)}
+        style={[styles.check, goal.completed && styles.checkDone]}
+        hitSlop={8}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: !!goal.completed }}
+      >
+        {goal.completed ? <Ionicons name="checkmark" size={16} color="#FFFFFF" /> : null}
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 });
 
 export default GoalItem;
 
+const styles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardDone: {
+    backgroundColor: '#FFFFFF',
+    opacity: 0.92,
+  },
+  body: {
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
+    color: DARK,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  titleDone: {
+    color: '#9CA3AF',
+  },
+  description: {
+    color: '#6B7280',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -4,
+    marginBottom: 10,
+  },
+  descriptionDone: {
+    color: '#9CA3AF',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  chip: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  chipText: {
+    color: DARK,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  doneChip: {
+    backgroundColor: 'rgba(31,41,55,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(31,41,55,0.15)',
+  },
+  doneChipText: {
+    color: DARK,
+  },
+  overdueChip: {
+    backgroundColor: '#FEF2F2',
+  },
+  overdueChipText: {
+    color: '#DC2626',
+  },
+  soonChip: {
+    backgroundColor: '#FFFBEB',
+  },
+  soonChipText: {
+    color: '#B45309',
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 8,
+  },
+  metaText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  metaDot: {
+    color: '#D1D5DB',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  datesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  check: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkDone: {
+    backgroundColor: DARK,
+    borderColor: DARK,
+  },
+});

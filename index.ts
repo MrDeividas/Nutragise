@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 
 import React, { Component, useEffect, useState } from 'react';
-import { ScrollView, Text, View, StyleSheet } from 'react-native';
+import { ScrollView, Text, View, StyleSheet, Image } from 'react-native';
 import { registerRootComponent } from 'expo';
 
 /**
@@ -141,7 +141,17 @@ function Root() {
     return React.createElement(
       View,
       { style: styles.bootRoot },
-      React.createElement(Text, { style: styles.bootText }, 'Starting Nutrapp…')
+      React.createElement(Text, { style: styles.bootBrand }, 'nutragise'),
+      React.createElement(Image, {
+        source: require('./assets/icon.png'),
+        style: styles.bootLogo,
+        resizeMode: 'contain',
+      }),
+      React.createElement(
+        Text,
+        { style: styles.bootTagline },
+        'helping you become 1% better each day'
+      )
     );
   }
 
@@ -157,14 +167,31 @@ registerRootComponent(Root);
 const styles = StyleSheet.create({
   bootRoot: {
     flex: 1,
-    backgroundColor: '#FCFAF9',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  bootText: {
-    fontSize: 16,
+  bootBrand: {
+    fontSize: 28,
     color: '#111827',
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: 20,
+  },
+  bootLogo: {
+    width: 112,
+    height: 112,
+    borderRadius: 24,
+  },
+  bootTagline: {
+    marginTop: 20,
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#6B7280',
+    fontWeight: '500',
+    textAlign: 'center',
+    maxWidth: 280,
   },
   errorRoot: {
     flex: 1,

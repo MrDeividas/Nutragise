@@ -24,6 +24,8 @@ export interface Post {
   daily_post_id?: string;
   content: string;
   goal_id?: string;
+  challenge_id?: string;
+  challenge_title?: string;
   date: string;
   photos: string[];
   habits_completed: string[];
@@ -59,6 +61,8 @@ export interface ProfileView {
 export interface CreatePostData {
   content: string;
   goal_id?: string;
+  challenge_id?: string;
+  challenge_title?: string;
   date: string;
   photos: string[];
   habits_completed: string[];
@@ -179,6 +183,7 @@ export interface DailyHabits {
   gym_day_type?: 'active' | 'rest';
   gym_training_types?: string[];
   gym_custom_type?: string;
+  gym_duration?: string;
   
   // Reflect habit data
   reflect_mood?: number;
@@ -225,6 +230,7 @@ export interface CreateDailyHabitsData {
   gym_day_type?: 'active' | 'rest';
   gym_training_types?: string[];
   gym_custom_type?: string;
+  gym_duration?: string;
   reflect_mood?: number;
   reflect_energy?: number;
   reflect_motivation?: number;

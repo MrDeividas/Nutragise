@@ -3,6 +3,7 @@ import { DailyHabits } from '../types/database';
 import { pillarProgressService } from './pillarProgressService';
 import { notificationService } from './notificationService';
 import { habitChallengeSyncService } from './habitChallengeSyncService';
+import { storeService } from './storeService';
 
 export interface DailyPointsBreakdown {
   daily: number;
@@ -67,6 +68,12 @@ class PointsService {
   private isToday(dateString: string): boolean {
     const today = this.getCurrentDateFor4amCutoff();
     return dateString === today;
+  }
+
+  /** 2x while Accountability Boost is active */
+  private async scaledPoints(userId: string, base: number): Promise<number> {
+    const multiplier = await storeService.getPointsMultiplier(userId);
+    return base * multiplier;
   }
 
   /**
@@ -143,7 +150,8 @@ class PointsService {
       }
 
       const currentDailyPoints = existing?.daily_habits_points || 0;
-      const newDailyPoints = currentDailyPoints + this.DAILY_HABIT_POINTS;
+      const habitGain = await this.scaledPoints(userId, this.DAILY_HABIT_POINTS);
+      const newDailyPoints = currentDailyPoints + habitGain;
 
       const updateData: any = {
         [habitField]: true,
@@ -186,7 +194,7 @@ class PointsService {
         notificationService.createHabitRewardNotification({
           user_id: userId,
           habit_type: habitType,
-          points_gained: this.DAILY_HABIT_POINTS,
+          points_gained: habitGain,
           pillar_type: 'growth_wisdom',
           pillar_progress: 0.36
         }).catch(console.error);
@@ -201,6 +209,10 @@ class PointsService {
           }
         });
 
+      import('./achievementsService').then(({ achievementsService }) => {
+        achievementsService.scheduleEvaluate(userId);
+      }).catch(() => {});
+
       return true;
     } catch (error) {
       console.error('Error in trackDailyHabit:', error);
@@ -214,7 +226,8 @@ class PointsService {
    */
   async updateDailyHabitsPoints(userId: string, dailyHabits: DailyHabits, date: string): Promise<void> {
     try {
-      const points = this.calculateDailyHabitsPoints(dailyHabits);
+      const basePoints = this.calculateDailyHabitsPoints(dailyHabits);
+      const multiplier = await storeService.getPointsMultiplier(userId);
       
       // Get existing record
       const { data: existing, error: fetchError } = await supabase
@@ -242,9 +255,11 @@ class PointsService {
         microlearn_completed: existing?.microlearn_completed || false
       };
 
-      const newDailyPoints = points + 
+      const unscaledDaily =
+        basePoints +
         (habitCompletions.meditation_completed ? this.DAILY_HABIT_POINTS : 0) +
         (habitCompletions.microlearn_completed ? this.DAILY_HABIT_POINTS : 0);
+      const newDailyPoints = unscaledDaily * multiplier;
 
       const updateData = {
         ...habitCompletions,
@@ -373,7 +388,10 @@ class PointsService {
       }
 
       const field = habitType === 'like' ? 'liked_today' : 'commented_today';
-      const points = habitType === 'like' ? this.LIKE_POINTS : this.COMMENT_POINTS;
+      const points = await this.scaledPoints(
+        userId,
+        habitType === 'like' ? this.LIKE_POINTS : this.COMMENT_POINTS
+      );
       
       // Calculate new core points
       let currentCorePoints = existing?.core_habits_points || 0;
@@ -463,7 +481,10 @@ class PointsService {
       };
 
       const field = fieldMap[habitType as 'share' | 'update_goal'];
-      const pointsToAdd = pointsMap[habitType as 'share' | 'update_goal'];
+      const pointsToAdd = await this.scaledPoints(
+        userId,
+        pointsMap[habitType as 'share' | 'update_goal']
+      );
       
       // Check if already completed today (share is now once per day like like/comment)
       if (habitType === 'share' && existing && existing[field]) {
@@ -543,6 +564,10 @@ class PointsService {
         }
       }
 
+      import('./achievementsService').then(({ achievementsService }) => {
+        achievementsService.scheduleEvaluate(userId);
+      }).catch(() => {});
+
       return true;
     } catch (error) {
       console.error('Error in trackCoreHabit:', error);
@@ -587,11 +612,12 @@ class PointsService {
 
       if (allDailyHabitsComplete && allCoreHabitsComplete) {
         // Award bonus
+        const bonusGain = await this.scaledPoints(userId, this.BONUS_POINTS);
         const { error: updateError } = await supabase
           .from('user_points_daily')
           .update({
-            bonus_points: this.BONUS_POINTS,
-            total_points_today: data.total_points_today + this.BONUS_POINTS
+            bonus_points: bonusGain,
+            total_points_today: data.total_points_today + bonusGain
           })
           .eq('user_id', userId)
           .eq('date', date);
@@ -602,7 +628,7 @@ class PointsService {
         }
 
         // Update total points
-        await this.updateTotalPoints(userId, this.BONUS_POINTS);
+        await this.updateTotalPoints(userId, bonusGain);
       }
     } catch (error) {
       console.error('Error in checkAndAwardBonus:', error);
