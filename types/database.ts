@@ -24,6 +24,8 @@ export interface Post {
   daily_post_id?: string;
   content: string;
   goal_id?: string;
+  goal_title?: string | null;
+  milestone_title?: string | null;
   challenge_id?: string;
   challenge_title?: string;
   date: string;
@@ -61,6 +63,8 @@ export interface ProfileView {
 export interface CreatePostData {
   content: string;
   goal_id?: string;
+  goal_title?: string;
+  milestone_title?: string;
   challenge_id?: string;
   challenge_title?: string;
   date: string;

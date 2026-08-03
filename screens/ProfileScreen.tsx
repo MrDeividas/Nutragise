@@ -21,7 +21,6 @@ import { useAuthStore } from '../state/authStore';
 import { useGoalsStore } from '../state/goalsStore';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { getCategoryIcon, calculateCompletionPercentage } from '../lib/goalHelpers';
-import CreatePostModal from '../components/CreatePostModal';
 import { progressService } from '../lib/progressService';
 import { useTheme } from '../state/themeStore';
 import { useSocialStore } from '../state/socialStore';
@@ -71,9 +70,7 @@ function ProfileScreen({ navigation }: any) {
   const [overlayPosition, setOverlayPosition] = useState({ x: 0, y: 0 });
   const weeklyTrackerRef = useRef<View>(null);
   const weeklyTrackerLayout = useRef<any>(null);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
-  const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [checkedInGoals, setCheckedInGoals] = useState<Set<string>>(new Set());
   const [checkedInGoalsByDay, setCheckedInGoalsByDay] = useState<{[key: string]: Set<string>}>({});
@@ -989,15 +986,11 @@ function ProfileScreen({ navigation }: any) {
   const handleCheckInPress = (goal: any, dayOfWeek: number) => {
     setSelectedGoal(goal);
     setExpandedDay(dayOfWeek); // Store the day being checked in for
-    
-    // Set target check-in date based on overdue date if available
-    if (goal.overdueDate) {
-      setTargetCheckInDate(goal.overdueDate);
-    } else {
-      setTargetCheckInDate(null); // Use today's date
-    }
-    
-    setShowCreatePostModal(true);
+    const overdue = goal.overdueDate ? new Date(goal.overdueDate) : null;
+    navigation.navigate('UpdateGoal', {
+      goalId: goal.id,
+      targetCheckInDate: overdue ? overdue.toISOString() : undefined,
+    });
   };
 
 
@@ -1736,31 +1729,6 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
       </ScrollView>
-
-      {/* Create Post Modal */}
-      <CreatePostModal
-        visible={showCreatePostModal}
-        onClose={() => {
-          setShowCreatePostModal(false);
-          setSelectedGoal(null);
-          setTargetCheckInDate(null);
-        }}
-        onPostCreated={() => {
-          setShowCreatePostModal(false);
-          setSelectedGoal(null);
-          setTargetCheckInDate(null);
-          // Refresh goals and progress
-          if (user) {
-            fetchGoals(user.id);
-          }
-          fetchGoalProgress();
-          checkTodaysCheckIns(); // Add this to refresh check-in status
-          // Note: ProfileScreen doesn't have checkForOverdueGoals, but ActionScreen does
-        }}
-        userGoals={userGoals.filter(goal => !goal.completed)}
-        preSelectedGoal={selectedGoal?.id || undefined}
-        targetCheckInDate={targetCheckInDate || undefined}
-      />
 
       {/* Full Journey Modal */}
       {user && (

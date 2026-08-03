@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import * as FileSystem from 'expo-file-system';
 import { apiCache } from './apiCache';
+import { isInappropriateMediaError, uploadMediaSafely } from './safeMediaUpload';
 
 export interface ProgressPhoto {
   id: string;
@@ -26,82 +27,33 @@ class ProgressService {
    */
   async uploadPhoto(uri: string, fileName: string, userId: string, goalId?: string, photoType: string = 'progress', checkInDate?: Date): Promise<string | null> {
     try {
-      
-      // Use checkInDate for the file path if provided
       const fileExt = 'jpg';
       const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       let datePrefix = '';
       if (checkInDate) {
-        // Format as YYYY-MM-DD
         const yyyy = checkInDate.getFullYear();
         const mm = String(checkInDate.getMonth() + 1).padStart(2, '0');
         const dd = String(checkInDate.getDate()).padStart(2, '0');
         datePrefix = `${yyyy}-${mm}-${dd}_`;
       }
-      
-      // Create new folder structure: {user_id}/goal_{goal_id}_{photo_type}/ or {user_id}/profile/
+
       let filePath: string;
       if (goalId) {
-        // Goal-related photo: {user_id}/goal_{goal_id}_{photo_type}/
         filePath = `${userId}/goal_${goalId}_${photoType}/${datePrefix}${uniqueFileName}`;
       } else {
-        // Profile photo: {user_id}/profile/
         filePath = `${userId}/profile/${datePrefix}${uniqueFileName}`;
       }
-      
-      // REACT NATIVE COMPATIBLE UPLOAD: Use FormData with original URI
-      // Create FormData for React Native compatibility
-      const formData = new FormData();
-      
-      // For React Native, append the file directly from URI
-      formData.append('file', {
-        uri: uri,
-        type: 'image/jpeg',
-        name: uniqueFileName,
-      } as any);
-      
-      const { data, error } = await supabase.storage
-        .from('users')
-        .upload(filePath, formData, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
 
-      if (error) {
-        console.error('FormData upload failed:', error);
-        return null;
-      }
-
-      // Verify uploaded file immediately  
-      try {
-        // Try to download a small chunk to verify file exists and has content
-        const { data: downloadData, error: downloadError } = await supabase.storage
-          .from('users')
-          .download(data.path);
-        
-        if (downloadError) {
-          console.error('🚨 CRITICAL: File download failed immediately after upload!', downloadError);
-          console.error('This indicates the file was not actually saved to storage.');
-          return null;
-        } else {
-          if (downloadData.size === 0) {
-            console.error('🚨 CRITICAL: Downloaded file is 0 bytes!');
-            return null;
-          }
-        }
-      } catch (verifyError) {
-        console.error('🚨 CRITICAL: Error verifying upload:', verifyError);
-        return null;
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('users')
-        .getPublicUrl(data.path);
-      return urlData.publicUrl;
+      return await uploadMediaSafely({
+        uri,
+        path: filePath,
+        contentType: 'image/jpeg',
+        fileName: uniqueFileName,
+        mediaType: 'image',
+      });
     } catch (error) {
       console.error('Error in uploadPhoto:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -110,14 +62,16 @@ class ProgressService {
   /**
    * Create a check-in entry with optional photo
    */
-  async createCheckIn(checkInData: CheckInData): Promise<boolean> {
+  async createCheckIn(
+    checkInData: CheckInData
+  ): Promise<{ success: boolean; photoUrl: string | null }> {
     try {
       let photoUrl: string | null = null;
 
       // Debug: Check if the authenticated user matches the passed user ID
       const { data: { user: authUser } } = await supabase.auth.getUser();
 
-      // Upload photo if provided
+      // Upload + moderate photo if provided (also re-checks already-remote URLs)
       if (checkInData.photoUri) {
         photoUrl = await this.uploadPhoto(
           checkInData.photoUri,
@@ -147,7 +101,7 @@ class ProgressService {
       if (error) {
         console.error('Error saving check-in:', error);
         console.error('Error details:', JSON.stringify(error, null, 2));
-        return false;
+        return { success: false, photoUrl: null };
       }
       
 
@@ -159,10 +113,11 @@ class ProgressService {
       const goalProgressKey = apiCache.generateKey('goalProgress', checkInData.userId);
       apiCache.delete(goalProgressKey);
 
-      return true;
+      return { success: true, photoUrl };
     } catch (error) {
       console.error('Error in createCheckIn:', error);
-      return false;
+      if (isInappropriateMediaError(error)) throw error;
+      return { success: false, photoUrl: null };
     }
   }
 

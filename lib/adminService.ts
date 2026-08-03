@@ -3,6 +3,35 @@ import { challengePotService } from './challengePotService';
 import { notificationService } from './notificationService';
 import { Challenge, ChallengeReviewData, ParticipantWithSubmissions } from '../types/challenges';
 
+export type ContentReportItem = {
+  id: string;
+  reporter_id: string;
+  reported_user_id?: string | null;
+  post_id?: string | null;
+  post_source?: 'posts' | 'daily_posts' | null;
+  reason: string;
+  created_at: string;
+  review_status: string;
+  reporter?: {
+    id: string;
+    username?: string;
+    display_name?: string;
+    avatar_url?: string;
+  } | null;
+  reportedUser?: {
+    id: string;
+    username?: string;
+    display_name?: string;
+    avatar_url?: string;
+  } | null;
+  postPreview?: {
+    id: string;
+    content: string;
+    photoUrl: string | null;
+    userId: string;
+  } | null;
+};
+
 class AdminService {
   /**
    * Check if user is an admin
@@ -47,14 +76,16 @@ class AdminService {
   }
 
   /**
-   * Get pending challenges that need review
+   * Get pending challenges that need review.
+   * Only includes challenges that:
+   * - have ended (with grace period)
+   * - have at least one participant
+   * - have at least one flagged submission
    */
   async getPendingChallenges(filters?: { limit?: number; offset?: number }): Promise<Challenge[]> {
     try {
-      // Only show challenges that have actually ended (end_date is in the past)
-      // Add 1 hour grace period to prevent marking challenges that just ended
       const now = new Date();
-      const gracePeriod = new Date(now.getTime() - (1 * 60 * 60 * 1000)); // 1 hour ago
+      const gracePeriod = new Date(now.getTime() - (1 * 60 * 60 * 1000));
       const gracePeriodISO = gracePeriod.toISOString();
 
       let query = supabase
@@ -62,7 +93,7 @@ class AdminService {
         .select('*')
         .eq('approval_status', 'pending')
         .eq('status', 'completed')
-        .lt('end_date', gracePeriodISO) // Only challenges that ended more than 1 hour ago
+        .lt('end_date', gracePeriodISO)
         .order('end_date', { ascending: false });
 
       if (filters?.limit) {
@@ -80,45 +111,48 @@ class AdminService {
         throw error;
       }
 
-      console.log(`📋 [getPendingChallenges] Found ${data?.length || 0} pending challenges for review (ended before ${gracePeriodISO})`);
-      if (data && data.length > 0) {
-        // Log first few challenge IDs and their approval_status for debugging
-        const sample = data.slice(0, 5).map(c => ({ 
-          id: c.id.substring(0, 8) + '...', 
-          approval_status: c.approval_status, 
-          status: c.status,
-          end_date: c.end_date
-        }));
-        console.log(`📋 [getPendingChallenges] Sample pending challenges:`, sample);
+      if (!data || data.length === 0) {
+        return [];
       }
 
-      // Get participant counts for all challenges
-      if (data && data.length > 0) {
-        const challengeIds = data.map(c => c.id);
-        const { data: participantCounts, error: countError } = await supabase
-          .from('challenge_participants')
-          .select('challenge_id')
-          .in('challenge_id', challengeIds);
+      const challengeIds = data.map((c) => c.id);
 
-        if (countError) {
-          console.error('Error getting participant counts:', countError);
-        }
+      const [{ data: participantCounts, error: countError }, { data: flaggedRows, error: flagError }] =
+        await Promise.all([
+          supabase
+            .from('challenge_participants')
+            .select('challenge_id')
+            .in('challenge_id', challengeIds),
+          supabase
+            .from('challenge_submissions')
+            .select('challenge_id')
+            .in('challenge_id', challengeIds)
+            .eq('is_flagged', true),
+        ]);
 
-        const countMap = new Map<string, number>();
-        if (participantCounts) {
-          participantCounts.forEach((p: any) => {
-            const current = countMap.get(p.challenge_id) || 0;
-            countMap.set(p.challenge_id, current + 1);
-          });
-        }
+      if (countError) {
+        console.error('Error getting participant counts:', countError);
+      }
+      if (flagError) {
+        console.error('Error getting flagged submissions:', flagError);
+      }
 
-        return data.map(challenge => ({
+      const countMap = new Map<string, number>();
+      (participantCounts || []).forEach((p: any) => {
+        countMap.set(p.challenge_id, (countMap.get(p.challenge_id) || 0) + 1);
+      });
+
+      const flaggedSet = new Set((flaggedRows || []).map((r: any) => r.challenge_id));
+
+      return data
+        .map((challenge) => ({
           ...challenge,
           participant_count: countMap.get(challenge.id) || 0,
-        }));
-      }
-
-      return data || [];
+        }))
+        .filter(
+          (challenge) =>
+            (challenge.participant_count || 0) > 0 && flaggedSet.has(challenge.id)
+        );
     } catch (error) {
       console.error('Error in getPendingChallenges:', error);
       throw error;
@@ -564,6 +598,243 @@ class AdminService {
       console.error('Error in rejectChallenge:', error);
       throw error;
     }
+  }
+
+  /**
+   * Pending community content reports (flagged posts / users).
+   */
+  async getPendingContentReports(limit = 50): Promise<ContentReportItem[]> {
+    const { data: reports, error } = await supabase
+      .from('content_reports')
+      .select('*')
+      .eq('review_status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching content reports:', error);
+      throw error;
+    }
+
+    if (!reports || reports.length === 0) return [];
+
+    const userIds = [
+      ...new Set(
+        reports
+          .flatMap((r) => [r.reporter_id, r.reported_user_id])
+          .filter(Boolean) as string[]
+      ),
+    ];
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', userIds);
+
+    const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+
+    const postIdsBySource = {
+      posts: reports.filter((r) => r.post_source === 'posts' && r.post_id).map((r) => r.post_id as string),
+      daily_posts: reports
+        .filter((r) => r.post_source === 'daily_posts' && r.post_id)
+        .map((r) => r.post_id as string),
+    };
+
+    const [postsRes, dailyRes] = await Promise.all([
+      postIdsBySource.posts.length
+        ? supabase.from('posts').select('id, content, photos, user_id').in('id', postIdsBySource.posts)
+        : Promise.resolve({ data: [] as any[] }),
+      postIdsBySource.daily_posts.length
+        ? supabase
+            .from('daily_posts')
+            .select('id, captions, photos, user_id')
+            .in('id', postIdsBySource.daily_posts)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const postMap = new Map<string, any>();
+    (postsRes.data || []).forEach((p) => postMap.set(`posts:${p.id}`, p));
+    (dailyRes.data || []).forEach((p) => postMap.set(`daily_posts:${p.id}`, p));
+
+    return reports.map((report) => {
+      const postKey = report.post_source && report.post_id ? `${report.post_source}:${report.post_id}` : null;
+      const post = postKey ? postMap.get(postKey) : null;
+      const photo =
+        post?.photos?.find((uri: string) => /^https?:\/\//i.test(uri || '')) ||
+        post?.photos?.[0] ||
+        null;
+      const content =
+        post?.content ||
+        (Array.isArray(post?.captions) ? post.captions[0] : '') ||
+        '';
+
+      return {
+        ...report,
+        reporter: profileMap.get(report.reporter_id) || null,
+        reportedUser: report.reported_user_id
+          ? profileMap.get(report.reported_user_id) || null
+          : null,
+        postPreview: post
+          ? {
+              id: post.id,
+              content,
+              photoUrl: photo,
+              userId: post.user_id,
+            }
+          : null,
+      } as ContentReportItem;
+    });
+  }
+
+  async resolveContentReport(
+    reportId: string,
+    adminId: string,
+    status: 'dismissed' | 'actioned',
+    notes?: string
+  ): Promise<void> {
+    const isAdmin = await this.isAdmin(adminId);
+    if (!isAdmin) throw new Error('User is not an admin');
+
+    const { error } = await supabase
+      .from('content_reports')
+      .update({
+        review_status: status,
+        reviewed_by: adminId,
+        reviewed_at: new Date().toISOString(),
+        admin_notes: notes || null,
+      })
+      .eq('id', reportId);
+
+    if (error) throw error;
+  }
+
+  /**
+   * Delete a reported community post (posts or daily_posts), then mark report actioned.
+   */
+  async deleteReportedPost(report: ContentReportItem, adminId: string): Promise<void> {
+    const isAdmin = await this.isAdmin(adminId);
+    if (!isAdmin) throw new Error('User is not an admin');
+
+    if (!report.post_id || !report.post_source) {
+      throw new Error('No post linked to this report');
+    }
+
+    const table = report.post_source === 'daily_posts' ? 'daily_posts' : 'posts';
+    const { error } = await supabase.from(table).delete().eq('id', report.post_id);
+    if (error) throw error;
+
+    await this.resolveContentReport(report.id, adminId, 'actioned', 'Post deleted by admin');
+  }
+
+  /**
+   * Send an in-app + push warning to the reported user, then mark report actioned.
+   */
+  async warnReportedUser(
+    report: ContentReportItem,
+    adminId: string,
+    message: string
+  ): Promise<void> {
+    const isAdmin = await this.isAdmin(adminId);
+    if (!isAdmin) throw new Error('User is not an admin');
+
+    const targetUserId = report.reported_user_id || report.postPreview?.userId;
+    if (!targetUserId) {
+      throw new Error('No user to warn for this report');
+    }
+
+    const warning =
+      message.trim() ||
+      'Your recent post was reported and reviewed. Please keep community content respectful.';
+
+    const ok = await notificationService.createNotification(
+      {
+        user_id: targetUserId,
+        from_user_id: adminId,
+        notification_type: 'admin_warning',
+        post_id: report.post_source === 'posts' ? report.post_id || undefined : undefined,
+        habit_type: 'community_warning',
+        message: warning,
+      },
+      {
+        title: 'Community warning',
+        body: warning,
+      }
+    );
+
+    if (!ok) {
+      throw new Error('Failed to send warning notification');
+    }
+
+    await this.resolveContentReport(report.id, adminId, 'actioned', `Warning sent: ${warning}`);
+  }
+
+  /**
+   * Ban a reported user for 3 days, 7 days, or forever.
+   */
+  async banReportedUser(
+    report: ContentReportItem,
+    adminId: string,
+    duration: 3 | 7 | 'forever',
+    reason?: string
+  ): Promise<void> {
+    const isAdmin = await this.isAdmin(adminId);
+    if (!isAdmin) throw new Error('User is not an admin');
+
+    const targetUserId = report.reported_user_id || report.postPreview?.userId;
+    if (!targetUserId) {
+      throw new Error('No user to ban for this report');
+    }
+
+    if (targetUserId === adminId) {
+      throw new Error('You cannot ban yourself');
+    }
+
+    const banReason =
+      reason?.trim() ||
+      'Your account was banned after a community content review.';
+
+    let banExpiresAt: string;
+    let durationLabel: string;
+    if (duration === 'forever') {
+      banExpiresAt = 'infinity';
+      durationLabel = 'permanently';
+    } else {
+      const expires = new Date();
+      expires.setDate(expires.getDate() + duration);
+      banExpiresAt = expires.toISOString();
+      durationLabel = `for ${duration} days`;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        ban_expires_at: banExpiresAt,
+        ban_reason: banReason,
+      })
+      .eq('id', targetUserId);
+
+    if (error) throw error;
+
+    await notificationService.createNotification(
+      {
+        user_id: targetUserId,
+        from_user_id: adminId,
+        notification_type: 'admin_warning',
+        habit_type: 'account_ban',
+        message: `Your account has been banned ${durationLabel}. ${banReason}`,
+      },
+      {
+        title: 'Account banned',
+        body: `Your account has been banned ${durationLabel}.`,
+      }
+    );
+
+    await this.resolveContentReport(
+      report.id,
+      adminId,
+      'actioned',
+      `User banned ${durationLabel}: ${banReason}`
+    );
   }
 }
 

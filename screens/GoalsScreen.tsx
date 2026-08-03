@@ -23,8 +23,6 @@ import GoalItem from '../components/GoalItem';
 import { useTheme } from '../state/themeStore';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import NewGoalModal from '../components/NewGoalModal';
-import CreatePostModal from '../components/CreatePostModal';
 import CustomBackground from '../components/CustomBackground';
 import GymMyWorkoutLogger, { GymMyWorkoutLoggerHandle } from '../components/GymMyWorkoutLogger';
 import { workoutService } from '../lib/workoutService';
@@ -178,9 +176,6 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   const bottomNavPadding = useBottomNavPadding();
   const { goals, loading, error, fetchGoals, toggleGoalCompletion } = useGoalsStore();
   const { theme } = useTheme();
-  const [showNewGoalModal, setShowNewGoalModal] = useState(false);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
-  const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'goals' | 'workout'>(
     route.params?.openWorkout ? 'workout' : 'goals'
   );
@@ -283,8 +278,8 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
       if (route.params?.openCreateGoal) {
         setActiveTab('goals');
         setGoalsFilter('active');
-        setShowNewGoalModal(true);
         navigation.setParams?.({ openCreateGoal: undefined });
+        navigation.navigate('CreateGoal');
       }
       if (user && (activeTab === 'workout' || route.params?.openWorkout)) {
         loadActiveSplit();
@@ -655,7 +650,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
             </TouchableOpacity>
             {activeTab === 'goals' && (
               <TouchableOpacity
-                onPress={() => setShowNewGoalModal(true)}
+                onPress={() => navigation.navigate('CreateGoal')}
                 style={styles.newGoalButton}
               >
                 <Ionicons name="add" size={24} color={theme.textPrimary} />
@@ -757,7 +752,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                   </Text>
                   {goalsFilter === 'active' && (
                     <TouchableOpacity
-                      onPress={() => setShowNewGoalModal(true)}
+                      onPress={() => navigation.navigate('CreateGoal')}
                       style={styles.createFirstGoalButton}
                     >
                       <Text style={styles.createFirstGoalButtonText}>Create goal</Text>
@@ -1182,41 +1177,6 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
         </ScrollView>
       </SafeAreaView>
       
-      {/* New Goal Modal */}
-      <NewGoalModal
-        visible={showNewGoalModal}
-        onClose={() => setShowNewGoalModal(false)}
-        onGoalCreated={(goalId) => {
-          setNewlyCreatedGoalId(goalId);
-          setShowNewGoalModal(false);
-          // Open CreatePostModal with the new goal pre-selected
-          setShowCreatePostModal(true);
-          // Refresh goals after creation
-          if (user) {
-            fetchGoals(user.id);
-          }
-        }}
-      />
-
-      {/* Create Post Modal */}
-      <CreatePostModal
-        visible={showCreatePostModal}
-        onClose={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-        }}
-        onPostCreated={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-          // Refresh goals after creation
-          if (user) {
-            fetchGoals(user.id);
-          }
-        }}
-        userGoals={goals.filter(goal => !goal.completed)}
-        preSelectedGoal={newlyCreatedGoalId || undefined}
-      />
-
       {/* Exercise Modal */}
       <Modal
         visible={showExerciseModal}

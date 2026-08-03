@@ -18,6 +18,7 @@ import { useAuthStore } from '../state/authStore';
 import { useTheme } from '../state/themeStore';
 import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
+import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
 import CustomBackground from '../components/CustomBackground';
 
 export default function ProfileSetupScreen() {
@@ -86,39 +87,18 @@ export default function ProfileSetupScreen() {
   };
 
   const uploadAvatar = async (imageUri: string, userId: string): Promise<string | null> => {
-    try {
-      const fileExt = 'jpg';
-      const uniqueFileName = `profile_${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${userId}/profile/${uniqueFileName}`;
-      
-      const formData = new FormData();
-      formData.append('file', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: uniqueFileName,
-      } as any);
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('users')
-        .upload(filePath, formData, {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
+    const fileExt = 'jpg';
+    const uniqueFileName = `profile_${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `${userId}/profile/${uniqueFileName}`;
 
-      if (uploadError) {
-        console.error('❌ Avatar upload error:', uploadError);
-        return null;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('users')
-        .getPublicUrl(uploadData.path);
-
-      return urlData.publicUrl;
-    } catch (error) {
-      console.error('❌ Error uploading avatar:', error);
-      return null;
-    }
+    return uploadMediaSafely({
+      uri: imageUri,
+      path: filePath,
+      contentType: 'image/jpeg',
+      fileName: uniqueFileName,
+      upsert: true,
+      mediaType: 'image',
+    });
   };
 
   const handleSaveProfile = async () => {
@@ -200,8 +180,7 @@ export default function ProfileSetupScreen() {
       
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);
-      console.error('Error stack:', error.stack);
-      Alert.alert('Error', `Failed to save profile: ${error.message || 'Unknown error'}. Please try again.`);
+      Alert.alert('Upload blocked', moderationAlertMessage(error));
     } finally {
       setLoading(false);
     }

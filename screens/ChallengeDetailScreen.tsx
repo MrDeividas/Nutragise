@@ -11,6 +11,7 @@ import {
   Dimensions,
   Modal,
   Pressable,
+  Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,12 +38,21 @@ import {
 import { PotStatus } from '../types/wallet';
 import ChallengeSubmissionModal from '../components/ChallengeSubmissionModal';
 import CustomBackground from '../components/CustomBackground';
-import UpgradeToProModal from '../components/UpgradeToProModal';
 import { postsService } from '../lib/postsService';
 import { getDailyPostDate, localDeviceCalendarYmd } from '../lib/timeService';
 import { getChallengeDisplayTitle, isCuratedGymChallengeForCardHero, challengeAllowsGalleryProofUpload, stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 
 const { width, height: windowHeight } = Dimensions.get('window');
+
+const DARK = '#1f2937';
+const CHALLENGE_TABS = ['about', 'schedule', 'details', 'submissions'] as const;
+type ChallengeDetailTab = (typeof CHALLENGE_TABS)[number];
+const CHALLENGE_TAB_LABELS: Record<ChallengeDetailTab, string> = {
+  about: 'About',
+  schedule: 'Schedule',
+  details: 'Details',
+  submissions: 'Submissions',
+};
 
 /** Prefer today's proof with a photo; else most recent submission that has a photo. */
 function getParticipantPreviewSubmission(subs: ChallengeSubmission[]): ChallengeSubmission | null {
@@ -194,11 +204,13 @@ export default function ChallengeDetailScreen({ route }: any) {
   const [isParticipating, setIsParticipating] = useState(false);
   const [showSubmissionModal, setShowSubmissionModal] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(1);
-  const [activeTab, setActiveTab] = useState('about');
+  const [activeTab, setActiveTab] = useState<ChallengeDetailTab>('about');
+  const [segmentTrackWidth, setSegmentTrackWidth] = useState(0);
+  const segmentIndicatorX = useRef(new Animated.Value(0)).current;
+  const segmentHasPositioned = useRef(false);
   const [potStatus, setPotStatus] = useState<PotStatus | null>(null);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [participantTodaySubmissions, setParticipantTodaySubmissions] = useState<Set<string>>(new Set());
   /** All submissions grouped by userId, enriched with has_flagged_by_me */
   const [participantSubmissions, setParticipantSubmissions] = useState<Record<string, ChallengeSubmission[]>>({});
@@ -226,12 +238,32 @@ export default function ChallengeDetailScreen({ route }: any) {
       };
       refreshProgress();
     }
-    if (activeTab === 'participants' && prevActiveTab.current !== 'participants' && challenge && user) {
+    if (activeTab === 'submissions' && prevActiveTab.current !== 'submissions' && challenge && user) {
       loadParticipantSubmissionsData(challenge.id, user.id);
       setSelectedParticipantDay(getCurrentChallengeDay());
     }
     prevActiveTab.current = activeTab;
   }, [activeTab, challenge?.id, user?.id, isParticipating]);
+
+  const segmentIndex = Math.max(0, CHALLENGE_TABS.indexOf(activeTab));
+  const segmentTabWidth = segmentTrackWidth > 0 ? segmentTrackWidth / CHALLENGE_TABS.length : 0;
+
+  useEffect(() => {
+    if (segmentTabWidth <= 0) return;
+    const toValue = segmentIndex * segmentTabWidth;
+    if (!segmentHasPositioned.current) {
+      segmentHasPositioned.current = true;
+      segmentIndicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(segmentIndicatorX, {
+      toValue,
+      useNativeDriver: true,
+      stiffness: 230,
+      damping: 24,
+      mass: 0.9,
+    }).start();
+  }, [segmentIndex, segmentTabWidth, segmentIndicatorX]);
 
   const loadUserProfile = async () => {
     if (user?.id) {
@@ -563,16 +595,6 @@ export default function ChallengeDetailScreen({ route }: any) {
   const handleJoinChallenge = async () => {
     if (!user || !challenge) return;
 
-    if (challenge.is_pro_only && !userProfile?.is_pro) {
-      setShowUpgradeModal(true);
-      return;
-    }
-
-    if (!userProfile?.is_pro && (challenge.duration_weeks || 1) > 1) {
-      setShowUpgradeModal(true);
-      return;
-    }
-
     const entryFee = challenge.entry_fee || 0;
 
     if (entryFee <= 0) {
@@ -642,12 +664,12 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
 
     const challengeDays = getChallengeDays();
-    if (activeTab === 'participants' && challengeDays.length > 0) {
+    if (activeTab === 'submissions' && challengeDays.length > 0) {
       const sel = challengeDays.find((d) => d.dayNumber === selectedParticipantDay);
       if (!sel?.isToday) {
         Alert.alert(
           'Today only',
-          'You can only take a photo for today. In Participants, select the day labelled Today, or switch to About, Schedule, or Details.',
+          'You can only take a photo for today. In Submissions, select the day labelled Today, or switch to About, Schedule, or Details.',
           [{ text: 'OK' }],
         );
         return;
@@ -1020,7 +1042,7 @@ export default function ChallengeDetailScreen({ route }: any) {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header — back, date + title centre, spacer for balance */}
+        {/* Header — back, date + title centre */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
@@ -1068,7 +1090,10 @@ export default function ChallengeDetailScreen({ route }: any) {
           </View>
           <View style={styles.statColumn}>
             <Text style={[styles.statValue, { color: '#1F2937' }]}>
-              £{potStatus?.totalAmount.toFixed(2) || ((challenge.participants?.length || 0) * (challenge.entry_fee || 0)).toFixed(2)}
+              £{Math.round(
+                potStatus?.totalAmount ??
+                  (challenge.participants?.length || 0) * (challenge.entry_fee || 0)
+              )}
             </Text>
             <Text style={[styles.statLabel, { color: '#6B7280' }]}>total pot</Text>
           </View>
@@ -1142,81 +1167,48 @@ export default function ChallengeDetailScreen({ route }: any) {
           </View>
         ) : null}
 
-        {/* Wallet Balance (if not participating and has entry fee) */}
-        {(challenge.entry_fee ?? 0) > 0 && !isParticipating && (
-          <View style={[styles.balanceCard, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View>
-                <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
-                  Your Wallet Balance
-                </Text>
-                <Text style={[styles.balanceValue, { color: theme.textPrimary }]}>
-                  £{walletBalance.toFixed(2)}
-                </Text>
-              </View>
-              <TouchableOpacity 
-                onPress={() => navigation.navigate('Wallet')}
-                style={[styles.addFundsButton, { backgroundColor: theme.textPrimary }]}
-              >
-                <Text style={styles.addFundsButtonText}>Add Funds</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {/* Tabs */}
         <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={styles.tab} 
-            onPress={() => setActiveTab('about')}
+          <View
+            style={styles.segmentBar}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width - 8;
+              if (w > 0 && Math.abs(w - segmentTrackWidth) > 0.5) {
+                setSegmentTrackWidth(w);
+              }
+            }}
           >
-            <Text style={[
-              styles.tabText, 
-              { color: activeTab === 'about' ? theme.textPrimary : theme.textSecondary }
-            ]}>
-              About
-            </Text>
-            {activeTab === 'about' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.tab} 
-            onPress={() => setActiveTab('schedule')}
-          >
-            <Text style={[
-              styles.tabText, 
-              { color: activeTab === 'schedule' ? theme.textPrimary : theme.textSecondary }
-            ]}>
-              Schedule
-            </Text>
-            {activeTab === 'schedule' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.tab} 
-            onPress={() => setActiveTab('details')}
-          >
-            <Text style={[
-              styles.tabText, 
-              { color: activeTab === 'details' ? theme.textPrimary : theme.textSecondary }
-            ]}>
-              Details
-            </Text>
-            {activeTab === 'details' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.tab} 
-            onPress={() => setActiveTab('participants')}
-          >
-            <Text style={[
-              styles.tabText, 
-              { color: activeTab === 'participants' ? theme.textPrimary : theme.textSecondary }
-            ]}>
-              Participants
-            </Text>
-            {activeTab === 'participants' && <View style={[styles.tabUnderline, { backgroundColor: theme.textPrimary }]} />}
-          </TouchableOpacity>
+            {segmentTabWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.segmentIndicator,
+                  {
+                    width: segmentTabWidth,
+                    transform: [{ translateX: segmentIndicatorX }],
+                  },
+                ]}
+              />
+            )}
+            {CHALLENGE_TABS.map((tabKey) => (
+              <TouchableOpacity
+                key={tabKey}
+                style={styles.segment}
+                onPress={() => setActiveTab(tabKey)}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    activeTab === tabKey && styles.segmentTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {CHALLENGE_TAB_LABELS[tabKey]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Tab Content */}
@@ -1292,18 +1284,69 @@ export default function ChallengeDetailScreen({ route }: any) {
                 Hosted by
               </Text>
               <View style={[styles.hostContainer, { backgroundColor: theme.cardBackground }]}>
-                <View style={[styles.hostAvatar, { backgroundColor: theme.textPrimary }]}>
-                  <Ionicons name="person" size={24} color="#FFFFFF" />
-                </View>
+                <Image
+                  source={require('../assets/icon.png')}
+                  style={styles.hostAvatar}
+                />
                 <View style={styles.hostInfo}>
                   <Text style={[styles.hostName, { color: theme.textPrimary }]}>
-                    {challenge.creator?.display_name || challenge.creator?.username || 'NutrApp Team'}
+                    Nutragise
                   </Text>
                   <Text style={[styles.hostRole, { color: theme.textSecondary }]}>
                     Challenge Host
                   </Text>
                 </View>
               </View>
+
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginTop: 20 }]}>
+                Participants
+              </Text>
+              {(challenge.participants?.length ?? 0) > 0 ? (
+                <View style={styles.aboutParticipantsCard}>
+                  {challenge.participants!.map((participant, index) => {
+                    const isOwn = participant.user_id === user?.id;
+                    const name = isOwn
+                      ? 'You'
+                      : participant.user?.display_name ||
+                        participant.user?.username ||
+                        'Anonymous';
+                    return (
+                      <View
+                        key={participant.id || participant.user_id || index}
+                        style={[
+                          styles.aboutParticipantRow,
+                          index < challenge.participants!.length - 1 && styles.aboutParticipantDivider,
+                        ]}
+                      >
+                        {participant.user?.avatar_url ? (
+                          <Image
+                            source={{ uri: participant.user.avatar_url }}
+                            style={styles.aboutParticipantAvatar}
+                          />
+                        ) : (
+                          <View style={styles.aboutParticipantAvatarPlaceholder}>
+                            <Text style={styles.aboutParticipantInitial}>
+                              {name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <Text
+                          style={[styles.aboutParticipantName, { color: theme.textPrimary }]}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.aboutParticipantsEmpty}>
+                  <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
+                    No participants yet — be the first to join.
+                  </Text>
+                </View>
+              )}
 
               {/* Leave Challenge Button (only if participating and not started) */}
               {isParticipating && (() => {
@@ -1493,7 +1536,7 @@ export default function ChallengeDetailScreen({ route }: any) {
           </View>
         )}
 
-        {activeTab === 'participants' && (
+        {activeTab === 'submissions' && (
           <View style={styles.tabContent}>
             {(() => {
               const days = getChallengeDays();
@@ -1621,7 +1664,6 @@ export default function ChallengeDetailScreen({ route }: any) {
                         const daySubmission = matchedDaySubmission ?? todayOwnSubmission;
                         const previewSub = daySubmission;
                         const previewUri = previewSub?.photo_url ?? null;
-                        const hasDaySubmission = daySubmission !== null;
                         const hasSubmittedOnDay = selectedDayObj?.isToday
                           ? participantTodaySubmissions.has(participant.user_id) || daySubmission !== null
                           : daySubmission !== null;
@@ -1640,24 +1682,7 @@ export default function ChallengeDetailScreen({ route }: any) {
 
                         return (
                           <View key={participant.id || index} style={styles.participantCard}>
-                            <TouchableOpacity
-                              style={styles.participantCardMain}
-                              activeOpacity={previewUri || hasDaySubmission ? 0.85 : 1}
-                              disabled={!hasDaySubmission}
-                              onPress={() => previewSub && setPreviewedSubmission(previewSub)}
-                            >
-                              {previewUri ? (
-                                <Image source={{ uri: previewUri }} style={styles.participantProofLarge} />
-                              ) : (
-                                <View style={styles.participantProofEmpty}>
-                                  <Ionicons
-                                    name={selectedIsFuture ? 'time-outline' : hasDaySubmission ? 'image-outline' : 'remove-outline'}
-                                    size={22}
-                                    color="#C4C9D1"
-                                  />
-                                </View>
-                              )}
-
+                            <View style={styles.participantCardMain}>
                               <View style={styles.participantMeta}>
                                 <View style={styles.participantIdentity}>
                                   {participant.user?.avatar_url ? (
@@ -1675,29 +1700,72 @@ export default function ChallengeDetailScreen({ route }: any) {
                                     </View>
                                   )}
                                   <View style={{ flex: 1, minWidth: 0 }}>
-                                    <Text style={[styles.participantNameClean, { color: theme.textPrimary }]} numberOfLines={1}>
+                                    <Text
+                                      style={[styles.participantNameClean, { color: theme.textPrimary }]}
+                                      numberOfLines={1}
+                                    >
                                       {isOwnRow
                                         ? 'You'
-                                        : participant.user?.display_name || participant.user?.username || 'Anonymous'}
+                                        : participant.user?.display_name ||
+                                          participant.user?.username ||
+                                          'Anonymous'}
                                     </Text>
-                                    <Text style={[styles.participantProgressClean, { color: theme.textSecondary }]}>
-                                      {submittedDaysCount}/{totalChallengeDays} days
-                                    </Text>
+                                    <View style={styles.participantProgressRow}>
+                                      <Text
+                                        style={[
+                                          styles.participantProgressClean,
+                                          { color: theme.textSecondary },
+                                        ]}
+                                      >
+                                        {submittedDaysCount}/{totalChallengeDays} days
+                                      </Text>
+                                      <View
+                                        style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}
+                                      >
+                                        <View
+                                          style={[styles.statusDot, { backgroundColor: statusColor }]}
+                                        />
+                                        <Text style={[styles.statusPillText, { color: statusColor }]}>
+                                          {statusLabel}
+                                        </Text>
+                                      </View>
+                                    </View>
                                   </View>
                                 </View>
 
-                                <View style={[styles.statusPill, { backgroundColor: `${statusColor}14` }]}>
-                                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                                  <Text style={[styles.statusPillText, { color: statusColor }]}>{statusLabel}</Text>
-                                </View>
+                                <TouchableOpacity
+                                  style={styles.participantThumbBtn}
+                                  activeOpacity={previewUri ? 0.85 : 1}
+                                  disabled={!previewUri || !previewSub}
+                                  onPress={() => previewSub && setPreviewedSubmission(previewSub)}
+                                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                >
+                                  {previewUri ? (
+                                    <Image
+                                      source={{ uri: previewUri }}
+                                      style={styles.participantThumb}
+                                    />
+                                  ) : (
+                                    <View style={styles.participantThumbEmpty}>
+                                      <Ionicons
+                                        name={
+                                          selectedIsFuture
+                                            ? 'time-outline'
+                                            : 'image-outline'
+                                        }
+                                        size={16}
+                                        color="#C4C9D1"
+                                      />
+                                    </View>
+                                  )}
+                                  {isFlagged ? (
+                                    <View style={styles.flagThumbBadge}>
+                                      <Ionicons name="flag" size={8} color="#FFFFFF" />
+                                    </View>
+                                  ) : null}
+                                </TouchableOpacity>
                               </View>
-
-                              {isFlagged && (
-                                <View style={styles.flagCorner}>
-                                  <Ionicons name="flag" size={10} color="#FFFFFF" />
-                                </View>
-                              )}
-                            </TouchableOpacity>
+                            </View>
 
                             {!isOwnRow && daySubmission && (
                               <TouchableOpacity
@@ -1718,9 +1786,9 @@ export default function ChallengeDetailScreen({ route }: any) {
                       })
                     ) : (
                       <View style={styles.emptyParticipants}>
-                        <Ionicons name="people-outline" size={40} color={theme.textSecondary} />
+                        <Ionicons name="images-outline" size={40} color={theme.textSecondary} />
                         <Text style={[styles.emptyParticipantsText, { color: theme.textSecondary }]}>
-                          No participants yet
+                          No submissions yet
                         </Text>
                       </View>
                     )}
@@ -1751,7 +1819,7 @@ export default function ChallengeDetailScreen({ route }: any) {
             const dayList = getChallengeDays();
             const selectedDayForPicker = dayList.find((d) => d.dayNumber === selectedParticipantDay);
             const participantsDayLocksCamera =
-              activeTab === 'participants' &&
+              activeTab === 'submissions' &&
               dayList.length > 0 &&
               !(selectedDayForPicker?.isToday ?? false);
             const photoActionLocked = uploadLocked || participantsDayLocksCamera;
@@ -2095,9 +2163,7 @@ const styles = StyleSheet.create({
   hostAvatar: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 8,
   },
   hostInfo: {
     flex: 1,
@@ -2148,28 +2214,101 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tabsContainer: {
-    flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    justifyContent: 'space-between',
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  tab: {
+  segmentBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    position: 'relative',
+  },
+  segmentIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 12,
+    backgroundColor: DARK,
+  },
+  segment: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    zIndex: 1,
+    paddingHorizontal: 2,
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 4,
+  segmentText: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  tabUnderline: {
-    width: 30,
-    height: 2,
-    borderRadius: 1,
+  segmentTextActive: {
+    color: '#FFFFFF',
   },
   tabContent: {
     flex: 1,
+  },
+  aboutParticipantsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  aboutParticipantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  aboutParticipantDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F3',
+  },
+  aboutParticipantAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+  },
+  aboutParticipantAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EEF2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aboutParticipantInitial: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  aboutParticipantName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  aboutParticipantsEmpty: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 8,
   },
   scheduleContainer: {
     paddingHorizontal: 20,
@@ -2343,31 +2482,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  balanceCard: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginHorizontal: 16,
-    marginTop: 16,
-  },
-  balanceLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  balanceValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  addFundsButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addFundsButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   participantsContainer: {
     paddingHorizontal: 20,
     paddingTop: 8,
@@ -2451,7 +2565,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'stretch',
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#EEF0F3',
     overflow: 'hidden',
@@ -2459,18 +2573,6 @@ const styles = StyleSheet.create({
   participantCardMain: {
     flex: 1,
     minWidth: 0,
-  },
-  participantProofLarge: {
-    width: '100%',
-    height: 168,
-    backgroundColor: '#F3F4F6',
-  },
-  participantProofEmpty: {
-    width: '100%',
-    height: 120,
-    backgroundColor: '#F8F9FB',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   participantMeta: {
     flexDirection: 'row',
@@ -2509,38 +2611,65 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  participantProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+  },
   participantProgressClean: {
     fontSize: 12,
     fontWeight: '500',
-    marginTop: 1,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 5,
   },
   statusDot: {
-    width: 6,
-    height: 6,
+    width: 5,
+    height: 5,
     borderRadius: 3,
   },
   statusPillText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
-  flagCorner: {
+  participantThumbBtn: {
+    position: 'relative',
+  },
+  participantThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+  },
+  participantThumbEmpty: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#F8F9FB',
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flagThumbBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: -3,
+    right: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   flagSideBtn: {
     width: 44,

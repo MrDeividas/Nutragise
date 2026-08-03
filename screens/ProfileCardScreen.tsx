@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import MediaUploadModal from './MediaUploadModal';
-import { supabase } from '../lib/supabase';
+import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProfileCardScreen({ navigation }: any) {
@@ -67,52 +67,28 @@ export default function ProfileCardScreen({ navigation }: any) {
 
   const handleProfilePictureUpload = async (imageUri: string) => {
     try {
-      console.log('Starting profile picture upload with URI:', imageUri);
-      
-      // Generate unique filename for profile picture
-      const fileExt = 'jpg';
-      const uniqueFileName = `profile_${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${user?.id}/profile/${uniqueFileName}`;
-      
-      console.log('Uploading to path:', filePath);
-      
-      // Create FormData for React Native compatibility
-      const formData = new FormData();
-      
-      formData.append('file', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: uniqueFileName,
-      } as any);
-      
-      // Upload to users storage bucket
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('users')
-        .upload(filePath, formData, {
-          contentType: 'image/jpeg',
-          upsert: true, // Allow overwriting existing profile pictures
-        });
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        Alert.alert('Upload Error', uploadError.message);
+      if (!user?.id) {
+        Alert.alert('Error', 'Please sign in again.');
         return;
       }
 
-      console.log('Upload successful, data:', uploadData);
+      const fileExt = 'jpg';
+      const uniqueFileName = `profile_${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `${user.id}/profile/${uniqueFileName}`;
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('users')
-        .getPublicUrl(uploadData.path);
+      const publicUrl = await uploadMediaSafely({
+        uri: imageUri,
+        path: filePath,
+        contentType: 'image/jpeg',
+        fileName: uniqueFileName,
+        upsert: true,
+        mediaType: 'image',
+      });
 
-      console.log('Public URL:', urlData.publicUrl);
-
-      // Update user profile with new avatar URL
       const { error: updateError } = await updateProfile({
         username: user?.username || '',
         bio: user?.bio || '',
-        avatar_url: urlData.publicUrl
+        avatar_url: publicUrl,
       });
 
       if (updateError) {
@@ -121,12 +97,11 @@ export default function ProfileCardScreen({ navigation }: any) {
         return;
       }
 
-      console.log('Profile updated successfully with URL:', urlData.publicUrl);
       setShowMediaUpload(false);
       Alert.alert('Success', 'Profile picture updated successfully!');
     } catch (error) {
       console.error('Profile picture upload error:', error);
-      Alert.alert('Error', 'Failed to update profile picture');
+      Alert.alert('Upload blocked', moderationAlertMessage(error));
     }
   };
 

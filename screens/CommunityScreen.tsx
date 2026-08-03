@@ -38,8 +38,8 @@ import PostInteractionBar from '../components/PostInteractionBar';
 import DailyPostInteractionBar from '../components/DailyPostInteractionBar';
 import CommentModal from '../components/CommentModal';
 import PostCommentModal from '../components/PostCommentModal';
-import CreatePostModal from '../components/CreatePostModal';
-import NewGoalModal from '../components/NewGoalModal';
+import CoreHabitSheet from '../components/CoreHabitSheet';
+import PostOptionsSheet, { PostOptionsAction } from '../components/PostOptionsSheet';
 import GesturePhotoCarousel from '../components/GesturePhotoCarousel';
 import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
 import { notificationService } from '../lib/notificationService';
@@ -48,6 +48,8 @@ import { dailyPostInteractionsService } from '../lib/dailyPostInteractions';
 import { formatLastUpdate } from '../lib/goalHelpers';
 import { postsService } from '../lib/postsService';
 import { dailyPostsService } from '../lib/dailyPostsService';
+import { moderationService } from '../lib/moderationService';
+import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
 import { DailyPost } from '../types/database';
 
 // Extended Goal type with user data
@@ -68,6 +70,8 @@ interface PostWithUser {
   user_id: string;
   content: string;
   goal_id?: string;
+  goal_title?: string | null;
+  milestone_title?: string | null;
   challenge_id?: string;
   challenge_title?: string;
   date: string;
@@ -87,6 +91,8 @@ interface PostWithUser {
   };
   dailyHabits?: DailyHabits;
   type: 'post'; // To distinguish from goals
+  /** Origin table — daily_post rows use different like/comment tables */
+  feedSource?: 'post' | 'daily_post';
 }
 
 // Extended DailyPost type with user data
@@ -142,10 +148,7 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
   const [selectedPostForComment, setSelectedPostForComment] = useState<{id: string, title: string} | null>(null);
   const [allPosts, setAllPosts] = useState<PostWithUser[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
-  const [showNewGoalModal, setShowNewGoalModal] = useState(false);
-  const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState<{[postId: string]: number}>({});
   const [showFullScreenModal, setShowFullScreenModal] = useState(false);
   const [fullScreenPhotos, setFullScreenPhotos] = useState<string[]>([]);
@@ -1212,11 +1215,15 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
   };
 
   const handlePostCommentPress = (postId: string) => {
-    const posts = explorePosts.filter(p => p.id === postId);
-    if (posts.length === 0) return;
-    
-    const post = posts[0];
-    setSelectedPostForComment({ id: postId, title: post.content || 'Post' });
+    const post =
+      allPosts.find((p) => p.id === postId) ||
+      explorePosts.find((p) => p.id === postId);
+    if (!post) return;
+
+    setSelectedPostForComment({
+      id: postId,
+      title: post.feedSource === 'daily_post' ? 'Daily Post' : post.content || 'Post',
+    });
     setPostCommentModalVisible(true);
   };
 
@@ -1277,45 +1284,133 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
 
     setLoadingPosts(true);
     try {
-      // Get all public posts
-      const posts = await postsService.getAllPublicPosts(50);
-      
-      if (posts.length === 0) {
+      const isRemotePhoto = (uri: string) => /^https?:\/\//i.test(uri || '');
+
+      // Remote URLs for everyone; keep local file:// only for the current user's device
+      const displayPhotos = (photos: string[] | null | undefined, ownerId: string) => {
+        const list = photos || [];
+        const remote = list.filter(isRemotePhoto);
+        if (remote.length > 0) return remote;
+        if (ownerId === user.id) return list.filter(Boolean);
+        return [];
+      };
+
+      // Tips feed used to read only `posts`, but most shared photos live in `daily_posts`.
+      const [posts, dailyPostsRes] = await Promise.all([
+        postsService.getAllPublicPosts(50),
+        supabase
+          .from('daily_posts')
+          .select('*')
+          .eq('hidden_from_feed', false)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      if (dailyPostsRes.error) {
+        console.error('Error fetching daily posts for community feed:', dailyPostsRes.error);
+      }
+
+      const dailyPostsData = dailyPostsRes.data || [];
+      const dailyById = new Map(dailyPostsData.map((d: any) => [d.id, d]));
+      const coveredDailyIds = new Set<string>();
+
+      const blockedIds = new Set(await moderationService.getBlockedUserIds(user.id));
+      const isBlockedAuthor = (userId: string) => blockedIds.has(userId);
+
+      const normalizedPosts = posts.map((post: any) => {
+        let photos = displayPhotos(post.photos, post.user_id);
+        // Prefer remote photos from linked daily_post when the post row still has local URIs
+        if (!photos.some(isRemotePhoto) && post.daily_post_id && dailyById.has(post.daily_post_id)) {
+          const fromDaily = displayPhotos(dailyById.get(post.daily_post_id).photos, post.user_id);
+          if (fromDaily.length > 0) photos = fromDaily;
+        }
+        if (post.daily_post_id) coveredDailyIds.add(post.daily_post_id);
+        return {
+          ...post,
+          content: post.content || post.caption || '',
+          photos,
+          type: 'post' as const,
+          feedSource: 'post' as const,
+        };
+      });
+
+      const dailyAsPosts = dailyPostsData
+        .filter((d: any) => !coveredDailyIds.has(d.id))
+        .map((d: any) => {
+          const photos = displayPhotos(d.photos, d.user_id);
+          const content = (d.captions && d.captions[0]) || '';
+          if (photos.length === 0 && !content.trim()) return null;
+          return {
+            id: d.id,
+            user_id: d.user_id,
+            content,
+            date: d.date,
+            photos,
+            habits_completed: d.habits_completed || [],
+            caption: content,
+            mood_rating: 0,
+            energy_level: 0,
+            is_public: true,
+            created_at: d.created_at,
+            updated_at: d.updated_at,
+            type: 'post' as const,
+            feedSource: 'daily_post' as const,
+          };
+        })
+        .filter(Boolean) as PostWithUser[];
+
+      const merged = [...normalizedPosts, ...dailyAsPosts]
+        .filter((p: any) => !isBlockedAuthor(p.user_id))
+        .sort(
+          (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+      if (merged.length === 0) {
         setAllPosts([]);
         return;
       }
-      
-      // Get profile data for post creators
-      const userIds = [...new Set(posts.map(post => post.user_id))];
-      
+
+      const userIds = [...new Set(merged.map((post: any) => post.user_id))];
+
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, username, display_name, avatar_url')
         .in('id', userIds);
 
-        if (profilesError) {
-          console.error('Error fetching profiles for posts:', profilesError);
-        } else {
-          const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
-          const enrichedProfiles = await enrichProfilesWithAvatars(profiles || []);
+      let postsWithProfiles: PostWithUser[];
+      if (profilesError) {
+        console.error('Error fetching profiles for posts:', profilesError);
+        postsWithProfiles = merged as PostWithUser[];
+      } else {
+        const { enrichProfilesWithAvatars } = await import('../lib/avatarUtils');
+        const enrichedProfiles = await enrichProfilesWithAvatars(profiles || []);
+        const profileMap = new Map();
+        enrichedProfiles.forEach((profile: any) => {
+          profileMap.set(profile.id, profile);
+        });
 
-          // Create a map of user ID to profile data
-          const profileMap = new Map();
-          enrichedProfiles.forEach(profile => {
-            profileMap.set(profile.id, profile);
-          });
+        postsWithProfiles = merged.map((post: any) => ({
+          ...post,
+          profiles: profileMap.get(post.user_id),
+          type: 'post' as const,
+        })) as PostWithUser[];
+      }
 
-          // Attach profile data to posts
-          const postsWithProfiles = posts.map(post => ({
-            ...post,
-            profiles: profileMap.get(post.user_id),
-            type: 'post' as const
-          }));
+      setAllPosts(postsWithProfiles);
 
-          setAllPosts(postsWithProfiles as PostWithUser[]);
-          // Load interaction data for these posts
-          await loadPostInteractionData(postsWithProfiles as PostWithUser[]);
-        }
+      // Never clear the feed if interaction counts fail
+      try {
+        const regularPosts = postsWithProfiles.filter((p) => p.feedSource !== 'daily_post');
+        const dailyFeedPosts = postsWithProfiles.filter((p) => p.feedSource === 'daily_post');
+        await Promise.all([
+          regularPosts.length ? loadPostInteractionData(regularPosts) : Promise.resolve(),
+          dailyFeedPosts.length
+            ? loadDailyPostInteractionData(dailyFeedPosts as unknown as DailyPostWithUser[])
+            : Promise.resolve(),
+        ]);
+      } catch (interactionError) {
+        console.error('Error loading community interaction data:', interactionError);
+      }
     } catch (error) {
       console.error('Error loading all posts:', error);
       setAllPosts([]);
@@ -1716,101 +1811,50 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
         }}
       />
 
-      {/* Create Post Modal */}
-      <CreatePostModal
-        visible={showCreatePostModal}
-        onClose={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-        }}
-        onPostCreated={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-          loadExploreGoals(); // Reload goals and posts after creating post
-        }}
-        userGoals={exploreGoals.filter(goal => !goal.completed)}
-        preSelectedGoal={newlyCreatedGoalId || undefined}
-      />
-
-      {/* New Goal Modal */}
-      <NewGoalModal
-        visible={showNewGoalModal}
-        onClose={() => setShowNewGoalModal(false)}
-        onGoalCreated={(goalId) => {
-          setNewlyCreatedGoalId(goalId);
-          setShowNewGoalModal(false);
-          // Open CreatePostModal with the new goal pre-selected
-          setShowCreatePostModal(true);
-        }}
-      />
-
-      {/* Action Modal - Create Goal or Update Daily Post */}
-      <Modal
+      {/* Action sheet — fade dim + slide sheet */}
+      <CoreHabitSheet
         visible={showActionModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowActionModal(false)}
+        onClose={() => setShowActionModal(false)}
+        title="What would you like to do?"
+        subtitle="Choose an action to continue"
+        fitContent
       >
-        <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.actionModal}>
-                <View style={styles.actionModalHandle} />
-                <Text style={styles.actionModalTitle}>
-                  What would you like to do?
-                </Text>
-                <Text style={styles.actionModalSubtitle}>
-                  Choose an action to continue
-                </Text>
-                
-                <TouchableOpacity 
-                  style={styles.actionOption}
-                  onPress={() => {
-                    setShowActionModal(false);
-                    setShowNewGoalModal(true);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.actionOptionIcon}>
-                    <Ionicons name="flag-outline" size={20} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.actionOptionTextCol}>
-                    <Text style={styles.actionOptionTitle}>Create Goal</Text>
-                    <Text style={styles.actionOptionDesc}>Set a new goal to track</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.actionOption}
-                  onPress={() => {
-                    setShowActionModal(false);
-                    setShowCreatePostModal(true);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.actionOptionIcon}>
-                    <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.actionOptionTextCol}>
-                    <Text style={styles.actionOptionTitle}>Update Daily Post</Text>
-                    <Text style={styles.actionOptionDesc}>Share today’s progress</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={() => setShowActionModal(false)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
+        <TouchableOpacity
+          style={styles.actionOption}
+          onPress={() => {
+            setShowActionModal(false);
+            navigation?.navigate('CreateGoal');
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.actionOptionIcon}>
+            <Ionicons name="flag-outline" size={20} color="#FFFFFF" />
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+          <View style={styles.actionOptionTextCol}>
+            <Text style={styles.actionOptionTitle}>Create Goal</Text>
+            <Text style={styles.actionOptionDesc}>Set a new goal to track</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionOption}
+          onPress={() => {
+            setShowActionModal(false);
+            (navigation as any)?.navigate?.('UpdateGoal');
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.actionOptionIcon}>
+            <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.actionOptionTextCol}>
+            <Text style={styles.actionOptionTitle}>Update Goal</Text>
+            <Text style={styles.actionOptionDesc}>Post progress on a goal</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+      </CoreHabitSheet>
 
       {/* Full Screen Photo Modal */}
       <FullScreenPhotoModalAny
@@ -1851,6 +1895,81 @@ function PostFeedContent({
   const [postContent, setPostContent] = useState('');
   const [postPhoto, setPostPhoto] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [optionsPost, setOptionsPost] = useState<PostWithUser | null>(null);
+  const optionsPostRef = useRef<PostWithUser | null>(null);
+
+  const openPostOptions = (post: PostWithUser) => {
+    optionsPostRef.current = post;
+    setOptionsPost(post);
+  };
+
+  const closePostOptions = () => {
+    setOptionsPost(null);
+  };
+
+  const handlePostOptionsAction = async (action: PostOptionsAction) => {
+    const post = optionsPostRef.current;
+    if (!user?.id || !post) return;
+
+    const postSource = post.feedSource === 'daily_post' ? 'daily_posts' : 'posts';
+    optionsPostRef.current = null;
+    setOptionsPost(null);
+
+    try {
+      if (action === 'report_photo') {
+        await moderationService.reportContent({
+          reporterId: user.id,
+          reportedUserId: post.user_id,
+          postId: post.id,
+          postSource,
+          reason: 'inappropriate_photo',
+        });
+        Alert.alert('Thanks', 'Photo reported. We’ll review it.');
+        return;
+      }
+
+      if (action === 'flag_user') {
+        await moderationService.reportContent({
+          reporterId: user.id,
+          reportedUserId: post.user_id,
+          postId: post.id,
+          postSource,
+          reason: 'inappropriate_content',
+        });
+        Alert.alert('Thanks', 'User flagged. We’ll review this content.');
+        return;
+      }
+
+      if (action === 'block_account') {
+        if (post.user_id === user.id) {
+          Alert.alert('Not available', 'You can’t block your own account.');
+          return;
+        }
+        Alert.alert(
+          'Block this account?',
+          'You won’t see their posts in your feed anymore.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Block',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await moderationService.blockUser(user.id, post.user_id);
+                  Alert.alert('Blocked', 'This account has been blocked.');
+                  onPostCreated();
+                } catch (error: any) {
+                  Alert.alert('Error', error?.message || 'Could not block this account.');
+                }
+              },
+            },
+          ]
+        );
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Something went wrong. Please try again.');
+    }
+  };
 
   const handleSelectPhoto = async () => {
     const { launchImageLibraryAsync, MediaTypeOptions, requestMediaLibraryPermissionsAsync } = await import('expo-image-picker');
@@ -1871,6 +1990,21 @@ function PostFeedContent({
     }
   };
 
+  const uploadCommunityPhoto = async (uri: string): Promise<string | null> => {
+    if (!user?.id) return null;
+
+    const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.jpg`;
+    const filePath = `${user.id}/posts/${uniqueFileName}`;
+
+    return uploadMediaSafely({
+      uri,
+      path: filePath,
+      contentType: 'image/jpeg',
+      fileName: uniqueFileName,
+      mediaType: 'image',
+    });
+  };
+
   const handleSubmitPost = async () => {
     if (!postContent.trim() && !postPhoto) {
       Alert.alert('Empty post', 'Please add some content or a photo');
@@ -1879,11 +2013,21 @@ function PostFeedContent({
 
     setIsSubmitting(true);
     try {
+      let photos: string[] = [];
+      if (postPhoto) {
+        const uploadedUrl = await uploadCommunityPhoto(postPhoto);
+        if (!uploadedUrl) {
+          Alert.alert('Upload failed', 'Could not upload your photo. Please try again.');
+          return;
+        }
+        photos = [uploadedUrl];
+      }
+
       const today = new Date().toISOString().split('T')[0];
       const postData = {
         content: postContent,
         date: today,
-        photos: postPhoto ? [postPhoto] : [],
+        photos,
         caption: postContent,
         is_public: true,
         habits_completed: []
@@ -1900,7 +2044,7 @@ function PostFeedContent({
       }
     } catch (error) {
       console.error('Error creating post:', error);
-      Alert.alert('Error', 'Failed to create post');
+      Alert.alert('Upload blocked', moderationAlertMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -1923,7 +2067,8 @@ function PostFeedContent({
           autoCapitalize="sentences"
           autoCorrect={true}
           multiline
-          textAlignVertical="top"
+          scrollEnabled
+          textAlignVertical="center"
         />
 
         <View style={styles.postActionsRow}>
@@ -1998,6 +2143,14 @@ function PostFeedContent({
                       </Text>
                     </View>
                   </View>
+                  <TouchableOpacity
+                    style={styles.postMoreButton}
+                    onPress={() => openPostOptions(post)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={20} color="#6B7280" />
+                  </TouchableOpacity>
                 </View>
 
                 {!!post.challenge_title && (
@@ -2006,34 +2159,72 @@ function PostFeedContent({
                   </Text>
                 )}
 
+                {(!!post.milestone_title || !!post.goal_title) && (
+                  <View style={styles.goalMetaRow}>
+                    {!!post.goal_title && (
+                      <Text style={styles.goalMetaLabel} numberOfLines={1}>
+                        Goal · {post.goal_title}
+                      </Text>
+                    )}
+                    {!!post.milestone_title && (
+                      <Text style={styles.milestoneMetaLabel} numberOfLines={2}>
+                        Milestone · {post.milestone_title}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
                 {/* Post Content */}
-                {post.content && (
+                {!!(post.content || post.caption)?.trim() && (
                   <Text style={[styles.postBodyText, { color: theme.textPrimary }]}>
-                    {post.content}
+                    {(post.content || post.caption || '').trim()}
                   </Text>
                 )}
 
-                {/* Post Photo */}
-                {post.photos && post.photos.length > 0 && (
-                  <Image 
-                    source={{ uri: post.photos[0] }} 
-                    style={styles.postImage}
-                    resizeMode="cover"
-                  />
-                )}
+                {/* Post Photo — remote for everyone; local file:// only works on the uploader's device */}
+                {(() => {
+                  const photos = post.photos || [];
+                  const remotePhoto = photos.find((uri) => /^https?:\/\//i.test(uri || ''));
+                  const localPhoto =
+                    !remotePhoto && post.user_id === user?.id
+                      ? photos.find((uri) => !!uri)
+                      : null;
+                  const photoUri = remotePhoto || localPhoto;
+                  if (!photoUri) return null;
+                  return (
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={styles.postImage}
+                      contentFit="cover"
+                    />
+                  );
+                })()}
 
                 {/* Post Interaction Bar */}
                 <View style={styles.interactionBarContainer}>
-                  <PostInteractionBar
-                    postId={post.id}
-                    initialLikeCount={postInteractionData[post.id]?.likes || 0}
-                    initialCommentCount={postInteractionData[post.id]?.comments || 0}
-                    initialIsLiked={postInteractionData[post.id]?.isLiked || false}
-                    onLikeChange={(isLiked, newCount) => onLikeChange(post.id, isLiked, newCount)}
-                    onCommentPress={() => onCommentPress(post.id)}
-                    size="medium"
-                    showCounts={true}
-                  />
+                  {post.feedSource === 'daily_post' ? (
+                    <DailyPostInteractionBar
+                      dailyPostId={post.id}
+                      initialLikeCount={postInteractionData[post.id]?.likes || 0}
+                      initialCommentCount={postInteractionData[post.id]?.comments || 0}
+                      initialIsLiked={postInteractionData[post.id]?.isLiked || false}
+                      onLikeChange={(isLiked, newCount) => onLikeChange(post.id, isLiked, newCount)}
+                      onCommentPress={() => onCommentPress(post.id)}
+                      size="medium"
+                      showCounts={true}
+                    />
+                  ) : (
+                    <PostInteractionBar
+                      postId={post.id}
+                      initialLikeCount={postInteractionData[post.id]?.likes || 0}
+                      initialCommentCount={postInteractionData[post.id]?.comments || 0}
+                      initialIsLiked={postInteractionData[post.id]?.isLiked || false}
+                      onLikeChange={(isLiked, newCount) => onLikeChange(post.id, isLiked, newCount)}
+                      onCommentPress={() => onCommentPress(post.id)}
+                      size="medium"
+                      showCounts={true}
+                    />
+                  )}
                 </View>
               </View>
             ))}
@@ -2048,6 +2239,12 @@ function PostFeedContent({
           </View>
         )}
       </View>
+
+      <PostOptionsSheet
+        visible={!!optionsPost}
+        onClose={closePostOptions}
+        onAction={handlePostOptionsAction}
+      />
     </View>
   );
 }
@@ -2412,7 +2609,16 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  postMoreButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
   userInfo: {
     flex: 1,
@@ -3466,11 +3672,12 @@ const styles = StyleSheet.create({
   },
   postInputSimple: {
     width: '100%',
-    minHeight: 88,
-    maxHeight: 160,
+    minHeight: 44,
+    maxHeight: 120,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'ios' ? 11 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 11 : 8,
     fontSize: 15,
     lineHeight: 21,
     borderWidth: 1,
@@ -3519,6 +3726,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10B981',
     marginBottom: 8,
+  },
+  goalMetaRow: {
+    marginBottom: 10,
+    gap: 4,
+  },
+  goalMetaLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  milestoneMetaLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1f2937',
   },
   postImage: {
     width: '100%',

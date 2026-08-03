@@ -15,8 +15,6 @@ import { useAuthStore } from '../state/authStore';
 import { supabase } from '../lib/supabase';
 import RenderHtml from 'react-native-render-html';
 import { ensureMicrolearnStart, getMicrolearnLimitHint } from '../lib/microlearnAccess';
-import UpgradeToProModal from '../components/UpgradeToProModal';
-
 const DARK = '#1f2937';
 const PAGE_BG = '#F8F9FB';
 
@@ -34,7 +32,6 @@ export default function InformationDetailScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [quizLoading, setQuizLoading] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [limitHint, setLimitHint] = useState(
@@ -325,7 +322,10 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         if (result.reason === 'daily_limit') {
           // Open shared Pro modal on explicit Start; stay on preview for silent auto-enter
           if (!opts?.silentLimit) {
-            setShowUpgradeModal(true);
+            navigation.navigate('UpgradeToPro', {
+              subtitle:
+                "You've hit today's new-microlearn limit. Level up for more daily starts, or upgrade to Pro for unlimited — anything you've already started stays unlocked.",
+            });
           }
         } else if (!opts?.silentLimit) {
           Alert.alert('Unable to start', result.message);
@@ -1003,15 +1003,6 @@ export default function InformationDetailScreen({ route, navigation }: any) {
         </>
       )}
 
-      <UpgradeToProModal
-        visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        subtitle="You've hit today's new-microlearn limit. Level up for more daily starts, or upgrade to Pro for unlimited — anything you've already started stays unlocked."
-        onUpgrade={async () => {
-          setShowUpgradeModal(false);
-          await enterReading();
-        }}
-      />
     </SafeAreaView>
   );
 }

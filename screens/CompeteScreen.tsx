@@ -28,7 +28,6 @@ import { emailService } from '../lib/emailService';
 import { supabase } from '../lib/supabase';
 import ChallengeCard from '../components/ChallengeCard';
 import { Challenge, CreateChallengeData } from '../types/challenges';
-import UpgradeToProModal from '../components/UpgradeToProModal';
 import CreateChallengeModal from '../components/CreateChallengeModal';
 import JoinPrivateChallengeModal from '../components/JoinPrivateChallengeModal';
 import MyChallengesSection from '../components/MyChallengesSection';
@@ -47,7 +46,6 @@ export default function CompeteScreen({ navigation }: any) {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [joinedChallengeIds, setJoinedChallengeIds] = useState<Set<string>>(new Set());
   const [completedChallengeIds, setCompletedChallengeIds] = useState<Set<string>>(new Set());
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [myCreatedChallenges, setMyCreatedChallenges] = useState<Challenge[]>([]);
@@ -462,11 +460,6 @@ export default function CompeteScreen({ navigation }: any) {
   };
 
   const handleChallengePress = (challenge: Challenge) => {
-    // Check if challenge is pro-only and user is not pro
-    if (challenge.is_pro_only && !userProfile?.is_pro) {
-      setShowUpgradeModal(true);
-      return;
-    }
     navigation.navigate('ChallengeDetail', { challengeId: challenge.id });
   };
 
@@ -624,7 +617,7 @@ export default function CompeteScreen({ navigation }: any) {
           onCreatePress={() => {
             // Check if user is Pro before allowing challenge creation
             if (!userProfile?.is_pro) {
-              setShowUpgradeModal(true);
+              navigation.navigate('UpgradeToPro');
               return;
             }
             setShowCreateModal(true);
@@ -977,24 +970,6 @@ export default function CompeteScreen({ navigation }: any) {
         )}
 
       </ScrollView>
-
-      {/* Upgrade to Pro Modal */}
-      <UpgradeToProModal
-        visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        onUpgrade={async () => {
-          // Refresh profile data and reload challenges
-          await loadUserProfile();
-          if (user) {
-            // Clear cache and reload challenges
-            const { apiCache } = await import('../lib/apiCache');
-            apiCache.clear();
-            await loadChallenges();
-            await loadPrivateChallenges();
-            await loadUserChallenges();
-          }
-        }}
-      />
 
       {/* Create Challenge Modal */}
       <CreateChallengeModal

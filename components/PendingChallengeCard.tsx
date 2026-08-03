@@ -2,8 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Challenge } from '../types/challenges';
-import { useTheme } from '../state/themeStore';
 import { getChallengeDisplayTitle } from '../lib/challengeTitleUtils';
+
+const DARK = '#1f2937';
+const MUTED = '#6B7280';
 
 interface PendingChallengeCardProps {
   challenge: Challenge;
@@ -11,66 +13,45 @@ interface PendingChallengeCardProps {
 }
 
 export default function PendingChallengeCard({ challenge, onPress }: PendingChallengeCardProps) {
-  const { theme } = useTheme();
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-GB', {
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     });
-  };
 
-  const formatEntryFee = (fee: number) => {
-    if (fee === 0) return 'Free';
-    return `£${fee}`;
-  };
+  const formatEntryFee = (fee: number) => (fee === 0 ? 'Free' : `£${fee}`);
 
   return (
-    <TouchableOpacity
-      style={[styles.card, { backgroundColor: theme.cardBackground, borderColor: theme.border }]}
-      onPress={() => onPress(challenge)}
-      activeOpacity={0.8}
-    >
+    <TouchableOpacity style={styles.card} onPress={() => onPress(challenge)} activeOpacity={0.85}>
       <View style={styles.header}>
-        <View style={styles.titleContainer}>
-          <Text style={[styles.title, { color: theme.textPrimary }]} numberOfLines={2}>
-            {getChallengeDisplayTitle(challenge.title)}
-          </Text>
-          <View style={styles.badgeContainer}>
-            <View style={[styles.pendingBadge, { backgroundColor: '#F59E0B20' }]}>
-              <Text style={[styles.pendingText, { color: '#F59E0B' }]}>Pending Review</Text>
-            </View>
-          </View>
+        <Text style={styles.title} numberOfLines={2}>
+          {getChallengeDisplayTitle(challenge.title)}
+        </Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>Flagged</Text>
         </View>
       </View>
 
-      <View style={styles.infoContainer}>
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-          <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            Ended: {formatDate(challenge.end_date)}
-          </Text>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="people-outline" size={16} color={theme.textSecondary} />
-          <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            {challenge.participant_count || 0} participants
-          </Text>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="cash-outline" size={16} color={theme.textSecondary} />
-          <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-            {formatEntryFee(challenge.entry_fee)} entry • £{(challenge.participant_count || 0) * challenge.entry_fee} pot
-          </Text>
-        </View>
+      <View style={styles.infoRow}>
+        <Ionicons name="calendar-outline" size={16} color={MUTED} />
+        <Text style={styles.infoText}>Ended {formatDate(challenge.end_date)}</Text>
+      </View>
+      <View style={styles.infoRow}>
+        <Ionicons name="people-outline" size={16} color={MUTED} />
+        <Text style={styles.infoText}>{challenge.participant_count || 0} participants</Text>
+      </View>
+      <View style={styles.infoRow}>
+        <Ionicons name="cash-outline" size={16} color={MUTED} />
+        <Text style={styles.infoText}>
+          {formatEntryFee(challenge.entry_fee)} entry · £
+          {(challenge.participant_count || 0) * challenge.entry_fee} pot
+        </Text>
       </View>
 
       <View style={styles.footer}>
-        <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+        <Text style={styles.footerText}>Review submissions</Text>
+        <Ionicons name="chevron-forward" size={18} color={MUTED} />
       </View>
     </TouchableOpacity>
   );
@@ -78,54 +59,60 @@ export default function PendingChallengeCard({ challenge, onPress }: PendingChal
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     borderWidth: 1,
+    borderColor: '#E5E7EB',
     padding: 16,
     marginBottom: 12,
   },
   header: {
-    marginBottom: 12,
-  },
-  titleContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '700',
     flex: 1,
-    marginRight: 8,
+    fontSize: 16,
+    fontWeight: '800',
+    color: DARK,
   },
-  badgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  pendingBadge: {
-    paddingHorizontal: 8,
+  badge: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 999,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
   },
-  pendingText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  infoContainer: {
-    gap: 8,
-    marginBottom: 12,
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 8,
   },
   infoText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
+    color: MUTED,
   },
   footer: {
-    alignItems: 'flex-end',
+    marginTop: 6,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  footerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DARK,
   },
 });
-

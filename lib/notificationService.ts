@@ -67,6 +67,7 @@ export interface Notification {
   pillar_type?: string;
   pillar_progress?: number;
   habit_type?: string;
+  message?: string | null;
 }
 
 type ResolvedPostTarget = {
@@ -140,6 +141,7 @@ class NotificationService {
       reply_id?: string;
       goal_id?: string;
       habit_type?: string;
+      message?: string;
     },
     push?: { title: string; body: string; extras?: Record<string, any> }
   ): Promise<boolean> {

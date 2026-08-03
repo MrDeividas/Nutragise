@@ -157,10 +157,13 @@ export default function CoreHabitSheet({
   return (
     <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <Animated.View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFillObject, styles.dim, { opacity: overlayOpacity }]}
-        />
+        <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: overlayOpacity }]}>
+          <TouchableOpacity
+            style={[StyleSheet.absoluteFillObject, styles.dim]}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+        </Animated.View>
         <Animated.View
           onLayout={(e) => {
             const h = e.nativeEvent.layout.height;

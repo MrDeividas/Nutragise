@@ -47,6 +47,9 @@ import FollowingScreen from './screens/FollowingScreen';
 import ChallengeDetailScreen from './screens/ChallengeDetailScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import WalletScreen from './screens/WalletScreen';
+import UpgradeToProScreen from './screens/UpgradeToProScreen';
+import UpdateGoalScreen from './screens/UpdateGoalScreen';
+import CreateGoalScreen from './screens/CreateGoalScreen';
 import CompeteScreen from './screens/CompeteScreen';
 import StoreScreen from './screens/StoreScreen';
 import InventoryScreen from './screens/InventoryScreen';
@@ -512,6 +515,36 @@ function AppStack() {
           animation: 'slide_from_right',
           gestureEnabled: true,
           gestureDirection: 'horizontal'
+        }}
+      />
+      <Stack.Screen
+        name="UpgradeToPro"
+        component={UpgradeToProScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="UpdateGoal"
+        component={UpdateGoalScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="CreateGoal"
+        component={CreateGoalScreen}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          headerShown: false,
         }}
       />
       <Stack.Screen 

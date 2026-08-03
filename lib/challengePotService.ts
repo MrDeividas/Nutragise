@@ -507,6 +507,7 @@ class ChallengePotService {
         const isHoldParticipant = participant.payment_capture_method === 'hold';
         const isWalletParticipant =
           participant.payment_capture_method === 'wallet' ||
+          participant.payment_capture_method === 'wallet_escrow' ||
           (typeof participant.stripe_payment_intent_id === 'string' &&
             participant.stripe_payment_intent_id.startsWith('wallet_transfer_'));
 

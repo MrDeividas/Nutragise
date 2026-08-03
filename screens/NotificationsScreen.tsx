@@ -28,7 +28,6 @@ export default function NotificationsScreen() {
   const [habitRewards, setHabitRewards] = useState<any[]>([]);
   const [habitRewardsViewed, setHabitRewardsViewed] = useState(true);
   const [recentActivityCollapsed, setRecentActivityCollapsed] = useState(true);
-  const [actionTipsCollapsed, setActionTipsCollapsed] = useState(true);
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -75,6 +74,9 @@ export default function NotificationsScreen() {
       const transformedNotifications = otherNotifications
         .filter((notification: Notification) => {
           if (notification.notification_type === 'achievement_unlocked') {
+            return true;
+          }
+          if (notification.notification_type === 'admin_warning') {
             return true;
           }
           if (!notification.from_user_id) {
@@ -149,6 +151,11 @@ export default function NotificationsScreen() {
           case 'achievement_unlocked':
             message = `You unlocked "${achievementTitle(notification.habit_type)}"`;
             break;
+          case 'admin_warning':
+            message =
+              notification.message ||
+              'Your recent post was reviewed. Please keep community content respectful.';
+            break;
           default:
             message = 'interacted with your content';
         }
@@ -159,6 +166,8 @@ export default function NotificationsScreen() {
           name:
             notification.notification_type === 'achievement_unlocked'
               ? 'Achievement unlocked'
+              : notification.notification_type === 'admin_warning'
+                ? 'Community warning'
               : notification.from_user?.display_name || notification.from_user?.username || 'Unknown',
           avatar: notification.from_user?.avatar_url || null,
           message: message,
@@ -410,6 +419,8 @@ export default function NotificationsScreen() {
         return 'person-add';
       case 'achievement_unlocked':
         return 'trophy';
+      case 'admin_warning':
+        return 'warning';
       default:
         return 'notifications';
     }
@@ -604,43 +615,6 @@ export default function NotificationsScreen() {
           </View>
         </View>
       )}
-
-      {/* Action Tips Section */}
-      <View style={[styles.sectionHeader, { paddingLeft: 20 }]}>
-        <TouchableOpacity
-          style={styles.collapsibleHeader}
-          onPress={() => setActionTipsCollapsed(!actionTipsCollapsed)}
-        >
-          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Action Tips</Text>
-          <Ionicons
-            name={actionTipsCollapsed ? 'chevron-down' : 'chevron-up'}
-            size={16}
-            color={theme.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-      {!actionTipsCollapsed && (
-        <View style={styles.tipsContainer}>
-          <View style={styles.tipCard}>
-            <Ionicons name="bulb-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
-              Break big goals into smaller, manageable tasks
-            </Text>
-          </View>
-          <View style={styles.tipCard}>
-            <Ionicons name="time-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
-              Set specific time blocks for your goals
-            </Text>
-          </View>
-          <View style={styles.tipCard}>
-            <Ionicons name="trophy-outline" size={24} color={theme.textSecondary} />
-            <Text style={[styles.tipText, { color: theme.textSecondary }]}>
-              Celebrate small wins to stay motivated
-            </Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 
@@ -671,6 +645,12 @@ export default function NotificationsScreen() {
         <FlatList
           data={notifications}
           keyExtractor={item => item.id}
+          extraData={{
+            habitRewardsCollapsed,
+            recentActivityCollapsed,
+            habitRewards,
+            habitRewardsViewed,
+          }}
           contentContainerStyle={{ padding: 12, paddingBottom: 40, flexGrow: 1 }}
           refreshControl={
             <RefreshControl
@@ -680,7 +660,13 @@ export default function NotificationsScreen() {
               colors={[theme.primary]}
             />
           }
-          ListFooterComponent={renderExtrasFooter}
+          ListFooterComponent={
+            <View
+              key={`extras-${habitRewardsCollapsed ? 0 : 1}-${recentActivityCollapsed ? 0 : 1}-${habitRewards.length}`}
+            >
+              {renderExtrasFooter()}
+            </View>
+          }
           renderItem={({ item, index }) => {
             const groups = groupNotificationsByTime(notifications);
             const notificationDate = new Date(item.created_at);
@@ -742,6 +728,10 @@ export default function NotificationsScreen() {
                       {item.type === 'achievement_unlocked' ? (
                         <View style={[styles.avatar, { backgroundColor: '#1f2937', alignItems: 'center', justifyContent: 'center' }]}>
                           <Ionicons name="trophy" size={20} color="#F5C542" />
+                        </View>
+                      ) : item.type === 'admin_warning' ? (
+                        <View style={[styles.avatar, { backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }]}>
+                          <Ionicons name="warning" size={20} color="#B45309" />
                         </View>
                       ) : item.avatar ? (
                         <Image source={{ uri: item.avatar }} style={styles.avatar} />
@@ -825,6 +815,7 @@ const styles = StyleSheet.create({
   extrasFooter: {
     marginTop: 8,
     paddingBottom: 24,
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',
@@ -1030,13 +1021,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   habitRewardsContainer: {
-    maxHeight: 300,
     marginBottom: 8,
+    overflow: 'hidden',
   },
   activityList: {
     marginTop: 0,
     paddingHorizontal: 16,
     marginBottom: 8,
+    overflow: 'hidden',
   },
   activityItem: {
     flexDirection: 'row',
@@ -1064,23 +1056,6 @@ const styles = StyleSheet.create({
   activityTime: {
     fontSize: 11,
     color: '#6b7280',
-  },
-  tipsContainer: {
-    marginTop: 0,
-    paddingHorizontal: 16,
-  },
-  tipCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-  },
-  tipText: {
-    fontSize: 13,
-    marginLeft: 14,
-    flex: 1,
-    color: '#6b7280',
-    lineHeight: 18,
   },
   // Habit Rewards styles
   rewardItem: {

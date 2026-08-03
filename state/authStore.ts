@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 import { emailService } from '../lib/emailService';
 import { iapService } from '../lib/iapService';
+import { getUserBanStatus } from '../lib/banUtils';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
 
 interface AuthStore extends AuthState {
@@ -34,6 +35,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
+        const ban = await getUserBanStatus(session.user.id);
+        if (ban.banned) {
+          await supabase.auth.signOut();
+          clearTimeout(safetyTimer);
+          set({ user: null, session: null, loading: false });
+          return;
+        }
+
         // Fetch user profile from our users table
         const { data: userData } = await supabase
           .from('users')
@@ -86,6 +95,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // Listen for auth changes
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user) {
+          const ban = await getUserBanStatus(session.user.id);
+          if (ban.banned) {
+            await supabase.auth.signOut();
+            set({ user: null, session: null, loading: false });
+            return;
+          }
+
           const { data: userData } = await supabase
             .from('users')
             .select('*')
@@ -236,6 +252,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // Set user state immediately after successful sign-in
       if (signInData?.user) {
         console.log('✅ Sign-in successful for user:', signInData.user.id);
+
+        const ban = await getUserBanStatus(signInData.user.id);
+        if (ban.banned) {
+          await supabase.auth.signOut();
+          return { error: { message: ban.message } };
+        }
         
         // Fetch user data from database
         const { data: userData } = await supabase

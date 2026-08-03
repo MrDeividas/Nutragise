@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../state/authStore';
-import { supabase } from '../lib/supabase';
+import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
 import { useTheme } from '../state/themeStore';
 
 interface AchievementModalProps {
@@ -108,35 +108,18 @@ export default function AchievementModal({ visible, onClose, onSave }: Achieveme
       const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${user.id}/achievements/${uniqueFileName}`;
 
-      const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        type: 'image/jpeg',
-        name: uniqueFileName,
-      } as any);
+      const publicUrl = await uploadMediaSafely({
+        uri,
+        path: filePath,
+        contentType: 'image/jpeg',
+        fileName: uniqueFileName,
+        mediaType: 'image',
+      });
 
-      const { data, error } = await supabase.storage
-        .from('users')
-        .upload(filePath, formData, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-
-      if (error) {
-        console.error('Upload error:', error);
-        Alert.alert('Upload Error', 'Failed to upload photo. Please try again.');
-        setPhotoUri(null);
-        return;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('users')
-        .getPublicUrl(data.path);
-
-      setUploadedPhotoUrl(urlData.publicUrl);
+      setUploadedPhotoUrl(publicUrl);
     } catch (error) {
       console.error('Error uploading photo:', error);
-      Alert.alert('Error', 'Failed to upload photo. Please try again.');
+      Alert.alert('Upload blocked', moderationAlertMessage(error));
       setPhotoUri(null);
     } finally {
       setUploading(false);

@@ -45,6 +45,8 @@ class PostsService {
           daily_post_id: dailyPost.id,
           content: postData.content,
           goal_id: postData.goal_id,
+          goal_title: postData.goal_title ?? null,
+          milestone_title: postData.milestone_title ?? null,
           challenge_id: postData.challenge_id ?? null,
           challenge_title: postData.challenge_title ?? null,
           date: dailyPostDate,
@@ -327,6 +329,7 @@ class PostsService {
         .from('posts')
         .select('*')
         .eq('is_public', true)
+        .eq('hidden_from_feed', false)
         .order('created_at', { ascending: false })
         .limit(limit);
 

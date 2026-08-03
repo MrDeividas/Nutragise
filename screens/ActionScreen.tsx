@@ -37,8 +37,6 @@ import EditHabitsModal from '../components/EditHabitsModal';
 import HabitListItem from '../components/HabitListItem';
 import HabitInfoModal from '../components/HabitInfoModal';
 import StreakModal from '../components/StreakModal';
-import CreatePostModal from '../components/CreatePostModal';
-import NewGoalModal from '../components/NewGoalModal';
 import NewReminderModal from '../components/NewReminderModal';
 import { useRemindersStore } from '../state/remindersStore';
 import LevelInfoModal from '../components/LevelInfoModal';
@@ -83,6 +81,20 @@ const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 const LEVEL_THRESHOLDS = [0, 1400, 3200, 5500, 8600, 12500, 17500, 24000];
 const HABITS_REQUIRING_DETAILS = new Set(['gym', 'run', 'sleep', 'water', 'reflect', 'cold_shower']);
+
+const getLevelXpRequired = (progress: { currentLevel: number }) => {
+  const currentLevelIndex = Math.max(0, Math.min(progress.currentLevel - 1, LEVEL_THRESHOLDS.length - 1));
+  const currentLevelStart = LEVEL_THRESHOLDS[currentLevelIndex];
+  const nextThreshold =
+    LEVEL_THRESHOLDS[progress.currentLevel] !== undefined
+      ? LEVEL_THRESHOLDS[progress.currentLevel]
+      : currentLevelStart + 10000;
+  return Math.max(nextThreshold - currentLevelStart, 1);
+};
+
+const getLevelFillPercent = (progress: { currentLevel: number; pointsInCurrentLevel: number }) => {
+  return Math.min(progress.pointsInCurrentLevel / getLevelXpRequired(progress), 1);
+};
 
 function addDaysToDateString(dateStr: string, deltaDays: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -229,17 +241,6 @@ const rgbToHsv = (r: number, g: number, b: number) => {
   const v = max;
 
   return { h, s, v };
-};
-
-const getLevelFillPercent = (progress: { currentLevel: number; pointsInCurrentLevel: number }) => {
-  const currentLevelIndex = Math.max(0, Math.min(progress.currentLevel - 1, LEVEL_THRESHOLDS.length - 1));
-  const currentLevelStart = LEVEL_THRESHOLDS[currentLevelIndex];
-  const nextThreshold =
-    LEVEL_THRESHOLDS[progress.currentLevel] !== undefined
-      ? LEVEL_THRESHOLDS[progress.currentLevel]
-      : currentLevelStart + 10000;
-  const levelXPRequired = Math.max(nextThreshold - currentLevelStart, 1);
-  return Math.min(progress.pointsInCurrentLevel / levelXPRequired, 1);
 };
 
 const SCHEDULE_OPTION_MAP: Record<string, HabitScheduleType> = {
@@ -1816,7 +1817,6 @@ function ActionScreen() {
   const [reorderableCustomHabits, setReorderableCustomHabits] = useState<CustomHabit[]>([]);
   const [habitCompletionCounts, setHabitCompletionCounts] = useState<Record<string, number>>({});
   const [customHabitOrder, setCustomHabitOrder] = useState<string[]>([]);
-  const [targetCheckInDate, setTargetCheckInDate] = useState<Date | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [checkedInGoals, setCheckedInGoals] = useState<Set<string>>(new Set());
   const [checkedInGoalsByDay, setCheckedInGoalsByDay] = useState<{[key: string]: Set<string>}>({});
@@ -1987,10 +1987,7 @@ function ActionScreen() {
   const [showReorderHabitsModal, setShowReorderHabitsModal] = useState(false);
   const [reorderableHabits, setReorderableHabits] = useState<any[]>([]);
   const [showActionModal, setShowActionModal] = useState(false);
-  const [showCreatePostModal, setShowCreatePostModal] = useState(false);
-  const [showNewGoalModal, setShowNewGoalModal] = useState(false);
   const [showNewReminderModal, setShowNewReminderModal] = useState(false);
-  const [newlyCreatedGoalId, setNewlyCreatedGoalId] = useState<string | null>(null);
   const unreadNotificationCount = useNotificationsStore((s) => s.unreadCount);
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
   /** Challenge IDs where the user submitted proof for the current calendar day (for Done badge on cards) */
@@ -2015,6 +2012,7 @@ function ActionScreen() {
     setIsLevelExpanded(!isLevelExpanded);
   };
   const [totalPoints, setTotalPoints] = useState(0);
+  const [todayPoints, setTodayPoints] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
   const progressFillAnim = useRef(new Animated.Value(getLevelFillPercent(levelProgress))).current;
   const progressPointsAnim = useRef(new Animated.Value(levelProgress.pointsInCurrentLevel)).current;
@@ -2227,6 +2225,12 @@ function ActionScreen() {
           outputRange: [0, progressBarWidth],
         })
       : null;
+
+  const todayExpShareInLevel = (() => {
+    const todayInLevel = Math.min(Math.max(todayPoints, 0), levelProgress.pointsInCurrentLevel);
+    if (levelProgress.pointsInCurrentLevel <= 0) return 0;
+    return Math.min(todayInLevel / levelProgress.pointsInCurrentLevel, 1);
+  })();
 
   const markHabitNeedsDetails = useCallback((habitId: string) => {
     if (!HABITS_REQUIRING_DETAILS.has(habitId)) return;
@@ -3475,19 +3479,22 @@ function ActionScreen() {
   }, [progressPointsAnim]);
 
   useEffect(() => {
-    const percent = getLevelFillPercent(levelProgress);
-    Animated.timing(progressFillAnim, {
-      toValue: percent,
-      duration: 500,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-    Animated.timing(progressPointsAnim, {
-      toValue: levelProgress.pointsInCurrentLevel,
-      duration: 500,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
+    const totalPercent = getLevelFillPercent(levelProgress);
+
+    Animated.parallel([
+      Animated.timing(progressFillAnim, {
+        toValue: totalPercent,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }),
+      Animated.timing(progressPointsAnim, {
+        toValue: levelProgress.pointsInCurrentLevel,
+        duration: 500,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }),
+    ]).start();
   }, [levelProgress, progressFillAnim, progressPointsAnim]);
 
   
@@ -4603,13 +4610,18 @@ function ActionScreen() {
     if (!user) return;
 
     try {
-      const total = await pointsService.getTotalPoints(user.id);
+      const [total, today] = await Promise.all([
+        pointsService.getTotalPoints(user.id),
+        pointsService.getTodaysPoints(user.id),
+      ]);
       const progress = pointsService.getLevelProgress(total);
-      
+
       setTotalPoints(total);
+      setTodayPoints(today.total || 0);
       setLevelProgress(progress);
     } catch (error) {
       setTotalPoints(0);
+      setTodayPoints(0);
     }
   }
 
@@ -5330,16 +5342,12 @@ function ActionScreen() {
 
   const handleCheckInPress = useCallback((goal: any, dayOfWeek: number) => {
     setSelectedGoal(goal);
-    
-    // Set target check-in date based on overdue date if available
-    if (goal.overdueDate) {
-      setTargetCheckInDate(goal.overdueDate);
-    } else {
-      setTargetCheckInDate(null); // Use today's date
-    }
-    
-    setShowCreatePostModal(true);
-  }, []);
+    const overdue = goal.overdueDate ? new Date(goal.overdueDate) : null;
+    navigation.navigate('UpdateGoal', {
+      goalId: goal.id,
+      targetCheckInDate: overdue ? overdue.toISOString() : undefined,
+    });
+  }, [navigation]);
 
   const handleDeleteReminder = useCallback((reminderId: string, title: string) => {
     Alert.alert(
@@ -5485,10 +5493,6 @@ function ActionScreen() {
                     <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>Balance:</Text>
                     <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>£{walletBalance.toFixed(0)}</Text>
                   </View>
-                  <View style={styles.headerStat}>
-                    <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>EXP:</Text>
-                <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>{totalPoints}</Text>
-                  </View>
                 </Animated.View>
           </TouchableOpacity>
           
@@ -5562,14 +5566,11 @@ function ActionScreen() {
               {isLevelExpanded && (
                 <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
               )}
-              <View 
+              <View
                 style={{
                   flex: 1,
                   marginHorizontal: 4,
                   height: 8,
-                  backgroundColor: 'rgba(31, 41, 55, 0.15)',
-                  borderRadius: 4,
-                  overflow: 'visible',
                   position: 'relative',
                 }}
                 onLayout={(event) => {
@@ -5579,15 +5580,32 @@ function ActionScreen() {
                   }
                 }}
               >
-                <Animated.View
-                  style={[
-                    styles.levelProgressFill,
-                    {
-                      width: fillWidthInterpolation ?? 0,
-                      backgroundColor: theme.textPrimary,
-                    },
-                  ]}
-                />
+                {/* Pill track; rounded fill shell + green tip (regular View clips radii reliably) */}
+                <View style={styles.levelProgressTrack}>
+                  {fillWidthInterpolation ? (
+                    <Animated.View style={{ width: fillWidthInterpolation, height: '100%' }}>
+                      <View
+                        style={[
+                          styles.levelProgressFillCombined,
+                          { backgroundColor: theme.textPrimary },
+                        ]}
+                      >
+                        {todayExpShareInLevel > 0 ? (
+                          <View
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: `${todayExpShareInLevel * 100}%`,
+                              backgroundColor: '#22C55E',
+                            }}
+                          />
+                        ) : null}
+                      </View>
+                    </Animated.View>
+                  ) : null}
+                </View>
                 {fillWidthInterpolation && isLevelExpanded && (
                   <>
                     <Animated.View
@@ -8781,33 +8799,6 @@ function ActionScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Create Post Modal */}
-      <CreatePostModal
-        visible={showCreatePostModal}
-        onClose={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-          setSelectedGoal(null); // Clear the selected goal for check-in
-          setTargetCheckInDate(null); // Clear the target date
-        }}
-        onPostCreated={() => {
-          setShowCreatePostModal(false);
-          setNewlyCreatedGoalId(null); // Clear the pre-selected goal
-          setSelectedGoal(null); // Clear the selected goal for check-in
-          setTargetCheckInDate(null); // Clear the target date
-          // Refresh goals and progress
-          if (user) {
-            fetchGoals(user.id);
-            fetchGoalProgress();
-            checkTodaysCheckIns(); // Add this to refresh check-in status
-            checkForOverdueGoals(); // Add this to refresh overdue status
-          }
-        }}
-        userGoals={userGoals.filter(goal => !goal.completed)}
-        preSelectedGoal={newlyCreatedGoalId || selectedGoal?.id || undefined}
-        targetCheckInDate={targetCheckInDate || undefined}
-      />
-
       {/* Edit Habits Modal */}
       <EditHabitsModal
         visible={showEditHabitsModal}
@@ -8826,18 +8817,6 @@ function ActionScreen() {
         }}
       />
 
-      {/* New Goal Modal */}
-      <NewGoalModal
-        visible={showNewGoalModal}
-        onClose={() => setShowNewGoalModal(false)}
-        onGoalCreated={(goalId) => {
-          setNewlyCreatedGoalId(goalId);
-          setShowNewGoalModal(false);
-          // Open CreatePostModal with the new goal pre-selected
-          setShowCreatePostModal(true);
-        }}
-      />
-
       {/* Level Info Modal */}
       <LevelInfoModal
         visible={showLevelModal}
@@ -8847,52 +8826,50 @@ function ActionScreen() {
       />
 
 
-      {/* Action Modal - Create Goal or Update Daily Post */}
-      <Modal
+      {/* Action sheet — fade dim + slide sheet */}
+      <CoreHabitSheet
         visible={showActionModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowActionModal(false)}
+        onClose={() => setShowActionModal(false)}
+        title="What would you like to do?"
+        subtitle="Choose an action to continue"
+        fitContent
       >
-        <TouchableWithoutFeedback onPress={() => setShowActionModal(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={[styles.actionModal, { backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }]}>
-                <Text style={[styles.actionModalTitle, { color: theme.textPrimary }]}>
-                  What would you like to do?
-                </Text>
-                
-                <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
-                  onPress={() => {
-                    setShowActionModal(false);
-                    setShowNewGoalModal(true);
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>Create Goal</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: theme.primary }]}
-                  onPress={() => {
-                    setShowActionModal(false);
-                    setShowCreatePostModal(true);
-                  }}
-                >
-                  <Text style={styles.actionButtonText}>Update Daily Post</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.cancelButton, { borderColor: '#E5E7EB' }]}
-                  onPress={() => setShowActionModal(false)}
-                >
-                  <Text style={[styles.cancelButtonText, { color: theme.textSecondary }]}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
+        <TouchableOpacity
+          style={styles.actionSheetOption}
+          onPress={() => {
+            setShowActionModal(false);
+            navigation.navigate('CreateGoal');
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.actionSheetOptionIcon}>
+            <Ionicons name="flag-outline" size={20} color="#FFFFFF" />
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+          <View style={styles.actionSheetOptionTextCol}>
+            <Text style={styles.actionSheetOptionTitle}>Create Goal</Text>
+            <Text style={styles.actionSheetOptionDesc}>Set a new goal to track</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionSheetOption}
+          onPress={() => {
+            setShowActionModal(false);
+            (navigation as any).navigate('UpdateGoal');
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.actionSheetOptionIcon}>
+            <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.actionSheetOptionTextCol}>
+            <Text style={styles.actionSheetOptionTitle}>Update Goal</Text>
+            <Text style={styles.actionSheetOptionDesc}>Post progress on a goal</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+      </CoreHabitSheet>
 
       {/* Goal Selection Modal */}
       <CoreHabitSheet
@@ -8908,7 +8885,7 @@ function ActionScreen() {
               activeOpacity={0.88}
               onPress={() => {
                 setShowGoalSelectionModal(false);
-                setShowNewGoalModal(true);
+                navigation.navigate('CreateGoal');
               }}
             >
               <Text style={coreHabitStyles.saveBtnText}>Create Goal</Text>
@@ -9728,13 +9705,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  levelProgressTrack: {
+    height: 8,
+    width: '100%',
+    backgroundColor: 'rgba(31, 41, 55, 0.15)',
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
   levelProgressFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     height: '100%',
     backgroundColor: '#1f2937',
-    borderRadius: 4,
+    borderRadius: 999,
+  },
+  levelProgressFillCombined: {
+    flex: 1,
+    height: '100%',
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   levelProgressDash: {
     position: 'absolute',
@@ -11751,6 +11741,87 @@ const styles = StyleSheet.create({
     color: '#10B981',
   },
   // Action Modal Styles
+  actionSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  actionSheet: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  actionSheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D5DB',
+    marginBottom: 16,
+  },
+  actionSheetTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  actionSheetSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  actionSheetOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  actionSheetOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  actionSheetOptionTextCol: {
+    flex: 1,
+  },
+  actionSheetOptionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  actionSheetOptionDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  actionSheetCancel: {
+    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  actionSheetCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
   actionModal: {
     width: '100%',
     maxWidth: 300,

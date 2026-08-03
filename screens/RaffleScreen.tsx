@@ -24,8 +24,6 @@ import { useAuthStore } from '../state/authStore';
 import { raffleService, Raffle, getEndOfMonthDeadline, getCountdownParts, CountdownParts, RAFFLE_ENTRY_TOKEN_COST } from '../lib/raffleService';
 import { storeService, StoreItem, InventoryItem, ACCOUNTABILITY_BOOST_TYPE, ActiveBoostStatus } from '../lib/storeService';
 import CustomBackground from '../components/CustomBackground';
-import UpgradeToProModal from '../components/UpgradeToProModal';
-
 const DARK = '#1f2937';
 const GOLD = '#D4A017';
 const SCREEN_W = Dimensions.get('window').width;
@@ -64,8 +62,6 @@ export default function RaffleScreen() {
   const [userLevel, setUserLevel] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-
   // Raffle
   const [currentRaffle, setCurrentRaffle] = useState<Raffle | null>(null);
   const [hasEntered, setHasEntered] = useState(false);
@@ -206,7 +202,7 @@ export default function RaffleScreen() {
   const handleEnterRaffle = async () => {
     if (!user || !currentRaffle) return;
     if (!isPro) {
-      setShowUpgradeModal(true);
+      navigation.navigate('UpgradeToPro');
       return;
     }
     if (hasEntered) {
@@ -256,7 +252,7 @@ export default function RaffleScreen() {
   const handleClaimItem = async (item: StoreItem) => {
     if (!user) return;
     if (item.is_pro_only && !isPro) {
-      setShowUpgradeModal(true);
+      navigation.navigate('UpgradeToPro');
       return;
     }
     if (userLevel < item.level_required) {
@@ -534,7 +530,7 @@ export default function RaffleScreen() {
             </Text>
           )}
           {!isPro && (
-            <TouchableOpacity onPress={() => setShowUpgradeModal(true)}>
+            <TouchableOpacity onPress={() => navigation.navigate('UpgradeToPro')}>
               <Text style={styles.upgradeLink}>Upgrade to Pro to enter →</Text>
             </TouchableOpacity>
           )}
@@ -651,7 +647,7 @@ export default function RaffleScreen() {
           {!isPro ? (
             <TouchableOpacity
               style={styles.proBanner}
-              onPress={() => setShowUpgradeModal(true)}
+              onPress={() => navigation.navigate('UpgradeToPro')}
               activeOpacity={0.85}
             >
               <Ionicons name="star" size={16} color={GOLD} />
@@ -770,13 +766,6 @@ export default function RaffleScreen() {
         </View>
       </SafeAreaView>
 
-      <UpgradeToProModal
-        visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        onUpgrade={async () => {
-          await loadAll();
-        }}
-      />
     </View>
   );
 }

@@ -106,6 +106,7 @@ export default function LevelInfoModal({
   totalPoints,
 }: LevelInfoModalProps) {
   const { theme } = useTheme();
+  const currentLevelData = LEVELS.find((l) => l.level === currentLevel);
 
   const renderLevelCard = (levelData: (typeof LEVELS)[0], isCurrentLevel: boolean) => {
     let pointRangeText = '';
@@ -207,6 +208,15 @@ export default function LevelInfoModal({
           contentContainerStyle={styles.scrollContent}
           style={styles.scrollView}
         >
+          <View style={styles.totalExpCard}>
+            <Text style={styles.totalExpLabel}>Total EXP</Text>
+            <Text style={styles.totalExpValue}>{totalPoints.toLocaleString()}</Text>
+            <Text style={styles.totalExpLevel}>
+              Level {currentLevel}
+              {currentLevelData?.title ? ` · ${currentLevelData.title}` : ''}
+            </Text>
+          </View>
+
           <Text style={styles.sectionLabel}>All Levels</Text>
           {LEVELS.map((level) => renderLevelCard(level, level.level === currentLevel))}
         </ScrollView>
@@ -242,6 +252,35 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+  },
+  totalExpCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'flex-start',
+  },
+  totalExpLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  totalExpValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: DARK,
+    letterSpacing: -0.5,
+  },
+  totalExpLevel: {
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: ACCENT,
   },
   sectionLabel: {
     fontSize: 13,

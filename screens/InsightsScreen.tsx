@@ -17,11 +17,14 @@ import {
   Modal,
   Alert,
   Animated,
+  Easing,
   Image,
   Dimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useNotificationsStore } from '../state/notificationsStore';
@@ -47,7 +50,6 @@ import { smartSuggestionEngine } from '../lib/smartSuggestionEngine';
 import TimePeriodUtils from '../lib/timePeriodUtils';
 import ScreenTimeGraph from '../components/ScreenTimeGraph';
 import MoodStatistic from '../components/MoodStatistic';
-import UpgradeToProModal from '../components/UpgradeToProModal';
 import { HabitScoreboard, WeekPulsePanel, EnergyPanel, SleepSnapshotPanel, MovementPanel } from '../components/Stage1InsightPanels';
 import {
   MeditationInsightPanel,
@@ -118,7 +120,6 @@ export default function InsightsScreen({ route }: any) {
   const [stage4, setStage4] = useState<Stage4Dashboard | null>(null);
   const [isLoadingStage1, setIsLoadingStage1] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   
   useEffect(() => {
@@ -549,7 +550,7 @@ export default function InsightsScreen({ route }: any) {
 
     // Pro-only check for AI chat
     if (!profileLoading && !userProfile?.is_pro) {
-      setShowUpgradeModal(true);
+      navigation.navigate('UpgradeToPro' as never);
       return;
     }
 
@@ -619,7 +620,7 @@ export default function InsightsScreen({ route }: any) {
   const handleSuggestionClick = useCallback((suggestion: string) => {
     // Check if user is Pro before allowing AI chat
     if (!profileLoading && !userProfile?.is_pro) {
-      setShowUpgradeModal(true);
+      navigation.navigate('UpgradeToPro' as never);
       return;
     }
     sendMessage(suggestion);
@@ -732,28 +733,90 @@ export default function InsightsScreen({ route }: any) {
 
   // Check if user is pro (don't show overlay until we know for sure)
   const isPro = userProfile?.is_pro || false;
+  const showProGate = !profileLoading && !isPro;
+  const proGateOpacity = useRef(new Animated.Value(0)).current;
+  const proGateTranslate = useRef(new Animated.Value(18)).current;
+
+  useEffect(() => {
+    if (!showProGate) {
+      proGateOpacity.setValue(0);
+      proGateTranslate.setValue(18);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(proGateOpacity, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(proGateTranslate, {
+        toValue: 0,
+        duration: 320,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]).start();
+  }, [showProGate, proGateOpacity, proGateTranslate]);
 
   return (
     <CustomBackground>
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Pro Overlay - appears when user is not pro (only after loading) */}
-        {!profileLoading && !isPro && (
+        {showProGate && (
           <View style={styles.proOverlay} pointerEvents="auto">
-            <View style={styles.proOverlayContent}>
-              <Ionicons name="lock-closed" size={48} color="#F59E0B" />
-              <Text style={styles.proOverlayTitle}>Pro Feature</Text>
-              <Text style={styles.proOverlayText}>
-                Upgrade to Pro to unlock advanced insights and analytics
+            <BlurView intensity={28} tint="light" style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={['rgba(252,250,249,0.55)', 'rgba(232,246,245,0.78)', 'rgba(252,250,249,0.92)']}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+
+            <Animated.View
+              style={[
+                styles.proGateCard,
+                {
+                  opacity: proGateOpacity,
+                  transform: [{ translateY: proGateTranslate }],
+                },
+              ]}
+            >
+              <Text style={styles.proGateBrand}>Nutragise Pro</Text>
+              <Text style={styles.proGateHeadline}>See the full picture</Text>
+              <Text style={styles.proGateSupport}>
+                Unlock advanced insights, habit analytics, and Neutro AI coaching.
               </Text>
+
+              <View style={styles.proGateFeatures}>
+                {[
+                  { icon: 'analytics-outline' as const, label: 'Patterns, streaks & correlations' },
+                  { icon: 'chatbubble-ellipses-outline' as const, label: 'Neutro AI coach chat' },
+                  { icon: 'bar-chart-outline' as const, label: 'Detailed progress charts' },
+                ].map((item) => (
+                  <View key={item.label} style={styles.proGateFeatureRow}>
+                    <View style={styles.proGateFeatureIcon}>
+                      <Ionicons name={item.icon} size={16} color="#1f2937" />
+                    </View>
+                    <Text style={styles.proGateFeatureText}>{item.label}</Text>
+                  </View>
+                ))}
+              </View>
+
               <TouchableOpacity
-                style={styles.proOverlayButton}
-                onPress={() => setShowUpgradeModal(true)}
-                activeOpacity={0.8}
+                style={styles.proGateButton}
+                onPress={() => {
+                  (navigation as any).navigate('UpgradeToPro', {
+                    subtitle:
+                      'Unlock advanced insights, habit analytics, and Neutro AI coaching.',
+                  });
+                }}
+                activeOpacity={0.85}
               >
-                <Ionicons name="star" size={20} color="white" style={{ marginRight: 8 }} />
-                <Text style={styles.proOverlayButtonText}>Upgrade to Pro</Text>
+                <Text style={styles.proGateButtonText}>Upgrade to Pro</Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
           </View>
         )}
 
@@ -787,7 +850,7 @@ export default function InsightsScreen({ route }: any) {
              onPress={() => {
                // Check if user is Pro before allowing AI chat
                if (!profileLoading && !userProfile?.is_pro) {
-                 setShowUpgradeModal(true);
+                 navigation.navigate('UpgradeToPro' as never);
                  return;
                }
                setIsHeaderExpanded(!isHeaderExpanded);
@@ -1464,31 +1527,6 @@ export default function InsightsScreen({ route }: any) {
         </View>
       </Modal>
 
-      {/* Upgrade to Pro Modal */}
-        <UpgradeToProModal
-          visible={showUpgradeModal}
-          onClose={() => setShowUpgradeModal(false)}
-          onUpgrade={async () => {
-            // Refresh profile data
-            if (user?.id) {
-              try {
-                const { supabase } = await import('../lib/supabase');
-                const { data: freshProfile, error } = await supabase
-                  .from('profiles')
-                  .select('is_pro')
-                  .eq('id', user.id)
-                  .single();
-                
-                if (!error && freshProfile) {
-                  setUserProfile(freshProfile);
-                }
-              } catch (error) {
-                console.error('Error refreshing profile:', error);
-              }
-            }
-          }}
-        />
-
       </SafeAreaView>
     </CustomBackground>
   );
@@ -1959,50 +1997,81 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     zIndex: 999,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 24,
   },
-  proOverlayContent: {
-    alignItems: 'center',
-    maxWidth: 300,
+  proGateCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 22,
   },
-  proOverlayTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
-    marginTop: 16,
+  proGateBrand: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#1f2937',
+    letterSpacing: -0.6,
     marginBottom: 8,
   },
-  proOverlayText: {
-    fontSize: 15,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
+  proGateHeadline: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
   },
-  proOverlayButton: {
+  proGateSupport: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 18,
+  },
+  proGateFeatures: {
+    gap: 8,
+    marginBottom: 20,
+  },
+  proGateFeatureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F59E0B',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    shadowColor: '#F59E0B',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  proOverlayButtonText: {
-    fontSize: 16,
+  proGateFeatureIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  proGateFeatureText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  proGateButton: {
+    backgroundColor: '#1f2937',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proGateButtonText: {
+    fontSize: 15,
     fontWeight: '700',
-    color: 'white',
+    color: '#FFFFFF',
   },
 }); 

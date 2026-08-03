@@ -59,6 +59,8 @@ class PillarProgressService {
   private readonly DECAY_GRACE_DAYS = 3;
   /** 1/3 of max daily gain (2 × 0.36) */
   private readonly DECAY_AMOUNT = 0.24;
+  /** Floor — pillars never drop below this */
+  private readonly MIN_PROGRESS = 35;
 
   private lastDecayCheck: { [userId: string]: number } = {};
   private readonly DECAY_CHECK_INTERVAL = 60000;
@@ -276,7 +278,10 @@ class PillarProgressService {
       if (daysToApply <= 0) return false;
 
       const decayAmount = daysToApply * this.DECAY_AMOUNT;
-      const newProgress = Math.max(0, (pillar.progress_percentage || 0) - decayAmount);
+      const newProgress = Math.max(
+        this.MIN_PROGRESS,
+        (pillar.progress_percentage || this.MIN_PROGRESS) - decayAmount
+      );
 
       const { error: updateError } = await supabase
         .from('pillar_progress')
@@ -445,11 +450,12 @@ class PillarProgressService {
       }
 
       const average = data.reduce((sum, p) => sum + p.progress_percentage, 0) / data.length;
+      const clampedAverage = Math.max(this.MIN_PROGRESS, Math.min(100, average));
 
       await supabase
         .from('pillar_progress')
         .update({
-          progress_percentage: average,
+          progress_percentage: clampedAverage,
           updated_at: new Date().toISOString()
         })
         .eq('user_id', userId)
@@ -486,7 +492,10 @@ class PillarProgressService {
         return false;
       }
 
-      const newProgress = Math.max(0, pillar.progress_percentage - this.PROGRESS_INCREMENT);
+      const newProgress = Math.max(
+        this.MIN_PROGRESS,
+        pillar.progress_percentage - this.PROGRESS_INCREMENT
+      );
       const newActionsToday = Math.max(0, pillar.actions_today - 1);
 
       const { error: updateError } = await supabase
@@ -545,8 +554,31 @@ class PillarProgressService {
       };
 
       data?.forEach((pillar: PillarProgress) => {
-        progressMap[pillar.pillar_type] = pillar.progress_percentage;
+        progressMap[pillar.pillar_type] = Math.max(
+          this.MIN_PROGRESS,
+          Math.min(100, pillar.progress_percentage ?? this.MIN_PROGRESS)
+        );
       });
+
+      // Heal any stored values that drifted below the floor
+      const toHeal =
+        data?.filter(
+          (p) => (p.progress_percentage ?? 0) < this.MIN_PROGRESS
+        ) ?? [];
+      if (toHeal.length > 0) {
+        await Promise.all(
+          toHeal.map((p) =>
+            supabase
+              .from('pillar_progress')
+              .update({
+                progress_percentage: this.MIN_PROGRESS,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', userId)
+              .eq('pillar_type', p.pillar_type)
+          )
+        );
+      }
 
       return progressMap;
     } catch (error) {

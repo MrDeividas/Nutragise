@@ -19,8 +19,6 @@ import { useActionStore } from '../state/actionStore';
 import { supabase } from '../lib/supabase';
 import { meditationService, MeditationStats } from '../lib/meditationService';
 import { ensureMeditationStart, getMeditationLimitHint } from '../lib/meditationAccess';
-import UpgradeToProModal from '../components/UpgradeToProModal';
-
 export default function MeditationScreen({ navigation }: any) {
   const { theme } = useTheme();
   const { user } = useAuthStore();
@@ -30,7 +28,6 @@ export default function MeditationScreen({ navigation }: any) {
     totalTimeMinutes: 0,
   });
   const [limitHint, setLimitHint] = useState('1 meditation per day · Level 3 unlocks 2 · Level 5 unlocks 3 · Pro is unlimited');
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [startingId, setStartingId] = useState<string | null>(null);
 
   // Load meditation stats
@@ -239,7 +236,10 @@ export default function MeditationScreen({ navigation }: any) {
       const result = await ensureMeditationStart(user?.id);
       if (!result.allowed) {
         if (result.reason === 'daily_limit') {
-          setShowUpgradeModal(true);
+          navigation.navigate('UpgradeToPro', {
+            subtitle:
+              "You've hit today's meditation limit. Upgrade to Pro for unlimited sessions, or level up for more free daily slots.",
+          });
         } else {
           Alert.alert('Unable to start', result.message);
         }
@@ -405,15 +405,6 @@ export default function MeditationScreen({ navigation }: any) {
       </ScrollView>
       </SafeAreaView>
 
-      <UpgradeToProModal
-        visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        subtitle="You've hit today's meditation limit. Upgrade to Pro for unlimited sessions, or level up for more free daily slots."
-        onUpgrade={async () => {
-          setShowUpgradeModal(false);
-          if (user?.id) setLimitHint(await getMeditationLimitHint(user.id));
-        }}
-      />
     </CustomBackground>
   );
 }

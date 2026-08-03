@@ -172,17 +172,15 @@ class ChallengesService {
           }
           
           if (schedule === 'daily') {
-            // For daily recurring challenges, show current day's instance
+            // Daily challenges: only show today's instance (not tomorrow's preview)
             const today = new Date(now);
             today.setUTCHours(0, 0, 0, 0);
             const challengeDay = new Date(challengeStart);
             challengeDay.setUTCHours(0, 0, 0, 0);
-            
+
             const isToday = challengeDay.getTime() === today.getTime();
-            const isTomorrow = challengeDay.getTime() === today.getTime() + 24 * 60 * 60 * 1000;
-            
-            // Show today's or tomorrow's instance
-            if (isToday || isTomorrow) {
+
+            if (isToday) {
               // Auto-activate if start time has passed
               if (challenge.status === 'upcoming' && now >= challengeStart) {
                 await supabase
@@ -191,15 +189,13 @@ class ChallengesService {
                   .eq('id', challenge.id);
                 challenge.status = 'active';
               }
-              
-              // Only add if we haven't already added a challenge with this title for today
-              // Use a more specific key: title + date + entry_fee to distinguish free vs paid
-              const key = `${challenge.title}_${challengeDay.toISOString().split('T')[0]}_${challenge.entry_fee || 0}`;
+
+              // One card per daily title + fee (today only)
+              const key = `${challenge.title}_${challenge.entry_fee || 0}`;
               if (!recurringTitles.has(key)) {
                 filteredChallenges.push(challenge);
                 recurringTitles.add(key);
               }
-              // Duplicate daily challenges are silently skipped (filtering is working correctly)
             }
           } else {
             // For weekly recurring challenges, show current week's instance
@@ -362,24 +358,11 @@ class ChallengesService {
   }
 
   /**
-   * Check whether a user is allowed to join a challenge based on their subscription tier.
-   * Free users: 7-day (1 week) challenges only.
-   * Pro users: any duration.
+   * Challenge join access — open to all users.
+   * (Previously free users were limited to 7-day challenges.)
    */
-  async checkChallengeAccessForUser(userId: string, durationWeeks: number): Promise<void> {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_pro')
-      .eq('id', userId)
-      .single();
-
-    const isPro = profile?.is_pro === true;
-
-    if (!isPro && durationWeeks > 1) {
-      throw new Error(
-        'Free users can only join 7-day challenges. Upgrade to Pro to join longer challenges.'
-      );
-    }
+  async checkChallengeAccessForUser(_userId: string, _durationWeeks: number): Promise<void> {
+    return;
   }
 
   /**
@@ -525,6 +508,7 @@ class ChallengesService {
             payment_status: entryFee > 0 && paymentIntentId ? 'paid' : 'pending',
             investment_amount: entryFee,
             stripe_payment_intent_id: paymentIntentId,
+            // Must match DB check: hold | wallet_escrow | wallet | free | immediate
             payment_capture_method: entryFee > 0 ? 'wallet' : 'free',
             payment_settled: entryFee > 0,
           });
@@ -1429,6 +1413,27 @@ class ChallengesService {
   }
 
   /**
+   * Weekly recurring challenges always run Monday–Sunday (UTC).
+   * Returns the next Mon–Sun window starting on or after the day after `endDate`.
+   */
+  private getNextMondaySundayWindow(endDate: Date): { start: Date; end: Date } {
+    const start = new Date(endDate);
+    start.setUTCDate(start.getUTCDate() + 1);
+
+    // 0=Sun … 1=Mon … 6=Sat — advance to Monday when needed
+    const day = start.getUTCDay();
+    const daysUntilMonday = (1 - day + 7) % 7;
+    start.setUTCDate(start.getUTCDate() + daysUntilMonday);
+    start.setUTCHours(0, 1, 0, 0);
+
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+    end.setUTCHours(23, 59, 59, 999);
+
+    return { start, end };
+  }
+
+  /**
    * Handle weekly recurring challenge - create new instance each week.
    * Self-healing: walks forward from the most recent instance's end_date,
    * creating any missing weeks up to next week. This fixes broken chains
@@ -1446,17 +1451,10 @@ class ChallengesService {
       while (iterations < MAX_ITERATIONS) {
         iterations++;
 
-        // Next instance starts the day after cursor ends
-        const nextStart = new Date(cursor);
-        nextStart.setDate(cursor.getDate() + 1);
-        nextStart.setUTCHours(0, 1, 0, 0);
+        const { start: nextStart, end: nextEnd } = this.getNextMondaySundayWindow(cursor);
 
         // Stop once we've scheduled up to 1 week in the future
         if (nextStart > nextWeekCutoff) break;
-
-        const nextEnd = new Date(nextStart);
-        nextEnd.setDate(nextStart.getDate() + 6);
-        nextEnd.setUTCHours(23, 59, 59, 999);
 
         // Check if an instance already exists for this window
         const { data: existing } = await supabase
@@ -1475,7 +1473,7 @@ class ChallengesService {
             console.log(`  ✨ Creating missing instance for "${challenge.title}" ${nextStart.toISOString().split('T')[0]} ${label}`);
           }
           // Create from a temporary object with the cursor end_date so
-          // createRecurringInstance computes the correct start/end dates
+          // createRecurringInstance computes the correct Mon–Sun window
           await this.createRecurringInstance({ ...challenge, end_date: cursor.toISOString() });
         }
 
@@ -1513,7 +1511,7 @@ class ChallengesService {
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: 'daily',
-          is_pro_only: originalChallenge.is_pro_only || false,
+          is_pro_only: false,
           next_recurrence: new Date(endDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -1554,20 +1552,13 @@ class ChallengesService {
   }
 
   /**
-   * Create a new instance of a weekly recurring challenge
+   * Create a new instance of a weekly recurring challenge (always Monday–Sunday).
    */
   private async createRecurringInstance(originalChallenge: Challenge): Promise<void> {
     try {
-      // Simple: next Monday after the end date
-      const endDate = new Date(originalChallenge.end_date);
-      const nextWeekStart = new Date(endDate);
-      nextWeekStart.setDate(endDate.getDate() + 1); // Move to Monday
-      nextWeekStart.setUTCHours(0, 1, 0, 0);
-      
-      // End is 6 days later (Sunday)
-      const nextWeekEnd = new Date(nextWeekStart);
-      nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-      nextWeekEnd.setUTCHours(23, 59, 59, 999);
+      const { start: nextWeekStart, end: nextWeekEnd } = this.getNextMondaySundayWindow(
+        new Date(originalChallenge.end_date)
+      );
       
       // Create new challenge instance for next week
       const { data: newChallenge, error: challengeError } = await supabase
@@ -1586,7 +1577,7 @@ class ChallengesService {
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: originalChallenge.recurring_schedule,
-          is_pro_only: originalChallenge.is_pro_only || false,
+          is_pro_only: false,
           next_recurrence: new Date(nextWeekEnd.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -2102,8 +2093,7 @@ class ChallengesService {
 
           if (flagError) {
             console.error(`Error checking flags for challenge ${challenge.id}:`, flagError);
-            // Fall back to manual review so nothing slips through
-            await this.markChallengeAsPendingReview(challenge.id);
+            // Don't dump everything into admin review on query failure
             continue;
           }
 
@@ -2111,6 +2101,25 @@ class ChallengesService {
 
           // Always finalise participant statuses first (marks non-completers as 'failed')
           await this.finaliseParticipantStatuses(challenge.id);
+
+          // Skip admin review if nobody joined
+          const { count: participantCount } = await supabase
+            .from('challenge_participants')
+            .select('id', { count: 'exact', head: true })
+            .eq('challenge_id', challenge.id);
+
+          if (!participantCount || participantCount === 0) {
+            await supabase
+              .from('challenges')
+              .update({
+                approval_status: 'approved',
+                status: 'completed',
+                reviewed_at: new Date().toISOString(),
+                admin_notes: 'Auto-approved: no participants',
+              })
+              .eq('id', challenge.id);
+            continue;
+          }
 
           if (hasFlaggedSubmissions) {
             // Flagged submissions present → send to admin review

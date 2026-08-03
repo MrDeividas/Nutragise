@@ -9,6 +9,7 @@ import { Goal } from '../types/database';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { progressService, ProgressPhoto } from '../lib/progressService';
+import { moderationAlertMessage } from '../lib/safeMediaUpload';
 import { useAuthStore } from '../state/authStore';
 import CustomBackground from '../components/CustomBackground';
 import { useBottomNavPadding } from '../components/CustomTabBar';
@@ -174,7 +175,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
 
     setIsPosting(true);
     try {
-      // 1. Create progress_photos entry
+      // 1. Create progress_photos entry (uploads local URI → public Storage URL)
       const checkInResult = await progressService.createCheckIn({
         goalId: goal.id,
         userId: user.id,
@@ -183,16 +184,17 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
         checkInDate: new Date()
       });
 
-      if (!checkInResult) {
+      if (!checkInResult.success) {
         throw new Error('Failed to save progress update');
       }
 
-      // 2. Also add to daily post (activity feed)
+      // 2. Also add to daily post (activity feed) using the uploaded URL
       const dailyPostDate = getDailyPostDate(new Date());
       const existingDailyPost = await dailyPostsService.getDailyPostByDate(user.id, dailyPostDate);
+      const publicPhotoUrl = checkInResult.photoUrl;
       
       const dailyPostData: CreateDailyPostData = {
-        photos: updateImage ? [updateImage] : [],
+        photos: publicPhotoUrl ? [publicPhotoUrl] : [],
         captions: updateText.trim() ? [updateText.trim()] : [],
         habits_completed: []
       };
@@ -219,7 +221,7 @@ export default function GoalDetailScreen({ navigation, route }: Props) {
       setSelectedMilestone(null);
     } catch (error) {
       console.error('Error posting update:', error);
-      Alert.alert('Error', 'Failed to post update. Please try again.');
+      Alert.alert('Upload blocked', moderationAlertMessage(error));
     } finally {
       setIsPosting(false);
     }
