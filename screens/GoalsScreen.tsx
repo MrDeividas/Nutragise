@@ -174,7 +174,7 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
   const route = useRoute<any>();
   const { user } = useAuthStore();
   const bottomNavPadding = useBottomNavPadding();
-  const { goals, loading, error, fetchGoals, toggleGoalCompletion } = useGoalsStore();
+  const { goals, loading, error, fetchGoals, updateGoal } = useGoalsStore();
   const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState<'goals' | 'workout'>(
     route.params?.openWorkout ? 'workout' : 'goals'
@@ -581,8 +581,88 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
     }
   };
 
-  const handleToggleCompletion = async (goalId: string) => {
-    await toggleGoalCompletion(goalId);
+  const handleToggleCompletion = (goalId: string) => {
+    const goal = goals.find((g) => g.id === goalId);
+    if (!goal) return;
+
+    if (goal.completed) {
+      Alert.alert(
+        'Mark as incomplete?',
+        `Move "${goal.title}" back to Active? Progress will stay as it is.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Mark incomplete',
+            onPress: () => {
+              void updateGoal(goalId, {
+                completed: false,
+                last_updated_at: new Date().toISOString(),
+              });
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    const milestones = (goal.milestones || [])
+      .map((m) => (typeof m === 'string' ? m.trim() : String(m).trim()))
+      .filter((m) => m.length > 0);
+
+    const markComplete = () => {
+      void updateGoal(goalId, {
+        completed: true,
+        progress_percent: 100,
+        last_updated_at: new Date().toISOString(),
+      });
+    };
+
+    const askAboutMilestones = () => {
+      if (milestones.length === 0) {
+        markComplete();
+        return;
+      }
+
+      const preview = milestones.slice(0, 6);
+      const extra = milestones.length - preview.length;
+      const list = [
+        ...preview.map((m, i) => `${i + 1}. ${m}`),
+        ...(extra > 0 ? [`…and ${extra} more`] : []),
+      ].join('\n');
+
+      Alert.alert(
+        'Milestones',
+        `This goal has ${milestones.length} milestone${milestones.length === 1 ? '' : 's'}:\n\n${list}\n\nHave you completed them?`,
+        [
+          { text: 'Not yet', style: 'cancel' },
+          {
+            text: 'Yes, mark complete',
+            onPress: markComplete,
+          },
+        ]
+      );
+    };
+
+    Alert.alert(
+      'Complete goal?',
+      `Mark "${goal.title}" as 100% complete?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          onPress: askAboutMilestones,
+        },
+      ]
+    );
+  };
+
+  const featuredCount = React.useMemo(
+    () => goals.filter((g) => !g.completed && g.is_featured).length,
+    [goals]
+  );
+
+  const handleToggleFeatured = async (goalId: string, featured: boolean) => {
+    await updateGoal(goalId, { is_featured: featured });
   };
 
   const activeGoals = React.useMemo(() => goals.filter(goal => !goal.completed), [goals]);
@@ -673,15 +753,6 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
         {activeTab === 'goals' ? (
           <>
             <View style={styles.goalsTop}>
-              <View style={styles.resourceRow}>
-                <View style={styles.resourcePill}>
-                  <Text style={styles.resourceText}>{activeGoals.length} Active</Text>
-                </View>
-                <View style={styles.resourcePill}>
-                  <Text style={styles.resourceText}>{completedGoals.length} Done</Text>
-                </View>
-              </View>
-
               <View
                 style={styles.segmentBar}
                 onLayout={(e) => {
@@ -711,6 +782,14 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                   <Text style={[styles.segmentText, goalsFilter === 'active' && styles.segmentTextActive]}>
                     Active
                   </Text>
+                  <Text
+                    style={[
+                      styles.segmentCount,
+                      goalsFilter === 'active' && styles.segmentCountActive,
+                    ]}
+                  >
+                    {activeGoals.length}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.segment}
@@ -719,6 +798,14 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                 >
                   <Text style={[styles.segmentText, goalsFilter === 'completed' && styles.segmentTextActive]}>
                     Completed
+                  </Text>
+                  <Text
+                    style={[
+                      styles.segmentCount,
+                      goalsFilter === 'completed' && styles.segmentCountActive,
+                    ]}
+                  >
+                    {completedGoals.length}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -766,6 +853,8 @@ export default function GoalsScreen({ navigation: navigationProp }: GoalsScreenP
                     goal={goal}
                     navigation={navigation}
                     onToggle={handleToggleCompletion}
+                    onToggleFeatured={handleToggleFeatured}
+                    featuredCount={featuredCount}
                   />
                 ))
               )}
@@ -1608,31 +1697,6 @@ const styles = StyleSheet.create({
     gap: 12,
     overflow: 'visible',
   },
-  resourceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    overflow: 'visible',
-  },
-  resourcePill: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  resourceText: {
-    color: DARK,
-    fontWeight: '700',
-    fontSize: 13,
-  },
   segmentBar: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -1663,6 +1727,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     zIndex: 1,
+    gap: 2,
   },
   segmentActive: {
     backgroundColor: DARK,
@@ -1671,9 +1736,19 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
   },
   segmentTextActive: {
     color: '#FFFFFF',
+  },
+  segmentCount: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  segmentCountActive: {
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   goalsListPad: {
     paddingHorizontal: 16,

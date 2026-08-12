@@ -13,6 +13,7 @@ const corsHeaders = {
 // nudity-2.1 only keeps free-tier usage at 1 op/image. Add gore-2.0,weapon later if needed.
 const IMAGE_MODELS = 'nudity-2.1';
 const VIDEO_MODELS = 'nudity-2.1';
+const MAX_BASE64_CHARS = 6_500_000;
 
 type MediaKind = 'image' | 'video';
 
@@ -86,7 +87,7 @@ function extractFrameResults(videoPayload: Record<string, any>): Record<string, 
   return Array.isArray(frames) ? frames : [];
 }
 
-/** Free-tier daily/monthly quota (and similar plan caps). Uploads should fail-open. */
+/** Free-tier daily/monthly quota (and similar plan caps). Uploads must fail-closed. */
 class SightengineUsageLimitError extends Error {
   constructor(message = 'Sightengine usage limit exceeded') {
     super(message);
@@ -108,7 +109,17 @@ function isUsageLimitPayload(payload: Record<string, any> | null | undefined): b
   return false;
 }
 
-async function checkImage(url: string, apiUser: string, apiSecret: string) {
+function decodeBase64ToBytes(mediaBase64: string): Uint8Array {
+  const cleaned = mediaBase64.replace(/^data:[^;]+;base64,/, '').replace(/\s/g, '');
+  const binary = atob(cleaned);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function checkImageUrl(url: string, apiUser: string, apiSecret: string) {
   const endpoint = new URL('https://api.sightengine.com/1.0/check.json');
   endpoint.searchParams.set('url', url);
   endpoint.searchParams.set('models', IMAGE_MODELS);
@@ -126,6 +137,37 @@ async function checkImage(url: string, apiUser: string, apiSecret: string) {
   return evaluateSafety(payload);
 }
 
+async function checkImageBytes(
+  bytes: Uint8Array,
+  contentType: string,
+  apiUser: string,
+  apiSecret: string
+) {
+  const form = new FormData();
+  const filename = contentType.includes('png')
+    ? 'upload.png'
+    : contentType.includes('webp')
+      ? 'upload.webp'
+      : 'upload.jpg';
+  form.append('media', new Blob([bytes], { type: contentType || 'image/jpeg' }), filename);
+  form.append('models', IMAGE_MODELS);
+  form.append('api_user', apiUser);
+  form.append('api_secret', apiSecret);
+
+  const response = await fetch('https://api.sightengine.com/1.0/check.json', {
+    method: 'POST',
+    body: form,
+  });
+  const payload = await response.json();
+  if (!response.ok || payload?.status === 'failure') {
+    if (isUsageLimitPayload(payload)) {
+      throw new SightengineUsageLimitError(payload?.error?.message || 'Sightengine usage limit exceeded');
+    }
+    throw new Error(payload?.error?.message || 'Sightengine image check failed');
+  }
+  return evaluateSafety(payload);
+}
+
 async function checkVideo(url: string, apiUser: string, apiSecret: string) {
   const form = new FormData();
   form.append('stream_url', url);
@@ -133,7 +175,6 @@ async function checkVideo(url: string, apiUser: string, apiSecret: string) {
   form.append('api_user', apiUser);
   form.append('api_secret', apiSecret);
 
-  // Sync endpoint for short clips; falls back to treating as image if unavailable.
   const response = await fetch('https://api.sightengine.com/1.0/video/check-sync.json', {
     method: 'POST',
     body: form,
@@ -144,9 +185,8 @@ async function checkVideo(url: string, apiUser: string, apiSecret: string) {
     if (isUsageLimitPayload(payload)) {
       throw new SightengineUsageLimitError(payload?.error?.message || 'Sightengine usage limit exceeded');
     }
-    // Free tier may not include video — fall back to first-frame image check.
     console.warn('Video sync check failed, falling back to image check:', payload?.error);
-    return checkImage(url, apiUser, apiSecret);
+    return checkImageUrl(url, apiUser, apiSecret);
   }
 
   const frames = extractFrameResults(payload);
@@ -204,22 +244,48 @@ serve(async (req: Request) => {
 
     const body = await req.json();
     const mediaUrl = typeof body?.url === 'string' ? body.url.trim() : '';
+    const mediaBase64 = typeof body?.mediaBase64 === 'string' ? body.mediaBase64 : '';
+    const contentType =
+      typeof body?.contentType === 'string' && body.contentType.trim()
+        ? body.contentType.trim()
+        : 'image/jpeg';
     const mediaType = (body?.mediaType as MediaKind | undefined) ?? undefined;
 
-    if (!mediaUrl || !/^https?:\/\//i.test(mediaUrl)) {
-      return new Response(JSON.stringify({ error: 'A valid media url is required' }), {
+    if (!mediaUrl && !mediaBase64) {
+      return new Response(JSON.stringify({ error: 'A valid media url or mediaBase64 is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
-    const kind: MediaKind = isVideoUrl(mediaUrl, mediaType) ? 'video' : 'image';
+    if (mediaBase64 && mediaBase64.length > MAX_BASE64_CHARS) {
+      return new Response(JSON.stringify({ error: 'Media payload is too large to moderate' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 413,
+      });
+    }
+
+    const kind: MediaKind = mediaBase64
+      ? mediaType === 'video'
+        ? 'video'
+        : 'image'
+      : isVideoUrl(mediaUrl, mediaType)
+        ? 'video'
+        : 'image';
+
+    if (mediaBase64 && kind === 'video') {
+      return new Response(
+        JSON.stringify({ error: 'Video base64 moderation is not supported; upload then moderate by URL.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
 
     try {
-      const decision =
-        kind === 'video'
+      const decision = mediaBase64
+        ? await checkImageBytes(decodeBase64ToBytes(mediaBase64), contentType, apiUser, apiSecret)
+        : kind === 'video'
           ? await checkVideo(mediaUrl, apiUser, apiSecret)
-          : await checkImage(mediaUrl, apiUser, apiSecret);
+          : await checkImageUrl(mediaUrl, apiUser, apiSecret);
 
       return new Response(
         JSON.stringify({
@@ -231,22 +297,23 @@ serve(async (req: Request) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     } catch (checkError) {
-      // Quota / plan hard-cap: allow upload through (fail-open) so the app keeps working.
+      // Fail closed: do not publish UGC when moderation cannot run.
       if (
         checkError instanceof SightengineUsageLimitError ||
         (checkError as any)?.name === 'SightengineUsageLimitError' ||
         isUsageLimitPayload({ error: { message: (checkError as Error)?.message } })
       ) {
-        console.warn('Sightengine usage limit hit — allowing media through:', checkError);
+        console.warn('Sightengine usage limit hit — blocking media:', checkError);
         return new Response(
           JSON.stringify({
-            safe: true,
+            safe: false,
             skipped: true,
             skipReason: 'usage_limit',
-            reason: null,
+            error: 'Media moderation is at capacity. Please try again later.',
+            reason: 'usage_limit',
             mediaType: kind,
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 503 }
         );
       }
       throw checkError;

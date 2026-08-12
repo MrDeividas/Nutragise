@@ -132,6 +132,69 @@ class IAPService {
     return offering.monthly ?? offering.availablePackages[0] ?? null;
   }
 
+  /**
+   * Read introductory / free-trial metadata from a RevenueCat package.
+   * Free trials must be configured on the store product (App Store / Play)
+   * and synced in RevenueCat — this only surfaces what’s on the package.
+   */
+  getTrialInfo(pkg: PurchasesPackage | null | undefined): {
+    hasTrial: boolean;
+    trialDays: number;
+    billingStartsOn: Date;
+    trialLabel: string;
+  } {
+    const fallbackDays = 7;
+    const product = pkg?.product;
+    const intro = product?.introPrice;
+
+    let trialDays = fallbackDays;
+    let hasTrial = false;
+
+    if (intro) {
+      const units = Number(intro.periodNumberOfUnits) || 0;
+      const unit = String(intro.periodUnit || '').toUpperCase();
+      // Free trial typically has price === 0
+      const priceNum = Number(intro.price);
+      hasTrial = units > 0 && (Number.isNaN(priceNum) || priceNum === 0);
+
+      if (hasTrial) {
+        if (unit.includes('DAY')) trialDays = units;
+        else if (unit.includes('WEEK')) trialDays = units * 7;
+        else if (unit.includes('MONTH')) trialDays = units * 30;
+        else trialDays = units;
+      }
+    }
+
+    // If RC product has no introPrice yet, still communicate the intended 1-week trial
+    // (actual store sheet will only grant a trial once configured on Apple/Google).
+    if (!hasTrial) {
+      hasTrial = true;
+      trialDays = fallbackDays;
+    }
+
+    const billingStartsOn = new Date();
+    billingStartsOn.setHours(0, 0, 0, 0);
+    billingStartsOn.setDate(billingStartsOn.getDate() + trialDays);
+
+    const trialLabel =
+      trialDays === 7
+        ? '1-week free trial'
+        : trialDays === 1
+          ? '1-day free trial'
+          : `${trialDays}-day free trial`;
+
+    return { hasTrial, trialDays, billingStartsOn, trialLabel };
+  }
+
+  formatBillingDate(date: Date): string {
+    return date.toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
   async purchasePro(): Promise<PurchaseOutcome> {
     if (!this.configured && !this.configure()) {
       return { status: 'error', message: 'In-app purchases are not available.' };

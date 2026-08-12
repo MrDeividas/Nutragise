@@ -438,15 +438,35 @@ class ChallengePotService {
         console.log('🎉 Everyone completed! Refunding investments without platform fee.');
       } else {
         // Some users failed - calculate platform fee from ONLY losers' stakes
-        // Platform gets 30% of losers' stakes
-        // Winners split the remaining 70% of losers' stakes PLUS their own stakes back
+        // Platform gets 30% of losers' stakes ONLY if any Free (non-Pro) member joined.
+        // If every participant is Pro, no commission is taken.
+        // Winners split the remaining pot PLUS their own stakes back
         // Note: Invalid users' stakes are excluded from calculations (they lose their entry fee)
+
+        const participantIds = (allParticipantsData || [])
+          .filter((p) => !p.is_invalid)
+          .map((p) => p.user_id);
+
+        let allParticipantsArePro = false;
+        if (participantIds.length > 0) {
+          const { data: proProfiles } = await supabase
+            .from('profiles')
+            .select('id, is_pro')
+            .in('id', participantIds);
+          allParticipantsArePro =
+            !!proProfiles?.length &&
+            proProfiles.length === participantIds.length &&
+            proProfiles.every((p) => !!p.is_pro);
+        }
         
         const totalPot = validParticipants * entryFee;
         const losersStakes = loserCount * entryFee;
         
-        // Platform fee is 30% of ONLY the losers' stakes (the profit pool)
-        const platformFee = losersStakes * (Number(pot.platform_fee_percentage) / 100);
+        // Platform fee is 30% of ONLY the losers' stakes (the profit pool), or 0 if all Pro
+        const feePercent = allParticipantsArePro
+          ? 0
+          : Number(pot.platform_fee_percentage) || 30;
+        const platformFee = losersStakes * (feePercent / 100);
         
         // Winners pool = total pot - platform fee
         const winnersPot = totalPot - platformFee;
@@ -461,7 +481,8 @@ class ChallengePotService {
           entryFee,
           totalPot,
           losersStakes,
-          platformFeePercentage: pot.platform_fee_percentage,
+          allParticipantsArePro,
+          platformFeePercentage: feePercent,
           platformFee,
           winnersPot,
           payoutPerWinner,
@@ -473,6 +494,7 @@ class ChallengePotService {
           .update({
             platform_fee_amount: platformFee,
             winners_pot: winnersPot,
+            ...(allParticipantsArePro ? { platform_fee_percentage: 0 } : {}),
           })
           .eq('id', pot.id);
 

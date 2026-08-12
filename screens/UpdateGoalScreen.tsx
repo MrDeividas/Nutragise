@@ -19,16 +19,20 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import CustomBackground from '../components/CustomBackground';
 import { useAuthStore } from '../state/authStore';
 import { useActionStore } from '../state/actionStore';
+import { useGoalsStore } from '../state/goalsStore';
 import { supabase } from '../lib/supabase';
 import { progressService } from '../lib/progressService';
 import { postsService } from '../lib/postsService';
 import { getDailyPostDate } from '../lib/timeService';
 import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
-import { Goal } from '../types/database';
+import { calculateCompletionPercentage } from '../lib/goalHelpers';
+import { Goal, GoalProgress } from '../types/database';
 
 export type UpdateGoalParams = {
   UpdateGoal: {
     goalId?: string;
+    /** When true, hide goal picker and keep updates on this goal only */
+    lockGoal?: boolean;
     /** ISO date string for backdated check-ins */
     targetCheckInDate?: string;
   };
@@ -37,22 +41,31 @@ export type UpdateGoalParams = {
 const DARK = '#1f2937';
 const MUTED = '#6B7280';
 const PAGE_BG = '#F8F9FB';
+const PROGRESS_BUMPS = [1, 3, 5, 10, 20] as const;
+type ProgressBump = (typeof PROGRESS_BUMPS)[number];
 
 export default function UpdateGoalScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<UpdateGoalParams, 'UpdateGoal'>>();
   const { user } = useAuthStore();
   const { trackCoreHabit } = useActionStore();
+  const fetchGoals = useGoalsStore((s) => s.fetchGoals);
 
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
-  const [selectedGoalId, setSelectedGoalId] = useState<string>(route.params?.goalId || '');
+  const lockedGoalId = route.params?.lockGoal ? route.params?.goalId : undefined;
+  const goalLocked = !!lockedGoalId;
+  const [selectedGoalId, setSelectedGoalId] = useState<string>(
+    route.params?.goalId || ''
+  );
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [shareToFeed, setShareToFeed] = useState(false);
   const [selectedMilestoneIndex, setSelectedMilestoneIndex] = useState<number | null>(null);
+  const [progressBump, setProgressBump] = useState<ProgressBump>(1);
+  const [estimatedPctByGoal, setEstimatedPctByGoal] = useState<Record<string, number>>({});
   const targetCheckInDate = route.params?.targetCheckInDate
     ? new Date(route.params.targetCheckInDate)
     : null;
@@ -66,6 +79,13 @@ export default function UpdateGoalScreen() {
       setSelectedGoalId(route.params.goalId);
     }
   }, [route.params?.goalId]);
+
+  const selectGoal = (goalId: string) => {
+    if (goalLocked) return;
+    setSelectedGoalId(goalId);
+    setSelectedMilestoneIndex(null);
+    setProgressBump(1);
+  };
 
   const loadGoals = async () => {
     if (!user?.id) {
@@ -83,11 +103,40 @@ export default function UpdateGoalScreen() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setGoals(data || []);
+      const loaded = data || [];
+      setGoals(loaded);
 
-      if (!selectedGoalId && data && data.length === 1) {
-        setSelectedGoalId(data[0].id);
+      if (!selectedGoalId && loaded.length === 1) {
+        setSelectedGoalId(loaded[0].id);
       }
+
+      // Estimate % from check-ins for goals that haven't set manual progress yet
+      const estimates: Record<string, number> = {};
+      await Promise.all(
+        loaded.map(async (goal) => {
+          if (typeof goal.progress_percent === 'number') return;
+          if (!goal.start_date || !user?.id) {
+            estimates[goal.id] = 0;
+            return;
+          }
+          const count = await progressService.getCheckInCountInRange(
+            goal.id,
+            user.id,
+            goal.start_date,
+            goal.end_date,
+            goal.frequency
+          );
+          const mockEntries = Array.from({ length: count }, (_, i) => ({
+            id: `est-${i}`,
+            goal_id: goal.id,
+            user_id: user.id,
+            completed_date: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          })) as GoalProgress[];
+          estimates[goal.id] = calculateCompletionPercentage(goal, mockEntries);
+        })
+      );
+      setEstimatedPctByGoal(estimates);
     } catch (error) {
       console.error('Error loading goals:', error);
       Alert.alert('Error', 'Failed to load your goals.');
@@ -189,10 +238,12 @@ export default function UpdateGoalScreen() {
       ? goalMilestones.find((m) => m.index === selectedMilestoneIndex)?.title || null
       : null;
 
-  const selectGoal = (goalId: string) => {
-    setSelectedGoalId(goalId);
-    setSelectedMilestoneIndex(null);
-  };
+  const currentProgressPct = selectedGoal
+    ? typeof selectedGoal.progress_percent === 'number'
+      ? Math.max(0, Math.min(100, Math.round(selectedGoal.progress_percent)))
+      : estimatedPctByGoal[selectedGoal.id] ?? 0
+    : 0;
+  const nextProgressPct = Math.min(100, currentProgressPct + progressBump);
 
   const handleSubmit = async () => {
     if (!user) {
@@ -207,8 +258,8 @@ export default function UpdateGoalScreen() {
       Alert.alert('Not allowed', 'You can only update your own goals.');
       return;
     }
-    if (!note.trim() && photos.length === 0) {
-      Alert.alert('Empty update', 'Add a note or a photo to post an update.');
+    if (currentProgressPct >= 100) {
+      Alert.alert('Already complete', 'This goal is already at 100%.');
       return;
     }
 
@@ -218,10 +269,41 @@ export default function UpdateGoalScreen() {
       const noteWithMilestone = [
         note.trim(),
         selectedMilestoneTitle ? `Milestone: ${selectedMilestoneTitle}` : '',
+        `Progress +${progressBump}% → ${nextProgressPct}%`,
       ]
         .filter(Boolean)
         .join('\n');
 
+      // Always bump manual progress on update (default +1%)
+      const { error: progressError } = await supabase
+        .from('goals')
+        .update({
+          progress_percent: nextProgressPct,
+          last_updated_at: new Date().toISOString(),
+          ...(nextProgressPct >= 100 ? { completed: true } : {}),
+        })
+        .eq('id', selectedGoalId)
+        .eq('user_id', user.id);
+
+      if (progressError) {
+        throw new Error(progressError.message || 'Failed to update progress');
+      }
+
+      setGoals((prev) =>
+        prev.map((g) =>
+          g.id === selectedGoalId
+            ? {
+                ...g,
+                progress_percent: nextProgressPct,
+                completed: nextProgressPct >= 100 ? true : g.completed,
+              }
+            : g
+        )
+      );
+      // Keep profile / goals list in sync
+      await fetchGoals(user.id);
+
+      // Always record a check-in so Reminders ("due today" / overdue) clear
       if (photos.length > 0) {
         for (const photoUrl of photos) {
           const result = await progressService.createCheckIn({
@@ -247,10 +329,12 @@ export default function UpdateGoalScreen() {
         }
       }
 
-      // Optional community feed share — never posts other people's goals
-      if (shareToFeed) {
+      // Private by default: only write to Posts / feed when explicitly enabled
+      if (shareToFeed === true) {
         const feedResult = await postsService.createPost({
-          content: note.trim() || `Update on ${selectedGoal.title}`,
+          content:
+            note.trim() ||
+            `+${progressBump}% on ${selectedGoal.title} (${nextProgressPct}%)`,
           date: getDailyPostDate(checkInDate),
           photos,
           habits_completed: [],
@@ -264,7 +348,7 @@ export default function UpdateGoalScreen() {
         if (!feedResult) {
           Alert.alert(
             'Goal updated',
-            'Your goal was updated, but sharing to the feed failed. Try again later.'
+            'Progress was saved, but posting to the feed failed. Try again later.'
           );
           navigation.goBack();
           return;
@@ -274,9 +358,9 @@ export default function UpdateGoalScreen() {
       trackCoreHabit('update_goal');
       Alert.alert(
         'Updated',
-        shareToFeed
-          ? 'Your goal update was saved and shared to the feed.'
-          : 'Your goal update was saved.',
+        `Progress is now ${nextProgressPct}% (+${progressBump}%).${
+          shareToFeed ? ' Posted to feed.' : ''
+        }`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
@@ -311,22 +395,16 @@ export default function UpdateGoalScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.hero}>
-              <Text style={styles.heroTitle}>Update your goal</Text>
-              <Text style={styles.heroSupport}>
-                Progress saves to your goal. Optionally share it to the community feed.
+            {targetCheckInDate ? (
+              <Text style={styles.dateHint}>
+                Dating this update for{' '}
+                {targetCheckInDate.toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
               </Text>
-              {targetCheckInDate ? (
-                <Text style={styles.dateHint}>
-                  Dating this update for{' '}
-                  {targetCheckInDate.toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                </Text>
-              ) : null}
-            </View>
+            ) : null}
 
             <Text style={styles.sectionLabel}>Your goal</Text>
             {loadingGoals ? (
@@ -343,6 +421,20 @@ export default function UpdateGoalScreen() {
                 >
                   <Text style={styles.secondaryButtonText}>Go back</Text>
                 </TouchableOpacity>
+              </View>
+            ) : goalLocked && selectedGoal ? (
+              <View style={[styles.goalRow, styles.goalRowSelected, styles.goalRowLocked]}>
+                <View style={styles.goalCopy}>
+                  <Text style={styles.goalTitle} numberOfLines={2}>
+                    {selectedGoal.title}
+                  </Text>
+                  <Text style={styles.goalMeta}>
+                    {typeof selectedGoal.progress_percent === 'number'
+                      ? `${Math.round(selectedGoal.progress_percent)}% complete`
+                      : `${estimatedPctByGoal[selectedGoal.id] ?? 0}% complete`}
+                    {selectedGoal.category ? ` · ${selectedGoal.category}` : ''}
+                  </Text>
+                </View>
               </View>
             ) : (
               <View style={styles.goalList}>
@@ -362,15 +454,59 @@ export default function UpdateGoalScreen() {
                         <Text style={styles.goalTitle} numberOfLines={2}>
                           {goal.title}
                         </Text>
-                        {!!goal.category && (
-                          <Text style={styles.goalMeta}>{goal.category}</Text>
-                        )}
+                        <Text style={styles.goalMeta}>
+                          {typeof goal.progress_percent === 'number'
+                            ? `${Math.round(goal.progress_percent)}% complete`
+                            : `${estimatedPctByGoal[goal.id] ?? 0}% complete`}
+                          {goal.category ? ` · ${goal.category}` : ''}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   );
                 })}
               </View>
             )}
+
+            <Text style={styles.sectionLabel}>Progress bump</Text>
+            <View style={styles.progressCard}>
+              <View style={styles.progressSummary}>
+                <Text style={styles.progressSummaryLabel}>Current</Text>
+                <Text style={styles.progressSummaryValue}>{currentProgressPct}%</Text>
+                <Ionicons name="arrow-forward" size={16} color={MUTED} />
+                <Text style={styles.progressSummaryLabel}>After update</Text>
+                <Text style={[styles.progressSummaryValue, styles.progressSummaryNext]}>
+                  {nextProgressPct}%
+                </Text>
+              </View>
+              <View style={styles.bumpRow}>
+                {PROGRESS_BUMPS.map((bump) => {
+                  const selected = progressBump === bump;
+                  const disabled = currentProgressPct >= 100;
+                  return (
+                    <TouchableOpacity
+                      key={bump}
+                      style={[
+                        styles.bumpChip,
+                        selected && styles.bumpChipSelected,
+                        disabled && styles.bumpChipDisabled,
+                      ]}
+                      onPress={() => setProgressBump(bump)}
+                      activeOpacity={0.85}
+                      disabled={disabled}
+                    >
+                      <Text
+                        style={[
+                          styles.bumpChipText,
+                          selected && styles.bumpChipTextSelected,
+                        ]}
+                      >
+                        +{bump}%
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
 
             <Text style={styles.sectionLabel}>Update</Text>
             <View style={styles.noteCard}>
@@ -482,14 +618,13 @@ export default function UpdateGoalScreen() {
               onPress={() => setShareToFeed((prev) => !prev)}
               activeOpacity={0.85}
             >
+              <Ionicons
+                name={shareToFeed ? 'checkbox' : 'square-outline'}
+                size={24}
+                color={shareToFeed ? '#10B981' : MUTED}
+              />
               <View style={styles.shareCopy}>
-                <Text style={styles.shareTitle}>Share to community feed</Text>
-                <Text style={styles.shareDesc}>
-                  Optional. Your goal update stays private unless you turn this on.
-                </Text>
-              </View>
-              <View style={[styles.toggleTrack, shareToFeed && styles.toggleTrackOn]}>
-                <View style={[styles.toggleThumb, shareToFeed && styles.toggleThumbOn]} />
+                <Text style={styles.shareTitle}>Post to feed</Text>
               </View>
             </TouchableOpacity>
           </ScrollView>
@@ -507,7 +642,9 @@ export default function UpdateGoalScreen() {
               {submitting ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.submitText}>Post update</Text>
+                <Text style={styles.submitText}>
+                  {selectedGoalId ? `Update · +${progressBump}%` : 'Post update'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -543,30 +680,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  hero: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 18,
-    paddingVertical: 20,
-    marginBottom: 22,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: DARK,
-    letterSpacing: -0.4,
-    marginBottom: 6,
-  },
-  heroSupport: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: MUTED,
-    fontWeight: '500',
-  },
   dateHint: {
-    marginTop: 10,
+    marginBottom: 14,
     fontSize: 12,
     fontWeight: '600',
     color: DARK,
@@ -630,6 +745,9 @@ const styles = StyleSheet.create({
     borderColor: DARK,
     backgroundColor: '#F8FAFC',
   },
+  goalRowLocked: {
+    marginBottom: 22,
+  },
   radio: {
     width: 22,
     height: 22,
@@ -662,7 +780,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: MUTED,
-    textTransform: 'capitalize',
+  },
+  progressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    marginBottom: 18,
+    gap: 12,
+  },
+  progressSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  progressSummaryLabel: {
+    fontSize: 13,
+    color: MUTED,
+    fontWeight: '600',
+  },
+  progressSummaryValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: DARK,
+  },
+  progressSummaryNext: {
+    color: '#059669',
+  },
+  bumpRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bumpChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  bumpChipSelected: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  bumpChipDisabled: {
+    opacity: 0.45,
+  },
+  bumpChipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DARK,
+  },
+  bumpChipTextSelected: {
+    color: '#FFFFFF',
   },
   noteCard: {
     backgroundColor: '#FFFFFF',
@@ -798,33 +971,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: DARK,
-    marginBottom: 2,
-  },
-  shareDesc: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: MUTED,
-    fontWeight: '500',
-  },
-  toggleTrack: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#E5E7EB',
-    padding: 3,
-    justifyContent: 'center',
-  },
-  toggleTrackOn: {
-    backgroundColor: DARK,
-  },
-  toggleThumb: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleThumbOn: {
-    alignSelf: 'flex-end',
   },
   footer: {
     paddingHorizontal: 16,

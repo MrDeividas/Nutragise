@@ -1,5 +1,13 @@
 // TypeScript types for the challenges feature
 
+/** Official entry fees (GBP) for public challenges */
+export const CHALLENGE_ENTRY_FEES = {
+  /** Core habits + Everyone Can Play */
+  STANDARD: 15,
+  /** Pro-only challenges */
+  PRO: 25,
+} as const;
+
 export interface Challenge {
   id: string;
   title: string;
@@ -53,6 +61,7 @@ export interface ChallengeParticipant {
     username: string;
     avatar_url?: string;
     display_name?: string;
+    is_pro?: boolean;
   };
 }
 
@@ -143,6 +152,9 @@ export interface PublicChallengeRequest {
   requirements: string;
   creator_email: string;
   creator_username: string;
+  image_url?: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface JoinChallengeData {

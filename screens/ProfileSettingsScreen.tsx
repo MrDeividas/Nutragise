@@ -25,6 +25,9 @@ import { useBottomNavPadding } from '../components/CustomTabBar';
 import { supabase } from '../lib/supabase';
 import { iapService } from '../lib/iapService';
 import { adminService } from '../lib/adminService';
+import { useOnboardingStore } from '../state/onboardingStore';
+import { referralService } from '../lib/referralService';
+import * as Clipboard from 'expo-clipboard';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -52,6 +55,8 @@ export default function ProfileSettingsScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralCount, setReferralCount] = useState(0);
 
   const accent = theme.textPrimary;
   const softAccent = `${theme.textPrimary}14`;
@@ -69,7 +74,7 @@ export default function ProfileSettingsScreen() {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('is_pro, username_last_changed, paypal_email')
+        .select('is_pro, username_last_changed, paypal_email, referral_code')
         .eq('id', user.id)
         .single();
 
@@ -81,9 +86,28 @@ export default function ProfileSettingsScreen() {
         if (profile.paypal_email) {
           setPaypalEmail(profile.paypal_email);
         }
+        if (profile.referral_code) {
+          setReferralCode(profile.referral_code);
+        } else {
+          const code = await referralService.getMyReferralCode(user.id);
+          setReferralCode(code);
+        }
       }
+
+      const referred = await referralService.listMyReferrals(user.id);
+      setReferralCount(referred.length);
     } catch (error) {
       console.error('Error loading user profile:', error);
+    }
+  };
+
+  const handleCopyReferralCode = async () => {
+    if (!referralCode) return;
+    try {
+      await Clipboard.setStringAsync(referralCode);
+      Alert.alert('Copied', `Your referral code ${referralCode} is on the clipboard.`);
+    } catch {
+      Alert.alert('Your referral code', referralCode);
     }
   };
 
@@ -464,6 +488,15 @@ export default function ProfileSettingsScreen() {
           )}
 
           <Section title="Account">
+            {renderRow({
+              icon: 'gift-outline',
+              label: 'Your referral code',
+              value: referralCode
+                ? `${referralCode}${referralCount ? ` · ${referralCount} joined` : ''}`
+                : 'Loading…',
+              onPress: handleCopyReferralCode,
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
             {!showChangeUsername ? (
               renderRow({
                 icon: 'person-outline',
@@ -642,6 +675,15 @@ export default function ProfileSettingsScreen() {
             })}
             <View style={[styles.divider, { backgroundColor: cardBorder }]} />
             {renderRow({
+              icon: 'sparkles-outline',
+              label: 'Preview Onboarding',
+              onPress: () => {
+                useOnboardingStore.getState().reset();
+                navigation.navigate('Onboarding' as never, { preview: true } as never);
+              },
+            })}
+            <View style={[styles.divider, { backgroundColor: cardBorder }]} />
+            {renderRow({
               icon: 'images-outline',
               label: 'Change Profile Card',
               onPress: () => navigation.navigate('ProfileCard' as never),
@@ -650,7 +692,7 @@ export default function ProfileSettingsScreen() {
             {renderRow({
               icon: 'notifications-outline',
               label: 'Notification Preferences',
-              onPress: () => {},
+              onPress: () => navigation.navigate('NotificationPreferences' as never),
             })}
           </Section>
 

@@ -18,6 +18,7 @@
       "statusBarBackgroundColor": "#ffffff",
       "bundleIdentifier": "com.nutragise.app",
       "merchantIdentifier": "merchant.com.nutragise.app",
+      "usesAppleSignIn": true,
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -29,7 +30,10 @@
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
-        "com.apple.developer.healthkit.access": []
+        "com.apple.developer.healthkit.access": [],
+        "com.apple.developer.in-app-payments": [
+          "merchant.com.nutragise.app"
+        ]
       }
     },
     "android": {
@@ -58,6 +62,7 @@
     "plugins": [
       "expo-font",
       "expo-audio",
+      "expo-apple-authentication",
       [
         "expo-notifications",
         {

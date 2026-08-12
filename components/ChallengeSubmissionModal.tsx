@@ -21,7 +21,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../state/authStore';
 import { ChallengeSubmissionModalProps } from '../types/challenges';
 import { getChallengeDisplayTitle, challengeAllowsGalleryProofUpload } from '../lib/challengeTitleUtils';
-import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
+import {
+  moderationAlertMessage,
+  moderateExistingMediaUrl,
+  uploadMediaSafely,
+} from '../lib/safeMediaUpload';
 import CustomCamera from './CustomCamera';
 import CustomBackground from './CustomBackground';
 
@@ -159,6 +163,12 @@ export default function ChallengeSubmissionModal({
           return;
         }
         photoUrl = await uploadProofPhoto(selectedImage, user.id, challenge.id);
+      } else {
+        // Replacing an existing proof still requires a fresh moderation pass.
+        await moderateExistingMediaUrl(selectedImage, {
+          deleteIfUnsafe: false,
+          mediaType: 'image',
+        });
       }
 
       await onSubmit(photoUrl, submissionNotes.trim() || undefined, shareToCommunity);

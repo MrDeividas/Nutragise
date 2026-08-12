@@ -70,22 +70,35 @@ class PillarProgressService {
    */
   async initializeUserPillars(userId: string): Promise<boolean> {
     try {
-      const { data: existingPillars } = await supabase
+      if (!userId) return false;
+
+      const { data: existingPillars, error: selectError } = await supabase
         .from('pillar_progress')
         .select('pillar_type')
         .eq('user_id', userId);
 
-      const existingTypes = new Set(existingPillars?.map(p => p.pillar_type) || []);
+      if (selectError) {
+        // Don't treat a transient read failure as fatal — still try upsert
+        console.warn('Pillar select warning:', selectError.message);
+      }
 
-      const pillars: PillarType[] = ['strength_fitness', 'growth_wisdom', 'discipline', 'team_spirit', 'overall'];
-      const missingPillars = pillars.filter(p => !existingTypes.has(p));
+      const existingTypes = new Set(existingPillars?.map((p) => p.pillar_type) || []);
+
+      const pillars: PillarType[] = [
+        'strength_fitness',
+        'growth_wisdom',
+        'discipline',
+        'team_spirit',
+        'overall',
+      ];
+      const missingPillars = pillars.filter((p) => !existingTypes.has(p));
 
       if (missingPillars.length === 0) {
         return true;
       }
 
       const today = formatDateOnly(new Date());
-      const records = missingPillars.map(pillar => ({
+      const records = missingPillars.map((pillar) => ({
         user_id: userId,
         pillar_type: pillar,
         progress_percentage: 35.0,
@@ -94,12 +107,14 @@ class PillarProgressService {
         last_decay_date: null,
       }));
 
-      const { error } = await supabase
-        .from('pillar_progress')
-        .insert(records);
+      const { error } = await supabase.from('pillar_progress').upsert(records, {
+        onConflict: 'user_id,pillar_type',
+        ignoreDuplicates: true,
+      });
 
       if (error) {
-        if (error.code === '42501') {
+        // RLS / race: if rows already exist, treat as success
+        if (error.code === '42501' || error.code === '23505') {
           return true;
         }
         console.error('Error initializing user pillars:', error);

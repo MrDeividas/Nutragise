@@ -3,7 +3,7 @@
  * Balance, deposits, withdrawals, and transaction history
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -33,6 +34,7 @@ import {
 import CustomBackground from '../components/CustomBackground';
 
 const DARK = '#1f2937';
+const DEPOSIT_PRESETS = [15, 25, 50, 100] as const;
 
 export default function WalletScreen() {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -45,6 +47,13 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [challengeNames, setChallengeNames] = useState<Record<string, string>>({});
   const [isPro, setIsPro] = useState(false);
+  const [depositExpanded, setDepositExpanded] = useState(false);
+  const [depositAmount, setDepositAmount] = useState(15);
+  const [customDepositMode, setCustomDepositMode] = useState(false);
+  const [customDepositText, setCustomDepositText] = useState('');
+  const [depositing, setDepositing] = useState(false);
+
+  const defaultDepositAmount = isPro ? 25 : 15;
 
   const loadWalletData = useCallback(async () => {
     if (!user) return;
@@ -99,42 +108,53 @@ export default function WalletScreen() {
     loadWalletData();
   };
 
-  const handleAddFunds = async () => {
-    if (!user) return;
+  const resolvedDepositAmount = useMemo(() => {
+    if (customDepositMode) {
+      const parsed = parseFloat(customDepositText.replace(/,/g, ''));
+      return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+    }
+    return depositAmount;
+  }, [customDepositMode, customDepositText, depositAmount]);
 
-    try {
-      const fee10 = getDepositChargeTotal(10, isPro);
-      const fee20 = getDepositChargeTotal(20, isPro);
-      const fee50 = getDepositChargeTotal(50, isPro);
-      const feeLine = isPro
-        ? 'Pro: no deposit fee'
-        : 'Free plan: £3 deposit fee per top-up';
+  const depositCharge = useMemo(() => {
+    if (resolvedDepositAmount < 0.5) return null;
+    return getDepositChargeTotal(resolvedDepositAmount);
+  }, [resolvedDepositAmount]);
 
-      Alert.alert('Add Funds', `Select amount to add to your wallet\n(${feeLine})`, [
-        {
-          text: fee10.fee > 0 ? `£10 (pay £${fee10.total.toFixed(2)})` : '£10',
-          onPress: () => processDeposit(10),
-        },
-        {
-          text: fee20.fee > 0 ? `£20 (pay £${fee20.total.toFixed(2)})` : '£20',
-          onPress: () => processDeposit(20),
-        },
-        {
-          text: fee50.fee > 0 ? `£50 (pay £${fee50.total.toFixed(2)})` : '£50',
-          onPress: () => processDeposit(50),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    } catch (error) {
-      console.error('Error adding funds:', error);
-      Alert.alert('Error', 'Failed to add funds');
+  const toggleDepositPanel = () => {
+    setDepositExpanded((open) => {
+      if (!open) {
+        setCustomDepositMode(false);
+        setCustomDepositText('');
+        setDepositAmount(defaultDepositAmount);
+      }
+      return !open;
+    });
+  };
+
+  const selectPresetDeposit = (amount: number) => {
+    setCustomDepositMode(false);
+    setCustomDepositText('');
+    setDepositAmount(amount);
+  };
+
+  const selectCustomDeposit = () => {
+    setCustomDepositMode(true);
+    if (!customDepositText) {
+      setCustomDepositText(String(defaultDepositAmount));
     }
   };
 
   const processDeposit = async (amount: number) => {
     if (!user) return;
 
+    if (amount < 0.5) {
+      Alert.alert('Minimum deposit', 'Please enter at least £0.50.');
+      return;
+    }
+
     try {
+      setDepositing(true);
       const { clientSecret, paymentIntentId, originalAmount, platformFee, stripeFee, totalAmount } =
         await stripeService.createPaymentIntent(amount, user.id, {
           userId: user.id,
@@ -150,8 +170,13 @@ export default function WalletScreen() {
         paymentIntentClientSecret: clientSecret,
         defaultBillingDetails: {
           name: user.email?.split('@')[0] || 'User',
+          email: user.email || undefined,
         },
         returnURL: 'nutrapp://stripe-redirect',
+        // Shows Apple Pay in the Payment Sheet when the device + Stripe certs support it
+        applePay: {
+          merchantCountryCode: 'GB',
+        },
       });
 
       if (initError) {
@@ -169,18 +194,21 @@ export default function WalletScreen() {
       const result = await walletService.depositToWallet(user.id, creditAmount, paymentIntentId);
 
       setBalance(Number(result.wallet.balance));
+      setDepositExpanded(false);
       await loadWalletData();
 
-      const fee = platformFee ?? stripeFee ?? 0;
+      const fee = stripeFee ?? platformFee ?? 0;
       const feeInfo =
         fee > 0
-          ? `\n\nPaid: £${(totalAmount || amount).toFixed(2)} (includes £${fee.toFixed(2)} deposit fee)`
-          : '\n\nNo deposit fee (Pro)';
+          ? `\n\nPaid: £${(totalAmount || amount).toFixed(2)} (includes £${fee.toFixed(2)} card fee)`
+          : '';
 
       Alert.alert('Success!', `£${creditAmount.toFixed(2)} added to your wallet!${feeInfo}`);
     } catch (error: any) {
       console.error('Error processing deposit:', error);
       Alert.alert('Error', `Failed to add funds: ${error.message || 'Unknown error'}`);
+    } finally {
+      setDepositing(false);
     }
   };
 
@@ -230,7 +258,7 @@ export default function WalletScreen() {
 
     Alert.alert(
       'Withdraw to PayPal',
-      `Wallet: £${balance.toFixed(2)}\nFee: £${withdrawFee.toFixed(2)}${isPro ? ' (Pro)' : ' (Free)'}\nYou receive: £${payout.toFixed(2)}\n\n${profile.paypal_email}`,
+      `Wallet: £${balance.toFixed(2)}\nFee: £${withdrawFee.toFixed(2)}${isPro ? ' (Member)' : ' (Free)'}\nYou receive: £${payout.toFixed(2)}\n\n${profile.paypal_email}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -366,12 +394,18 @@ export default function WalletScreen() {
 
                 <View style={styles.actionRow}>
                   <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={handleAddFunds}
+                    style={[styles.primaryButton, depositExpanded && styles.primaryButtonActive]}
+                    onPress={toggleDepositPanel}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="add" size={20} color="#FFFFFF" />
-                    <Text style={styles.primaryButtonText}>Add funds</Text>
+                    <Ionicons
+                      name={depositExpanded ? 'chevron-up' : 'add'}
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.primaryButtonText}>
+                      {depositExpanded ? 'Hide' : 'Add funds'}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -383,6 +417,98 @@ export default function WalletScreen() {
                     <Text style={styles.secondaryButtonText}>Withdraw</Text>
                   </TouchableOpacity>
                 </View>
+
+                {depositExpanded ? (
+                  <View style={styles.depositPanel}>
+                    <Text style={styles.depositLabel}>Amount to add</Text>
+                    <View style={styles.depositChipRow}>
+                      {DEPOSIT_PRESETS.map((amount) => {
+                        const selected = !customDepositMode && depositAmount === amount;
+                        return (
+                          <TouchableOpacity
+                            key={amount}
+                            style={[styles.depositChip, selected && styles.depositChipSelected]}
+                            onPress={() => selectPresetDeposit(amount)}
+                            activeOpacity={0.85}
+                          >
+                            <Text
+                              style={[
+                                styles.depositChipText,
+                                selected && styles.depositChipTextSelected,
+                              ]}
+                            >
+                              £{amount}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      <TouchableOpacity
+                        style={[
+                          styles.depositChip,
+                          customDepositMode && styles.depositChipSelected,
+                        ]}
+                        onPress={selectCustomDeposit}
+                        activeOpacity={0.85}
+                      >
+                        <Text
+                          style={[
+                            styles.depositChipText,
+                            customDepositMode && styles.depositChipTextSelected,
+                          ]}
+                        >
+                          Custom
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {customDepositMode ? (
+                      <View style={styles.customAmountRow}>
+                        <Text style={styles.customAmountPrefix}>£</Text>
+                        <TextInput
+                          style={styles.customAmountInput}
+                          value={customDepositText}
+                          onChangeText={(text) =>
+                            setCustomDepositText(text.replace(/[^0-9.]/g, ''))
+                          }
+                          keyboardType="decimal-pad"
+                          placeholder={String(defaultDepositAmount)}
+                          placeholderTextColor="#9CA3AF"
+                          autoFocus
+                        />
+                      </View>
+                    ) : null}
+
+                    {depositCharge ? (
+                      <Text style={styles.depositFeeHint}>
+                        You’ll pay £{depositCharge.total.toFixed(2)}
+                        {depositCharge.fee > 0
+                          ? ` (includes £${depositCharge.fee.toFixed(2)} card fee)`
+                          : ''}
+                        . No platform deposit fee.
+                      </Text>
+                    ) : (
+                      <Text style={styles.depositFeeHint}>Enter at least £0.50 to continue.</Text>
+                    )}
+
+                    <TouchableOpacity
+                      style={[
+                        styles.depositConfirmButton,
+                        (depositing || !depositCharge) && styles.depositConfirmDisabled,
+                      ]}
+                      onPress={() => processDeposit(resolvedDepositAmount)}
+                      disabled={depositing || !depositCharge}
+                      activeOpacity={0.85}
+                    >
+                      {depositing ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.depositConfirmText}>
+                          Deposit £{resolvedDepositAmount > 0 ? resolvedDepositAmount.toFixed(2) : '0.00'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.sectionHeader}>
@@ -531,6 +657,93 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: DARK,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  primaryButtonActive: {
+    opacity: 0.92,
+  },
+  depositPanel: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  depositLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 10,
+  },
+  depositChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  depositChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  depositChipSelected: {
+    backgroundColor: DARK,
+    borderColor: DARK,
+  },
+  depositChipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DARK,
+  },
+  depositChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  customAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  customAmountPrefix: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DARK,
+    marginRight: 4,
+  },
+  customAmountInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: DARK,
+    padding: 0,
+  },
+  depositFeeHint: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    lineHeight: 17,
+  },
+  depositConfirmButton: {
+    marginTop: 14,
+    backgroundColor: DARK,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  depositConfirmDisabled: {
+    opacity: 0.5,
+  },
+  depositConfirmText: {
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },

@@ -8,55 +8,60 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet
+  StyleSheet,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '../state/authStore';
-import { useTheme } from '../state/themeStore';
+import OnboardingShell from '../components/onboarding/ui/OnboardingShell';
+import PrimaryButton from '../components/onboarding/ui/PrimaryButton';
+import { OB } from '../components/onboarding/ui/onboardingTheme';
+import { AUTH_BRAND } from '../components/onboarding/ui/authBrand';
 
 export default function SignUpScreen({ navigation }: any) {
-  const { theme } = useTheme();
-  const [authMethod, setAuthMethod] = useState<'none' | 'email' | 'google' | 'apple'>('none');
+  const [authMethod, setAuthMethod] = useState<'options' | 'email'>('options');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [emailError, setEmailError] = useState<{ message: string; isBounce?: boolean; isInvalidEmail?: boolean } | null>(null);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [emailError, setEmailError] = useState<{
+    message: string;
+    isBounce?: boolean;
+    isInvalidEmail?: boolean;
+  } | null>(null);
   const [showResendOption, setShowResendOption] = useState(false);
-  const signUp = useAuthStore(state => state.signUp);
-  const resendVerificationEmail = useAuthStore(state => state.resendVerificationEmail);
-  const user = useAuthStore(state => state.user);
 
-  // Reset auth method to 'none' when screen mounts if no user (first time visiting)
-  useEffect(() => {
-    // Only reset if there's no user (first time sign-up, not returning user)
-    if (!user && authMethod !== 'none') {
-      setAuthMethod('none');
-      setEmail('');
-      setPassword('');
-      setConfirmPassword('');
-    }
-  }, []); // Only run on mount
+  const signUp = useAuthStore((state) => state.signUp);
+  const signInWithApple = useAuthStore((state) => state.signInWithApple);
+  const resendVerificationEmail = useAuthStore((state) => state.resendVerificationEmail);
+  const user = useAuthStore((state) => state.user);
 
-  // Reset loading when user is set (App.tsx will handle navigation)
   useEffect(() => {
-    if (user) {
-      console.log('✅ User created, App.tsx will handle navigation to onboarding');
-      setLoading(false);
-      // Don't navigate here - let App.tsx handle stack switching
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
     }
+  }, []);
+
+  useEffect(() => {
+    if (user) setLoading(false);
   }, [user]);
 
-  const handleGoogleSignUp = async () => {
-    Alert.alert('Coming Soon', 'Google sign-up will be available soon!');
-    // TODO: Implement Google OAuth
-    // const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
+  const goBackRoot = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Welcome');
   };
 
   const handleAppleSignUp = async () => {
-    Alert.alert('Coming Soon', 'Apple sign-up will be available soon!');
-    // TODO: Implement Apple OAuth
-    // const { error } = await supabase.auth.signInWithOAuth({ provider: 'apple' });
+    setAppleLoading(true);
+    const { error } = await signInWithApple();
+    setAppleLoading(false);
+    if (error) {
+      Alert.alert('Apple Sign Up', error.message || 'Could not continue with Apple.');
+    }
   };
 
   const handleEmailSignUp = async () => {
@@ -64,12 +69,10 @@ export default function SignUpScreen({ navigation }: any) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
@@ -78,16 +81,12 @@ export default function SignUpScreen({ navigation }: any) {
     setLoading(true);
     setEmailError(null);
     setShowResendOption(false);
-    
+
     const { error } = await signUp({ email, password });
-    
+
     if (error) {
       setLoading(false);
-      
-      // Check if it's an email bounce or invalid email error
-      const isEmailRelatedError = error.isBounce || error.isInvalidEmail;
-      
-      if (isEmailRelatedError) {
+      if (error.isBounce || error.isInvalidEmail) {
         setEmailError({
           message: error.message,
           isBounce: error.isBounce,
@@ -98,11 +97,9 @@ export default function SignUpScreen({ navigation }: any) {
         Alert.alert('Sign Up Error', error.message);
       }
     } else {
-      // Success - clear any previous errors
       setEmailError(null);
       setShowResendOption(false);
     }
-    // Navigation will happen automatically via useEffect when user state is set
   };
 
   const handleResendEmail = async () => {
@@ -110,17 +107,15 @@ export default function SignUpScreen({ navigation }: any) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
-
     setLoading(true);
     const { error } = await resendVerificationEmail(email);
     setLoading(false);
-
     if (error) {
       Alert.alert('Error', error.message);
     } else {
       Alert.alert(
         'Email Sent',
-        'Please check your inbox for the verification email. If you don\'t see it, check your spam folder.'
+        "Please check your inbox for the verification email. If you don't see it, check your spam folder."
       );
       setShowResendOption(false);
       setEmailError(null);
@@ -128,295 +123,341 @@ export default function SignUpScreen({ navigation }: any) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: '#FCFAF9' }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
-      <View style={styles.content}>
-          {/* Header */}
+    <OnboardingShell hideHeader showProgress={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backButton}
-            >
-              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
+            <TouchableOpacity onPress={goBackRoot} style={styles.backBtn} hitSlop={12}>
+              <Ionicons name="chevron-back" size={22} color={OB.text} />
             </TouchableOpacity>
-            <Text style={[styles.title, { color: '#000000' }]}>Join Nutrapp</Text>
-            <Text style={[styles.subtitle, { color: '#000000' }]}>
-              Start your health journey today
-            </Text>
+
+            <Animated.View entering={FadeIn.duration(500)} style={styles.brandBlock}>
+              <Text style={styles.brand}>NUTRAGISE</Text>
+              <Text style={styles.tagline}>reach your peak</Text>
+            </Animated.View>
           </View>
 
-        {authMethod === 'none' ? (
-          // Social Auth Options
-          <View style={styles.form}>
-            <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: 'rgba(128, 128, 128, 0.15)', borderColor: theme.borderSecondary }]}
-              onPress={() => setAuthMethod('email')}
-            >
-              <Ionicons name="mail-outline" size={24} color={theme.textPrimary} />
-              <Text style={[styles.socialButtonText, { color: theme.textPrimary }]}>
-                Continue with Email
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          // Email/Password Form
-          <View style={styles.form}>
-            <TouchableOpacity
-              style={styles.backToOptionsButton}
-              onPress={() => setAuthMethod('none')}
-            >
-              <Ionicons name="arrow-back" size={20} color={theme.textPrimary} />
-              <Text style={[styles.backToOptionsText, { color: theme.textPrimary }]}>
-                Back to options
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.mid}>
+            <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.formBlock}>
+              <Text style={styles.title}>Join Nutragise</Text>
+              <Text style={styles.subtitle}>Start your habit journey today.</Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: 'rgba(128, 128, 128, 0.15)',
-                  color: theme.textPrimary,
-                  borderColor: theme.borderSecondary
-                }]}
-                placeholder="Enter your email"
-                placeholderTextColor={theme.textTertiary}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+              {authMethod === 'options' ? (
+                <View style={styles.options}>
+                  {appleAvailable ? (
+                    <View style={styles.appleWrap}>
+                      {appleLoading ? (
+                        <View style={styles.appleLoading}>
+                          <ActivityIndicator color="#FFFFFF" />
+                        </View>
+                      ) : (
+                        <AppleAuthentication.AppleAuthenticationButton
+                          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+                          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                          cornerRadius={16}
+                          style={styles.appleBtn}
+                          onPress={handleAppleSignUp}
+                        />
+                      )}
+                    </View>
+                  ) : null}
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Password</Text>
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: 'rgba(128, 128, 128, 0.15)',
-                  color: theme.textPrimary,
-                  borderColor: theme.borderSecondary
-                }]}
-                placeholder="Enter your password"
-                placeholderTextColor={theme.textTertiary}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textPrimary }]}>Confirm Password</Text>
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: 'rgba(128, 128, 128, 0.15)',
-                  color: theme.textPrimary,
-                  borderColor: theme.borderSecondary
-                }]}
-                placeholder="Confirm your password"
-                placeholderTextColor={theme.textTertiary}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-              />
-            </View>
-
-            {emailError && (
-              <View style={[styles.errorContainer, { backgroundColor: 'rgba(255, 107, 107, 0.1)', borderColor: '#FF6B6B' }]}>
-                <Ionicons name="warning-outline" size={20} color="#FF6B6B" />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.errorText, { color: '#FF6B6B' }]}>
-                    {emailError.message}
-                  </Text>
-                  {emailError.isInvalidEmail && (
-                    <Text style={[styles.errorHint, { color: theme.textSecondary }]}>
-                      Please check your email address and try again.
-                    </Text>
-                  )}
+                  <TouchableOpacity
+                    style={styles.methodBtn}
+                    onPress={() => setAuthMethod('email')}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="mail-outline" size={20} color={OB.text} />
+                    <Text style={styles.methodText}>Continue with Email</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[
-                styles.button, 
-                { backgroundColor: loading ? 'rgba(128, 128, 128, 0.3)' : '#2DD4BF' }
-              ]}
-              onPress={handleEmailSignUp}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="white" />
               ) : (
-                <Text style={styles.buttonText}>Sign Up</Text>
+                <View style={styles.options}>
+                  <TouchableOpacity
+                    style={styles.backToOptions}
+                    onPress={() => setAuthMethod('options')}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="chevron-back" size={18} color={OB.textMuted} />
+                    <Text style={styles.backToOptionsText}>Other options</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Email</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter your email"
+                      placeholderTextColor={OB.textSoft}
+                      value={email}
+                      onChangeText={setEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Password</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter your password"
+                      placeholderTextColor={OB.textSoft}
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Confirm password</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirm your password"
+                      placeholderTextColor={OB.textSoft}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      secureTextEntry
+                    />
+                  </View>
+
+                  {emailError ? (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="warning-outline" size={18} color="#B91C1C" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.errorText}>{emailError.message}</Text>
+                        {emailError.isInvalidEmail ? (
+                          <Text style={styles.errorHint}>
+                            Please check your email address and try again.
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <PrimaryButton
+                    label="Sign up"
+                    onPress={handleEmailSignUp}
+                    loading={loading}
+                    disabled={loading}
+                    variant="white"
+                    showArrow={false}
+                    style={styles.signUpBtn}
+                  />
+
+                  {showResendOption ? (
+                    <TouchableOpacity
+                      style={styles.resendBtn}
+                      onPress={handleResendEmail}
+                      disabled={loading}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="mail-outline" size={18} color={OB.primaryDark} />
+                      <Text style={styles.resendText}>Resend verification email</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               )}
-            </TouchableOpacity>
 
-            {showResendOption && (
-              <TouchableOpacity
-                style={[styles.resendButton, { borderColor: '#2DD4BF' }]}
-                onPress={handleResendEmail}
-                disabled={loading}
-              >
-                <Ionicons name="mail-outline" size={20} color="#2DD4BF" />
-                <Text style={[styles.resendButtonText, { color: '#2DD4BF' }]}>
-                  Resend Verification Email
-                </Text>
-              </TouchableOpacity>
-            )}
+              <View style={styles.footerRow}>
+                <Text style={styles.footerText}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
+                  <Text style={styles.linkText}>Sign in</Text>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
           </View>
-        )}
-
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-            Already have an account?{' '}
-          </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-            <Text style={[styles.linkText, { color: '#2DD4BF' }]}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+  flex: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 28,
+    paddingTop: AUTH_BRAND.bodyPaddingTop,
+    paddingBottom: 40,
   },
   header: {
-    marginBottom: 32,
+    position: 'relative',
     alignItems: 'center',
   },
-  backButton: {
+  backBtn: {
     position: 'absolute',
     left: 0,
-    top: 0,
-    padding: 8,
+    top: AUTH_BRAND.brandMarginTop,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: OB.white,
+    borderWidth: 1,
+    borderColor: OB.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandBlock: {
+    alignSelf: 'center',
+    marginTop: AUTH_BRAND.brandMarginTop,
+  },
+  brand: {
+    ...AUTH_BRAND.brand,
+    color: OB.text,
+  },
+  tagline: {
+    ...AUTH_BRAND.tagline,
+    color: OB.textMuted,
+  },
+  mid: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 24,
+  },
+  formBlock: {
+    gap: 14,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontWeight: '800',
+    color: OB.text,
+    textAlign: 'center',
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 22,
+    color: OB.textMuted,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  form: {
-    gap: 16,
+  options: {
+    gap: 12,
+  },
+  appleWrap: {
+    width: '100%',
+    height: 52,
+  },
+  appleBtn: {
+    width: '100%',
+    height: 52,
+  },
+  appleLoading: {
+    width: '100%',
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  methodBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(31, 41, 55, 0.12)',
+  },
+  methodText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: OB.text,
+  },
+  backToOptions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  backToOptionsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: OB.textMuted,
   },
   inputGroup: {
     gap: 8,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
+    color: OB.text,
   },
   input: {
+    backgroundColor: OB.white,
     borderWidth: 1,
-    borderRadius: 8,
+    borderColor: OB.border,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  button: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  buttonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 32,
-  },
-  footerText: {
-    fontSize: 16,
-  },
-  linkText: {
-    fontWeight: '600',
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
     paddingVertical: 14,
-    paddingHorizontal: 20,
-    gap: 12,
-  },
-  socialButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    color: OB.text,
   },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
-  },
-  backToOptionsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  backToOptionsText: {
-    fontSize: 14,
-    fontWeight: '500',
+  signUpBtn: {
+    marginTop: 4,
+    alignSelf: 'stretch',
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
     gap: 8,
-    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(185, 28, 28, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(185, 28, 28, 0.25)',
   },
   errorText: {
-    flex: 1,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#B91C1C',
   },
   errorHint: {
     fontSize: 12,
+    color: OB.textMuted,
     marginTop: 4,
   },
-  resendButton: {
+  resendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     gap: 8,
-    marginTop: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: OB.primary,
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
   },
-  resendButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  resendText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: OB.primaryDark,
   },
-}); 
+  footerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  footerText: {
+    fontSize: 14,
+    color: OB.textMuted,
+  },
+  linkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: OB.primaryDark,
+  },
+});

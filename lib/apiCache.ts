@@ -53,6 +53,15 @@ class APICache {
     this.cache.delete(key);
   }
 
+  /** Remove all entries whose key starts with prefix (e.g. `todaysCheckIns:`) */
+  invalidatePrefix(prefix: string): void {
+    for (const key of Array.from(this.cache.keys())) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
   clear(): void {
     this.cache.clear();
   }

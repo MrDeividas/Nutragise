@@ -1,0 +1,26 @@
+/** Cream Nutrapp onboarding tokens — layout from reference, colors from brand */
+export const OB = {
+  bg: '#FCFAF9',
+  bgWarm: '#F5F0EB',
+  cream: '#FFF8F3',
+  text: '#1f2937',
+  textMuted: '#6b7280',
+  textSoft: '#9ca3af',
+  primary: '#10B981',
+  primaryDark: '#059669',
+  primarySoft: 'rgba(16, 185, 129, 0.12)',
+  primaryGlow: 'rgba(16, 185, 129, 0.35)',
+  surface: 'rgba(31, 41, 55, 0.04)',
+  surfaceStrong: 'rgba(31, 41, 55, 0.07)',
+  border: 'rgba(31, 41, 55, 0.08)',
+  white: '#FFFFFF',
+  accentWarm: '#F59E0B',
+  accentCoral: '#F97316',
+  cardShadow: {
+    shadowColor: '#1f2937',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+} as const;

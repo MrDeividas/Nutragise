@@ -14,6 +14,9 @@ export interface Goal {
   milestone_count?: number;
   milestones?: string[];
   completed: boolean;
+  is_featured?: boolean;
+  /** Manual 0–100 progress. Null falls back to check-in estimate. */
+  progress_percent?: number | null;
   created_at: string;
   last_updated_at?: string;
 }
@@ -146,6 +149,8 @@ export interface UpdateGoalData {
   milestone_count?: number;
   milestones?: string[];
   completed?: boolean;
+  is_featured?: boolean;
+  progress_percent?: number | null;
   last_updated_at?: string;
 }
 

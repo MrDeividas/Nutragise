@@ -3,6 +3,13 @@ import * as FileSystem from 'expo-file-system';
 import { apiCache } from './apiCache';
 import { isInappropriateMediaError, uploadMediaSafely } from './safeMediaUpload';
 
+function formatLocalDateYmd(date: Date): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export interface ProgressPhoto {
   id: string;
   user_id: string;
@@ -89,7 +96,9 @@ class ProgressService {
         goal_id: checkInData.goalId,
         photo_url: photoUrl || 'no-photo', // Use placeholder since column is NOT NULL
         photo_type: 'progress', // Default photo type for check-ins
-        check_in_date: checkInData.checkInDate ? checkInData.checkInDate.toISOString().slice(0, 10) : undefined,
+        check_in_date: checkInData.checkInDate
+          ? formatLocalDateYmd(checkInData.checkInDate)
+          : formatLocalDateYmd(new Date()),
         note: checkInData.note || undefined,
       };
       
@@ -112,6 +121,10 @@ class ProgressService {
       // Invalidate goal progress cache
       const goalProgressKey = apiCache.generateKey('goalProgress', checkInData.userId);
       apiCache.delete(goalProgressKey);
+
+      // Reminders / Action check-in lists must refresh after an update
+      apiCache.invalidatePrefix('todaysCheckIns:');
+      apiCache.invalidatePrefix('overdueGoals:');
 
       return { success: true, photoUrl };
     } catch (error) {
@@ -193,9 +206,9 @@ class ProgressService {
    */
   async getCheckInsForDateRange(userId: string, startDate: Date, endDate: Date): Promise<Array<{goal_id: string, check_in_date: string}>> {
     try {
-      // Format dates as YYYY-MM-DD
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
+      // Format dates as YYYY-MM-DD (local calendar day — matches check-in writes)
+      const startDateStr = formatLocalDateYmd(startDate);
+      const endDateStr = formatLocalDateYmd(endDate);
 
       // Verify authenticated user matches
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -537,6 +550,8 @@ class ProgressService {
       // Invalidate goal progress cache
       const goalProgressKey = apiCache.generateKey('goalProgress', user.id);
       apiCache.delete(goalProgressKey);
+      apiCache.invalidatePrefix('todaysCheckIns:');
+      apiCache.invalidatePrefix('overdueGoals:');
       
       return true;
     } catch (error) {

@@ -295,7 +295,7 @@ class ChallengesService {
       if (userIds.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, username, avatar_url, display_name')
+          .select('id, username, avatar_url, display_name, is_pro')
           .in('id', userIds);
 
         if (profilesError) {
@@ -1705,6 +1705,24 @@ class ChallengesService {
     challengeData: CreateChallengeData
   ): Promise<{ challenge: Challenge; joinCode?: string }> {
     try {
+      await this.validateUserId(userId);
+
+      // Pro users: max 3 active (not-yet-ended) created challenges at a time
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_pro')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile?.is_pro) {
+        const activeCount = await this.countActiveUserCreatedChallenges(userId);
+        if (activeCount >= 3) {
+          throw new Error(
+            'Pro members can have up to 3 active challenges at a time. Delete or wait for one to end before creating another.'
+          );
+        }
+      }
+
       const joinCode = challengeData.visibility === 'private' 
         ? this.generateJoinCode() 
         : undefined;
@@ -1790,7 +1808,6 @@ class ChallengesService {
 
   async joinChallengeByCode(userId: string, code: string): Promise<Challenge> {
     try {
-      // Find challenge by code
       const { data: challenge, error: findError } = await supabase
         .from('challenges')
         .select('*')
@@ -1802,10 +1819,74 @@ class ChallengesService {
         throw new Error('Invalid join code');
       }
 
-      // Join the challenge (reuse existing joinChallenge logic)
-      await this.joinChallenge(challenge.id, userId);
-      
-      return challenge;
+      await this.validateUserId(userId);
+      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
+
+      const { data: existing } = await supabase
+        .from('challenge_participants')
+        .select('id, status')
+        .eq('challenge_id', challenge.id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing?.status === 'active') {
+        throw new Error('You have already joined this challenge');
+      }
+
+      if (challenge.status !== 'active' && challenge.status !== 'upcoming') {
+        throw new Error('Challenge is not open for joining');
+      }
+
+      if (challenge.max_participants) {
+        const { count } = await supabase
+          .from('challenge_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('challenge_id', challenge.id)
+          .eq('status', 'active');
+
+        if (count && count >= challenge.max_participants) {
+          throw new Error('Challenge is full');
+        }
+      }
+
+      const entryFee = Number(challenge.entry_fee) || 0;
+
+      if (entryFee > 0) {
+        const balance = await walletService.getBalance(userId);
+        if (balance < entryFee) {
+          const shortfallError = new Error(
+            `Insufficient wallet balance. Entry is £${entryFee.toFixed(2)}; you have £${balance.toFixed(2)}.`
+          ) as Error & {
+            code: string;
+            entryFee: number;
+            balance: number;
+            shortBy: number;
+          };
+          shortfallError.code = 'INSUFFICIENT_WALLET_BALANCE';
+          shortfallError.entryFee = entryFee;
+          shortfallError.balance = balance;
+          shortfallError.shortBy = Math.max(
+            0.01,
+            Math.ceil((entryFee - balance) * 100) / 100
+          );
+          throw shortfallError;
+        }
+
+        const { paymentIntentId } = await this.initiateChallengeJoinWithWallet(
+          challenge.id,
+          userId,
+          entryFee
+        );
+        await this.completeChallengeJoin(challenge.id, userId, paymentIntentId);
+      } else {
+        await this.completeChallengeJoin(challenge.id, userId, null);
+      }
+
+      apiCache.delete(apiCache.generateKey('challenges', 'all'));
+      apiCache.delete(apiCache.generateKey('challenges', 'active'));
+      apiCache.delete(apiCache.generateKey('challenges', 'upcoming'));
+
+      return challenge as Challenge;
     } catch (error) {
       console.error('Error joining challenge by code:', error);
       throw error;
@@ -1897,10 +1978,30 @@ class ChallengesService {
   }
 
   /**
-   * Delete user challenge
+   * Delete user challenge (only before it has started).
    */
   async deleteUserChallenge(challengeId: string, userId: string): Promise<void> {
     try {
+      await this.validateUserId(userId);
+
+      const { data: challenge, error: fetchError } = await supabase
+        .from('challenges')
+        .select('id, start_date, created_by, is_user_created')
+        .eq('id', challengeId)
+        .eq('created_by', userId)
+        .eq('is_user_created', true)
+        .single();
+
+      if (fetchError || !challenge) {
+        throw new Error('Challenge not found');
+      }
+
+      if (challenge.start_date && new Date() >= new Date(challenge.start_date)) {
+        throw new Error(
+          'This challenge has already started and can no longer be deleted.'
+        );
+      }
+
       const { error } = await supabase
         .from('challenges')
         .delete()
@@ -1915,6 +2016,29 @@ class ChallengesService {
     } catch (error) {
       console.error('Error in deleteUserChallenge:', error);
       throw error;
+    }
+  }
+
+  /** How many of the user's created challenges are still active / not ended. */
+  async countActiveUserCreatedChallenges(userId: string): Promise<number> {
+    try {
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('challenges')
+        .select('id')
+        .eq('created_by', userId)
+        .eq('is_user_created', true)
+        .in('status', ['active', 'upcoming'])
+        .gte('end_date', nowIso);
+
+      if (error) {
+        console.error('Error counting active user challenges:', error);
+        return 0;
+      }
+      return data?.length ?? 0;
+    } catch (error) {
+      console.error('Error in countActiveUserCreatedChallenges:', error);
+      return 0;
     }
   }
 
@@ -2061,15 +2185,15 @@ class ChallengesService {
       const gracePeriod = new Date(now.getTime() - (1 * 60 * 60 * 1000)); // 1 hour ago
       const gracePeriodISO = gracePeriod.toISOString();
 
-      // Find challenges that have ended but don't have approval_status set
-      // Check all ended challenges regardless of when they ended (removed date restriction)
-      // Include 'upcoming', 'active', and 'completed' statuses to catch all scenarios
+      // Find ended challenges that still need closing:
+      // - approval_status IS NULL (never processed), OR
+      // - stuck as pending with no flagged submissions (should have auto-approved)
       const { data: endedChallenges, error } = await supabase
         .from('challenges')
-        .select('id, title, end_date, status')
-        .lt('end_date', gracePeriodISO) // Has ended more than 1 hour ago
-        .is('approval_status', null) // Not yet processed
-        .in('status', ['upcoming', 'active', 'completed']); // Include all possible statuses
+        .select('id, title, end_date, status, approval_status')
+        .lt('end_date', gracePeriodISO)
+        .or('approval_status.is.null,approval_status.eq.pending')
+        .in('status', ['upcoming', 'active', 'completed']);
 
       if (error) {
         console.error('Error fetching ended challenges:', error);
@@ -2098,6 +2222,11 @@ class ChallengesService {
           }
 
           const hasFlaggedSubmissions = (flaggedRows?.length ?? 0) > 0;
+
+          // Already pending with real flags → leave for admin
+          if (challenge.approval_status === 'pending' && hasFlaggedSubmissions) {
+            continue;
+          }
 
           // Always finalise participant statuses first (marks non-completers as 'failed')
           await this.finaliseParticipantStatuses(challenge.id);

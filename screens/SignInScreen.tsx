@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,31 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet
+  StyleSheet,
+  ScrollView,
 } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '../state/authStore';
-import { useTheme } from '../state/themeStore';
+import OnboardingShell from '../components/onboarding/ui/OnboardingShell';
+import PrimaryButton from '../components/onboarding/ui/PrimaryButton';
+import { OB } from '../components/onboarding/ui/onboardingTheme';
+import { AUTH_BRAND } from '../components/onboarding/ui/authBrand';
 
 export default function SignInScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const signIn = useAuthStore(state => state.signIn);
-  const { theme } = useTheme();
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const signIn = useAuthStore((state) => state.signIn);
+  const signInWithApple = useAuthStore((state) => state.signInWithApple);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+    }
+  }, []);
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -31,174 +45,269 @@ export default function SignInScreen({ navigation }: any) {
     setLoading(false);
 
     if (error) {
-      console.error('❌ Sign-in error:', error);
-      console.error('❌ Error code:', error.code);
-      console.error('❌ Error message:', error.message);
-      
-      // Check if it's an email confirmation error
-      if (error.code === 'email_not_confirmed' || 
-          (error.message?.toLowerCase().includes('email') && 
-           (error.message?.toLowerCase().includes('confirm') || 
-            error.message?.toLowerCase().includes('not confirmed')))) {
+      if (
+        error.code === 'email_not_confirmed' ||
+        (error.message?.toLowerCase().includes('email') &&
+          (error.message?.toLowerCase().includes('confirm') ||
+            error.message?.toLowerCase().includes('not confirmed')))
+      ) {
         Alert.alert(
           'Email Not Verified',
-          'Your email address needs to be verified before you can sign in. This setting is currently enabled in your Supabase project.\n\nPlease check your inbox for the verification email, or contact support to verify your account.',
-          [
-            { text: 'OK', style: 'default' },
-            {
-              text: 'Need Help?',
-              onPress: () => {
-                Alert.alert(
-                  'Troubleshooting',
-                  'To disable email confirmation requirement:\n\n1. Go to Supabase Dashboard\n2. Authentication → Settings\n3. Disable "Confirm email" option\n4. Save changes\n5. Wait 1-2 minutes for changes to propagate\n\nIf this persists, the setting may not have saved correctly. Try toggling it off/on again.'
-                );
-              }
-            }
-          ]
+          'Your email address needs to be verified before you can sign in. Please check your inbox for the verification email.',
+          [{ text: 'OK', style: 'default' }]
         );
       } else {
-        Alert.alert('Sign In Error', error.message || 'Failed to sign in. Please check your credentials and try again.');
+        Alert.alert(
+          'Sign In Error',
+          error.message || 'Failed to sign in. Please check your credentials and try again.'
+        );
       }
     }
   };
 
-    return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
-      <View style={styles.contentContainer}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Welcome Back</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Share your journey, inspire the world
-          </Text>
-        </View>
+  const handleAppleSignIn = async () => {
+    setAppleLoading(true);
+    const { error } = await signInWithApple();
+    setAppleLoading(false);
+    if (error) {
+      Alert.alert('Apple Sign In', error.message || 'Could not continue with Apple.');
+    }
+  };
 
-        <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textPrimary }]}>Email</Text>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: 'rgba(128, 128, 128, 0.15)',
-                borderColor: 'rgba(128, 128, 128, 0.3)',
-                color: '#000000'
-              }]}
-              placeholder="Enter your email"
-              placeholderTextColor="rgba(0, 0, 0, 0.5)"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+  return (
+    <OnboardingShell hideHeader showProgress={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Animated.View entering={FadeIn.duration(500)} style={styles.brandBlock}>
+              <Text style={styles.brand}>NUTRAGISE</Text>
+              <Text style={styles.tagline}>reach your peak</Text>
+            </Animated.View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textPrimary }]}>Password</Text>
-            <TextInput
-              style={[styles.input, { 
-                backgroundColor: 'rgba(128, 128, 128, 0.15)',
-                borderColor: 'rgba(128, 128, 128, 0.3)',
-                color: '#000000'
-              }]}
-              placeholder="Enter your password"
-              placeholderTextColor="rgba(0, 0, 0, 0.5)"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
+          <View style={styles.mid}>
+            <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.formBlock}>
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Sign in to continue your habit journey.</Text>
 
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#2DD4BF' }, loading && styles.buttonDisabled]}
-            onPress={handleSignIn}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  placeholderTextColor={OB.textSoft}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
 
-          <View style={styles.footer}>
-            <Text style={[styles.footerText, { color: theme.textSecondary }]}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-              <Text style={[styles.linkText, { color: '#2DD4BF' }]}>Sign Up</Text>
-            </TouchableOpacity>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Password</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor={OB.textSoft}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              <PrimaryButton
+                label="Sign in"
+                onPress={handleSignIn}
+                loading={loading}
+                disabled={loading}
+                variant="white"
+                showArrow={false}
+                style={styles.signInBtn}
+                textStyle={styles.signInBtnText}
+              />
+
+              {appleAvailable ? (
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+              ) : null}
+
+              {appleAvailable ? (
+                <View style={styles.appleWrap}>
+                  {appleLoading ? (
+                    <View style={styles.appleLoading}>
+                      <ActivityIndicator color="#FFFFFF" />
+                    </View>
+                  ) : (
+                    <AppleAuthentication.AppleAuthenticationButton
+                      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                      cornerRadius={16}
+                      style={styles.appleBtn}
+                      onPress={handleAppleSignIn}
+                    />
+                  )}
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                onPress={() => navigation.navigate('SignUp')}
+                style={styles.footerBtn}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.footerText}>
+                  Don&apos;t have an account?{' '}
+                  <Text style={styles.linkText}>Sign up</Text>
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
   },
-  contentContainer: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    paddingHorizontal: 24,
-    paddingTop: 200,
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 28,
+    paddingTop: AUTH_BRAND.bodyPaddingTop,
+    paddingBottom: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+  },
+  brandBlock: {
+    alignSelf: 'center',
+    marginTop: AUTH_BRAND.brandMarginTop,
+  },
+  brand: {
+    ...AUTH_BRAND.brand,
+    color: OB.text,
+  },
+  tagline: {
+    ...AUTH_BRAND.tagline,
+    color: OB.textMuted,
+  },
+  mid: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingBottom: 24,
+  },
+  formBlock: {
+    gap: 14,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    color: OB.text,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 22,
+    color: OB.textMuted,
     textAlign: 'center',
-    marginTop: 8,
+    marginBottom: 12,
   },
-  form: {
-    gap: 16,
+  appleWrap: {
+    width: '100%',
+    height: 52,
+  },
+  appleBtn: {
+    width: '100%',
+    height: 52,
+  },
+  appleLoading: {
+    width: '100%',
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(31, 41, 55, 0.18)',
+  },
+  dividerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OB.textSoft,
   },
   inputGroup: {
     gap: 8,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
+    color: OB.text,
   },
   input: {
+    backgroundColor: OB.white,
     borderWidth: 1,
-    borderRadius: 8,
+    borderColor: OB.border,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
+    color: OB.text,
   },
-  button: {
-    borderRadius: 8,
-    paddingVertical: 12,
+  signInBtn: {
     marginTop: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  buttonText: {
-    color: 'white',
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
+    alignSelf: 'center',
     justifyContent: 'center',
-    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 36,
+    minWidth: 160,
+  },
+  signInBtnText: {
+    textAlign: 'center',
+    width: '100%',
+    fontSize: 15,
+  },
+  footerBtn: {
+    marginTop: 16,
+    alignSelf: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: 1,
+    borderColor: OB.border,
   },
   footerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: OB.text,
+    textAlign: 'center',
   },
   linkText: {
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '800',
+    color: OB.primaryDark,
+    textDecorationLine: 'underline',
   },
-}); 
+});

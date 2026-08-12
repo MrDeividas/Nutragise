@@ -1,5 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,52 +16,70 @@ import CustomBackground from '../components/CustomBackground';
 import { useBottomNavPadding } from '../components/CustomTabBar';
 import { supabase } from '../lib/supabase';
 
-// Option mappings for display
-const LIFE_DESCRIPTION_OPTIONS: Record<string, { emoji: string; text: string }> = {
-  chaotic: { emoji: '🌪️', text: "Chaotic and overwhelming — I feel like I'm just trying to keep up" },
-  stuck: { emoji: '😐', text: "Stuck or unmotivated — I know I can do more but I'm not sure where to start" },
-  balanced: { emoji: '⚖️', text: "Balanced but inconsistent — Some days I'm on track, others I lose focus" },
-  purposeful: { emoji: '🌿', text: "Purposeful and improving — I'm actively working on myself and my habits" },
-  thriving: { emoji: '🔥', text: "Fulfilled and thriving — I'm living with energy, focus, and direction" },
+const DARK = '#1f2937';
+const CARD_BORDER = '#EEF0F3';
+
+const LIFE_DESCRIPTION_OPTIONS: Record<string, { label: string; text: string }> = {
+  chaotic: { label: 'Chaotic', text: "I feel like I'm just trying to keep up" },
+  stuck: { label: 'Stuck', text: "I know I can do more but I'm not sure where to start" },
+  balanced: { label: 'Balanced', text: "Some days I'm on track, others I lose focus" },
+  purposeful: { label: 'Purposeful', text: "I'm actively working on myself and my habits" },
+  thriving: { label: 'Thriving', text: "I'm living with energy, focus, and direction" },
 };
 
-const CHANGE_REASON_OPTIONS: Record<string, { emoji: string; text: string }> = {
-  confident: { emoji: '💪', text: 'To feel stronger, healthier, and more confident in myself' },
-  discipline: { emoji: '🧠', text: 'To overcome procrastination and build discipline' },
-  happiness: { emoji: '❤️', text: 'To feel happier and more at peace' },
-  purpose: { emoji: '🎯', text: 'To find clarity, purpose, and direction' },
-  growth: { emoji: '🌿', text: 'To grow into the best version of myself' },
-  inspire: { emoji: '🤝', text: 'To set an example and inspire others around me' },
+const CHANGE_REASON_OPTIONS: Record<string, { label: string; text: string }> = {
+  confident: { label: 'Confidence', text: 'To feel stronger, healthier, and more confident' },
+  discipline: { label: 'Discipline', text: 'To overcome procrastination and build discipline' },
+  happiness: { label: 'Happiness', text: 'To feel happier and more at peace' },
+  purpose: { label: 'Purpose', text: 'To find clarity, purpose, and direction' },
+  growth: { label: 'Growth', text: 'To grow into the best version of myself' },
+  inspire: { label: 'Impact', text: 'To set an example and inspire others' },
 };
 
-const PROUD_MOMENT_OPTIONS: Record<string, { emoji: string; text: string }> = {
-  consistent: { emoji: '🎯', text: 'When I stayed consistent with a goal or habit' },
-  persevered: { emoji: '💪', text: 'When I pushed through something difficult' },
-  helped: { emoji: '❤️', text: 'When I helped or supported someone else' },
-  learned: { emoji: '🧠', text: 'When I learned or accomplished something new' },
-  seeking: { emoji: '🌿', text: "It's been a while — I want to feel that again" },
-  regular: { emoji: '🔥', text: 'I feel proud of myself regularly and want to keep that energy going' },
+const PROUD_MOMENT_OPTIONS: Record<string, { label: string; text: string }> = {
+  consistent: { label: 'Consistency', text: 'When I stayed consistent with a goal or habit' },
+  persevered: { label: 'Perseverance', text: 'When I pushed through something difficult' },
+  helped: { label: 'Support', text: 'When I helped or supported someone else' },
+  learned: { label: 'Learning', text: 'When I learned or accomplished something new' },
+  seeking: { label: 'Seeking', text: "It's been a while — I want to feel that again" },
+  regular: { label: 'Momentum', text: 'I feel proud regularly and want to keep that energy' },
 };
 
-const MORNING_MOTIVATION_OPTIONS: Record<string, { emoji: string; text: string }> = {
-  goals: { emoji: '🎯', text: 'My goals and dreams — I want to build a better future' },
-  improvement: { emoji: '💪', text: 'The drive to improve and become stronger each day' },
-  relationships: { emoji: '❤️', text: 'My family, friends, or people I care about' },
-  growth: { emoji: '🧠', text: 'The chance to learn, grow, and experience something new' },
-  responsibility: { emoji: '💼', text: 'My responsibilities — I get up because I have to' },
-  searching: { emoji: '🌅', text: "Honestly, I'm still trying to find that reason" },
+const MORNING_MOTIVATION_OPTIONS: Record<string, { label: string; text: string }> = {
+  goals: { label: 'Goals', text: 'My goals and dreams — building a better future' },
+  improvement: { label: 'Drive', text: 'The drive to improve and become stronger each day' },
+  relationships: { label: 'People', text: 'Family, friends, or people I care about' },
+  growth: { label: 'Growth', text: 'The chance to learn, grow, and experience something new' },
+  responsibility: { label: 'Duty', text: 'My responsibilities — I get up because I have to' },
+  searching: { label: 'Searching', text: "Honestly, I'm still trying to find that reason" },
 };
 
-const CURRENT_STATE_OPTIONS: Record<string, { emoji: string; text: string }> = {
-  determined: { emoji: '🔥', text: 'Determined — focused and ready to make progress' },
-  evolving: { emoji: '🌱', text: 'Evolving — growing and learning each day' },
-  curious: { emoji: '🧠', text: 'Curious — open to new ideas and self-improvement' },
-  disciplined: { emoji: '💪', text: 'Disciplined — staying consistent and accountable' },
-  distracted: { emoji: '😓', text: 'Distracted — struggling to stay focused or on track' },
-  doubting: { emoji: '😔', text: 'Lacking confidence — doubting myself but wanting change' },
-  underachieving: { emoji: '😩', text: 'Underachieving — not reaching my potential (yet)' },
-  hopeful: { emoji: '🌅', text: 'Hopeful — believing things can get better' },
+const CURRENT_STATE_OPTIONS: Record<string, { label: string; text: string }> = {
+  determined: { label: 'Determined', text: 'Focused and ready to make progress' },
+  evolving: { label: 'Evolving', text: 'Growing and learning each day' },
+  curious: { label: 'Curious', text: 'Open to new ideas and self-improvement' },
+  disciplined: { label: 'Disciplined', text: 'Staying consistent and accountable' },
+  distracted: { label: 'Distracted', text: 'Struggling to stay focused or on track' },
+  doubting: { label: 'Doubting', text: 'Doubting myself but wanting change' },
+  underachieving: { label: 'Underachieving', text: 'Not reaching my potential yet' },
+  hopeful: { label: 'Hopeful', text: 'Believing things can get better' },
 };
+
+type AnswerItem = {
+  id: string;
+  step: number;
+  question: string;
+  label: string | null;
+  text: string | null;
+};
+
+function mapOption(
+  value: string | null | undefined,
+  options: Record<string, { label: string; text: string }>
+): { label: string; text: string } | null {
+  if (!value?.trim()) return null;
+  return options[value] ?? { label: 'Answer', text: value };
+}
 
 export default function OnboardingAnswersScreen() {
   const navigation = useNavigation();
@@ -71,37 +96,22 @@ export default function OnboardingAnswersScreen() {
 
   const loadOnboardingData = async () => {
     if (!user) return;
-
     try {
-      // Load onboarding data from profiles table
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('life_description, change_reason, proud_moment, morning_motivation, current_state')
         .eq('id', user.id)
         .single();
-
-      if (error) {
-        console.error('Error loading profile:', error);
-        throw error;
-      }
-
-      console.log('📊 Loaded onboarding data:', profile);
+      if (error) throw error;
       setOnboardingData(profile);
 
-      // Load goals from goals table
-      const { data: goalsData, error: goalsError } = await supabase
+      const { data: goalsData } = await supabase
         .from('goals')
         .select('title, description, category, end_date')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
-        .limit(10); // Get first 10 goals
-
-      if (!goalsError && goalsData) {
-        console.log('📊 Loaded goals:', goalsData);
-        setGoals(goalsData);
-      } else if (goalsError) {
-        console.error('Error loading goals:', goalsError);
-      }
+        .limit(10);
+      if (goalsData) setGoals(goalsData);
     } catch (error) {
       console.error('Error loading onboarding data:', error);
     } finally {
@@ -109,30 +119,53 @@ export default function OnboardingAnswersScreen() {
     }
   };
 
-  const getOptionDisplay = (value: string | null | undefined, options: Record<string, { emoji: string; text: string }>) => {
-    if (!value || value.trim() === '') return null;
-    const option = options[value];
-    if (option) {
-      return `${option.emoji} ${option.text}`;
-    }
-    // If no mapping found, return the raw value (for debugging)
-    console.warn(`No option mapping found for value: "${value}"`);
-    return value;
-  };
+  const answers: AnswerItem[] = useMemo(() => {
+    const life = mapOption(onboardingData?.life_description, LIFE_DESCRIPTION_OPTIONS);
+    const reason = mapOption(onboardingData?.change_reason, CHANGE_REASON_OPTIONS);
+    const proud = mapOption(onboardingData?.proud_moment, PROUD_MOMENT_OPTIONS);
+    const morning = mapOption(onboardingData?.morning_motivation, MORNING_MOTIVATION_OPTIONS);
+    const state = mapOption(onboardingData?.current_state, CURRENT_STATE_OPTIONS);
 
-  const renderAnswerCard = (title: string, content: string | null, stepNumber: number) => {
-    if (!content) return null;
+    return [
+      {
+        id: 'life',
+        step: 1,
+        question: 'How would you describe your current life?',
+        label: life?.label ?? null,
+        text: life?.text ?? null,
+      },
+      {
+        id: 'reason',
+        step: 2,
+        question: 'Why do you want to change?',
+        label: reason?.label ?? null,
+        text: reason?.text ?? null,
+      },
+      {
+        id: 'proud',
+        step: 3,
+        question: 'When did you last feel proud?',
+        label: proud?.label ?? null,
+        text: proud?.text ?? null,
+      },
+      {
+        id: 'morning',
+        step: 4,
+        question: 'What gets you out of bed?',
+        label: morning?.label ?? null,
+        text: morning?.text ?? null,
+      },
+      {
+        id: 'state',
+        step: 5,
+        question: 'Which word describes you now?',
+        label: state?.label ?? null,
+        text: state?.text ?? null,
+      },
+    ].filter((a) => a.text);
+  }, [onboardingData]);
 
-    return (
-      <View key={stepNumber} style={[styles.answerCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-        <View style={styles.cardHeader}>
-          <Text style={[styles.stepNumber, { color: theme.primary }]}>Step {stepNumber}</Text>
-          <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>{title}</Text>
-        </View>
-        <Text style={[styles.answerText, { color: theme.textSecondary }]}>{content}</Text>
-      </View>
-    );
-  };
+  const answeredCount = answers.length + (goals.length > 0 ? 1 : 0) + (onboardingData ? 1 : 0);
 
   if (loading) {
     return (
@@ -142,11 +175,11 @@ export default function OnboardingAnswersScreen() {
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Onboarding Answers</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Your answers</Text>
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={"#1f2937"} />
+            <ActivityIndicator size="large" color={DARK} />
           </View>
         </SafeAreaView>
       </CustomBackground>
@@ -156,101 +189,101 @@ export default function OnboardingAnswersScreen() {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
         <View style={[styles.headerRow, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Onboarding Answers</Text>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Your answers</Text>
           <View style={styles.headerSpacer} />
         </View>
 
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: 24 + bottomNavPadding }]}
+          contentContainerStyle={[styles.content, { paddingBottom: 28 + bottomNavPadding }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Step 6: Life Description */}
-          {renderAnswerCard(
-            "How would you describe your current life?",
-            getOptionDisplay(onboardingData?.life_description, LIFE_DESCRIPTION_OPTIONS),
-            6
-          )}
+          <View style={styles.heroCard}>
+            <Text style={styles.heroEyebrow}>Onboarding</Text>
+            <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>
+              The commitments that started your journey
+            </Text>
+            <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
+              {answeredCount > 0
+                ? `${answeredCount} saved ${answeredCount === 1 ? 'reflection' : 'reflections'}`
+                : 'No answers saved yet'}
+            </Text>
+          </View>
 
-          {/* Step 7: Change Reason */}
-          {renderAnswerCard(
-            "What's the biggest reason why you want to start making a change and improving your life?",
-            getOptionDisplay(onboardingData?.change_reason, CHANGE_REASON_OPTIONS),
-            7
-          )}
-
-          {/* Step 8: Proud Moment */}
-          {renderAnswerCard(
-            "What's the last time you felt proud of yourself?",
-            getOptionDisplay(onboardingData?.proud_moment, PROUD_MOMENT_OPTIONS),
-            8
-          )}
-
-          {/* Step 9: Morning Motivation */}
-          {renderAnswerCard(
-            "What gets you out of bed every morning?",
-            getOptionDisplay(onboardingData?.morning_motivation, MORNING_MOTIVATION_OPTIONS),
-            9
-          )}
-
-          {/* Step 10: Current State */}
-          {renderAnswerCard(
-            "Which of these words best describes you right now?",
-            getOptionDisplay(onboardingData?.current_state, CURRENT_STATE_OPTIONS),
-            10
-          )}
-
-          {/* Step 11: Goals */}
-          {goals.length > 0 && (
-            <View style={[styles.answerCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-              <View style={styles.cardHeader}>
-                <Text style={[styles.stepNumber, { color: theme.primary }]}>Step 11</Text>
-                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Set Your First Goal 🎯</Text>
-              </View>
-              {goals.map((goal, index) => (
-                <View key={index} style={[styles.goalItem, { borderColor: theme.borderSecondary }]}>
-                  <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>{goal.title}</Text>
-                  {goal.description && (
-                    <Text style={[styles.goalDescription, { color: theme.textSecondary }]}>{goal.description}</Text>
-                  )}
+          {answers.map((answer, index) => (
+            <View key={answer.id} style={styles.timelineRow}>
+              <View style={styles.timelineRail}>
+                <View style={styles.stepBadge}>
+                  <Text style={styles.stepBadgeText}>{index + 1}</Text>
                 </View>
-              ))}
+                {index < answers.length - 1 || goals.length > 0 || onboardingData ? (
+                  <View style={styles.timelineLine} />
+                ) : null}
+              </View>
+              <View style={styles.answerCard}>
+                <Text style={[styles.question, { color: theme.textSecondary }]}>{answer.question}</Text>
+                {answer.label ? <Text style={styles.answerLabel}>{answer.label}</Text> : null}
+                <Text style={[styles.answerText, { color: theme.textPrimary }]}>{answer.text}</Text>
+              </View>
+            </View>
+          ))}
+
+          {goals.length > 0 && (
+            <View style={styles.timelineRow}>
+              <View style={styles.timelineRail}>
+                <View style={styles.stepBadge}>
+                  <Ionicons name="flag" size={14} color="#FFFFFF" />
+                </View>
+                {onboardingData ? <View style={styles.timelineLine} /> : null}
+              </View>
+              <View style={styles.answerCard}>
+                <Text style={[styles.question, { color: theme.textSecondary }]}>First goals</Text>
+                {goals.map((goal, index) => (
+                  <View
+                    key={`${goal.title}-${index}`}
+                    style={[
+                      styles.goalRow,
+                      index < goals.length - 1 && styles.goalRowDivider,
+                    ]}
+                  >
+                    <Text style={[styles.goalTitle, { color: theme.textPrimary }]}>{goal.title}</Text>
+                    {goal.description ? (
+                      <Text style={[styles.goalDescription, { color: theme.textSecondary }]}>
+                        {goal.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
             </View>
           )}
 
-          {/* Step 13: Affirmation Signature */}
-          {/* Check if user completed onboarding to show commitment */}
           {onboardingData && (
-            <View style={[styles.answerCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-              <View style={styles.cardHeader}>
-                <Text style={[styles.stepNumber, { color: theme.primary }]}>Step 13</Text>
-                <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>Your Commitment</Text>
+            <View style={styles.timelineRow}>
+              <View style={styles.timelineRail}>
+                <View style={[styles.stepBadge, styles.stepBadgeDone]}>
+                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                </View>
               </View>
-              <View style={[styles.signatureIndicator, { backgroundColor: 'rgba(46, 213, 115, 0.1)', borderColor: '#2ED573' }]}>
-                <Ionicons name="checkmark-circle" size={24} color="#2ED573" />
-                <Text style={[styles.signatureText, { color: '#2ED573' }]}>You committed to your journey</Text>
+              <View style={styles.answerCard}>
+                <Text style={[styles.question, { color: theme.textSecondary }]}>Commitment</Text>
+                <Text style={styles.answerLabel}>Locked in</Text>
+                <Text style={[styles.answerText, { color: theme.textPrimary }]}>
+                  You committed to showing up for your habits and finishing what you start.
+                </Text>
               </View>
-            </View>
-          )}
-
-          {/* Debug: Show raw data if available */}
-          {__DEV__ && onboardingData && (
-            <View style={[styles.answerCard, { backgroundColor: theme.cardBackground, borderColor: theme.borderSecondary }]}>
-              <Text style={[styles.cardTitle, { color: theme.textPrimary, marginBottom: 12 }]}>Debug Info</Text>
-              <Text style={[styles.answerText, { color: theme.textSecondary, fontSize: 12 }]}>
-                {JSON.stringify(onboardingData, null, 2)}
-              </Text>
             </View>
           )}
 
           {!onboardingData && goals.length === 0 && (
-            <View style={styles.emptyContainer}>
+            <View style={styles.emptyCard}>
+              <Ionicons name="clipboard-outline" size={28} color="#9CA3AF" />
+              <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>No answers yet</Text>
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No onboarding answers found. Complete onboarding to see your answers here.
+                Complete onboarding to see your reflections here.
               </Text>
             </View>
           )}
@@ -261,94 +294,110 @@ export default function OnboardingAnswersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
     flex: 1,
   },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
+  backButton: { padding: 8, width: 40 },
+  headerSpacer: { width: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  content: { paddingHorizontal: 20, paddingTop: 20, gap: 4 },
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    padding: 20,
+    marginBottom: 18,
   },
-  headerSpacer: {
-    width: 40,
+  heroEyebrow: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  heroSubtitle: { fontSize: 14, lineHeight: 20 },
+  timelineRow: { flexDirection: 'row', gap: 14, minHeight: 88 },
+  timelineRail: { width: 28, alignItems: 'center' },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: DARK,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  content: {
-    padding: 24,
-    gap: 16,
+  stepBadgeDone: { backgroundColor: '#059669' },
+  stepBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 6,
+    borderRadius: 1,
   },
   answerCard: {
-    borderRadius: 12,
-    padding: 20,
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-  },
-  cardHeader: {
+    borderColor: CARD_BORDER,
+    padding: 16,
     marginBottom: 12,
   },
-  stepNumber: {
-    fontSize: 12,
+  question: {
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
-    textTransform: 'uppercase',
+    marginBottom: 8,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  answerLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DARK,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   answerText: {
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
   },
-  goalItem: {
+  goalRow: { paddingVertical: 10 },
+  goalRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: CARD_BORDER,
+  },
+  goalTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  goalDescription: { fontSize: 13, lineHeight: 18 },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-  },
-  goalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  goalDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  signatureIndicator: {
-    flexDirection: 'row',
+    borderColor: CARD_BORDER,
+    padding: 28,
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
+    gap: 8,
   },
-  signatureText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
+  emptyTitle: { fontSize: 17, fontWeight: '700' },
+  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 });

@@ -671,6 +671,23 @@ class PointsService {
   }
 
   /**
+   * EXP earned this calendar week (Sunday → today, 4am day boundary)
+   */
+  async getThisWeeksPoints(userId: string): Promise<number> {
+    try {
+      const today = this.getCurrentDateFor4amCutoff();
+      const [y, m, d] = today.split('-').map(Number);
+      const date = new Date(y, m - 1, d);
+      date.setDate(date.getDate() - date.getDay());
+      const start = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      return this.getPointsBetweenDates(userId, start, today);
+    } catch (error) {
+      console.error('Error in getThisWeeksPoints:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Recent daily EXP rows with source flags (newest first)
    */
   async getRecentDailyBreakdown(userId: string, days: number = 14): Promise<UserPointsDaily[]> {

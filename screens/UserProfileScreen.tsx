@@ -38,7 +38,8 @@ import {
   TOTAL_ACHIEVEMENTS,
 } from '../lib/achievementsService';
 import { sortAchievementsHardestFirst } from '../lib/achievementDefinitions';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+
+const DARK = '#1f2937';import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 type UserProfileStackParamList = {
   UserProfile: { userId: string; username: string };
@@ -851,98 +852,54 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         {statsVisible && (
         <View style={[styles.keepTrackSection, styles.profileSectionSpacing]}>
           <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
-            <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
-                <View style={{
-                  backgroundColor: isDark ? '#1f1f1f' : '#111827',
-                  paddingHorizontal: 12,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '600' }}>
-                    {Math.floor(pillarProgress.overall)}
-                  </Text>
-                </View>
+            <View style={[styles.keepTrackHeader, { marginBottom: 16 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Stats</Text>
               </View>
             </View>
-            <View style={[styles.progressBarsContainer, { 
-              height: Math.max(100, Math.max(...[
-                pillarProgress.strength_fitness,
-                pillarProgress.growth_wisdom,
-                pillarProgress.discipline,
-                pillarProgress.team_spirit,
-                pillarProgress.overall
-              ].map(p => Math.max(45, p * 1.8))) + 30)
-            }]}>
+            <View style={styles.statBarsList}>
               {[
-                { index: 1, progress: pillarProgress.strength_fitness, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Strength & Fitness', key: 'strength_fitness' },
-                { index: 2, progress: pillarProgress.growth_wisdom, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
-                { index: 3, progress: pillarProgress.discipline, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Discipline', key: 'discipline' },
-                { index: 4, progress: pillarProgress.team_spirit, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Team Spirit', key: 'team_spirit' },
-                { index: 5, progress: pillarProgress.overall, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Overall', key: 'overall' }
+                { key: 'strength_fitness', label: 'Strength & Fitness', progress: pillarProgress.strength_fitness },
+                { key: 'growth_wisdom', label: 'Growth & Wisdom', progress: pillarProgress.growth_wisdom },
+                { key: 'discipline', label: 'Discipline', progress: pillarProgress.discipline },
+                { key: 'team_spirit', label: 'Team Spirit', progress: pillarProgress.team_spirit },
               ].map((bar) => {
-              const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
-              const displayProgress = Math.floor(exactProgress);
-              
-              const barColor = bar.color;
-              const iconColor = '#FFFFFF';
-              
-              const barHeight = Math.max(45, exactProgress * 1.8);
-              
-              return (
-                <View key={bar.index} style={styles.progressBarColumn}>
-                  <View style={[styles.progressBarContainer, { height: barHeight }]}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        {
-                          backgroundColor: barColor,
-                          height: '100%',
-                          zIndex: 5,
-                        }
-                      ]}
-                    />
-                    <View style={styles.progressBarAvatar}>
-                      <View style={{
-                        position: 'absolute',
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        zIndex: 1
-                      }} />
-                      {bar.index === 1 ? (
-                        <FontAwesome5 name="dumbbell" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 2 ? (
-                        <FontAwesome5 name="brain" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 3 ? (
-                        <FontAwesome5 name="lock" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 4 ? (
-                        <FontAwesome5 name="star" size={20} color={iconColor} solid style={{ zIndex: 2 }} />
-                      ) : (
-                        <FontAwesome5 name="fire" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      )}
+                const pct = Math.max(0, Math.min(100, bar.progress || 0));
+                const displayProgress = Math.floor(pct);
+                const fillColor = DARK;
+
+                return (
+                  <TouchableOpacity
+                    key={bar.key}
+                    style={styles.statBarRow}
+                    onPress={() => {
+                      Alert.alert(bar.label, `${pct.toFixed(1)}%`, [{ text: 'OK' }]);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.statBarHeader}>
+                      <Text style={[styles.statBarLabel, { color: theme.textPrimary }]} numberOfLines={1}>
+                        {bar.label}
+                      </Text>
                     </View>
-                  </View>
-                  <View style={styles.progressBarLabelBelow}>
-                    <TouchableOpacity 
-                      style={styles.progressBarNumberContainer}
-                      onPress={() => {
-                        Alert.alert(
-                          bar.pillar,
-                          `${exactProgress.toFixed(1)}%`,
-                          [{ text: 'OK' }]
-                        );
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.progressBarNumber, { color: theme.textPrimary }]}>
+                    <View style={styles.statBarTrackRow}>
+                      <View style={styles.statBarTrack}>
+                        <View
+                          style={[
+                            styles.statBarFill,
+                            {
+                              width: `${pct}%`,
+                              backgroundColor: fillColor,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.statBarPercent, { color: fillColor }]}>
                         {displayProgress}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
+                    </View>
+                  </TouchableOpacity>
+                );
               })}
             </View>
           </View>
@@ -1682,6 +1639,46 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  statBarsList: {
+    gap: 14,
+  },
+  statBarRow: {
+    width: '100%',
+  },
+  statBarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  statBarLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  statBarTrackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statBarTrack: {
+    flex: 1,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: 'rgba(31, 41, 55, 0.08)',
+    overflow: 'hidden',
+  },
+  statBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  statBarPercent: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    minWidth: 40,
+    textAlign: 'right',
   },
   progressBarLabelBelow: {
     alignItems: 'center',

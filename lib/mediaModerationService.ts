@@ -12,6 +12,17 @@ export class InappropriateMediaError extends Error {
   }
 }
 
+export class ModerationUnavailableError extends Error {
+  readonly code = 'MODERATION_UNAVAILABLE' as const;
+
+  constructor(
+    message = 'Media moderation is temporarily unavailable. Please try again later.'
+  ) {
+    super(message);
+    this.name = 'ModerationUnavailableError';
+  }
+}
+
 export type MediaModerationResult = {
   safe: boolean;
   reason?: string | null;
@@ -41,15 +52,7 @@ function isUsageLimitPayload(payload: any): boolean {
   );
 }
 
-/**
- * Runs Sightengine moderation via the moderate-media edge function.
- * Throws InappropriateMediaError when content should be blocked.
- * If Sightengine quota/limit is hit, allows the upload through (fail-open).
- */
-export async function assertMediaIsSafe(
-  url: string,
-  mediaType?: 'image' | 'video'
-): Promise<MediaModerationResult> {
+async function getAccessToken(): Promise<string> {
   const {
     data: { session },
     error: sessionError,
@@ -58,19 +61,23 @@ export async function assertMediaIsSafe(
   if (sessionError || !session?.access_token) {
     throw new Error('Please sign in again to upload media.');
   }
+  return session.access_token;
+}
 
+async function postModerateMedia(body: Record<string, unknown>): Promise<MediaModerationResult> {
   const supabaseUrl = getSupabaseUrl();
   if (!supabaseUrl) {
     throw new Error('Supabase URL is not configured.');
   }
 
+  const accessToken = await getAccessToken();
   const response = await fetch(`${supabaseUrl}/functions/v1/moderate-media`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ url, mediaType }),
+    body: JSON.stringify(body),
   });
 
   let payload: any = null;
@@ -80,21 +87,19 @@ export async function assertMediaIsSafe(
     payload = null;
   }
 
-  // Quota / plan cap: allow upload (moderation unavailable, not unsafe content).
+  // Fail closed: quota / skipped moderation must not publish UGC.
   if (isUsageLimitPayload(payload) || (response.ok && payload?.skipped === true)) {
-    if (__DEV__) {
-      console.warn('Media moderation skipped (Sightengine usage limit) — allowing upload');
-    }
-    return {
-      safe: true,
-      skipped: true,
-      skipReason: 'usage_limit',
-      reason: null,
-      mediaType: payload?.mediaType,
-    };
+    throw new ModerationUnavailableError(
+      'Media moderation is at capacity right now. Please try uploading again shortly.'
+    );
   }
 
   if (!response.ok) {
+    if (response.status >= 500) {
+      throw new ModerationUnavailableError(
+        payload?.error || 'Media moderation is temporarily unavailable. Please try again later.'
+      );
+    }
     throw new Error(payload?.error || 'Could not verify this media. Please try again.');
   }
 
@@ -110,9 +115,35 @@ export async function assertMediaIsSafe(
     reason: payload?.reason ?? null,
     scores: payload?.scores,
     mediaType: payload?.mediaType,
-    skipped: payload?.skipped === true,
-    skipReason: payload?.skipReason ?? null,
+    skipped: false,
+    skipReason: null,
   };
+}
+
+/**
+ * Runs Sightengine moderation via the moderate-media edge function for a public URL.
+ * Throws InappropriateMediaError when content should be blocked.
+ * Throws ModerationUnavailableError when quota/service is down (fail-closed).
+ */
+export async function assertMediaIsSafe(
+  url: string,
+  mediaType?: 'image' | 'video'
+): Promise<MediaModerationResult> {
+  return postModerateMedia({ url, mediaType });
+}
+
+/**
+ * Moderates local media bytes (base64) before any public upload.
+ */
+export async function assertMediaBase64IsSafe(
+  mediaBase64: string,
+  options?: { mediaType?: 'image' | 'video'; contentType?: string }
+): Promise<MediaModerationResult> {
+  return postModerateMedia({
+    mediaBase64,
+    mediaType: options?.mediaType,
+    contentType: options?.contentType,
+  });
 }
 
 export function isInappropriateMediaError(error: unknown): error is InappropriateMediaError {
@@ -124,7 +155,18 @@ export function isInappropriateMediaError(error: unknown): error is Inappropriat
   );
 }
 
+export function isModerationUnavailableError(error: unknown): error is ModerationUnavailableError {
+  return (
+    error instanceof ModerationUnavailableError ||
+    (!!error &&
+      typeof error === 'object' &&
+      (error as any).code === 'MODERATION_UNAVAILABLE')
+  );
+}
+
 export const mediaModerationService = {
   assertMediaIsSafe,
+  assertMediaBase64IsSafe,
   isInappropriateMediaError,
+  isModerationUnavailableError,
 };

@@ -253,11 +253,18 @@ class AchievementsService {
       const def = ACHIEVEMENT_DEFINITIONS.find((d) => d.id === id);
       if (!def) continue;
 
-      await notificationService.createNotification({
-        user_id: userId,
-        notification_type: 'achievement_unlocked',
-        habit_type: id,
-      });
+      await notificationService.createNotification(
+        {
+          user_id: userId,
+          notification_type: 'achievement_unlocked',
+          habit_type: id,
+        },
+        {
+          title: '🏆 Achievement unlocked',
+          body: def.title,
+          extras: { achievementId: id, habitType: id },
+        }
+      );
 
       const delay = i * 4000;
       const bannerId = `achievement-${id}-${Date.now()}-${i}`;

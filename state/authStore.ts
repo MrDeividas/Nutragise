@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { socialService } from '../lib/socialService';
 import { emailService } from '../lib/emailService';
@@ -7,8 +8,12 @@ import { getUserBanStatus } from '../lib/banUtils';
 import { AuthState, User, SignUpData, SignInData, ProfileData } from '../types/auth';
 
 interface AuthStore extends AuthState {
+  /** Bumped when onboarding finishes so App.tsx re-checks the gate. */
+  onboardingGateRevision: number;
+  notifyOnboardingFinished: () => void;
   signUp: (data: SignUpData) => Promise<{ error: any | null }>;
   signIn: (data: SignInData) => Promise<{ error: any | null }>;
+  signInWithApple: () => Promise<{ error: any | null }>;
   signOut: () => Promise<void>;
   updateProfile: (data: ProfileData) => Promise<{ error: any | null }>;
   resendVerificationEmail: (email: string) => Promise<{ error: any | null }>;
@@ -20,6 +25,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
   session: null,
   loading: true,
+  onboardingGateRevision: 0,
+
+  notifyOnboardingFinished: () =>
+    set((state) => ({ onboardingGateRevision: state.onboardingGateRevision + 1 })),
 
   initialize: async () => {
     // Never leave the UI on a blank/loading screen if auth hangs
@@ -73,10 +82,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             .eq('id', session.user.id);
         }
 
-        const userToSet = userData || {
-          id: session.user.id,
-          email: session.user.email!,
-          created_at: session.user.created_at
+        const userToSet = {
+          ...(userData || {
+            id: session.user.id,
+            email: session.user.email!,
+            created_at: session.user.created_at,
+          }),
+          username: profileData?.username || userData?.username,
+          display_name: profileData?.display_name || userData?.username,
+          avatar_url: profileData?.avatar_url || userData?.avatar_url,
         };
 
         iapService.logIn(session.user.id).catch(() => {});
@@ -133,10 +147,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           iapService.logIn(session.user.id).catch(() => {});
 
           set({
-            user: userData || {
-              id: session.user.id,
-              email: session.user.email!,
-              created_at: session.user.created_at
+            user: {
+              ...(userData || {
+                id: session.user.id,
+                email: session.user.email!,
+                created_at: session.user.created_at,
+              }),
+              username: profileData?.username || userData?.username,
+              display_name: profileData?.display_name || userData?.username,
+              avatar_url: profileData?.avatar_url || userData?.avatar_url,
             },
             session
           });
@@ -277,10 +296,151 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           },
           session: signInData.session
         });
+
+        // Non-blocking: make sure pillar rows exist for returning users
+        import('../lib/pillarProgressService')
+          .then(({ pillarProgressService }) =>
+            pillarProgressService.initializeUserPillars(signInData.user.id)
+          )
+          .catch(() => {});
       }
 
       return { error: null };
     } catch (error) {
+      return { error };
+    }
+  },
+
+  signInWithApple: async () => {
+    try {
+      if (Platform.OS !== 'ios') {
+        return { error: { message: 'Sign in with Apple is only available on iOS.' } };
+      }
+
+      const AppleAuthentication = await import('expo-apple-authentication');
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (!available) {
+        return { error: { message: 'Sign in with Apple is not available on this device.' } };
+      }
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        return { error: { message: 'Apple did not return an identity token.' } };
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+
+      if (error) return { error };
+      if (!data.user) return { error: { message: 'Apple sign-in failed.' } };
+
+      const ban = await getUserBanStatus(data.user.id);
+      if (ban.banned) {
+        await supabase.auth.signOut();
+        return { error: { message: ban.message } };
+      }
+
+      const given = credential.fullName?.givenName?.trim();
+      const family = credential.fullName?.familyName?.trim();
+      // Prefer first name for onboarding greetings; keep full name for profile metadata
+      const firstName = given || undefined;
+      const displayName =
+        [given, family].filter(Boolean).join(' ') ||
+        data.user.user_metadata?.full_name ||
+        data.user.email?.split('@')[0] ||
+        'User';
+      const greetingName = firstName || displayName.split(/\s+/)[0] || displayName;
+
+      await supabase.from('users').upsert({
+        id: data.user.id,
+        email: data.user.email,
+      });
+
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id, display_name, onboarding_completed')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        const profile = await socialService.createProfile(data.user.id, {
+          username: data.user.id,
+          display_name: greetingName,
+          onboarding_completed: false,
+        });
+        if (!profile) {
+          await supabase.from('profiles').insert({
+            id: data.user.id,
+            username: data.user.id,
+            display_name: greetingName,
+            onboarding_completed: false,
+          });
+        }
+      } else if (
+        (given || family) &&
+        (!existingProfile.display_name ||
+          existingProfile.display_name === 'User' ||
+          existingProfile.display_name === data.user.email?.split('@')[0])
+      ) {
+        await supabase
+          .from('profiles')
+          .update({ display_name: greetingName })
+          .eq('id', data.user.id);
+      }
+
+      if (given || family) {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: displayName,
+            given_name: given,
+            family_name: family,
+            // Apple does not provide date of birth via Sign in with Apple
+          },
+        });
+      }
+
+      iapService.logIn(data.user.id).catch(() => {});
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('username, display_name, avatar_url')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      set({
+        user: {
+          ...(userData || {
+            id: data.user.id,
+            email: data.user.email!,
+            created_at: data.user.created_at,
+          }),
+          username: profileData?.username,
+          display_name: profileData?.display_name || greetingName,
+          avatar_url: profileData?.avatar_url,
+        },
+        session: data.session,
+        loading: false,
+      });
+
+      return { error: null };
+    } catch (error: any) {
+      if (error?.code === 'ERR_REQUEST_CANCELED') {
+        return { error: null };
+      }
       return { error };
     }
   },

@@ -22,18 +22,25 @@ import InAppNotificationBanner from './components/InAppNotificationBanner';
 import type { InAppBanner } from './state/notificationsStore';
 
 // Soft-load Stripe — Expo Go has no Stripe native module and will blank otherwise
-let StripeProvider: React.ComponentType<{ publishableKey: string; children?: React.ReactNode }> = ({
-  children,
-}) => <>{children}</>;
+let StripeProvider: React.ComponentType<{
+  publishableKey: string;
+  merchantIdentifier?: string;
+  urlScheme?: string;
+  children?: React.ReactNode;
+}> = ({ children }) => <>{children}</>;
 try {
   StripeProvider = require('@stripe/stripe-react-native').StripeProvider;
 } catch (e) {
   console.warn('Stripe native module unavailable (Expo Go):', e);
 }
 
+const STRIPE_MERCHANT_IDENTIFIER = 'merchant.com.nutragise.app';
+const STRIPE_URL_SCHEME = 'nutrapp';
+
 // Core screens (loaded immediately)
 import SignInScreen from './screens/SignInScreen';
 import SignUpScreen from './screens/SignUpScreen';
+import AuthWelcomeScreen from './screens/AuthWelcomeScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import GoalsScreen from './screens/GoalsScreen';
@@ -66,6 +73,7 @@ const ProfileCardScreen = lazy(() => import('./screens/ProfileCardScreen'));
 const ProfileStatsScreen = lazy(() => import('./screens/ProfileStatsScreen'));
 const AchievementsScreen = lazy(() => import('./screens/AchievementsScreen'));
 const OnboardingAnswersScreen = lazy(() => import('./screens/OnboardingAnswersScreen'));
+const NotificationPreferencesScreen = lazy(() => import('./screens/NotificationPreferencesScreen'));
 const NotificationsScreen = lazy(() => import('./screens/NotificationsScreen'));
 const GoalDetailScreen = lazy(() => import('./screens/GoalDetailScreen'));
 const CommunityScreen = lazy(() => import('./screens/CommunityScreen'));
@@ -210,6 +218,15 @@ function ProfileStack() {
             animation: 'slide_from_right',
             gestureEnabled: true,
             gestureDirection: 'horizontal'
+          }}
+        />
+        <Stack.Screen
+          name="NotificationPreferences"
+          component={NotificationPreferencesScreen}
+          options={{
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
           }}
         />
         <Stack.Screen 
@@ -612,12 +629,23 @@ function AppStack() {
 function AuthStack() {
   return (
     <Stack.Navigator 
+      initialRouteName="Welcome"
       screenOptions={{ 
         headerShown: false
-        // Use default navigation behavior like Tab.Navigator
       }}
     >
-      <Stack.Screen name="SignIn" component={SignInScreen} />
+      <Stack.Screen name="Welcome" component={AuthWelcomeScreen} />
+      <Stack.Screen
+        name="SignIn"
+        component={SignInScreen}
+        options={{
+          animation: 'slide_from_right',
+          animationDuration: 200,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+          gestureDirection: 'horizontal',
+        }}
+      />
       <Stack.Screen 
         name="SignUp" 
         component={SignUpScreen}
@@ -642,7 +670,7 @@ function AuthStack() {
 }
 
 export default function App() {
-  const { user, loading, initialize } = useAuthStore();
+  const { user, loading, initialize, onboardingGateRevision } = useAuthStore();
   const { theme } = useTheme();
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
@@ -678,17 +706,40 @@ export default function App() {
           navigationRef.current.navigate('ChatWindow', { chatId: data.chatId });
         } else if (data.type === 'challenge' && data.challengeId) {
           navigationRef.current.navigate('ChallengeDetail', { challengeId: data.challengeId });
+        } else if (
+          data.type === 'challenge_approved' ||
+          data.type === 'challenge_rejected' ||
+          data.type === 'submission_invalidated'
+        ) {
+          navigationRef.current.navigate('MainTabs', { screen: 'Discover' });
         } else if (data.type === 'habit_reminder' || data.type === 'nudge') {
           navigationRef.current.navigate('Action');
-        } else if ((data.type === 'post_like' || data.type === 'post_comment' || data.type === 'post_reply') && data.postId) {
+        } else if (
+          (data.type === 'post_like' || data.type === 'post_comment' || data.type === 'post_reply') &&
+          (data.postId || data.post_id)
+        ) {
           navigationRef.current.navigate('PostDetail', {
-            postId: data.postId,
+            postId: data.postId || data.post_id,
             openComments: data.type === 'post_comment' || data.type === 'post_reply',
           });
         } else if (data.type === 'habit_invite_accepted' || data.type === 'habit_nudge') {
           navigationRef.current.navigate('MainTabs', { screen: 'Action' });
-        } else if (data.type === 'post_reply' && data.commentId) {
-          navigationRef.current.navigate('MainTabs', { screen: 'Community' });
+        } else if (data.type === 'habit_invite') {
+          navigationRef.current.navigate('Notifications');
+        } else if (data.type === 'follow' && (data.fromUserId || data.from_user_id)) {
+          navigationRef.current.navigate('UserProfile', {
+            userId: data.fromUserId || data.from_user_id,
+          });
+        } else if (data.type === 'achievement_unlocked') {
+          navigationRef.current.navigate('Achievements', {
+            highlightId: data.achievementId || data.habitType || data.habit_type,
+          });
+        } else if (data.goalId || data.goal_id) {
+          navigationRef.current.navigate('UpdateGoal', {
+            goalId: data.goalId || data.goal_id,
+          });
+        } else {
+          navigationRef.current.navigate('Notifications');
         }
       } catch (e) {
         // Navigation may not be ready yet — silently ignore
@@ -721,7 +772,7 @@ export default function App() {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('onboarding_completed, onboarding_last_step')
+          .select('onboarding_completed, onboarding_last_step, username')
           .eq('id', user.id)
           .single();
 
@@ -734,18 +785,19 @@ export default function App() {
           return;
         }
 
-        // If onboarding is completed, or if user has progressed past step 1 (has exited), show main app
-        const isComplete = data?.onboarding_completed || false;
-        const hasPartialProgress = data?.onboarding_last_step && data.onboarding_last_step > 1;
-
-        // Show main app if completed OR if user has partial progress (exited onboarding)
-        const shouldShowMainApp = isComplete || hasPartialProgress;
+        // Quiz/onboarding finished, but username setup still lives in OnboardingStack
+        const username = data?.username;
+        const hasRealUsername =
+          !!username &&
+          username !== user.id &&
+          username !== user.email?.split('@')[0];
+        const isComplete = !!data?.onboarding_completed && hasRealUsername;
 
         // Add small delay to prevent navigation stack conflicts
         setTimeout(() => {
           if (cancelled) return;
           clearTimeout(safetyTimer);
-          setOnboardingComplete(!!shouldShowMainApp);
+          setOnboardingComplete(isComplete);
         }, 500);
       } catch (e) {
         console.warn('Onboarding check threw, opening main app:', e);
@@ -761,7 +813,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(safetyTimer);
     };
-  }, [user]);
+  }, [user, onboardingGateRevision]);
 
   if (supabaseConfigError) {
     return (
@@ -812,9 +864,17 @@ export default function App() {
       } else if (banner.type === 'follow' && banner.fromUserId) {
         navigationRef.current.navigate('UserProfile', { userId: banner.fromUserId });
       } else if (banner.type === 'achievement_unlocked') {
-        navigationRef.current.navigate('Achievements');
+        navigationRef.current.navigate('Achievements', {
+          highlightId: banner.habitType || undefined,
+        });
+      } else if (
+        banner.type === 'challenge_approved' ||
+        banner.type === 'challenge_rejected' ||
+        banner.type === 'submission_invalidated'
+      ) {
+        navigationRef.current.navigate('MainTabs', { screen: 'Discover' });
       } else if (banner.goalId) {
-        navigationRef.current.navigate('GoalDetail', { goalId: banner.goalId });
+        navigationRef.current.navigate('UpdateGoal', { goalId: banner.goalId });
       } else {
         navigationRef.current.navigate('Notifications');
       }
@@ -874,7 +934,13 @@ export default function App() {
     <CustomBackground>
       {/* Empty publishable keys can crash Stripe's native init on TestFlight */}
       {stripeKey ? (
-        <StripeProvider publishableKey={stripeKey}>{appTree}</StripeProvider>
+        <StripeProvider
+          publishableKey={stripeKey}
+          merchantIdentifier={STRIPE_MERCHANT_IDENTIFIER}
+          urlScheme={STRIPE_URL_SCHEME}
+        >
+          {appTree}
+        </StripeProvider>
       ) : (
         appTree
       )}

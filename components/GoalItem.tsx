@@ -1,15 +1,19 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Goal } from '../types/database';
+import FeaturedGoalCircle from './FeaturedGoalCircle';
 
 const DARK = '#1f2937';
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MAX_FEATURED = 3;
 
 interface GoalItemProps {
   goal: Goal;
   navigation: any;
   onToggle: (id: string) => void;
+  onToggleFeatured?: (id: string, featured: boolean) => void;
+  featuredCount?: number;
 }
 
 const formatShortDate = (dateString: string) => {
@@ -47,117 +51,195 @@ const frequencyLabel = (frequency?: boolean[]): string | null => {
   return activeDays.join(' · ');
 };
 
-const GoalItem = React.memo(({ goal, navigation, onToggle }: GoalItemProps) => {
-  const due = !goal.completed ? dueLabel(goal.end_date) : null;
-  const schedule = frequencyLabel(goal.frequency);
-  const milestoneCount = goal.milestone_count || goal.milestones?.length || 0;
-  const finishedDate = goal.completed
-    ? goal.last_updated_at || goal.created_at
-    : null;
-  const hasChips = !!(goal.category || goal.completed || due || goal.time_commitment || milestoneCount > 0);
-  const hasDates = !!(goal.start_date || goal.end_date || finishedDate);
+const GoalItem = React.memo(
+  ({ goal, navigation, onToggle, onToggleFeatured, featuredCount = 0 }: GoalItemProps) => {
+    const due = !goal.completed ? dueLabel(goal.end_date) : null;
+    const schedule = frequencyLabel(goal.frequency);
+    const milestoneCount = goal.milestone_count || goal.milestones?.length || 0;
+    const progressPct =
+      typeof goal.progress_percent === 'number' && !Number.isNaN(goal.progress_percent)
+        ? Math.max(0, Math.min(100, Math.round(goal.progress_percent)))
+        : goal.completed
+          ? 100
+          : 0;
+    const finishedDate = goal.completed
+      ? goal.last_updated_at || goal.created_at
+      : null;
+    const hasChips = !!(
+      goal.category ||
+      goal.completed ||
+      due ||
+      goal.time_commitment ||
+      milestoneCount > 0
+    );
+    const hasDates = !!(goal.start_date || goal.end_date || finishedDate);
+    const isFeatured = !!goal.is_featured;
+    const hasMeta =
+      !!goal.description || hasChips || !!schedule || hasDates;
 
-  return (
-    <TouchableOpacity
-      style={[styles.card, goal.completed && styles.cardDone]}
-      onPress={() => navigation.navigate('GoalDetail', { goal })}
-      activeOpacity={0.88}
-    >
-      <View style={styles.body}>
-        <Text style={[styles.title, goal.completed && styles.titleDone]} numberOfLines={2}>
-          {goal.title}
-        </Text>
+    const handleFeaturePress = () => {
+      if (!onToggleFeatured || goal.completed) return;
+      if (!isFeatured && featuredCount >= MAX_FEATURED) {
+        Alert.alert('Featured goals', `You can feature up to ${MAX_FEATURED} goals on your profile.`);
+        return;
+      }
+      onToggleFeatured(goal.id, !isFeatured);
+    };
 
-        {goal.description ? (
-          <Text style={[styles.description, goal.completed && styles.descriptionDone]} numberOfLines={2}>
-            {goal.description}
-          </Text>
-        ) : null}
+    const openDetail = () => navigation.navigate('GoalDetail', { goal });
+    const openUpdate = () => navigation.navigate('UpdateGoal', { goalId: goal.id });
 
-        {hasChips ? (
-          <View style={styles.chipRow}>
-            {goal.category ? (
-              <View style={styles.chip}>
-                <Text style={styles.chipText}>{goal.category}</Text>
+    return (
+      <View style={[styles.card, goal.completed && styles.cardDone]}>
+        <View style={styles.body}>
+          <View style={styles.titleRow}>
+            <TouchableOpacity style={styles.titlePress} onPress={openDetail} activeOpacity={0.88}>
+              <View style={styles.titleWithBadge}>
+                <Text style={[styles.title, goal.completed && styles.titleDone]} numberOfLines={2}>
+                  {goal.title}
+                </Text>
+                {isFeatured ? (
+                  <View style={styles.featuredInline}>
+                    <Text style={styles.featuredInlineText}>Featured</Text>
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-            {goal.completed ? (
-              <View style={[styles.chip, styles.doneChip]}>
-                <Text style={[styles.chipText, styles.doneChipText]}>Done</Text>
-              </View>
-            ) : null}
-            {due ? (
-              <View
-                style={[
-                  styles.chip,
-                  due.tone === 'overdue' && styles.overdueChip,
-                  due.tone === 'soon' && styles.soonChip,
-                ]}
+            </TouchableOpacity>
+            {!goal.completed && onToggleFeatured ? (
+              <TouchableOpacity
+                onPress={handleFeaturePress}
+                hitSlop={10}
+                style={[styles.featureBtn, isFeatured && styles.featureBtnOn]}
+                accessibilityLabel={isFeatured ? 'Unfeature goal' : 'Feature on profile'}
               >
+                <Ionicons
+                  name={isFeatured ? 'star' : 'star-outline'}
+                  size={16}
+                  color={isFeatured ? '#FFFFFF' : '#10B981'}
+                />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.contentRow}>
+            <View style={styles.ringWrap}>
+              <FeaturedGoalCircle
+                id={goal.id}
+                title={goal.title}
+                percent={progressPct}
+                compact
+                showTitle={false}
+                onPress={openDetail}
+                onLongPress={openUpdate}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.metaCol}
+              onPress={openDetail}
+              activeOpacity={0.88}
+              disabled={!hasMeta}
+            >
+              {goal.description ? (
                 <Text
-                  style={[
-                    styles.chipText,
-                    due.tone === 'overdue' && styles.overdueChipText,
-                    due.tone === 'soon' && styles.soonChipText,
-                  ]}
+                  style={[styles.description, goal.completed && styles.descriptionDone]}
+                  numberOfLines={2}
                 >
-                  {due.text}
+                  {goal.description}
                 </Text>
-              </View>
-            ) : null}
-            {goal.time_commitment ? (
-              <View style={styles.chip}>
-                <Text style={styles.chipText}>{goal.time_commitment}</Text>
-              </View>
-            ) : null}
-            {milestoneCount > 0 ? (
-              <View style={styles.chip}>
-                <Text style={styles.chipText}>
-                  {milestoneCount} milestone{milestoneCount === 1 ? '' : 's'}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+              ) : null}
 
-        {schedule ? (
-          <View style={styles.scheduleRow}>
-            <Ionicons name="calendar-outline" size={13} color="#9CA3AF" />
-            <Text style={styles.metaText} numberOfLines={1}>
-              {schedule}
-            </Text>
-          </View>
-        ) : null}
+              {hasChips ? (
+                <View style={styles.chipRow}>
+                  {goal.category ? (
+                    <View style={styles.chip}>
+                      <Text style={styles.chipText}>{goal.category}</Text>
+                    </View>
+                  ) : null}
+                  {goal.completed ? (
+                    <View style={[styles.chip, styles.doneChip]}>
+                      <Text style={[styles.chipText, styles.doneChipText]}>Done</Text>
+                    </View>
+                  ) : null}
+                  {due ? (
+                    <View
+                      style={[
+                        styles.chip,
+                        due.tone === 'overdue' && styles.overdueChip,
+                        due.tone === 'soon' && styles.soonChip,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          due.tone === 'overdue' && styles.overdueChipText,
+                          due.tone === 'soon' && styles.soonChipText,
+                        ]}
+                      >
+                        {due.text}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {goal.time_commitment ? (
+                    <View style={styles.chip}>
+                      <Text style={styles.chipText}>{goal.time_commitment}</Text>
+                    </View>
+                  ) : null}
+                  {milestoneCount > 0 ? (
+                    <View style={styles.chip}>
+                      <Text style={styles.chipText}>
+                        {milestoneCount} milestone{milestoneCount === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
 
-        {hasDates ? (
-          <View style={styles.datesRow}>
-            <Text style={styles.metaText}>
-              Started {goal.start_date ? formatShortDate(goal.start_date) : '—'}
-            </Text>
-            <Text style={styles.metaDot}>·</Text>
-            <Text style={styles.metaText}>
-              Ends {goal.end_date ? formatShortDate(goal.end_date) : '—'}
-            </Text>
-            <Text style={styles.metaDot}>·</Text>
-            <Text style={styles.metaText}>
-              Finished {finishedDate ? formatShortDate(finishedDate) : '—'}
-            </Text>
+              {schedule ? (
+                <View style={styles.scheduleRow}>
+                  <Ionicons name="calendar-outline" size={13} color="#9CA3AF" />
+                  <Text style={styles.metaText} numberOfLines={1}>
+                    {schedule}
+                  </Text>
+                </View>
+              ) : null}
+
+              {hasDates ? (
+                <View style={styles.datesRow}>
+                  <Text style={styles.metaText}>
+                    Started {goal.start_date ? formatShortDate(goal.start_date) : '—'}
+                  </Text>
+                  <Text style={styles.metaDot}>·</Text>
+                  <Text style={styles.metaText}>
+                    Ends {goal.end_date ? formatShortDate(goal.end_date) : '—'}
+                  </Text>
+                  {finishedDate ? (
+                    <>
+                      <Text style={styles.metaDot}>·</Text>
+                      <Text style={styles.metaText}>
+                        Finished {formatShortDate(finishedDate)}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
+            </TouchableOpacity>
           </View>
-        ) : null}
+        </View>
+
+        <TouchableOpacity
+          onPress={() => onToggle(goal.id)}
+          style={[styles.check, goal.completed && styles.checkDone]}
+          hitSlop={8}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: !!goal.completed }}
+        >
+          {goal.completed ? <Ionicons name="checkmark" size={16} color="#FFFFFF" /> : null}
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        onPress={() => onToggle(goal.id)}
-        style={[styles.check, goal.completed && styles.checkDone]}
-        hitSlop={8}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: !!goal.completed }}
-      >
-        {goal.completed ? <Ionicons name="checkmark" size={16} color="#FFFFFF" /> : null}
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-});
+    );
+  }
+);
 
 export default GoalItem;
 
@@ -187,20 +269,74 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 10,
+  },
+  titlePress: {
+    flex: 1,
+    minWidth: 0,
+  },
+  titleWithBadge: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
   title: {
     color: DARK,
     fontSize: 16,
     fontWeight: '700',
-    marginBottom: 8,
+    flexShrink: 1,
   },
   titleDone: {
     color: '#9CA3AF',
+  },
+  featuredInline: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  featuredInlineText: {
+    color: '#059669',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  featureBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureBtnOn: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  contentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  ringWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  metaCol: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   description: {
     color: '#6B7280',
     fontSize: 13,
     lineHeight: 18,
-    marginTop: -4,
     marginBottom: 10,
   },
   descriptionDone: {

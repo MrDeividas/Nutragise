@@ -47,7 +47,6 @@ module.exports = () => {
       stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
       revenueCatIosApiKey: process.env.REVENUECAT_IOS_API_KEY ?? '',
       revenueCatAndroidApiKey: process.env.REVENUECAT_ANDROID_API_KEY ?? '',
-      deepseekApiKey: process.env.DEEPSEEK_API_KEY ?? '',
     },
   };
 };

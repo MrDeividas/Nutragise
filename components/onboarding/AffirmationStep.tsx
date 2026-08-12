@@ -19,7 +19,7 @@ const AFFIRMATIONS = [
 export default function AffirmationStep({ value, onChange }: AffirmationStepProps) {
   const { theme } = useTheme();
   const [selectedAffirmation] = useState(AFFIRMATIONS[Math.floor(Math.random() * AFFIRMATIONS.length)]);
-  const signatureRef = useRef<any>();
+  const signatureRef = useRef<any>(null);
 
   const handleEnd = () => {
     onChange(true);

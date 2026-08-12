@@ -13,74 +13,17 @@ import { useTheme } from '../state/themeStore';
 import {
   stripTrailingChallengeWord,
   getChallengeDisplayTitle,
-  normalizeHeroRegistryKey,
-  normalizedChallengeHeroLookupKey,
 } from '../lib/challengeTitleUtils';
+import { getChallengeCardHeroSource } from '../lib/challengeHeroImages';
+import {
+  formatChallengeShortDate,
+  getChallengePeriodDays,
+} from '../lib/challengeDates';
 
 const { width } = Dimensions.get('window');
 const horizontalPadding = 24 * 2;
 const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
-
-/** Core-habit cards with full-bleed hero art */
-const CHALLENGE_HERO_IMAGES: Record<string, number> = {
-  Gym: require('../assets/challenge-cards/gym.png'),
-  Exercise: require('../assets/challenge-cards/exercise.png'),
-  Sleep: require('../assets/challenge-cards/sleep.png'),
-  'Goal Update': require('../assets/challenge-cards/goal_update.png'),
-  Microlearn: require('../assets/challenge-cards/microlearn.png'),
-  Focus: require('../assets/challenge-cards/focus.png'),
-  Reflection: require('../assets/challenge-cards/reflection.png'),
-  Water: require('../assets/challenge-cards/water.png'),
-  'Drinking Water': require('../assets/challenge-cards/water.png'),
-  'Cold Shower': require('../assets/challenge-cards/cold_shower.png'),
-  Meditation: require('../assets/challenge-cards/meditation.png'),
-  'Screen Time': require('../assets/challenge-cards/screen_time.png'),
-  '6AM Club': require('../assets/challenge-cards/six_am_club.png'),
-  '6am Club': require('../assets/challenge-cards/six_am_club.png'),
-  '6am club': require('../assets/challenge-cards/six_am_club.png'),
-  'No Junk Food': require('../assets/challenge-cards/no_junk_food.png'),
-  'Reduce Social Media': require('../assets/challenge-cards/reduce_social_media.png'),
-  'Daily Sweat': require('../assets/challenge-cards/daily_sweat.png'),
-  '100 Press Ups': require('../assets/challenge-cards/100_press_ups.png'),
-  '100 Squats': require('../assets/challenge-cards/100_squats.png'),
-  'Mobility Every Day': require('../assets/challenge-cards/mobility_every_day.png'),
-  'Deep Work': require('../assets/challenge-cards/deep_work.png'),
-  '15k Steps': require('../assets/challenge-cards/15k_steps.png'),
-  '15K Steps': require('../assets/challenge-cards/15k_steps.png'),
-  '15k Steps Daily': require('../assets/challenge-cards/15k_steps.png'),
-  '15K Steps Daily': require('../assets/challenge-cards/15k_steps.png'),
-  '10k Steps': require('../assets/challenge-cards/10k_steps.png'),
-  '10K Steps': require('../assets/challenge-cards/10k_steps.png'),
-  '10k Steps Daily': require('../assets/challenge-cards/10k_steps.png'),
-  '10K Steps Daily': require('../assets/challenge-cards/10k_steps.png'),
-  '10k Steps Free': require('../assets/challenge-cards/10k_steps.png'),
-  '10K Steps Free': require('../assets/challenge-cards/10k_steps.png'),
-  'Make Your Bed': require('../assets/challenge-cards/make_your_bed.png'),
-  Gratitude: require('../assets/challenge-cards/gratitude.png'),
-  'Go Outside': require('../assets/challenge-cards/go_outside.png'),
-  'Spread Positivity': require('../assets/challenge-cards/spread_positivity.png'),
-  'Accountability Starter': require('../assets/challenge-cards/accountability_starter.png'),
-  '7AM Wake Up': require('../assets/challenge-cards/7am_wake_up.png'),
-  '7am Wake Up': require('../assets/challenge-cards/7am_wake_up.png'),
-  'Journal 1 Thought': require('../assets/challenge-cards/journal_1_thought.png'),
-  'Gym Warrior Free': require('../assets/challenge-cards/gym_warrior_free.png'),
-  'Gym Warrior': require('../assets/challenge-cards/gym_warrior_free.png'),
-  'Free Gym Warrior': require('../assets/challenge-cards/gym_warrior_free.png'),
-  'Be Happy': require('../assets/challenge-cards/be_happy.png'),
-};
-
-/** Case-insensitive hero lookup; fixes "Gym Warriror" typo in DB titles. */
-const HERO_IMAGE_BY_NORMALIZED_KEY: Record<string, number> = (() => {
-  const m: Record<string, number> = {};
-  for (const [label, src] of Object.entries(CHALLENGE_HERO_IMAGES)) {
-    m[normalizeHeroRegistryKey(label)] = src;
-  }
-  return m;
-})();
-
-/** User-created challenges (create flow) always use this art instead of title-matched heroes. */
-const CUSTOM_USER_CHALLENGE_HERO = require('../assets/challenge-cards/custom_challenge.png');
 
 const CORE_HABIT_TITLES = new Set([
   'Gym',
@@ -100,20 +43,20 @@ function isCoreHabitTitle(title: string): boolean {
   return CORE_HABIT_TITLES.has(stripTrailingChallengeWord(title));
 }
 
-/** e.g. "23 Mar" */
-function formatShortDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-
 export default function ChallengeCard({ challenge, onPress, isJoined, isCompleted }: ChallengeCardProps) {
   const { theme, isDark } = useTheme();
 
   const isCoreHabit = isCoreHabitTitle(challenge.title);
-  const heroImageSource = challenge.is_user_created
-    ? CUSTOM_USER_CHALLENGE_HERO
-    : HERO_IMAGE_BY_NORMALIZED_KEY[normalizedChallengeHeroLookupKey(challenge.title)];
+  const curatedHero = getChallengeCardHeroSource(
+    challenge.title,
+    challenge.is_user_created && !challenge.image_url
+  );
+  const heroImageSource =
+    challenge.is_user_created && challenge.image_url
+      ? { uri: challenge.image_url }
+      : curatedHero;
+  const heroContentPosition =
+    challenge.is_user_created && challenge.image_url ? 'center' : 'top center';
 
   const getCategoryColor = (category: string) => {
     switch (category.toLowerCase()) {
@@ -137,32 +80,21 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
   };
 
   const formatDuration = (weeks: number) => {
-    // Calculate actual duration in days
-    const startDate = new Date(challenge.start_date);
-    const endDate = new Date(challenge.end_date);
-    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    
-    // If it's a same-day challenge
-    if (startDate.toDateString() === endDate.toDateString()) {
-      return '1 day';
-    }
-    
-    if (diffDays < 7) {
-      return `${diffDays + 1} days`;
-    }
+    const spanDays = getChallengePeriodDays(challenge.start_date, challenge.end_date);
 
+    if (spanDays === 1) return '1 day';
+    if (spanDays < 7) return `${spanDays} days`;
     if (weeks === 1) return '1 week';
     return `${weeks} weeks`;
   };
 
   /** e.g. "23 Mar - 30 Mar • 1 week" */
-  const scheduleLine = `${formatShortDate(challenge.start_date)} - ${formatShortDate(challenge.end_date)} • ${formatDuration(challenge.duration_weeks)}`;
+  const scheduleLine = `${formatChallengeShortDate(challenge.start_date)} - ${formatChallengeShortDate(challenge.end_date)} • ${formatDuration(challenge.duration_weeks)}`;
 
   const categoryColor = getCategoryColor(challenge.category);
-  const categoryLabel = challenge.visibility === 'private'
-    ? 'Private'
-    : challenge.category.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const categoryLabel = (challenge.category || 'fitness')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
   
   // For core habit challenges, use dark grey color (matching ActionScreen core habit cards)
   // For private challenges, use dark purple, otherwise use category color
@@ -190,7 +122,7 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
             source={heroImageSource}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
-            contentPosition="top center"
+            contentPosition={heroContentPosition}
             transition={0}
           />
         </View>
@@ -200,32 +132,30 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Category on top row; Everyone / Member stacked below */}
+        {/* Category + Private / Everyone (or Member) */}
         <View style={styles.topPillsColumn} pointerEvents="none">
           <View
             style={[
               styles.categoryPill,
               {
-                borderColor: challenge.visibility === 'private' ? 'rgba(75, 0, 130, 0.35)' : `${categoryColor}55`,
-                backgroundColor: challenge.visibility === 'private'
-                  ? 'rgba(75, 0, 130, 0.08)'
-                  : 'rgba(255, 255, 255, 0.96)',
+                borderColor: `${categoryColor}55`,
+                backgroundColor: 'rgba(255, 255, 255, 0.96)',
               },
             ]}
           >
             <Text
-              style={[
-                styles.pillLabel,
-                styles.categoryPillLabel,
-                { color: challenge.visibility === 'private' ? '#4B0082' : theme.textPrimary },
-              ]}
+              style={[styles.pillLabel, styles.categoryPillLabel, { color: theme.textPrimary }]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
               {categoryLabel}
             </Text>
           </View>
-          {challenge.is_pro_only ? (
+          {challenge.visibility === 'private' ? (
+            <View style={styles.privatePill}>
+              <Text style={[styles.pillLabel, styles.privatePillText]}>Private</Text>
+            </View>
+          ) : challenge.is_pro_only ? (
             <View style={styles.memberPill}>
               <Text style={[styles.pillLabel, styles.memberPillText]}>Member</Text>
             </View>
@@ -394,6 +324,23 @@ const styles = StyleSheet.create({
   },
   everyonePillText: {
     color: '#15803D',
+  },
+  privatePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(75, 0, 130, 0.35)',
+    backgroundColor: 'rgba(75, 0, 130, 0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  privatePillText: {
+    color: '#4B0082',
   },
   memberPill: {
     alignSelf: 'flex-start',

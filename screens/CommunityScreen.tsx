@@ -561,69 +561,72 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
 
   const renderUser = useCallback(({ item }: { item: Profile }) => {
     const isFollowingUser = followingStatus.get(item.id) || false;
-    
+    const softBg = `${theme.textPrimary}14`;
+
     return (
       <TouchableOpacity
-        style={[styles.userItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
+        style={[styles.userItem, styles.searchResultCard]}
         onPress={() => openUserProfile(item)}
-        activeOpacity={0.7}
+        activeOpacity={0.75}
       >
-        {/* Profile Picture Section */}
         <View style={styles.profilePictureSection}>
           {item.avatar_url ? (
-            <Image source={{ uri: item.avatar_url }} style={styles.profilePicture} />
+            <Image source={{ uri: item.avatar_url }} style={styles.searchAvatar} />
           ) : (
-            <View style={[styles.profilePicturePlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-              <Text style={[styles.profilePictureInitial, { color: 'white' }]}>
+            <View style={[styles.searchAvatarPlaceholder, { backgroundColor: softBg }]}>
+              <Text style={[styles.searchAvatarInitial, { color: theme.textPrimary }]}>
                 {item.username?.charAt(0)?.toUpperCase() || 'U'}
               </Text>
             </View>
           )}
         </View>
-        
-        {/* User Info Section */}
-        <View style={styles.profileInfoSection}>
-          <View style={styles.usernameRow}>
-            <Text style={[styles.profileDisplayName, { color: theme.textPrimary }]}>
-              @{item.username}
+
+        <View style={styles.searchUserInfo}>
+          <Text style={[styles.searchUserName, { color: theme.textPrimary }]} numberOfLines={1}>
+            {item.display_name || item.username}
+          </Text>
+          <Text style={[styles.searchUserHandle, { color: theme.textSecondary }]} numberOfLines={1}>
+            @{item.username}
+          </Text>
+          {!!item.bio && (
+            <Text style={[styles.searchUserBio, { color: theme.textTertiary }]} numberOfLines={1}>
+              {item.bio}
             </Text>
-            {user && user.id !== item.id && (
-              <TouchableOpacity
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  handleFollow(item.id);
-                }}
-                disabled={followingUsers.has(item.id)}
-                style={[
-                  styles.smallFollowButton, 
-                  { 
-                    backgroundColor: (followingStatus.get(item.id) || false) ? 'rgba(128, 128, 128, 0.3)' : theme.primary,
-                    opacity: followingUsers.has(item.id) ? 0.7 : 1,
-                  }
-                ]}
-              >
-                {followingUsers.has(item.id) ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text style={styles.smallFollowButtonText}>
-                    {(followingStatus.get(item.id) || false) ? 'Following' : 'Follow'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-          <Text style={[styles.profileLocation, { color: theme.textSecondary }]}>
-            {item.bio || 'No bio'}
-          </Text>
+          )}
         </View>
-        
-        {/* Followers Section */}
-        <View style={styles.profileFollowersSection}>
-          <Text style={[styles.profileFollowers, { color: theme.textSecondary }]}>
-            Followers
-          </Text>
-          <Text style={[styles.profileFollowersCount, { color: theme.textPrimary }]}>
-            {followerCounts.get(item.id) || 0}
+
+        <View style={styles.searchUserMeta}>
+          {user && user.id !== item.id && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                handleFollow(item.id);
+              }}
+              disabled={followingUsers.has(item.id)}
+              style={[
+                styles.searchFollowBtn,
+                isFollowingUser
+                  ? styles.searchFollowBtnGhost
+                  : { backgroundColor: theme.primary },
+                followingUsers.has(item.id) && { opacity: 0.7 },
+              ]}
+            >
+              {followingUsers.has(item.id) ? (
+                <ActivityIndicator size="small" color={isFollowingUser ? theme.textPrimary : '#fff'} />
+              ) : (
+                <Text
+                  style={[
+                    styles.searchFollowBtnText,
+                    { color: isFollowingUser ? theme.textPrimary : '#fff' },
+                  ]}
+                >
+                  {isFollowingUser ? 'Following' : 'Follow'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.searchFollowerCount, { color: theme.textTertiary }]}>
+            {followerCounts.get(item.id) || 0} followers
           </Text>
         </View>
       </TouchableOpacity>
@@ -631,23 +634,15 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
   }, [followingStatus, followerCounts, theme, handleFollow, followingUsers, user, openUserProfile]);
 
   const renderGoal = ({ item }: { item: any }) => {
+    const softBg = `${theme.textPrimary}14`;
     return (
-      <TouchableOpacity
-        style={[styles.searchGoalItem, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}
-        onPress={() => {
-          // Navigate to goal detail - you'll need to add this navigation
-          // navigation.navigate('GoalDetail', {
-          //   goalId: item.id,
-          // });
-        }}
-      >
-        {/* User Info Section */}
+      <TouchableOpacity style={[styles.searchGoalItem, styles.searchResultCard]} activeOpacity={0.75}>
         <View style={styles.searchGoalUserSection}>
           {item.profiles?.avatar_url ? (
             <Image source={{ uri: item.profiles.avatar_url }} style={styles.searchGoalUserAvatar} />
           ) : (
-            <View style={[styles.searchGoalUserAvatarPlaceholder, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-              <Text style={[styles.searchGoalUserAvatarInitial, { color: 'white' }]}>
+            <View style={[styles.searchGoalUserAvatarPlaceholder, { backgroundColor: softBg }]}>
+              <Text style={[styles.searchGoalUserAvatarInitial, { color: theme.textPrimary }]}>
                 {item.profiles?.username?.charAt(0)?.toUpperCase() || 'U'}
               </Text>
             </View>
@@ -662,26 +657,23 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
           </View>
         </View>
 
-        {/* Goal Content Section */}
-        <View style={styles.searchGoalContentSection}>
-          <Text style={[styles.searchGoalTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-            {item.title}
+        <Text style={[styles.searchGoalTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        {item.description ? (
+          <Text style={[styles.searchGoalDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+            {item.description}
           </Text>
-          {item.description && (
-            <Text style={[styles.searchGoalDescription, { color: theme.textSecondary }]} numberOfLines={3}>
-              {item.description}
-            </Text>
-          )}
-          <View style={styles.searchGoalMetaSection}>
-            <View style={[styles.searchGoalCategory, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}>
-              <Text style={[styles.searchGoalCategoryText, { color: theme.textSecondary }]}>
-                {item.category || 'Default'}
-              </Text>
-            </View>
-            <Text style={[styles.searchGoalDate, { color: theme.textTertiary }]}>
-              {formatLastUpdate(item.last_updated_at, item.created_at)}
+        ) : null}
+        <View style={styles.searchGoalMetaSection}>
+          <View style={[styles.searchGoalCategory, { backgroundColor: '#ECFDF5' }]}>
+            <Text style={[styles.searchGoalCategoryText, { color: theme.primaryDark || '#059669' }]}>
+              {item.category || 'Goal'}
             </Text>
           </View>
+          <Text style={[styles.searchGoalDate, { color: theme.textTertiary }]}>
+            {formatLastUpdate(item.last_updated_at, item.created_at)}
+          </Text>
         </View>
       </TouchableOpacity>
     );
@@ -689,30 +681,32 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
 
   const renderEmptyUsers = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="search-outline" size={64} color={theme.textSecondary} />
+      <View style={styles.emptyIconWrap}>
+        <Ionicons name="people-outline" size={28} color={theme.textTertiary} />
+      </View>
       <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-        {searchQuery ? 'No users found' : 'Discover People'}
+        {searchQuery ? 'No people found' : 'Discover people'}
       </Text>
       <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-        {searchQuery 
-          ? 'Try a different search term' 
-          : 'Find and follow people to see their progress'
-        }
+        {searchQuery
+          ? 'Try a different search term'
+          : 'Find and follow people to see their progress'}
       </Text>
     </View>
   );
 
   const renderEmptyGoals = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="flag-outline" size={64} color={theme.textSecondary} />
+      <View style={styles.emptyIconWrap}>
+        <Ionicons name="flag-outline" size={28} color={theme.textTertiary} />
+      </View>
       <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-        {searchQuery ? 'No goals found' : 'Discover Goals'}
+        {searchQuery ? 'No goals found' : 'Discover goals'}
       </Text>
       <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-        {searchQuery 
-          ? 'Try a different search term' 
-          : 'Find inspiring goals from other users'
-        }
+        {searchQuery
+          ? 'Try a different search term'
+          : 'Find inspiring goals from other users'}
       </Text>
     </View>
   );
@@ -1452,120 +1446,90 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
       <Modal
         visible={showSearchModal}
         transparent={false}
+        animationType="slide"
         statusBarTranslucent={true}
         onRequestClose={() => setShowSearchModal(false)}
       >
-        <View style={[styles.container, { backgroundColor: theme.background }]}>
-          <View style={[styles.header, { paddingTop: 60 }]}>
-            <View style={styles.searchModalHeaderContainer}>
-              <TouchableOpacity 
-                onPress={() => setShowSearchModal(false)}
-                style={styles.searchModalBackButton}
-              >
-                <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-              </TouchableOpacity>
-              
-              <View style={[styles.searchModalInputContainer, { backgroundColor: 'rgba(128, 128, 128, 0.15)' }]}>
-                <Ionicons name="search-outline" size={20} color={theme.textSecondary} style={styles.searchIcon} />
-                <TextInput
-                  style={[styles.searchInput, { color: theme.textPrimary }]}
-                  placeholder="Search users, goals and competitions..."
-                  placeholderTextColor={theme.textTertiary}
-                  value={searchQuery}
-                  onChangeText={handleSearchInput}
-                  onSubmitEditing={() => handleSearch(searchQuery)}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchModalClearButton}>
-                    <Ionicons name="close-circle-outline" size={20} color={theme.textSecondary} />
-                  </TouchableOpacity>
-                )}
-              </View>
-              
-              <TouchableOpacity 
-                style={styles.searchModalSearchButton}
-                onPress={() => {
-                  if (searchQuery.trim().length > 0) {
-                    handleSearch(searchQuery);
-                  }
-                }}
-              >
-                <Text style={[styles.searchButtonText, { color: searchQuery.length > 0 ? '#EA580C' : theme.textSecondary }]}>Search</Text>
-              </TouchableOpacity>
+        <SafeAreaView style={[styles.searchModalRoot, { backgroundColor: '#FCFAF9' }]} edges={['top', 'left', 'right']}>
+          <View style={styles.searchModalHeaderContainer}>
+            <TouchableOpacity
+              onPress={() => setShowSearchModal(false)}
+              style={styles.searchModalBackCircle}
+              hitSlop={12}
+            >
+              <Ionicons name="chevron-back" size={22} color={theme.textPrimary} />
+            </TouchableOpacity>
+
+            <View style={styles.searchModalInputContainer}>
+              <Ionicons name="search-outline" size={18} color={theme.textTertiary} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.textPrimary }]}
+                placeholder="Search people & goals"
+                placeholderTextColor={theme.textTertiary}
+                value={searchQuery}
+                onChangeText={handleSearchInput}
+                onSubmitEditing={() => handleSearch(searchQuery)}
+                autoFocus
+                returnKeyType="search"
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchModalClearButton} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
           {searchQuery.length > 0 ? (
             <>
-              {/* Search Type Tabs */}
               <View style={styles.searchTypeTabs}>
-                <TouchableOpacity 
-                  style={[
-                    styles.searchTypeTab, 
-                    searchType === 'top' && styles.searchTypeTabActive
-                  ]}
-                  onPress={() => {
-                    setSearchType('top');
-                    if (searchQuery.trim().length > 0) {
-                      setPendingSearchQuery(searchQuery);
-                    }
-                  }}
-                >
-                  <Text style={[
-                    styles.searchTypeTabText, 
-                    { color: searchType === 'top' ? '#EA580C' : theme.textSecondary }
-                  ]}>
-                    Top
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.searchTypeTab, 
-                    searchType === 'users' && styles.searchTypeTabActive
-                  ]}
-                  onPress={() => {
-                    setSearchType('users');
-                    if (searchQuery.trim().length > 0) {
-                      setPendingSearchQuery(searchQuery);
-                    }
-                  }}
-                >
-                  <Text style={[
-                    styles.searchTypeTabText, 
-                    { color: searchType === 'users' ? '#EA580C' : theme.textSecondary }
-                  ]}>
-                    Users
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.searchTypeTab, 
-                    searchType === 'goals' && styles.searchTypeTabActive
-                  ]}
-                  onPress={() => {
-                    setSearchType('goals');
-                    if (searchQuery.trim().length > 0) {
-                      setPendingSearchQuery(searchQuery);
-                    }
-                  }}
-                >
-                  <Text style={[
-                    styles.searchTypeTabText, 
-                    { color: searchType === 'goals' ? '#EA580C' : theme.textSecondary }
-                  ]}>
-                    Goals
-                  </Text>
-                </TouchableOpacity>
+                {([
+                  { key: 'top', label: 'Top' },
+                  { key: 'users', label: 'People' },
+                  { key: 'goals', label: 'Goals' },
+                ] as const).map((tab) => {
+                  const active = searchType === tab.key;
+                  return (
+                    <TouchableOpacity
+                      key={tab.key}
+                      style={[
+                        styles.searchTypeTab,
+                        active && styles.searchTypeTabActive,
+                      ]}
+                      onPress={() => {
+                        setSearchType(tab.key);
+                        if (searchQuery.trim().length > 0) {
+                          setPendingSearchQuery(searchQuery);
+                        }
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.searchTypeTabText,
+                          { color: active ? '#059669' : theme.textSecondary },
+                        ]}
+                      >
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              {/* Search Results */}
-              {searchType === 'users' ? (
+              {isSearching ? (
+                <View style={styles.searchLoading}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                </View>
+              ) : searchType === 'users' ? (
                 <FlatList
                   data={searchResults}
                   renderItem={renderUser}
                   keyExtractor={(item) => item.id}
                   style={styles.searchResultsList}
+                  contentContainerStyle={styles.searchResultsContent}
                   showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
                   ListEmptyComponent={renderEmptyUsers}
                 />
               ) : searchType === 'goals' ? (
@@ -1574,42 +1538,42 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
                   renderItem={renderGoal}
                   keyExtractor={(item) => item.id}
                   style={styles.searchResultsList}
+                  contentContainerStyle={styles.searchResultsContent}
                   showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
                   ListEmptyComponent={renderEmptyGoals}
                 />
               ) : (
-                // Top category - show both users and goals
                 <FlatList
                   data={[
-                    ...searchResults.map(user => ({ ...user, type: 'user' })),
-                    ...goalSearchResults.map(goal => ({ ...goal, type: 'goal' }))
+                    ...searchResults.map((u) => ({ ...u, type: 'user' as const })),
+                    ...goalSearchResults.map((g) => ({ ...g, type: 'goal' as const })),
                   ]}
                   renderItem={({ item }) => {
                     if (item.type === 'user') {
-                      const userItem = { ...item };
-                      delete userItem.type;
-                      return renderUser({ item: userItem });
-                    } else if (item.type === 'goal') {
-                      const goalItem = { ...item };
-                      delete goalItem.type;
-                      return renderGoal({ item: goalItem });
+                      const { type: _t, ...userItem } = item;
+                      return renderUser({ item: userItem as Profile });
                     }
-                    return null;
+                    const { type: _t, ...goalItem } = item;
+                    return renderGoal({ item: goalItem });
                   }}
                   keyExtractor={(item) => `${item.type}-${item.id}`}
                   style={styles.searchResultsList}
+                  contentContainerStyle={styles.searchResultsContent}
                   showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
                   ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
-                      <Ionicons name="search-outline" size={64} color={theme.textSecondary} />
+                      <View style={styles.emptyIconWrap}>
+                        <Ionicons name="search-outline" size={28} color={theme.textTertiary} />
+                      </View>
                       <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-                        {searchQuery ? 'No results found' : 'Search for users and goals'}
+                        {hasSearched ? 'No results found' : 'Search for people and goals'}
                       </Text>
                       <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-                        {searchQuery 
-                          ? 'Try a different search term' 
-                          : 'Find people and inspiring goals'
-                        }
+                        {hasSearched
+                          ? 'Try a different search term'
+                          : 'Find people and inspiring goals'}
                       </Text>
                     </View>
                   )}
@@ -1617,121 +1581,112 @@ function CommunityScreen({ navigation }: CommunityScreenProps) {
               )}
             </>
           ) : (
-            <View style={styles.searchContent}>
-              {/* Search History */}
+            <ScrollView
+              style={styles.searchContent}
+              contentContainerStyle={styles.searchIdleContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {searchHistory.length > 0 && (
                 <View style={styles.searchHistorySection}>
-                  <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                    Recent Searches
+                  <Text style={[styles.searchSectionLabel, { color: theme.textSecondary }]}>
+                    Recent
                   </Text>
-                  {searchHistory.slice(0, 5).map((query, index) => (
-                    <TouchableOpacity 
-                      key={index} 
-                      style={styles.historyItemCompact}
-                      onPress={() => handleSearchHistoryItemPress(query)}
-                    >
-                      <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
-                      <Text style={[styles.historyText, { color: theme.textPrimary }]} numberOfLines={1}>
-                        {query}
-                      </Text>
-                      <TouchableOpacity 
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          removeFromSearchHistory(query);
-                        }}
+                  <View style={styles.searchHistoryCard}>
+                    {searchHistory.slice(0, 5).map((query, index) => (
+                      <TouchableOpacity
+                        key={`${query}-${index}`}
+                        style={[
+                          styles.historyItemCompact,
+                          index < Math.min(searchHistory.length, 5) - 1 && styles.historyItemDivider,
+                        ]}
+                        onPress={() => handleSearchHistoryItemPress(query)}
+                        activeOpacity={0.7}
                       >
-                        <Ionicons name="close" size={16} color={theme.textSecondary} />
+                        <View style={styles.historyIconWrap}>
+                          <Ionicons name="time-outline" size={16} color={theme.textSecondary} />
+                        </View>
+                        <Text style={[styles.historyText, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {query}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            removeFromSearchHistory(query);
+                          }}
+                          hitSlop={10}
+                        >
+                          <Ionicons name="close" size={16} color={theme.textTertiary} />
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))}
-                  {searchHistory.length > 5 && (
-                    <TouchableOpacity 
-                      style={styles.seeMoreButton}
-                      onPress={() => {
-                        // TODO: Implement see more functionality
-                      }}
-                    >
-                      <Text style={[styles.seeMoreText, { color: theme.textSecondary }]}>
-                        See more
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                    ))}
+                  </View>
                 </View>
               )}
-              
-              {/* Suggested Users */}
+
               {youMayLikeUsers.length > 0 && (
                 <View style={styles.suggestedUsersSection}>
-                  <View style={styles.suggestedUsersHeader}>
-                    <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-                      Suggested for you
-                    </Text>
-                    <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
-                      People you might want to follow
-                    </Text>
-                  </View>
-                  
-                  <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.suggestedUsersList}
-                  >
-                    {youMayLikeUsers.map((user) => (
-                      <View key={user.id} style={[styles.suggestedUserCard, { backgroundColor: 'rgba(128, 128, 128, 0.1)' }]}>
+                  <Text style={[styles.searchSectionLabel, { color: theme.textSecondary }]}>
+                    Suggested for you
+                  </Text>
+                  <Text style={[styles.sectionSubtitle, { color: theme.textTertiary }]}>
+                    People you might want to follow
+                  </Text>
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {youMayLikeUsers.slice(0, 8).map((suggested) => (
+                      <TouchableOpacity
+                        key={suggested.id}
+                        style={[styles.userItem, styles.searchResultCard]}
+                        onPress={() => openUserProfile(suggested)}
+                        activeOpacity={0.75}
+                      >
+                        {suggested.avatar_url ? (
+                          <Image source={{ uri: suggested.avatar_url }} style={styles.searchAvatar} />
+                        ) : (
+                          <View style={[styles.searchAvatarPlaceholder, { backgroundColor: `${theme.textPrimary}14` }]}>
+                            <Text style={[styles.searchAvatarInitial, { color: theme.textPrimary }]}>
+                              {suggested.username?.charAt(0)?.toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.searchUserInfo}>
+                          <Text style={[styles.searchUserName, { color: theme.textPrimary }]} numberOfLines={1}>
+                            {suggested.display_name || suggested.username}
+                          </Text>
+                          <Text style={[styles.searchUserHandle, { color: theme.textSecondary }]} numberOfLines={1}>
+                            @{suggested.username}
+                          </Text>
+                        </View>
                         <TouchableOpacity
-                          style={styles.suggestedUserContent}
-                          onPress={() => openUserProfile(user)}
-                          activeOpacity={0.7}
+                          style={[
+                            styles.searchFollowBtn,
+                            followingStatus.get(suggested.id)
+                              ? styles.searchFollowBtnGhost
+                              : { backgroundColor: theme.primary },
+                          ]}
+                          onPress={() => handleFollow(suggested.id)}
                         >
-                          {/* Profile Picture */}
-                          <View style={styles.suggestedUserAvatar}>
-                            {user.avatar_url ? (
-                              <Image source={{ uri: user.avatar_url }} style={styles.suggestedUserImage} />
-                            ) : (
-                              <View style={[styles.suggestedUserPlaceholder, { backgroundColor: theme.primary }]}>
-                                <Text style={styles.suggestedUserInitial}>
-                                  {user.username?.charAt(0)?.toUpperCase() || 'U'}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                          
-                          {/* User Info */}
-                          <View style={styles.suggestedUserInfo}>
-                            <Text style={[styles.suggestedUserName, { color: theme.textPrimary }]}>
-                              {user.display_name || user.username}
-                            </Text>
-                            <Text style={[styles.suggestedUserHandle, { color: theme.textSecondary }]}>
-                              @{user.username}
-                            </Text>
-                            {user.bio && (
-                              <Text style={[styles.suggestedUserBio, { color: theme.textSecondary }]} numberOfLines={2}>
-                                {user.bio}
-                              </Text>
-                            )}
-                          </View>
-                          
-                          {/* Follow Button */}
-                          <TouchableOpacity
+                          <Text
                             style={[
-                              styles.suggestedFollowButton,
-                              { backgroundColor: theme.primary }
+                              styles.searchFollowBtnText,
+                              {
+                                color: followingStatus.get(suggested.id)
+                                  ? theme.textPrimary
+                                  : '#fff',
+                              },
                             ]}
-                            onPress={() => handleFollow(user.id)}
                           >
-                            <Text style={styles.suggestedFollowButtonText}>
-                              {followingStatus.get(user.id) ? 'Following' : 'Follow'}
-                            </Text>
-                          </TouchableOpacity>
+                            {followingStatus.get(suggested.id) ? 'Following' : 'Follow'}
+                          </Text>
                         </TouchableOpacity>
-                      </View>
+                      </TouchableOpacity>
                     ))}
-                  </ScrollView>
+                  </View>
                 </View>
               )}
-            </View>
+            </ScrollView>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
 
 
@@ -2915,8 +2870,6 @@ const styles = StyleSheet.create({
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    paddingVertical: 0,
     marginBottom: 8,
   },
   avatar: {
@@ -2937,12 +2890,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+    paddingTop: 48,
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 14,
@@ -3042,282 +2996,230 @@ const styles = StyleSheet.create({
     padding: 8,
     alignItems: 'center',
   },
-  searchModalOverlay: {
+  searchModalRoot: {
     flex: 1,
-    backgroundColor: 'rgb(20, 19, 19)',
-  },
-  searchModal: {
-    flex: 1,
-  },
-      searchModalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 24,
-    },
-  searchModalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
   },
   searchModalHeaderContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 2,
-    gap: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    gap: 10,
   },
-  searchModalBackButton: {
-    padding: 4,
-    marginLeft: -4,
+  searchModalBackCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(31, 41, 55, 0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchModalInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 8,
-    borderRadius: 12,
-    marginHorizontal: 0,
-  },
-  searchModalSearchButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    borderRadius: 14,
   },
-
-
   searchModalClearButton: {
-    marginLeft: 8,
+    marginLeft: 6,
   },
   searchResultsList: {
     flex: 1,
-    paddingHorizontal: 24,
   },
-  backButton: {
-    padding: 8,
-    marginRight: 12,
-    marginLeft: 24,
+  searchResultsContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    flexGrow: 1,
   },
-  searchButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginLeft: 12,
-  },
-  searchButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14,
+  searchLoading: {
+    paddingTop: 40,
+    alignItems: 'center',
   },
   searchContent: {
     flex: 1,
-    paddingHorizontal: 24,
+  },
+  searchIdleContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
   },
   searchHistorySection: {
-    marginBottom: 24,
-    paddingTop: 6,
+    marginBottom: 22,
+    paddingTop: 4,
   },
-
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
+  searchSectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginBottom: 8,
+  },
+  searchHistoryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
+    overflow: 'hidden',
   },
   historyItemCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    marginBottom: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
-  historyText: {
-    flex: 1,
-    fontSize: 14,
-    marginLeft: 12,
+  historyItemDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#EEF0F3',
   },
-  suggestedUsersSection: {
-    marginTop: 24,
-    marginBottom: 16,
-  },
-  suggestedUsersHeader: {
-    marginBottom: 16,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 4,
-    opacity: 0.8,
-  },
-  suggestedUsersList: {
-    paddingHorizontal: 4,
-  },
-  suggestedUserCard: {
-    width: 280,
-    borderRadius: 16,
-    marginRight: 12,
-    overflow: 'hidden',
-  },
-  suggestedUserContent: {
-    padding: 16,
-  },
-  suggestedUserAvatar: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  suggestedUserImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  suggestedUserPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  historyIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(31, 41, 55, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  suggestedUserInitial: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  historyText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    marginLeft: 10,
   },
-  suggestedUserInfo: {
-    alignItems: 'center',
+  suggestedUsersSection: {
     marginBottom: 16,
   },
-  suggestedUserName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  suggestedUserHandle: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  suggestedUserBio: {
+  sectionSubtitle: {
     fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
-    opacity: 0.8,
+    fontWeight: '500',
+    marginTop: -2,
+    marginBottom: 2,
   },
-  suggestedFollowButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+  searchResultCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
+    borderRadius: 16,
+    padding: 12,
+  },
+  searchAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+  },
+  searchAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchAvatarInitial: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  searchUserInfo: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  searchUserName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  searchUserHandle: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  searchUserBio: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  searchUserMeta: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  searchFollowBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    minWidth: 84,
     alignItems: 'center',
   },
-  suggestedFollowButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+  searchFollowBtnGhost: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
   },
-  // Gradient styles for search modal
-  topLeftGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '50%',
-    height: '50%',
-    borderRadius: 0,
-    zIndex: -1,
-    pointerEvents: 'none',
+  searchFollowBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  topRightGlow: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: '50%',
-    height: '50%',
-    borderRadius: 0,
-    zIndex: -1,
-    pointerEvents: 'none',
+  searchFollowerCount: {
+    fontSize: 11,
+    fontWeight: '500',
   },
-  bottomLeftGlow: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    width: '50%',
-    height: '50%',
-    borderRadius: 0,
-    zIndex: -1,
-    pointerEvents: 'none',
-  },
-  bottomRightGlow: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: '50%',
-    height: '50%',
-    borderRadius: 0,
-    zIndex: -1,
-    pointerEvents: 'none',
-  },
-  bottomSideGlow: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '30%',
-    borderRadius: 0,
-    zIndex: -1,
-    pointerEvents: 'none',
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: 'rgba(31, 41, 55, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   // Goal search styles
   searchGoalItem: {
-    flexDirection: 'row',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
+    marginBottom: 10,
   },
   searchGoalUserSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   searchGoalUserAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    marginRight: 10,
   },
   searchGoalUserAvatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    marginRight: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   searchGoalUserAvatarInitial: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   searchGoalUserInfo: {
     flex: 1,
   },
   searchGoalUserName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 1,
   },
   searchGoalUserUsername: {
-    fontSize: 14,
-  },
-  searchGoalContentSection: {
-    flex: 1,
+    fontSize: 12,
   },
   searchGoalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
   },
   searchGoalDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 10,
   },
   searchGoalMetaSection: {
     flexDirection: 'row',
@@ -3327,55 +3229,37 @@ const styles = StyleSheet.create({
   searchGoalCategory: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
   },
   searchGoalCategoryText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '700',
   },
   searchGoalDate: {
-    fontSize: 12,
+    fontSize: 11,
   },
-  // Search type tabs styles
   searchTypeTabs: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingTop: 2,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
   },
   searchTypeTab: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 9,
     alignItems: 'center',
-    marginHorizontal: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F3',
   },
   searchTypeTabActive: {
-    // No background, just color change
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
   },
   searchTypeTabText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  seeMoreButton: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  seeMoreText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  // Top search styles
-  topSection: {
-    marginBottom: 24,
-    paddingHorizontal: 24,
-  },
-  topUsersList: {
-    marginTop: 8,
-    paddingLeft: 0,
-  },
-  topGoalsList: {
-    marginTop: 8,
-    paddingLeft: 0,
+    fontSize: 13,
+    fontWeight: '700',
   },
   userInfoText: {
     flex: 1,

@@ -1,7 +1,8 @@
 import { analyticsService } from './analyticsService';
 import { dailyHabitsService } from './dailyHabitsService';
 import { DailyHabits } from '../types/database';
-import { config, getApiKey, isApiKeyConfigured } from './config';
+import { config } from './config';
+import { env } from './env';
 import { supabase } from './supabase';
 
 interface AIResponse {
@@ -49,8 +50,6 @@ interface UserContext {
 type ApiMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 class AIService {
-  private baseUrl: string = config.deepseek.baseUrl;
-
   /**
    * Generate personalized AI response based on user data
    */
@@ -301,37 +300,46 @@ ${correlationSection}`;
   }
 
   /**
-   * Call DeepSeek API with proper multi-turn messages
+   * Call DeepSeek via authenticated Supabase Edge Function (key never leaves the server).
    */
   private async callDeepSeekAPI(messages: ApiMessage[]): Promise<string> {
-    const apiKey = getApiKey();
-
     try {
-      const response = await fetch(this.baseUrl, {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('Please sign in again to use Insights.');
+      }
+
+      const supabaseUrl = (env.supabaseUrl || '').replace(/\/$/, '');
+      if (!supabaseUrl) {
+        throw new Error('Supabase URL is not configured.');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/deepseek-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          model: config.deepseek.model,
           messages,
           max_tokens: config.deepseek.maxTokens,
           temperature: config.deepseek.temperature,
-          frequency_penalty: config.deepseek.frequencyPenalty,
-          presence_penalty: config.deepseek.presencePenalty,
-        })
+        }),
       });
 
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`API request failed: ${response.status}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+        throw new Error(
+          data?.error || `Insights request failed: ${response.status}`
+        );
       }
 
-      const data = await response.json();
-      return data.choices[0]?.message?.content || '';
+      return typeof data?.content === 'string' ? data.content : '';
     } catch (error) {
-      console.error('DeepSeek API error:', error);
+      console.error('DeepSeek proxy error:', error);
       throw error;
     }
   }
@@ -416,15 +424,7 @@ ${correlationSection}`;
   /**
    * Fallback response when AI is unavailable — no invented personal stats
    */
-  private getFallbackResponse(userMessage: string): AIResponse {
-    if (!isApiKeyConfigured()) {
-      return {
-        response:
-          "Neutro isn't connected yet — add your DeepSeek API key to .env (DEEPSEEK_API_KEY), then restart the app.",
-        suggestions: [],
-      };
-    }
-
+  private getFallbackResponse(_userMessage: string): AIResponse {
     return {
       response:
         "I couldn't reach the analysis service just now, so I won't guess from your data. Please try again in a moment.",

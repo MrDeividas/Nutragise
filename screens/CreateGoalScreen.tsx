@@ -72,7 +72,6 @@ export default function CreateGoalScreen() {
   const [datePickerMode, setDatePickerMode] = useState<'start' | 'end'>('start');
 
   const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const scrollFocusedInputIntoView = (
     event: NativeSyntheticEvent<TextInputFocusEventData>
@@ -181,13 +180,6 @@ export default function CreateGoalScreen() {
           keyboardDismissMode="interactive"
           automaticallyAdjustKeyboardInsets
         >
-            <View style={styles.hero}>
-              <Text style={styles.heroTitle}>Create a goal</Text>
-              <Text style={styles.heroSupport}>
-                Set what you’re working toward, when you’ll show up, and how you’ll measure progress.
-              </Text>
-            </View>
-
             <Text style={styles.sectionLabel}>Basics</Text>
             <View style={styles.card}>
               <Text style={styles.fieldLabel}>Goal title *</Text>
@@ -226,11 +218,10 @@ export default function CreateGoalScreen() {
 
             <Text style={styles.sectionLabel}>Schedule</Text>
             <View style={styles.card}>
-              <View style={styles.labelRow}>
-                <Text style={[styles.fieldLabel, { marginBottom: 0 }]}>Frequency</Text>
-                <Text style={styles.recommendedBadge}>Recommended</Text>
-              </View>
-              <Text style={styles.fieldHint}>Days you’ll work on this goal</Text>
+              <Text style={[styles.fieldLabel, { marginBottom: 0 }]}>Frequency</Text>
+              <Text style={styles.fieldHint}>
+                Optional — pick the days you want to work on this. Those days show as check-in days to remind you.
+              </Text>
               <View style={styles.frequencyRow}>
                 {days.map((day, index) => {
                   const selected = frequency[index];
@@ -249,11 +240,6 @@ export default function CreateGoalScreen() {
                   );
                 })}
               </View>
-              <Text style={styles.scheduleHint}>
-                {frequency.some(Boolean)
-                  ? `Check-ins on ${dayNames.filter((_, i) => frequency[i]).join(', ')}`
-                  : 'Optional — pick days if you want a weekly rhythm'}
-              </Text>
 
               <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Dates</Text>
               <Text style={styles.fieldHint}>Recommended — start defaults to today</Text>
@@ -376,12 +362,14 @@ export default function CreateGoalScreen() {
 
             <Text style={styles.sectionLabel}>Success</Text>
             <View style={styles.card}>
-              <Text style={styles.fieldLabel}>What does success look like?</Text>
-              <Text style={styles.fieldHint}>Optional — e.g. “Lose 5kg”</Text>
+              <Text style={styles.fieldLabel}>What will it take?</Text>
+              <Text style={styles.fieldHint}>
+                Optional — what you’ll do or give up to make this happen
+              </Text>
               <TextInput
                 value={successCriteria}
                 onChangeText={setSuccessCriteria}
-                placeholder="Define success…"
+                placeholder="e.g. Train 4× a week, cut late nights…"
                 placeholderTextColor="#9CA3AF"
                 style={[styles.input, styles.textArea]}
                 multiline
@@ -502,28 +490,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 40,
-  },
-  hero: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 18,
-    paddingVertical: 20,
-    marginBottom: 22,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: DARK,
-    letterSpacing: -0.4,
-    marginBottom: 6,
-  },
-  heroSupport: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: MUTED,
-    fontWeight: '500',
   },
   sectionLabel: {
     fontSize: 12,

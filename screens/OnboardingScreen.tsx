@@ -1,586 +1,549 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../state/themeStore';
-import { useOnboardingStore } from '../state/onboardingStore';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Alert, ActivityIndicator, View, StyleSheet } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import {
+  useOnboardingStore,
+  OnboardingPhaseId,
+} from '../state/onboardingStore';
 import { useAuthStore } from '../state/authStore';
 import { onboardingService } from '../lib/onboardingService';
 import { supabase } from '../lib/supabase';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
-import CustomBackground from '../components/CustomBackground';
 
-// Import step components
-import ReferralCodeStep from '../components/onboarding/ReferralCodeStep';
-import DateOfBirthStep from '../components/onboarding/DateOfBirthStep';
-import LifeDescriptionStep from '../components/onboarding/LifeDescriptionStep';
-import ChangeReasonStep from '../components/onboarding/ChangeReasonStep';
-import ProudMomentStep from '../components/onboarding/ProudMomentStep';
-import MorningMotivationStep from '../components/onboarding/MorningMotivationStep';
-import CurrentStateStep from '../components/onboarding/CurrentStateStep';
-import HabitSelectionStep from '../components/onboarding/HabitSelectionStep';
-import PremiumFeaturesStep from '../components/onboarding/PremiumFeaturesStep';
-import GoalCreationStep from '../components/onboarding/GoalCreationStep';
-import RatingsStep from '../components/onboarding/RatingsStep';
-import CalendarPreviewStep from '../components/onboarding/CalendarPreviewStep';
-import AffirmationStep from '../components/onboarding/AffirmationStep';
+import WelcomeStep from '../components/onboarding/flow/WelcomeStep';
+import MemberCardStep from '../components/onboarding/flow/MemberCardStep';
+import CalculatingStep from '../components/onboarding/flow/CalculatingStep';
+import AnalysisStep from '../components/onboarding/flow/AnalysisStep';
+import BarriersStep from '../components/onboarding/flow/BarriersStep';
+import { EducationCarouselStep, ProductCarouselStep } from '../components/onboarding/flow/CarouselSteps';
+import {
+  ScienceDaysStep,
+  SciencePlanStep,
+  ProgramStartStep,
+} from '../components/onboarding/flow/ScienceSteps';
+import { TestimonialsStep, PathChartStep } from '../components/onboarding/flow/SocialProofSteps';
+import ChooseGoalsStep from '../components/onboarding/flow/ChooseGoalsStep';
+import {
+  DobFinallyStep,
+  ReferralFlowStep,
+  RatingPromptStep,
+  NotificationsFlowStep,
+} from '../components/onboarding/flow/MetaSteps';
+import {
+  GreetingStep,
+  PlanRevealStep,
+  JourneyStep,
+} from '../components/onboarding/flow/PlanRevealSteps';
+import { PaywallStep, MissedBenefitsStep } from '../components/onboarding/flow/PaywallSteps';
+import {
+  QuizQuestionStep,
+  getQuizField,
+  HabitSelectionFlowStep,
+  AffirmationFlowStep,
+} from '../components/onboarding/flow/QuizAndCoreSteps';
 
-export default function OnboardingScreen({ navigation }: any) {
-  const { theme } = useTheme();
+const QUIZ_PHASES = ['quizLife', 'quizReason', 'quizProud', 'quizMorning', 'quizState'] as const;
+
+function computeRatings(_data: {
+  lifeDescription?: string;
+  currentState?: string;
+}) {
+  const initial = {
+    physical: 35,
+    mental: 35,
+    social: 35,
+    emotional: 35,
+  };
+  const potential = {
+    physical: 93,
+    mental: 93,
+    social: 93,
+    emotional: 93,
+  };
+  return { initialRatings: initial, potentialRatings: potential };
+}
+
+export default function OnboardingScreen({ navigation, route }: any) {
   const {
     currentStep,
     totalSteps,
     data,
-    setStep,
     goNext,
     goPrevious,
+    goToPhase,
     updateField,
     updateData,
     reset,
-    loadSavedData
+    loadSavedData,
+    getPhaseId,
   } = useOnboardingStore();
+
   const [saving, setSaving] = useState(false);
-  const [exiting, setExiting] = useState(false);
+  const [displayName, setDisplayName] = useState<string | undefined>();
+  const phase = getPhaseId();
+  const isPreview = !!route?.params?.preview;
+  /** Blocks step resets / partial saves while finishing → ProfileSetup */
+  const finishingRef = useRef(false);
 
-  // Check for saved onboarding data on mount
   useEffect(() => {
-    const loadSavedOnboarding = async () => {
-      const { user: currentUser } = useAuthStore.getState();
-      if (!currentUser) return;
-
+    const load = async () => {
+      if (finishingRef.current) return;
+      const { user } = useAuthStore.getState();
+      if (!user) return;
       try {
-        // Get profile data
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('onboarding_completed, onboarding_last_step, referral_code, is_premium')
-          .eq('id', currentUser.id)
-          .single();
-
-        if (profileData && !profileData.onboarding_completed && profileData.onboarding_last_step) {
-          // Restore saved step and data
-          const savedData: any = {};
-          
-          if (profileData.referral_code) savedData.referralCode = profileData.referral_code;
-          if (profileData.is_premium !== null && profileData.is_premium !== undefined) {
-            savedData.isPremium = profileData.is_premium;
-          }
-          
-          // Don't load saved habits when resuming onboarding
-          // Step 2 should always start fresh with no habits selected
-          // User will need to select habits again when they reach step 2
-
-          if (Object.keys(savedData).length > 0 || profileData.onboarding_last_step) {
-            loadSavedData(savedData, profileData.onboarding_last_step || 1);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading saved onboarding data:', error);
-      }
-    };
-
-    loadSavedOnboarding();
-  }, []);
-
-  const canGoNext = () => {
-    switch (currentStep) {
-      case 2: {
-        // Step 2: Habit Selection - Must have at least 3 core habits
-        // Compulsory habits: sleep, reflect, exercise (run) - all auto-selected
-        // No minimum days required for schedules
-        
-        // Check if compulsory habits are selected
-        const hasSleep = data.selectedHabits.includes('sleep');
-        const hasReflect = data.selectedHabits.includes('reflect');
-        const hasExercise = data.selectedHabits.includes('run');
-        if (!hasSleep) {
-          console.log('❌ sleep (compulsory) not selected');
-          return false;
-        }
-        if (!hasReflect) {
-          console.log('❌ reflect (compulsory) not selected');
-          return false;
-        }
-        if (!hasExercise) {
-          console.log('❌ exercise/run (compulsory) not selected');
-          return false;
-        }
-        
-        const hasMinHabits = data.selectedHabits.length >= 3;
-        
-        if (!hasMinHabits) {
-          console.log('❌ Not enough habits:', data.selectedHabits.length);
-          return false;
-        }
-        
-        // Check that every selected habit has a valid frequency
-        const invalidHabits: string[] = [];
-        const allHaveValidFrequencies = data.selectedHabits.every(habitId => {
-          const freq = data.habitFrequencies[habitId];
-          
-          // If no frequency array exists, it's invalid
-          if (!freq || !Array.isArray(freq) || freq.length !== 7) {
-            invalidHabits.push(`${habitId}: no frequency array`);
-            return false;
-          }
-          
-          // No minimum days required - any schedule is valid
-          // Just ensure the frequency array exists and is valid
-          return true;
-        });
-        
-        if (!allHaveValidFrequencies && invalidHabits.length > 0) {
-          console.log('❌ Invalid habits:', invalidHabits);
-          console.log('📊 Selected habits:', data.selectedHabits);
-          console.log('📊 Frequencies:', JSON.stringify(data.habitFrequencies, null, 2));
-        }
-        
-        const result = allHaveValidFrequencies;
-        console.log('✅ Validation result:', result, '| Habits:', data.selectedHabits.length, '| All valid:', result);
-        
-        return result;
-      }
-      case 5: return !!data.dateOfBirth;
-      case 6: return !!data.lifeDescription;
-      case 7: return !!data.changeReason;
-      case 8: return !!data.proudMoment;
-      case 9: return !!data.morningMotivation;
-      case 10: return !!data.currentState;
-      case 11: return data.goals.length > 0;
-      case 13: return data.affirmationSigned;
-      default: return true;
-    }
-  };
-
-  const handleNext = () => {
-    if (!canGoNext()) {
-      Alert.alert('Required', 'Please complete this step before continuing');
-      return;
-    }
-
-    if (currentStep === totalSteps) {
-      handleComplete();
-    } else {
-      goNext();
-    }
-  };
-
-  const handleExitOnboarding = async () => {
-    setExiting(true);
-    try {
-      const { user: currentUser } = useAuthStore.getState();
-      
-      if (!currentUser) {
-        Alert.alert('Error', 'Session expired. Please sign in again.');
-        setExiting(false);
-        return;
-      }
-
-      // Prepare partial data with only entered fields
-      const partialData: any = {};
-      if (data.referralCode) partialData.referralCode = data.referralCode;
-      if (data.selectedHabits && data.selectedHabits.length > 0) {
-        partialData.selectedHabits = data.selectedHabits;
-      }
-      if (data.habitFrequencies && Object.keys(data.habitFrequencies).length > 0) {
-        partialData.habitFrequencies = data.habitFrequencies;
-      }
-      if (data.isPremium !== undefined && data.isPremium !== null) {
-        partialData.isPremium = data.isPremium;
-      }
-      // Save onboarding answers if they exist (steps 6-10)
-      if (data.lifeDescription) partialData.lifeDescription = data.lifeDescription;
-      if (data.changeReason) partialData.changeReason = data.changeReason;
-      if (data.proudMoment) partialData.proudMoment = data.proudMoment;
-      if (data.morningMotivation) partialData.morningMotivation = data.morningMotivation;
-      if (data.currentState) partialData.currentState = data.currentState;
-
-      // Save partial data
-      const success = await onboardingService.savePartialOnboardingData(
-        currentUser.id, 
-        partialData, 
-        currentStep
-      );
-
-      if (!success) {
-        Alert.alert('Error', 'Failed to save your progress. Please try again.');
-        setExiting(false);
-        return;
-      }
-
-      // Save habits if they exist (with error handling)
-      if (data.selectedHabits && data.selectedHabits.length > 0) {
-        try {
-          await dailyHabitsService.updateSelectedHabits(currentUser.id, data.selectedHabits);
-        } catch (error) {
-          console.error('Error saving habits:', error);
-          // Continue even if this fails
-        }
-      }
-
-      // Save habit frequencies (only if they have at least one day selected)
-      if (data.habitFrequencies && Object.keys(data.habitFrequencies).length > 0) {
-        try {
-          const savePromises = Object.entries(data.habitFrequencies)
-            .filter(([_, schedule]) => {
-              // Only save if at least one day is selected
-              return Array.isArray(schedule) && schedule.some(day => day === true);
-            })
-            .map(([habitId, schedule]) => 
-              dailyHabitsService.updateHabitSchedule(currentUser.id, habitId, schedule as boolean[])
-            );
-          
-          await Promise.all(savePromises);
-        } catch (error) {
-          console.error('Error saving habit frequencies:', error);
-          // Continue even if this fails
-        }
-      }
-
-      setExiting(false);
-      
-      // Check if user already has a username/profile set up
-      // Check both profiles and users tables (with error handling)
-      try {
-        const [profileResult, userResult] = await Promise.all([
+        const [{ data: profileData }, { data: authData }] = await Promise.all([
           supabase
             .from('profiles')
-            .select('username, display_name')
-            .eq('id', currentUser.id)
+            .select('onboarding_completed, onboarding_last_step, display_name, username, referred_by')
+            .eq('id', user.id)
             .single(),
-          supabase
-            .from('users')
-            .select('username')
-            .eq('id', currentUser.id)
-            .single()
+          supabase.auth.getUser(),
         ]);
 
-        const profileData = profileResult.data;
-        const userData = userResult.data;
-        const username = profileData?.username || userData?.username;
+        if (finishingRef.current) return;
 
-        // Check if username exists and is not just a UUID or email prefix (default placeholders)
-        // If username matches the user ID (UUID format) or email prefix, it's a placeholder
-        const hasRealUsername = username && 
-                               username !== currentUser.id &&
-                               username !== currentUser.email?.split('@')[0];
-
-        if (hasRealUsername) {
-          // User already has a profile set up, just go back to main app
-          console.log('✅ Profile already set up, navigating back to main app');
-          navigation.goBack();
-        } else {
-          // User doesn't have a profile yet, navigate to ProfileSetup
-          console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
-          navigation.navigate('ProfileSetup');
+        // Already finished — don't bounce the wizard back to Let's Go
+        if (profileData?.onboarding_completed) {
+          const username = profileData.username;
+          const hasRealUsername =
+            username && username !== user.id && username !== user.email?.split('@')[0];
+          if (!hasRealUsername) {
+            navigation.replace('ProfileSetup');
+          } else {
+            useAuthStore.getState().notifyOnboardingFinished();
+          }
+          return;
         }
-      } catch (profileError) {
-        console.error('Error checking profile:', profileError);
-        // Default to ProfileSetup if we can't determine profile status
-        navigation.navigate('ProfileSetup');
+
+        if (profileData?.display_name || profileData?.username) {
+          setDisplayName(profileData.display_name || profileData.username);
+        }
+
+        if (isPreview) {
+          reset();
+          return;
+        }
+
+        // Prefer Apple / auth given name for the “What should we call you?” field
+        const meta = authData?.user?.user_metadata || {};
+        const appleGiven =
+          (typeof meta.given_name === 'string' && meta.given_name.trim()) ||
+          (typeof meta.full_name === 'string' && meta.full_name.trim().split(/\s+/)[0]) ||
+          '';
+        const profileName =
+          profileData?.display_name &&
+          profileData.display_name !== 'User' &&
+          profileData.display_name !== user.id &&
+          profileData.display_name !== user.email?.split('@')[0]
+            ? profileData.display_name.trim()
+            : '';
+        const seededName = appleGiven || profileName || user.display_name || '';
+
+        const seedOnboardingFields = (extra: Record<string, unknown> = {}) => {
+          const saved: any = { ...extra };
+          if (seededName) saved.displayName = seededName;
+          return saved;
+        };
+
+        if (profileData && !profileData.onboarding_completed && profileData.onboarding_last_step) {
+          let step = profileData.onboarding_last_step > totalSteps ? 1 : profileData.onboarding_last_step;
+          if (step <= 1) step = 2;
+          loadSavedData(seedOnboardingFields(), step);
+        } else {
+          if (seededName) {
+            updateField('displayName', seededName);
+          }
+          goToPhase('memberCard');
+        }
+      } catch (e) {
+        console.error('Error loading saved onboarding:', e);
       }
-    } catch (error) {
-      console.error('Error exiting onboarding:', error);
-      Alert.alert('Error', 'Failed to exit onboarding');
-      setExiting(false);
+    };
+    load();
+  }, []);
+
+  // Welcome is the auth landing — skip it once the user is signed in
+  useEffect(() => {
+    if (finishingRef.current || isPreview) return;
+    if (phase === 'welcome') {
+      goToPhase('memberCard');
     }
+  }, [isPreview, phase, goToPhase]);
+
+  const persistProgress = useCallback(async () => {
+    if (isPreview || finishingRef.current || saving) return;
+    const { user } = useAuthStore.getState();
+    if (!user) return;
+    try {
+      await onboardingService.savePartialOnboardingData(user.id, data, currentStep);
+    } catch {
+      /* non-blocking */
+    }
+  }, [data, currentStep, isPreview, saving]);
+
+  useEffect(() => {
+    if (finishingRef.current || saving) return;
+    if (currentStep > 1) persistProgress();
+  }, [currentStep, persistProgress, saving]);
+
+  const advance = () => {
+    goNext();
   };
 
-  const handleComplete = async () => {
+  const selectQuiz = (field: string, value: string) => {
+    updateField(field as any, value);
+    setTimeout(() => goNext(), 220);
+  };
+
+  const finishOnboarding = async (asPremium: boolean) => {
+    if (isPreview) {
+      Alert.alert('Preview complete', 'Onboarding preview finished — nothing was saved.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+      reset();
+      return;
+    }
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     setSaving(true);
     try {
-      // Get current user from auth store
-      const { user: currentUser } = useAuthStore.getState();
-      
-      if (!currentUser) {
-        console.error('No user found in auth store');
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        finishingRef.current = false;
         Alert.alert('Error', 'Session expired. Please sign in again.');
         setSaving(false);
         return;
       }
 
-      // Save onboarding data
-      const success = await onboardingService.saveOnboardingData(currentUser.id, data);
+      // Always read latest store values (avoid stale closure from paywall → miss screens)
+      const latest = useOnboardingStore.getState().data;
+      const payload = {
+        ...latest,
+        isPremium: asPremium || latest.isPremium,
+        choseFreePlan: asPremium ? false : true,
+      };
 
+      const success = await onboardingService.saveOnboardingData(user.id, payload);
       if (!success) {
-        Alert.alert(
-          'Database Error', 
-          'Failed to save your onboarding data. This may be due to missing database columns. Please check the terminal logs and run the database migration in Supabase. See ONBOARDING_SETUP_INSTRUCTIONS.md for details.'
-        );
+        finishingRef.current = false;
+        Alert.alert('Error', 'Failed to save onboarding data. Please try again.');
         setSaving(false);
         return;
       }
 
-      // Ensure user exists in users table before creating goals
-      await supabase.from('users').upsert({
-        id: currentUser.id,
-        email: currentUser.email
-      });
-
-      // Create initial goals
-      for (const goal of data.goals) {
-        await onboardingService.createInitialGoal(currentUser.id, goal);
+      if (payload.displayName?.trim()) {
+        useAuthStore.setState({
+          user: { ...user, display_name: payload.displayName.trim() },
+        });
       }
 
-      // Premium feature removed - all habits are now free
+      await supabase.from('users').upsert({ id: user.id, email: user.email });
 
-      // Reset onboarding state
+      for (const goal of payload.goals || []) {
+        await onboardingService.createInitialGoal(user.id, goal);
+      }
+
+      if (payload.selectedHabits?.length) {
+        try {
+          await dailyHabitsService.updateSelectedHabits(user.id, payload.selectedHabits);
+          for (const [habitId, schedule] of Object.entries(payload.habitFrequencies || {})) {
+            await dailyHabitsService.updateHabitSchedule(user.id, habitId, schedule as boolean[]);
+          }
+        } catch (e) {
+          console.error('Habit save error:', e);
+        }
+      }
+
+      try {
+        const { pillarProgressService } = await import('../lib/pillarProgressService');
+        await pillarProgressService.initializeUserPillars(user.id);
+      } catch (e) {
+        console.warn('Pillar init after onboarding failed (non-blocking):', e);
+      }
+
+      const [profileResult, userResult] = await Promise.all([
+        supabase.from('profiles').select('username, display_name').eq('id', user.id).single(),
+        supabase.from('users').select('username').eq('id', user.id).single(),
+      ]);
+      const username = profileResult.data?.username || userResult.data?.username;
+      const hasRealUsername =
+        username && username !== user.id && username !== user.email?.split('@')[0];
+
+      // Keep the loading screen up and DO NOT reset() before leaving this screen —
+      // reset() was sending users back to "Let's Go!" via the welcome→memberCard effect.
+      if (!hasRealUsername) {
+        navigation.replace('ProfileSetup');
+        // Leave saving=true briefly; ProfileSetup unmounts this screen
+        return;
+      }
+
       reset();
       setSaving(false);
-
-      // Check if user already has a username/profile set up
-      const [profileResult, userResult] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('username, display_name')
-          .eq('id', currentUser.id)
-          .single(),
-        supabase
-          .from('users')
-          .select('username')
-          .eq('id', currentUser.id)
-          .single()
-      ]);
-
-      const profileData = profileResult.data;
-      const userData = userResult.data;
-      const username = profileData?.username || userData?.username;
-
-      // Check if username exists and is not just a UUID or email prefix (default placeholders)
-      const hasRealUsername = username && 
-                             username !== currentUser.id &&
-                             username !== currentUser.email?.split('@')[0];
-
-      if (hasRealUsername) {
-        // User already has a profile set up, let App.tsx handle navigation to main app
-        console.log('✅ Profile already set up, onboarding complete');
-        // Don't navigate - App.tsx will detect onboarding_completed: true and show main app
-      } else {
-        // User doesn't have a profile yet, navigate to ProfileSetup
-        console.log('ℹ️ Profile not set up, navigating to ProfileSetup');
-        navigation.navigate('ProfileSetup');
-      }
-    } catch (error) {
-      console.error('Error completing onboarding:', error);
+      useAuthStore.getState().notifyOnboardingFinished();
+    } catch (e) {
+      console.error(e);
+      finishingRef.current = false;
       Alert.alert('Error', 'Failed to complete onboarding');
       setSaving(false);
     }
   };
 
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <ReferralCodeStep
-            value={data.referralCode || ''}
-            onChange={(v) => updateField('referralCode', v)}
-            onNext={handleNext}
-          />
-        );
-      case 2:
-        return (
-          <HabitSelectionStep
-            selectedHabits={data.selectedHabits}
-            habitFrequencies={data.habitFrequencies}
-            isPremium={data.isPremium}
-            onChange={(updates) => updateData(updates)}
-          />
-        );
-      case 3:
-        return <PremiumFeaturesStep />;
-      case 4:
-        return (
-          <RatingsStep
-            value={data.initialRatings}
-            onChange={(ratings) => updateData(ratings)}
-          />
-        );
-      case 5:
-        return (
-          <DateOfBirthStep
-            value={data.dateOfBirth || ''}
-            onChange={(v) => updateField('dateOfBirth', v)}
-          />
-        );
-      case 6:
-        return (
-          <LifeDescriptionStep
-            value={data.lifeDescription || ''}
-            onChange={(v) => updateField('lifeDescription', v)}
-          />
-        );
-      case 7:
-        return (
-          <ChangeReasonStep
-            value={data.changeReason || ''}
-            onChange={(v) => updateField('changeReason', v)}
-          />
-        );
-      case 8:
-        return (
-          <ProudMomentStep
-            value={data.proudMoment || ''}
-            onChange={(v) => updateField('proudMoment', v)}
-          />
-        );
-      case 9:
-        return (
-          <MorningMotivationStep
-            value={data.morningMotivation || ''}
-            onChange={(v) => updateField('morningMotivation', v)}
-          />
-        );
-      case 10:
-        return (
-          <CurrentStateStep
-            value={data.currentState || ''}
-            onChange={(v) => updateField('currentState', v)}
-          />
-        );
-      case 11:
-        return (
-          <GoalCreationStep
-            value={data.goals}
-            onChange={(v) => updateField('goals', v)}
-          />
-        );
-      case 12:
-        return (
-          <CalendarPreviewStep selectedHabits={data.selectedHabits} />
-        );
-      case 13:
-        return (
-          <AffirmationStep
-            value={data.affirmationSigned}
-            onChange={(v) => updateField('affirmationSigned', v)}
-          />
-        );
-      default:
-        return null;
+  const handleExit = async () => {
+    if (isPreview) {
+      reset();
+      navigation.goBack();
+      return;
     }
+    const { user } = useAuthStore.getState();
+    if (!user) return;
+    await onboardingService.savePartialOnboardingData(user.id, data, currentStep);
+    navigation.goBack();
   };
 
-  return (
-    <CustomBackground>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header */}
-        <View style={styles.header}>
-          {currentStep > 1 && (
-            <TouchableOpacity style={styles.backButton} onPress={goPrevious}>
-              <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
-            </TouchableOpacity>
-          )}
-          <Text style={[styles.stepIndicator, { color: theme.textSecondary }]}>
-            Step {currentStep} of {totalSteps}
-          </Text>
-          {currentStep >= 3 ? (
-            <TouchableOpacity 
-              style={styles.exitButtonTop} 
-              onPress={handleExitOnboarding}
-              disabled={exiting}
-            >
-              {exiting ? (
-                <ActivityIndicator size="small" color={theme.textPrimary} />
-              ) : (
-                <Ionicons name="close" size={24} color={theme.textPrimary} />
-              )}
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.placeholder} />
-          )}
-        </View>
+  const quizProgress = (QUIZ_PHASES.indexOf(phase as any) + 1) / QUIZ_PHASES.length;
 
-        {/* Progress Bar */}
-        <View style={[styles.progressBarContainer, { backgroundColor: 'rgba(128, 128, 128, 0.2)' }]}>
-          <View
-            style={[styles.progressBar, { width: `${(currentStep / totalSteps) * 100}%`, backgroundColor: theme.primary }]}
-          />
-        </View>
+  if (saving) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#10B981" />
+      </View>
+    );
+  }
 
-        {/* Step Content */}
-        <View style={styles.content}>{renderStep()}</View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <View style={styles.footerButtons}>
-            <TouchableOpacity
-              style={[
-                styles.nextButton,
-                {
-                  backgroundColor: canGoNext() ? theme.primary : 'rgba(128, 128, 128, 0.3)',
-                }
-              ]}
-              onPress={handleNext}
-              disabled={!canGoNext() || saving}
-            >
-              <Text style={styles.nextButtonText}>
-                {currentStep === totalSteps ? (saving ? 'Saving...' : "I'm Committed") : 'Next'}
-              </Text>
-            </TouchableOpacity>
+  switch (phase as OnboardingPhaseId) {
+    case 'welcome':
+      if (!isPreview) {
+        return (
+          <View style={styles.loading}>
+            <ActivityIndicator size="large" color="#10B981" />
           </View>
-        </View>
-      </SafeAreaView>
-    </CustomBackground>
-  );
+        );
+      }
+      return <WelcomeStep onStart={advance} ctaLabel="Start quiz" />;
+
+    case 'memberCard':
+      return (
+        <MemberCardStep
+          onNext={advance}
+          onBack={isPreview ? goPrevious : undefined}
+        />
+      );
+
+    case 'quizLife':
+    case 'quizReason':
+    case 'quizProud':
+    case 'quizMorning':
+    case 'quizState': {
+      const field = getQuizField(phase)!;
+      return (
+        <QuizQuestionStep
+          phase={phase as any}
+          value={(data as any)[field] || ''}
+          progress={quizProgress}
+          onBack={goPrevious}
+          onSkip={handleExit}
+          onSelect={(v) => selectQuiz(field, v)}
+        />
+      );
+    }
+
+    case 'dob':
+      return (
+        <DobFinallyStep
+          name={data.displayName || ''}
+          ageGroup={data.ageGroup || ''}
+          onChangeName={(v) => updateField('displayName', v)}
+          onChangeAgeGroup={(v) => updateField('ageGroup', v)}
+          onBack={goPrevious}
+          onNext={() => {
+            const ratings = computeRatings(data);
+            updateData(ratings);
+            advance();
+          }}
+        />
+      );
+
+    case 'calculating':
+      return <CalculatingStep onBack={goPrevious} onDone={advance} />;
+
+    case 'analysis':
+      return (
+        <AnalysisStep
+          initial={data.initialRatings || { physical: 35, mental: 35, social: 35, emotional: 35 }}
+          potential={data.potentialRatings || { physical: 93, mental: 93, social: 93, emotional: 93 }}
+          onBack={goPrevious}
+          onNext={advance}
+          onReady={() => {}}
+        />
+      );
+
+    case 'barriers':
+      return (
+        <BarriersStep
+          value={data.habitBarriers || []}
+          onChange={(v) => updateField('habitBarriers', v)}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'education':
+      return <EducationCarouselStep onBack={goPrevious} onDone={advance} />;
+
+    case 'scienceDays':
+      return <ScienceDaysStep onBack={goPrevious} onNext={advance} />;
+
+    case 'sciencePlan':
+      return <SciencePlanStep onBack={goPrevious} onNext={advance} />;
+
+    case 'product':
+      return <ProductCarouselStep onBack={goPrevious} onDone={advance} />;
+
+    case 'testimonials':
+      return <TestimonialsStep onBack={goPrevious} onNext={advance} />;
+
+    case 'pathChart':
+      return <PathChartStep onBack={goPrevious} onNext={advance} />;
+
+    case 'chooseGoals':
+      return (
+        <ChooseGoalsStep
+          value={data.goals}
+          onChange={(v) => updateField('goals', v)}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'habitSelection':
+      return (
+        <HabitSelectionFlowStep
+          selectedHabits={data.selectedHabits}
+          onChange={(updates) => updateData(updates)}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'referral':
+      return (
+        <ReferralFlowStep
+          value={data.referralCode || ''}
+          onChange={(v) => updateField('referralCode', v)}
+          onBack={goPrevious}
+          onNext={advance}
+          onSkip={advance}
+          preview={isPreview}
+        />
+      );
+
+    case 'rating':
+      return (
+        <RatingPromptStep
+          onBack={goPrevious}
+          onNext={advance}
+          onRate={() => {
+            Alert.alert(
+              'Thank you!',
+              'Your support means a lot. You can leave a rating anytime from the App Store.',
+              [{ text: 'Continue', onPress: advance }]
+            );
+          }}
+        />
+      );
+
+    case 'notifications':
+      return (
+        <NotificationsFlowStep
+          onBack={goPrevious}
+          onSkip={advance}
+          onEnable={async () => {
+            try {
+              await Notifications.requestPermissionsAsync();
+            } catch {
+              /* ignore */
+            }
+            advance();
+          }}
+        />
+      );
+
+    case 'greeting':
+      return (
+        <GreetingStep
+          name={data.displayName || displayName}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'programStart':
+      return (
+        <ProgramStartStep
+          name={data.displayName || displayName}
+          selectedHabits={data.selectedHabits}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'planReveal':
+      return (
+        <PlanRevealStep
+          habitCount={data.selectedHabits.length}
+          goalCount={data.goals.length}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'journey':
+      return <JourneyStep onBack={goPrevious} onNext={advance} />;
+
+    case 'affirmation':
+      return (
+        <AffirmationFlowStep
+          value={data.affirmationSigned}
+          onChange={(v) => updateField('affirmationSigned', v)}
+          onBack={goPrevious}
+          onNext={advance}
+        />
+      );
+
+    case 'paywall':
+      return (
+        <PaywallStep
+          onBack={goPrevious}
+          onPurchased={() => {
+            updateField('isPremium', true);
+            finishOnboarding(true);
+          }}
+          onContinueFree={() => {
+            updateField('choseFreePlan', true);
+            goToPhase('missedBenefits');
+          }}
+        />
+      );
+
+    case 'missedBenefits':
+      return (
+        <MissedBenefitsStep
+          onBack={() => goToPhase('paywall')}
+          onUnlock={() => goToPhase('paywall')}
+          onContinueFree={() => finishOnboarding(false)}
+        />
+      );
+
+    default:
+      return <WelcomeStep onStart={advance} />;
+  }
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loading: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  backButton: {
-    padding: 8,
-  },
-  stepIndicator: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  placeholder: {
-    width: 40,
-  },
-  exitButtonTop: {
-    padding: 8,
-    width: 40,
-    height: 40,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressBarContainer: {
-    height: 4,
-    marginHorizontal: 20,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  content: {
-    flex: 1,
-  },
-  footer: {
-    padding: 20,
-    paddingBottom: 30,
-  },
-  footerButtons: {
-    flexDirection: 'row',
-  },
-  nextButton: {
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-    flex: 1,
-  },
-  nextButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    backgroundColor: '#FCFAF9',
   },
 });
-

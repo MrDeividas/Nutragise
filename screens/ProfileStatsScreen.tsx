@@ -25,10 +25,10 @@ const ACTIVE_GREEN = '#10B981';
 
 type PillarActiveMap = Record<keyof PillarProgressMap, boolean>;
 
-async function getPillarsActiveToday(
+async function getStartOfDayPillars(
   userId: string,
   progress: PillarProgressMap
-): Promise<PillarActiveMap> {
+): Promise<PillarProgressMap> {
   const today = new Date().toISOString().split('T')[0];
   const startOfDayKey = `pillar_progress_start_of_day_${userId}`;
   const startOfDayDateKey = `pillar_progress_start_of_day_date_${userId}`;
@@ -50,6 +50,62 @@ async function getPillarsActiveToday(
       // keep current progress as baseline
     }
   }
+
+  return startOfDayProgress;
+}
+
+async function getStartOfWeekPillars(
+  userId: string,
+  progress: PillarProgressMap
+): Promise<PillarProgressMap> {
+  const today = new Date().toISOString().split('T')[0];
+  const [ty, tm, td] = today.split('-').map(Number);
+  const weekDate = new Date(ty, tm - 1, td);
+  weekDate.setDate(weekDate.getDate() - weekDate.getDay());
+  const weekStart = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
+
+  const startOfWeekKey = `pillar_progress_start_of_week_${userId}`;
+  const startOfWeekDateKey = `pillar_progress_start_of_week_date_${userId}`;
+  const storedWeekDate = await AsyncStorage.getItem(startOfWeekDateKey);
+  const storedWeekProgress = await AsyncStorage.getItem(startOfWeekKey);
+  const startOfDayProgress = await getStartOfDayPillars(userId, progress);
+  const dayKey = `pillar_progress_start_of_day_date_${userId}`;
+  const storedDayDate = await AsyncStorage.getItem(dayKey);
+  const hasDaySnapshot = storedDayDate === today;
+
+  const keys = Object.keys(progress) as (keyof PillarProgressMap)[];
+
+  if (storedWeekDate === weekStart && storedWeekProgress) {
+    try {
+      const parsedSnapshot = JSON.parse(storedWeekProgress) as PillarProgressMap;
+      const isInvalid = keys.some((key) => parsedSnapshot[key] > progress[key]);
+      if (!isInvalid) {
+        const weekHasGrowth = keys.some((key) => progress[key] > parsedSnapshot[key]);
+        const dayHasGrowth =
+          hasDaySnapshot && keys.some((key) => progress[key] > startOfDayProgress[key]);
+        if (!weekHasGrowth && dayHasGrowth) {
+          await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfDayProgress));
+          await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+          return startOfDayProgress;
+        }
+        return parsedSnapshot;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  const seed = hasDaySnapshot ? startOfDayProgress : progress;
+  await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(seed));
+  await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+  return seed;
+}
+
+async function getPillarsActiveToday(
+  userId: string,
+  progress: PillarProgressMap
+): Promise<PillarActiveMap> {
+  const startOfDayProgress = await getStartOfDayPillars(userId, progress);
 
   const indicators = {
     strength_fitness: false,
@@ -211,6 +267,13 @@ export default function ProfileStatsScreen() {
     team_spirit: false,
     overall: false,
   });
+  const [startOfWeekPillars, setStartOfWeekPillars] = useState<PillarProgressMap>({
+    strength_fitness: 0,
+    growth_wisdom: 0,
+    discipline: 0,
+    team_spirit: 0,
+    overall: 0,
+  });
   const [rewards, setRewards] = useState<Notification[]>([]);
   const [showAllRewards, setShowAllRewards] = useState(false);
   const [showAllDays, setShowAllDays] = useState(false);
@@ -252,6 +315,8 @@ export default function ProfileStatsScreen() {
       setTotalPoints(points);
       setTodayBreakdown(today);
       setPillars(pillarMap);
+      const weekBaselines = await getStartOfWeekPillars(user.id, pillarMap);
+      setStartOfWeekPillars(weekBaselines);
       setPillarsActiveToday(await getPillarsActiveToday(user.id, pillarMap));
       setRewards(rewardHistory);
       setDailyRows(recentDays);
@@ -300,9 +365,25 @@ export default function ProfileStatsScreen() {
             }
             showsVerticalScrollIndicator={false}
           >
-            {/* Overall EXP */}
+            {/* Overall EXP + overall score */}
             <View style={[styles.card, { borderColor: theme.border }]}>
-              <Text style={[styles.cardEyebrow, { color: theme.textSecondary }]}>Overall</Text>
+              <View style={styles.overallScoreRow}>
+                <Text style={[styles.cardEyebrow, { color: theme.textSecondary, marginBottom: 0 }]}>
+                  Overall
+                </Text>
+                <View
+                  style={[
+                    styles.overallScoreBadge,
+                    {
+                      backgroundColor: pillarsActiveToday.overall ? ACTIVE_GREEN : theme.textPrimary,
+                    },
+                  ]}
+                >
+                  <Text style={styles.overallScoreBadgeText}>
+                    {Math.floor(pillars.overall || 0)}
+                  </Text>
+                </View>
+              </View>
               <View style={styles.levelRow}>
                 <Text style={[styles.levelTitle, { color: theme.textPrimary }]}>
                   Level {levelProgress.currentLevel} · {levelTitle}
@@ -350,6 +431,10 @@ export default function ProfileStatsScreen() {
                 const value = pillars[pillar.key] || 0;
                 const isActiveToday = !!pillarsActiveToday[pillar.key];
                 const accent = isActiveToday ? ACTIVE_GREEN : theme.textPrimary;
+                const pct = Math.max(0, Math.min(100, value));
+                const startPct = Math.max(0, Math.min(pct, startOfWeekPillars[pillar.key] || 0));
+                const growthPct = Math.max(0, pct - startPct);
+                const priorShareInFill = pct > 0 ? startPct / pct : 1;
                 return (
                   <View key={pillar.key} style={styles.pillarRow}>
                     <View style={[styles.pillarIcon, { backgroundColor: `${accent}14` }]}>
@@ -378,15 +463,22 @@ export default function ProfileStatsScreen() {
                         </Text>
                       </View>
                       <View style={[styles.pillarTrack, { backgroundColor: 'rgba(0,0,0,0.08)' }]}>
-                        <View
-                          style={[
-                            styles.pillarFill,
-                            {
-                              width: `${Math.min(100, Math.max(0, value))}%`,
-                              backgroundColor: accent,
-                            },
-                          ]}
-                        />
+                        {pct > 0 ? (
+                          <View style={[styles.pillarFillShell, { width: `${pct}%` }]}>
+                            {growthPct > 0 ? <View style={styles.pillarGrowthTip} /> : null}
+                            {priorShareInFill > 0 ? (
+                              <View
+                                style={[
+                                  styles.pillarPriorFill,
+                                  {
+                                    width: growthPct > 0 ? `${priorShareInFill * 100}%` : '100%',
+                                    backgroundColor: theme.textPrimary,
+                                  },
+                                ]}
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
                       </View>
                       <Text style={[styles.pillarSources, { color: theme.textSecondary }]}>
                         {pillar.sources}
@@ -395,25 +487,59 @@ export default function ProfileStatsScreen() {
                   </View>
                 );
               })}
-              <View style={[styles.overallPillar, { borderTopColor: theme.border }]}>
-                <View style={styles.pillarLabelRow}>
-                  <Text style={[styles.pillarLabel, { color: theme.textPrimary }]}>Overall average</Text>
-                  {pillarsActiveToday.overall && (
-                    <View style={styles.todayBadge}>
-                      <FontAwesome5 name="arrow-up" size={9} color={ACTIVE_GREEN} />
-                      <Text style={styles.todayBadgeText}>Today</Text>
+              {(() => {
+                const overallValue = pillars.overall || 0;
+                const overallActive = !!pillarsActiveToday.overall;
+                const overallAccent = overallActive ? ACTIVE_GREEN : theme.textPrimary;
+                const pct = Math.max(0, Math.min(100, overallValue));
+                const startPct = Math.max(0, Math.min(pct, startOfWeekPillars.overall || 0));
+                const growthPct = Math.max(0, pct - startPct);
+                const priorShareInFill = pct > 0 ? startPct / pct : 1;
+                return (
+                  <View style={[styles.pillarRow, styles.overallPillar, { borderTopColor: theme.border }]}>
+                    <View style={[styles.pillarIcon, { backgroundColor: `${overallAccent}14` }]}>
+                      <FontAwesome5 name="fire" size={14} color={overallAccent} />
                     </View>
-                  )}
-                </View>
-                <Text
-                  style={[
-                    styles.pillarValue,
-                    { color: pillarsActiveToday.overall ? ACTIVE_GREEN : theme.textPrimary },
-                  ]}
-                >
-                  {(pillars.overall || 0).toFixed(1)}%
-                </Text>
-              </View>
+                    <View style={styles.pillarBody}>
+                      <View style={styles.pillarHeader}>
+                        <View style={styles.pillarLabelRow}>
+                          <Text style={[styles.pillarLabel, { color: theme.textPrimary }]}>Overall</Text>
+                          {overallActive && (
+                            <View style={styles.todayBadge}>
+                              <FontAwesome5 name="arrow-up" size={9} color={ACTIVE_GREEN} />
+                              <Text style={styles.todayBadgeText}>Today</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.pillarValue, { color: overallAccent }]}>
+                          {overallValue.toFixed(1)}%
+                        </Text>
+                      </View>
+                      <View style={[styles.pillarTrack, { backgroundColor: 'rgba(0,0,0,0.08)' }]}>
+                        {pct > 0 ? (
+                          <View style={[styles.pillarFillShell, { width: `${pct}%` }]}>
+                            {growthPct > 0 ? <View style={styles.pillarGrowthTip} /> : null}
+                            {priorShareInFill > 0 ? (
+                              <View
+                                style={[
+                                  styles.pillarPriorFill,
+                                  {
+                                    width: growthPct > 0 ? `${priorShareInFill * 100}%` : '100%',
+                                    backgroundColor: theme.textPrimary,
+                                  },
+                                ]}
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.pillarSources, { color: theme.textSecondary }]}>
+                        Average of all four pillars
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })()}
             </View>
 
             {/* Recent EXP events */}
@@ -609,6 +735,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     marginBottom: 8,
   },
+  overallScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  overallScoreBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    minWidth: 44,
+    alignItems: 'center',
+  },
+  overallScoreBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '600',
+  },
   levelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -722,6 +866,28 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
+  pillarFillShell: {
+    height: '100%',
+    position: 'relative',
+  },
+  pillarGrowthTip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: ACTIVE_GREEN,
+    borderRadius: 999,
+    zIndex: 1,
+  },
+  pillarPriorFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    zIndex: 2,
+  },
   pillarFill: {
     height: '100%',
     borderRadius: 999,
@@ -732,13 +898,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   overallPillar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 12,
-    paddingBottom: 8,
     marginTop: 4,
+    paddingTop: 14,
   },
   emptyText: {
     fontSize: 14,

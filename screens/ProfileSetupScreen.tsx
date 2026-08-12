@@ -11,7 +11,6 @@ import {
   Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../state/authStore';
@@ -22,19 +21,25 @@ import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUploa
 import CustomBackground from '../components/CustomBackground';
 
 export default function ProfileSetupScreen() {
-  const navigation = useNavigation();
   const { theme } = useTheme();
   const { user } = useAuthStore();
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const finishingRef = React.useRef(false);
   const updateProfile = useAuthStore(state => state.updateProfile);
+
+  const enterMainApp = () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    useAuthStore.getState().notifyOnboardingFinished();
+  };
 
   // Check on mount if user already has profile and onboarding is complete - skip if so
   useEffect(() => {
     const checkExistingProfile = async () => {
-      if (!user) return;
+      if (!user || finishingRef.current) return;
 
       try {
         const [profileResult, userResult] = await Promise.all([
@@ -52,17 +57,18 @@ export default function ProfileSetupScreen() {
 
         const profileData = profileResult.data;
         const userData = userResult.data;
-        const username = profileData?.username || userData?.username;
+        const existingUsername = profileData?.username || userData?.username;
 
         // Check if username exists and is not just a UUID or email prefix
-        const hasRealUsername = username && 
-                               username !== user.id &&
-                               username !== user.email?.split('@')[0];
+        const hasRealUsername = existingUsername && 
+                               existingUsername !== user.id &&
+                               existingUsername !== user.email?.split('@')[0];
 
-        // If onboarding is complete AND profile exists, navigate away
+        // Already set up — enter main app. Do NOT goBack(): this screen is often
+        // the only route in OnboardingStack (navigation.replace), so GO_BACK fails.
         if (profileData?.onboarding_completed && hasRealUsername) {
-          console.log('✅ Profile already set up and onboarding complete, navigating back');
-          navigation.goBack();
+          console.log('✅ Profile already set up and onboarding complete, entering app');
+          enterMainApp();
         }
       } catch (error) {
         console.error('Error checking existing profile:', error);
@@ -71,7 +77,7 @@ export default function ProfileSetupScreen() {
     };
 
     checkExistingProfile();
-  }, [user, navigation]);
+  }, [user]);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -156,7 +162,10 @@ export default function ProfileSetupScreen() {
         // Mark onboarding as complete so user can access the app
         const { error: onboardingError } = await supabase
           .from('profiles')
-          .update({ onboarding_completed: true })
+          .update({
+            onboarding_completed: true,
+            onboarding_last_step: null,
+          })
           .eq('id', user.id);
 
         if (onboardingError) {
@@ -167,17 +176,8 @@ export default function ProfileSetupScreen() {
         }
       }
 
-      // Show success message and navigate back
-      // App.tsx will detect onboarding_completed: true and show the main app
-      Alert.alert('Success', 'Profile completed! Welcome to Nutrapp!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            navigation.goBack();
-          }
-        }
-      ]);
-      
+      // Enter main app immediately (don't wait on alert / don't goBack)
+      enterMainApp();
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);
       Alert.alert('Upload blocked', moderationAlertMessage(error));

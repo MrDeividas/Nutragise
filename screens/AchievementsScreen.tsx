@@ -158,6 +158,8 @@ export default function AchievementsScreen() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<BadgeWithStatus | null>(null);
+  /** Temporarily pin a newly unlocked achievement to the front with a NEW label */
+  const [pinnedNewId, setPinnedNewId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!targetUserId) return;
@@ -176,16 +178,38 @@ export default function AchievementsScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+
+      const highlightId: string | undefined = route.params?.highlightId;
+      if (highlightId) {
+        setPinnedNewId(highlightId);
+        setFilter('all');
+        const clearPin = setTimeout(() => setPinnedNewId(null), 8000);
+        // Clear param so revisiting the screen doesn't re-pin forever
+        navigation.setParams?.({ highlightId: undefined });
+        return () => clearTimeout(clearPin);
+      }
+    }, [load, route.params?.highlightId, navigation])
   );
 
   const unlockedCount = useMemo(() => badges.filter((b) => b.unlocked).length, [badges]);
 
   const visible = useMemo(() => {
-    if (filter === 'unlocked') return badges.filter((b) => b.unlocked);
-    if (filter === 'locked') return badges.filter((b) => !b.unlocked);
-    return badges;
-  }, [badges, filter]);
+    let list =
+      filter === 'unlocked'
+        ? badges.filter((b) => b.unlocked)
+        : filter === 'locked'
+          ? badges.filter((b) => !b.unlocked)
+          : badges;
+
+    if (pinnedNewId) {
+      const pinned = list.find((b) => b.id === pinnedNewId);
+      if (pinned) {
+        list = [pinned, ...list.filter((b) => b.id !== pinnedNewId)];
+      }
+    }
+
+    return list;
+  }, [badges, filter, pinnedNewId]);
 
   return (
     <CustomBackground>
@@ -236,21 +260,31 @@ export default function AchievementsScreen() {
             numColumns={COLS}
             contentContainerStyle={styles.grid}
             columnWrapperStyle={{ gap: GAP, marginBottom: GAP }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.cell, { width: CELL }]}
-                activeOpacity={0.8}
-                onPress={() => setSelected(item)}
-              >
-                <AchievementBadge image={item.image} unlocked={item.unlocked} size={CELL - 8} />
-                <Text
-                  style={[styles.cellTitle, { color: item.unlocked ? theme.textPrimary : theme.textSecondary }]}
-                  numberOfLines={2}
+            renderItem={({ item }) => {
+              const isNew = pinnedNewId === item.id;
+              return (
+                <TouchableOpacity
+                  style={[styles.cell, { width: CELL }]}
+                  activeOpacity={0.8}
+                  onPress={() => setSelected(item)}
                 >
-                  {item.title}
-                </Text>
-              </TouchableOpacity>
-            )}
+                  <View>
+                    <AchievementBadge image={item.image} unlocked={item.unlocked} size={CELL - 8} />
+                    {isNew ? (
+                      <View style={styles.newBadge}>
+                        <Text style={styles.newBadgeText}>NEW</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text
+                    style={[styles.cellTitle, { color: item.unlocked ? theme.textPrimary : theme.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {item.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
             ListEmptyComponent={
               <Text style={[styles.empty, { color: theme.textSecondary }]}>No badges in this filter</Text>
             }
@@ -329,6 +363,21 @@ const styles = StyleSheet.create({
   grid: { paddingHorizontal: 24, paddingBottom: 40 },
   cell: { alignItems: 'center' },
   cellTitle: { fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 4, minHeight: 28 },
+  newBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  newBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   empty: { textAlign: 'center', marginTop: 40 },
   modalBackdrop: {
     flex: 1,

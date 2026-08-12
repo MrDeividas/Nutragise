@@ -509,6 +509,9 @@ export default function CompeteScreen({ navigation }: any) {
           requirements: data.requirements.map(r => r.requirement_text).join(', '),
           creator_email: userEmail,
           creator_username: userName,
+          image_url: data.image_url,
+          start_date: data.start_date,
+          end_date: data.end_date,
         });
         
         Alert.alert(
@@ -523,33 +526,25 @@ export default function CompeteScreen({ navigation }: any) {
         loadUserChallenges(),
         loadPrivateChallenges(),
       ]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating challenge:', error);
-      Alert.alert('Error', 'Failed to create challenge. Please try again.');
+      throw error;
     }
   };
 
   const handleJoinByCode = async (code: string) => {
     if (!user?.id) return;
 
-    try {
-      await challengesService.joinChallengeByCode(user.id, code);
-      Alert.alert('Success!', 'You have joined the private challenge!');
-      // Reload both public and private challenges
-      await Promise.all([
-        loadChallenges(),
-        loadPrivateChallenges(),
-      ]);
-      setShowJoinModal(false);
-    } catch (error: any) {
-      console.error('Error joining challenge:', error);
-      throw error; // Re-throw so modal can show error
-    }
-  };
-
-  const handleEditChallenge = (challenge: Challenge) => {
-    // TODO: Implement edit functionality
-    Alert.alert('Edit Challenge', 'Edit functionality coming soon!');
+    const joined = await challengesService.joinChallengeByCode(user.id, code);
+    const entryFee = Number(joined.entry_fee) || 0;
+    Alert.alert(
+      'Joined!',
+      entryFee > 0
+        ? `You're in. £${entryFee.toFixed(2)} was taken from your wallet for this challenge.`
+        : 'You have joined the private challenge!'
+    );
+    await Promise.all([loadChallenges(), loadPrivateChallenges()]);
+    setShowJoinModal(false);
   };
 
   const handleDeleteChallenge = async (challengeId: string) => {
@@ -560,9 +555,9 @@ export default function CompeteScreen({ navigation }: any) {
       Alert.alert('Deleted', 'Challenge has been deleted and participants refunded.');
       await loadUserChallenges();
       await loadChallenges();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting challenge:', error);
-      Alert.alert('Error', 'Failed to delete challenge. Please try again.');
+      Alert.alert('Error', error?.message || 'Failed to delete challenge. Please try again.');
     }
   };
 
@@ -702,7 +697,6 @@ export default function CompeteScreen({ navigation }: any) {
             {myChallengesExpanded && (
               <MyChallengesSection
                 challenges={myCreatedChallenges}
-                onEdit={handleEditChallenge}
                 onDelete={handleDeleteChallenge}
               />
             )}
@@ -962,7 +956,6 @@ export default function CompeteScreen({ navigation }: any) {
             {myChallengesExpanded && (
               <MyChallengesSection
                 challenges={myCreatedChallenges}
-                onEdit={handleEditChallenge}
                 onDelete={handleDeleteChallenge}
               />
             )}
@@ -984,6 +977,19 @@ export default function CompeteScreen({ navigation }: any) {
         visible={showJoinModal}
         onClose={() => setShowJoinModal(false)}
         onSubmit={handleJoinByCode}
+        onNeedTopUp={({ entryFee, balance, shortBy }) => {
+          Alert.alert(
+            'Top up required',
+            `Entry is £${entryFee.toFixed(2)}. Your wallet has £${balance.toFixed(2)} — you need about £${shortBy.toFixed(2)} more.\n\nTop up your wallet, then join again with the same code.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Wallet',
+                onPress: () => navigation.navigate('Wallet'),
+              },
+            ]
+          );
+        }}
       />
     </SafeAreaView>
   );

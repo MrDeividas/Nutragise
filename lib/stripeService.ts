@@ -26,8 +26,8 @@ interface CreatePaymentIntentResponse {
   clientSecret: string;
   paymentIntentId: string;
   originalAmount?: number; // Amount credited to wallet
-  platformFee?: number; // Platform deposit fee
-  stripeFee?: number; // Alias / legacy field (same as platformFee for deposits)
+  platformFee?: number; // Always 0 for deposits (no platform deposit fee)
+  stripeFee?: number; // Stripe card processing fee passed through on deposit
   totalAmount?: number; // Total amount charged on card
   isPro?: boolean;
 }

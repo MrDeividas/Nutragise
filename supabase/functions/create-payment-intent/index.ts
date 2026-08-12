@@ -3,12 +3,22 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
-const FREE_DEPOSIT_FEE = 3
-const PRO_DEPOSIT_FEE = 0
+// UK Stripe card fees — passed through on deposits (no platform deposit fee)
+const STRIPE_PERCENTAGE_FEE = 0.014 // 1.4%
+const STRIPE_FIXED_FEE = 0.20 // £0.20
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || ""
 const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || ""
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+
+function calculateStripePassThrough(amount: number): { stripeFee: number; totalAmount: number } {
+  const totalAmount = (amount + STRIPE_FIXED_FEE) / (1 - STRIPE_PERCENTAGE_FEE)
+  const stripeFee = totalAmount - amount
+  return {
+    stripeFee: Math.round(stripeFee * 100) / 100,
+    totalAmount: Math.round(totalAmount * 100) / 100,
+  }
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -171,7 +181,8 @@ serve(async (req: Request) => {
       )
     }
 
-    // Platform deposit fee by tier (Free £3, Pro £0)
+    // Deposits: user pays Stripe processing fees only (no platform deposit fee).
+    // Withdrawal fees (£3 free / £1 pro) are applied separately on payout.
     const { data: profile } = await adminSupabase
       .from("profiles")
       .select("is_pro")
@@ -179,8 +190,8 @@ serve(async (req: Request) => {
       .single()
 
     const isPro = profile?.is_pro === true
-    const platformFee = isPro ? PRO_DEPOSIT_FEE : FREE_DEPOSIT_FEE
-    const finalAmount = Math.round((amount + platformFee) * 100) / 100
+    const { stripeFee, totalAmount: finalAmount } = calculateStripePassThrough(amount)
+    const platformFee = 0
 
     const amountInPence = Math.round(finalAmount * 100)
 
@@ -200,11 +211,14 @@ serve(async (req: Request) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInPence,
       currency: currency.toLowerCase(),
+      // Enables wallets (Apple Pay / Link) in Payment Sheet alongside cards
+      automatic_payment_methods: { enabled: true },
       metadata: {
         userId: authenticatedUserId,
         purpose: "wallet_deposit",
         originalAmount: (amount * 100).toString(),
-        platformFee: (platformFee * 100).toString(),
+        platformFee: "0",
+        stripeFee: (stripeFee * 100).toString(),
         isPro: isPro ? "true" : "false",
       },
     })
@@ -213,6 +227,7 @@ serve(async (req: Request) => {
       paymentIntentId: paymentIntent.id,
       originalAmount: amount,
       platformFee,
+      stripeFee,
       totalAmount: finalAmount,
       isPro,
       userId: authenticatedUserId,
@@ -224,7 +239,7 @@ serve(async (req: Request) => {
         paymentIntentId: paymentIntent.id,
         originalAmount: amount,
         platformFee,
-        stripeFee: platformFee, // backward-compatible alias for clients
+        stripeFee,
         totalAmount: finalAmount,
         isPro,
       }),

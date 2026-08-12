@@ -237,23 +237,6 @@ class DailyPostsService {
         return [];
       }
       
-      // Log result for debugging
-      if (data) {
-        console.log(`Found ${data.length} daily posts for journey`);
-        // Debug: Check if photos are present
-        data.forEach((post: DailyPost, index: number) => {
-          console.log(`Post ${index + 1}:`, {
-            id: post.id,
-            date: post.date,
-            photos_count: post.photos?.length || 0,
-            photos: post.photos ? (Array.isArray(post.photos) ? post.photos.slice(0, 2) : 'not an array') : 'null/undefined',
-            has_photos_field: 'photos' in post
-          });
-        });
-      } else {
-        console.log('No daily posts found (data is null)');
-      }
-      
       return data || [];
     } catch (error: any) {
       console.error('Error in getRecentJourney (catch):', {

@@ -23,6 +23,7 @@
     "@stripe/stripe-react-native": "0.50.3",
     "@supabase/supabase-js": "^2.50.5",
     "expo": "~54.0.36",
+    "expo-apple-authentication": "~8.0.8",
     "expo-audio": "~1.1.1",
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.8",

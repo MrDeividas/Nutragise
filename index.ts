@@ -26,16 +26,45 @@ function getErrorUtils(): RNErrorUtils | null {
 }
 
 function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}${error.stack ? `\n\n${error.stack}` : ''}`;
+  if (error == null) return 'Unknown error (null/undefined)';
+  if (typeof error === 'string') return error.trim() || 'Unknown error (empty string)';
+
+  const anyErr = error as {
+    name?: string;
+    message?: string;
+    originalMessage?: string;
+    description?: string;
+    stack?: string;
+    componentStack?: string;
+    cause?: unknown;
+  };
+
+  if (error instanceof Error || typeof anyErr?.message === 'string' || anyErr?.stack) {
+    const name = anyErr.name || 'Error';
+    const message =
+      anyErr.message ||
+      anyErr.originalMessage ||
+      anyErr.description ||
+      '(no message)';
+    const stack = anyErr.stack || anyErr.componentStack || '';
+    const cause = anyErr.cause != null ? `\n\nCaused by: ${formatError(anyErr.cause)}` : '';
+    return `${name}: ${message}${stack ? `\n\n${stack}` : ''}${cause}`;
   }
-  return String(error);
+
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch {
+    return String(error);
+  }
 }
 
-function publishError(message: string) {
-  capturedStartupError = message;
-  errorListeners.forEach((listener) => listener(message));
-  console.error('🚨 Startup/fatal error:\n', message);
+function publishError(message: string, opts?: { fatal?: boolean }) {
+  const text = (message || '').trim() || 'Unknown error (empty)';
+  if (opts?.fatal) {
+    capturedStartupError = text;
+    errorListeners.forEach((listener) => listener(text));
+  }
+  console.error(opts?.fatal ? '🚨 Fatal JS error:\n' : '🚨 JS error:\n', text);
 }
 
 function installFatalErrorHandler() {
@@ -48,8 +77,10 @@ function installFatalErrorHandler() {
 
   errorUtils.setGlobalHandler((error, isFatal) => {
     const message = formatError(error);
-    publishError(message);
-    if (!isFatal && typeof previousHandler === 'function') {
+    // Only kill the root tree for true fatals. Mid-session module/HMR errors
+    // used to blank the app with an empty "Startup/fatal error" screen.
+    publishError(message, { fatal: !!isFatal });
+    if (typeof previousHandler === 'function') {
       previousHandler(error, isFatal);
     }
   });
@@ -61,7 +92,7 @@ try {
   installFatalErrorHandler();
   AppComponent = require('./App').default;
 } catch (error) {
-  publishError(formatError(error));
+  publishError(formatError(error), { fatal: true });
   AppComponent = function FailedImport() {
     return React.createElement(StartupErrorScreen, {
       message: capturedStartupError || 'Failed to load App module',
@@ -104,7 +135,7 @@ class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: unknown) {
-    publishError(formatError(error));
+    publishError(formatError(error), { fatal: false });
   }
 
   render() {

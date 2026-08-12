@@ -69,6 +69,10 @@ export function calculateTotalSessions(goal: Goal): number {
 
 // Calculate completion percentage based on progress entries
 export function calculateCompletionPercentage(goal: Goal, progressEntries: GoalProgress[]): number {
+  if (typeof goal.progress_percent === 'number' && !Number.isNaN(goal.progress_percent)) {
+    return Math.max(0, Math.min(100, Math.round(goal.progress_percent)));
+  }
+
   const totalSessions = calculateTotalSessions(goal);
   
   if (totalSessions === 0) return 0;

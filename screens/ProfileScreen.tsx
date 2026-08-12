@@ -40,6 +40,7 @@ import LevelInfoModal from '../components/LevelInfoModal';
 import AchievementModal from '../components/AchievementModal';
 import FullScreenPhotoModal from '../components/FullScreenPhotoModal';
 import AchievementBadge from '../components/AchievementBadge';
+import FeaturedGoalCircle from '../components/FeaturedGoalCircle';
 import { Achievement } from '../types/database';
 import {
   achievementsService,
@@ -95,8 +96,17 @@ function ProfileScreen({ navigation }: any) {
     team_spirit: 35,
     overall: 35
   });
+
+  // Start-of-week baselines (green tip = this week's growth)
+  const [startOfWeekPillarProgress, setStartOfWeekPillarProgress] = useState({
+    strength_fitness: 35,
+    growth_wisdom: 35,
+    discipline: 35,
+    team_spirit: 35,
+    overall: 35,
+  });
   
-  // Track which pillars show the green arrow indicator
+  // Track which pillars show the green arrow indicator (today only)
   const [showProgressIndicator, setShowProgressIndicator] = useState<{
     [key: string]: boolean;
   }>({});
@@ -520,12 +530,21 @@ function ProfileScreen({ navigation }: any) {
         const progress = await pillarProgressService.getPillarProgress(user.id);
         
         const today = new Date().toISOString().split('T')[0];
+        const [ty, tm, td] = today.split('-').map(Number);
+        const weekDate = new Date(ty, tm - 1, td);
+        weekDate.setDate(weekDate.getDate() - weekDate.getDay());
+        const weekStart = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
         
         // Load start of day progress snapshot from AsyncStorage
         const startOfDayKey = `pillar_progress_start_of_day_${user.id}`;
         const startOfDayDateKey = `pillar_progress_start_of_day_date_${user.id}`;
         const storedStartOfDayDate = await AsyncStorage.getItem(startOfDayDateKey);
         const storedStartOfDayProgress = await AsyncStorage.getItem(startOfDayKey);
+
+        const startOfWeekKey = `pillar_progress_start_of_week_${user.id}`;
+        const startOfWeekDateKey = `pillar_progress_start_of_week_date_${user.id}`;
+        const storedStartOfWeekDate = await AsyncStorage.getItem(startOfWeekDateKey);
+        const storedStartOfWeekProgress = await AsyncStorage.getItem(startOfWeekKey);
         
         let startOfDayProgress = progress;
         let needsSnapshotReset = false;
@@ -561,10 +580,57 @@ function ProfileScreen({ navigation }: any) {
           await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
           await AsyncStorage.setItem(startOfDayDateKey, today);
         }
+
+        const pillarKeys: (keyof typeof progress)[] = [
+          'strength_fitness',
+          'growth_wisdom',
+          'discipline',
+          'team_spirit',
+          'overall',
+        ];
+
+        let startOfWeekProgress = progress;
+        if (storedStartOfWeekDate === weekStart && storedStartOfWeekProgress) {
+          try {
+            const parsedWeek = JSON.parse(storedStartOfWeekProgress);
+            const isInvalidWeek = pillarKeys.some(
+              (key) => parsedWeek[key] > progress[key]
+            );
+            if (isInvalidWeek) {
+              // Prefer morning baseline over current so the tip isn't wiped
+              startOfWeekProgress =
+                storedStartOfDayDate === today ? startOfDayProgress : progress;
+              await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfWeekProgress));
+              await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+            } else {
+              startOfWeekProgress = parsedWeek;
+              // Heal snapshots that were wrongly saved as "current" (no week growth visible)
+              const weekHasGrowth = pillarKeys.some(
+                (key) => progress[key] > (parsedWeek[key] ?? progress[key])
+              );
+              const dayHasGrowth =
+                storedStartOfDayDate === today &&
+                pillarKeys.some((key) => progress[key] > startOfDayProgress[key]);
+              if (!weekHasGrowth && dayHasGrowth) {
+                startOfWeekProgress = startOfDayProgress;
+                await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfDayProgress));
+                await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+              }
+            }
+          } catch {
+            startOfWeekProgress =
+              storedStartOfDayDate === today ? startOfDayProgress : progress;
+          }
+        } else {
+          // First snapshot this week: seed from start-of-day when possible (never lock in current)
+          startOfWeekProgress =
+            storedStartOfDayDate === today ? startOfDayProgress : progress;
+          await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfWeekProgress));
+          await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+        }
         
-        // Compare current progress vs start of day - show indicator if increased
+        // Compare current progress vs start of day - show indicator if increased today
         const newIndicators: { [key: string]: boolean } = {};
-        const pillarKeys: (keyof typeof progress)[] = ['strength_fitness', 'growth_wisdom', 'discipline', 'team_spirit', 'overall'];
         
         pillarKeys.forEach(key => {
           const currentProgress = progress[key];
@@ -578,6 +644,8 @@ function ProfileScreen({ navigation }: any) {
         
         // Update indicators state
         setShowProgressIndicator(newIndicators);
+
+        setStartOfWeekPillarProgress({ ...startOfWeekProgress });
         
         // Update previous progress state
         setPreviousPillarProgress(progress);
@@ -1015,8 +1083,14 @@ function ProfileScreen({ navigation }: any) {
   // Mock data for now - will be replaced with real data later
   const tasks = ['Task 1', 'Task 2', 'Task 3', 'Task 4', 'Task 5'];
   
-  // Get active goals with completion percentages
-  const activeGoals = userGoals.filter(goal => !goal.completed).slice(0, 3); // Show max 3 goals
+  // Get active goals for profile circles: featured first, then newest, max 3
+  const activeGoals = useMemo(() => {
+    const active = userGoals.filter((goal) => !goal.completed);
+    const featured = active.filter((g) => g.is_featured);
+    const rest = active.filter((g) => !g.is_featured);
+    return [...featured, ...rest].slice(0, 3);
+  }, [userGoals]);
+  const hasMoreGoals = userGoals.filter((g) => !g.completed).length > 3;
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -1263,14 +1337,29 @@ function ProfileScreen({ navigation }: any) {
         </View>
 
 
+        {/* Posts Section */}
+        {user && (
+          <View style={{ marginTop: 8 }}>
+            <JourneyPreview 
+              userId={user.id}
+              onViewAll={() => setShowFullJourney(true)}
+            />
+          </View>
+        )}
+
         {/* Goals Section */}
-        <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
+        <View style={[styles.keepTrackSection, styles.goalsSection]}>
           <TouchableOpacity 
             onPress={() => navigation.navigate('Goals')}
             style={styles.goalsSectionHeader}
           >
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
-            <Ionicons name="chevron-forward-outline" size={20} color={DARK} />
+            <View style={styles.goalsHeaderRight}>
+              {hasMoreGoals ? (
+                <Text style={styles.viewAllGoalsText}>View all</Text>
+              ) : null}
+              <Ionicons name="chevron-forward-outline" size={20} color={DARK} />
+            </View>
           </TouchableOpacity>
           <View style={[styles.weeklyTrackerCard, { backgroundColor: theme.cardBackground }]}>
             <View style={styles.goalsContainer}>
@@ -1296,83 +1385,33 @@ function ProfileScreen({ navigation }: any) {
                 </View>
               ) : (
                 <View style={styles.circularGoalsContainer}>
-                  {activeGoals.map((goal, index) => {
-                    // Create mock progress entries based on actual check-in count
+                  {activeGoals.map((goal) => {
                     const checkInCount = goalProgress[goal.id] || 0;
-                    const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
-                      id: `mock-${index}`,
-                      goal_id: goal.id,
-                      user_id: user?.id || '',
-                      completed_date: new Date().toISOString(),
-                      created_at: new Date().toISOString(),
-                    }));
-                    const completionPercent = calculateCompletionPercentage(goal, mockProgressEntries);
-                    
-                    // Create gradient colors based on index - using same green as level bar
-                    const gradientColors = ['#10B981', '#10B981', '#10B981']; // Green gradient matching level bar
-                    
+                    const mockProgressEntries = Array(checkInCount)
+                      .fill({})
+                      .map((_, index) => ({
+                        id: `mock-${index}`,
+                        goal_id: goal.id,
+                        user_id: user?.id || '',
+                        completed_date: new Date().toISOString(),
+                        created_at: new Date().toISOString(),
+                      }));
+                    const completionPercent = calculateCompletionPercentage(
+                      goal,
+                      mockProgressEntries
+                    );
+
                     return (
-                      <TouchableOpacity 
-                        key={goal.id} 
-                        style={styles.circularGoalItem}
-                        onPress={() => {
-                          navigation.navigate('GoalDetail', { 
-                            goal,
-                            onCheckInDeleted: async () => {
-                              // Refresh progress data when check-in is deleted
-                              await fetchGoalProgress();
-                              await checkTodaysCheckIns();
-                              // Add small delay to ensure database changes propagate
-                              setTimeout(async () => {
-                                await checkTodaysCheckIns();
-                                await fetchGoalProgress();
-                              }, 100);
-                            }
-                          });
-                        }}
-                      >
-                        <View style={styles.circularProgressContainer}>
-                          <Svg width={110} height={110}>
-                            <Defs>
-                              <LinearGradient id={`gradient-${goal.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                                <Stop offset="0%" stopColor={gradientColors[0]} />
-                                <Stop offset="50%" stopColor={gradientColors[1]} />
-                                <Stop offset="100%" stopColor={gradientColors[2]} />
-                              </LinearGradient>
-                            </Defs>
-                            {/* Background circle */}
-                            <Circle
-                              cx={55}
-                              cy={55}
-                              r={42}
-                              stroke="rgba(128, 128, 128, 0.3)"
-                              strokeWidth={8}
-                              fill="transparent"
-                            />
-                            {/* Progress circle */}
-                            <Circle
-                              cx={55}
-                              cy={55}
-                              r={42}
-                              stroke={`url(#gradient-${goal.id})`}
-                              strokeWidth={8}
-                              fill="transparent"
-                              strokeDasharray={`${2 * Math.PI * 42}`}
-                              strokeDashoffset={`${2 * Math.PI * 42 * (1 - Math.round(completionPercent) / 100)}`}
-                              strokeLinecap="round"
-                              transform="rotate(-90 55 55)"
-                            />
-                          </Svg>
-                          <View style={styles.circularProgressText}>
-                            <Text style={[styles.circularProgressValue, { color: theme.textPrimary }]}>
-                              {Math.round(completionPercent)}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.circularGoalTitle, { color: theme.textPrimary }]}>
-                          {goal.title}
-                        </Text>
-                      </TouchableOpacity>
+                      <FeaturedGoalCircle
+                        key={goal.id}
+                        id={goal.id}
+                        title={goal.title}
+                        percent={completionPercent}
+                        onPress={() => navigation.navigate('Goals')}
+                        onLongPress={() =>
+                          navigation.navigate('UpdateGoal', { goalId: goal.id })
+                        }
+                      />
                     );
                   })}
                 </View>
@@ -1381,35 +1420,17 @@ function ProfileScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Posts Section */}
-        {user && (
-          <JourneyPreview 
-            userId={user.id}
-            onViewAll={() => setShowFullJourney(true)}
-          />
-        )}
-
         {/* Progress Bars Section */}
-        <View style={styles.keepTrackSection}>
-          <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border, marginTop: 20 }]}>
-            <View style={[styles.keepTrackHeader, { marginBottom: 30 }]}>
+        <View style={[styles.keepTrackSection, styles.statsSection]}>
+          <View style={[styles.progressBarsBox, { backgroundColor: '#FFFFFF', borderColor: theme.border }]}>
+            <View style={[styles.keepTrackHeader, { marginBottom: 12 }]}>
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate('ProfileStats')}
-                style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, flex: 1 }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
               >
-                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Overall</Text>
-                <View style={{
-                  backgroundColor: showProgressIndicator.overall ? '#10B981' : (isDark ? '#1f1f1f' : '#111827'),
-                  paddingHorizontal: 12,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                }}>
-                  <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '600' }}>
-                    {Math.floor(pillarProgress.overall)}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} style={{ marginTop: 6 }} />
+                <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Stats</Text>
+                <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
               </TouchableOpacity>
               <TouchableOpacity 
                 onPress={toggleStatsVisibility}
@@ -1423,92 +1444,69 @@ function ProfileScreen({ navigation }: any) {
                 />
               </TouchableOpacity>
             </View>
-            <View style={[styles.progressBarsContainer, { 
-              height: Math.max(100, Math.max(...[
-                pillarProgress.strength_fitness,
-                pillarProgress.growth_wisdom,
-                pillarProgress.discipline,
-                pillarProgress.team_spirit,
-                pillarProgress.overall
-              ].map(p => Math.max(45, p * 1.8))) + 30)
-            }]}>
+            <View style={styles.statBarsList}>
               {[
-                { index: 1, progress: pillarProgress.strength_fitness, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Strength & Fitness', key: 'strength_fitness' },
-                { index: 2, progress: pillarProgress.growth_wisdom, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Growth & Wisdom', key: 'growth_wisdom' },
-                { index: 3, progress: pillarProgress.discipline, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Discipline', key: 'discipline' },
-                { index: 4, progress: pillarProgress.team_spirit, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Team Spirit', key: 'team_spirit' },
-                { index: 5, progress: pillarProgress.overall, color: isDark ? '#1f1f1f' : '#111827', pillar: 'Overall', key: 'overall' }
+                { key: 'strength_fitness', label: 'Strength & Fitness', progress: pillarProgress.strength_fitness },
+                { key: 'growth_wisdom', label: 'Growth & Wisdom', progress: pillarProgress.growth_wisdom },
+                { key: 'discipline', label: 'Discipline', progress: pillarProgress.discipline },
+                { key: 'team_spirit', label: 'Team Spirit', progress: pillarProgress.team_spirit },
               ].map((bar) => {
-              const showIndicator = showProgressIndicator[bar.key];
-              const exactProgress = pillarProgress[bar.key as keyof typeof pillarProgress];
-              const displayProgress = Math.floor(exactProgress);
-              
-              const barColor = showIndicator ? '#10B981' : bar.color;
-              const iconColor = '#FFFFFF';
-              
-              const barHeight = Math.max(45, exactProgress * 1.8);
-              
-              return (
-                <View key={bar.index} style={styles.progressBarColumn}>
-                  <View style={[styles.progressBarContainer, { height: barHeight }]}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        {
-                          backgroundColor: barColor,
-                          height: '100%',
-                          zIndex: 5,
-                        }
-                      ]}
-                    />
-                    {showIndicator && (
-                      <View style={styles.progressIndicatorAboveIcon}>
-                        <FontAwesome5 
-                          name="arrow-up" 
-                          size={12} 
-                          color={iconColor} 
-                        />
-                      </View>
-                    )}
-                    <View style={styles.progressBarAvatar}>
-                      <View style={{
-                        position: 'absolute',
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        zIndex: 1
-                      }} />
-                      {bar.index === 1 ? (
-                        <FontAwesome5 name="dumbbell" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 2 ? (
-                        <FontAwesome5 name="brain" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 3 ? (
-                        <FontAwesome5 name="lock" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      ) : bar.index === 4 ? (
-                        <FontAwesome5 name="star" size={20} color={iconColor} solid style={{ zIndex: 2 }} />
-                      ) : (
-                        <FontAwesome5 name="fire" size={20} color={iconColor} style={{ zIndex: 2 }} />
-                      )}
+                const showIndicator = !!showProgressIndicator[bar.key];
+                const pct = Math.max(0, Math.min(100, bar.progress || 0));
+                const weekStartPct = Math.max(
+                  0,
+                  Math.min(
+                    pct,
+                    startOfWeekPillarProgress[bar.key as keyof typeof startOfWeekPillarProgress] || 0
+                  )
+                );
+                const weekGrowthPct = Math.max(0, pct - weekStartPct);
+                const priorShareInFill = pct > 0 ? weekStartPct / pct : 1;
+                const displayProgress = Math.floor(pct);
+                const accentColor = showIndicator ? '#10B981' : DARK;
+
+                return (
+                  <TouchableOpacity
+                    key={bar.key}
+                    style={styles.statBarRow}
+                    onPress={() => navigation.navigate('ProfileStats')}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.statBarHeader}>
+                      <Text style={[styles.statBarLabel, { color: theme.textPrimary }]} numberOfLines={1}>
+                        {bar.label}
+                      </Text>
+                      {showIndicator ? (
+                        <View style={styles.statBarToday}>
+                          <FontAwesome5 name="arrow-up" size={9} color="#10B981" />
+                        </View>
+                      ) : null}
                     </View>
-                  </View>
-                  <View style={styles.progressBarLabelBelow}>
-                    <TouchableOpacity 
-                      style={styles.progressBarNumberContainer}
-                      onPress={() => navigation.navigate('ProfileStats')}
-                      onLongPress={async () => {
-                        if (user) {
-                          // ... keep debug logic ...
-                        }
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.progressBarNumber, { color: theme.textPrimary }]}>
+                    <View style={styles.statBarTrackRow}>
+                      <View style={styles.statBarTrack}>
+                        {pct > 0 ? (
+                          <View style={[styles.statBarFillShell, { width: `${pct}%` }]}>
+                            {weekGrowthPct > 0 ? <View style={styles.statBarGrowthTip} /> : null}
+                            {priorShareInFill > 0 ? (
+                              <View
+                                style={[
+                                  styles.statBarPriorFill,
+                                  {
+                                    width: weekGrowthPct > 0 ? `${priorShareInFill * 100}%` : '100%',
+                                    backgroundColor: DARK,
+                                  },
+                                ]}
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.statBarPercent, { color: accentColor }]}>
                         {displayProgress}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
+                    </View>
+                  </TouchableOpacity>
+                );
               })}
             </View>
           </View>
@@ -1894,7 +1892,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   goalsContainer: {
-    gap: 16,
+    gap: 8,
   },
   goalItem: {
     flexDirection: 'row',
@@ -1952,7 +1950,8 @@ const styles = StyleSheet.create({
   weeklyTrackerCard: {
     borderRadius: 16,
     paddingHorizontal: 32,
-    paddingVertical: 20,
+    paddingTop: 0,
+    paddingBottom: 4,
     marginHorizontal: 1,
   },
   weeklyTracker: {
@@ -2609,7 +2608,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+  },
+  goalsSection: {
+    paddingBottom: 4,
+    paddingTop: 6,
+  },
+  statsSection: {
+    paddingTop: 6,
+  },
+  goalsHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  viewAllGoalsText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   noGoalsContainer: {
     alignItems: 'center',
@@ -2809,8 +2825,7 @@ const styles = StyleSheet.create({
   keepTrackHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 8,
+    alignItems: 'center',
     gap: 8,
   },
   eyeIconButton: {
@@ -2916,14 +2931,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingVertical: 0,
-    gap: 25,
+    paddingHorizontal: 8,
+    paddingTop: 0,
+    paddingBottom: 4,
+    gap: 12,
   },
   circularGoalItem: {
     alignItems: 'center',
     flex: 0,
-    minHeight: 140,
   },
   circularGoalTitle: {
     fontSize: 11,
@@ -3034,6 +3049,76 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  statBarsList: {
+    gap: 14,
+  },
+  statBarRow: {
+    width: '100%',
+  },
+  statBarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  statBarLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  statBarToday: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statBarTrackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statBarTrack: {
+    flex: 1,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: 'rgba(31, 41, 55, 0.08)',
+    overflow: 'hidden',
+  },
+  statBarFillShell: {
+    height: '100%',
+    position: 'relative',
+  },
+  statBarGrowthTip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#10B981',
+    borderRadius: 999,
+    zIndex: 1,
+  },
+  statBarPriorFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    zIndex: 2,
+  },
+  statBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  statBarPercent: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    minWidth: 40,
+    textAlign: 'right',
   },
   progressBarsContainer: {
     flexDirection: 'row',

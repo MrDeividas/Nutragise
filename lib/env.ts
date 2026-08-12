@@ -6,7 +6,6 @@ type AppExtra = {
   stripePublishableKey?: string;
   revenueCatIosApiKey?: string;
   revenueCatAndroidApiKey?: string;
-  deepseekApiKey?: string;
 };
 
 /**
@@ -56,9 +55,6 @@ export const env = {
   },
   get revenueCatAndroidApiKey() {
     return read(getExtra().revenueCatAndroidApiKey);
-  },
-  get deepseekApiKey() {
-    return read(getExtra().deepseekApiKey);
   },
 };
 

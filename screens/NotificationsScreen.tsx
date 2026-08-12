@@ -386,12 +386,33 @@ export default function NotificationsScreen() {
     }
 
     if (item.type === 'achievement_unlocked') {
-      nav.navigate('Achievements');
+      nav.navigate('Achievements', {
+        highlightId: item.habit_type || undefined,
+      });
+      return;
+    }
+
+    if (
+      item.type === 'challenge_approved' ||
+      item.type === 'challenge_rejected' ||
+      item.type === 'submission_invalidated'
+    ) {
+      const parent = nav.getParent?.();
+      if (parent?.navigate) {
+        parent.navigate('Discover');
+      } else {
+        nav.navigate('MainTabs', { screen: 'Discover' });
+      }
+      return;
+    }
+
+    if (item.type === 'admin_warning') {
+      nav.navigate('Notifications');
       return;
     }
 
     if (item.goal_id) {
-      nav.navigate('GoalDetail', { goalId: item.goal_id });
+      nav.navigate('UpdateGoal', { goalId: item.goal_id });
       return;
     }
 

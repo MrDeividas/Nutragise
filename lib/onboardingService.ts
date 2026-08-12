@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { dailyHabitsService } from './dailyHabitsService';
 import { OnboardingData } from '../state/onboardingStore';
+import { referralService } from './referralService';
 
 class OnboardingService {
   /**
@@ -12,21 +13,44 @@ class OnboardingService {
       console.log('📊 Data to save:', JSON.stringify(data, null, 2));
       
       // Update profile with onboarding fields
-      const { error: profileError } = await supabase
+      // NOTE: do NOT write data.referralCode into profiles.referral_code —
+      // that column is the user's own shareable code. Friend codes go via applyReferralCode.
+      const updatePayload: Record<string, any> = {
+        life_description: data.lifeDescription,
+        change_reason: data.changeReason,
+        proud_moment: data.proudMoment,
+        morning_motivation: data.morningMotivation,
+        current_state: data.currentState,
+        // Pro is owned by RevenueCat (`is_pro` via revenuecat-webhook). Do not write
+        // legacy `is_premium` (old Stripe membership flag).
+        auth_method: data.authMethod,
+        onboarding_completed: true,
+        onboarding_last_step: null,
+      };
+
+      if (data.displayName?.trim()) {
+        updatePayload.display_name = data.displayName.trim();
+      }
+      if (data.ageGroup) {
+        // Persist age bracket; falls back safely if column is missing (retry below)
+        updatePayload.age_group = data.ageGroup;
+      }
+      if (data.dateOfBirth) {
+        updatePayload.date_of_birth = data.dateOfBirth;
+      }
+
+      let { error: profileError } = await supabase
         .from('profiles')
-        .update({
-          referral_code: data.referralCode,
-          date_of_birth: data.dateOfBirth,
-          life_description: data.lifeDescription,
-          change_reason: data.changeReason,
-          proud_moment: data.proudMoment,
-          morning_motivation: data.morningMotivation,
-          current_state: data.currentState,
-          is_premium: data.isPremium,
-          auth_method: data.authMethod,
-          onboarding_completed: true,
-        })
+        .update(updatePayload)
         .eq('id', userId);
+
+      // If age_group column doesn't exist yet, retry without it
+      if (profileError && data.ageGroup) {
+        console.warn('Retrying profile save without age_group:', profileError.message);
+        delete updatePayload.age_group;
+        const retry = await supabase.from('profiles').update(updatePayload).eq('id', userId);
+        profileError = retry.error;
+      }
 
       if (profileError) {
         console.error('❌ Error updating profile:', profileError);
@@ -35,6 +59,16 @@ class OnboardingService {
       }
       
       console.log('✅ Profile updated successfully');
+
+      // Attribute referral if they entered a friend's code
+      if (data.referralCode?.trim()) {
+        const referral = await referralService.applyReferralCode(data.referralCode);
+        if (!referral.ok) {
+          console.warn('Referral not applied:', referral.error);
+        } else if (referral.referrerId) {
+          console.log('✅ Referral applied →', referral.referrerName || referral.referrerId);
+        }
+      }
 
       // Save selected habits (this will also set habits_last_changed timestamp)
       if (data.selectedHabits.length > 0) {
@@ -70,15 +104,23 @@ class OnboardingService {
    */
   async createInitialGoal(userId: string, goalData: any): Promise<string | null> {
     try {
+      const endDate =
+        goalData.endDate ||
+        (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 66);
+          return d.toISOString().split('T')[0];
+        })();
+
       const { data, error } = await supabase
         .from('goals')
         .insert({
           user_id: userId,
           title: goalData.title,
-          description: goalData.description,
-          category: goalData.category,
+          description: goalData.description || null,
+          category: goalData.category || 'personal',
           start_date: new Date().toISOString().split('T')[0],
-          end_date: goalData.endDate,
+          end_date: endDate,
           milestones: goalData.milestones || [],
           completed: false,
         })
@@ -102,6 +144,16 @@ class OnboardingService {
    */
   async savePartialOnboardingData(userId: string, data: Partial<OnboardingData>, currentStep: number): Promise<boolean> {
     try {
+      // Never clobber a finished onboarding with a mid-flow partial write
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('id', userId)
+        .maybeSingle();
+      if (existing?.onboarding_completed) {
+        return true;
+      }
+
       console.log('💾 Saving partial onboarding data for user:', userId);
       console.log('📊 Partial data to save:', JSON.stringify(data, null, 2));
       console.log('📍 Current step:', currentStep);
@@ -113,12 +165,9 @@ class OnboardingService {
       };
 
       // Only add fields that have actual values
-      if (data.referralCode !== undefined && data.referralCode !== null) {
-        updateData.referral_code = data.referralCode;
-      }
-      if (data.isPremium !== undefined && data.isPremium !== null) {
-        updateData.is_premium = data.isPremium;
-      }
+      // Friend-entered code is applied at full save via apply_referral_code — do not
+      // overwrite this user's own profiles.referral_code.
+      // Do not persist data.isPremium → is_premium (legacy Stripe). Pro = RevenueCat.
       // Save onboarding answers if they exist (steps 6-10)
       if (data.lifeDescription !== undefined && data.lifeDescription !== null && data.lifeDescription !== '') {
         updateData.life_description = data.lifeDescription;

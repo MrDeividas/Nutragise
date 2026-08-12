@@ -46,7 +46,8 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 
 ### 4. Challenges System
 - **Free to Play** (Compete screen): £0 entry challenges for non‑Pro users
-- **Everyone Can Play** (Compete screen): paid entry (e.g. £10) challenges open to all users
+- **Everyone Can Play** (Compete screen): paid entry (£15) challenges open to all users
+- **Pro Challenges**: Pro-only paid entry (£25)
 - Daily recurring challenges (e.g., Be Happy)
 - Weekly recurring challenges
 - Challenge requirements and submissions
@@ -56,7 +57,7 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 ### 5. Wallet & Investment System
 - User wallet with balance tracking
 - Add funds via Stripe integration
-- Invest in challenges (£10 entry fee)
+- Invest in challenges (£15 entry for core / Everyone Can Play; £25 for Pro)
 - Automatic pot distribution to winners
 - Transaction history
 - Platform fee handling
@@ -153,7 +154,7 @@ A full-featured **React Native** app using **Supabase** for authentication, data
 - **Streak Tracking**: Visual streak indicators and rewards
 
 ### Challenge Investment System
-- **Entry Fees**: Challenges can require £10 investment
+- **Entry Fees**: Core habits & Everyone Can Play £15; Pro challenges £25
 - **Pot System**: All investments go into a shared pot
 - **Daily Proof**: Users must submit daily proof to keep investment
 - **Forfeiture**: Missing a day results in losing investment share
@@ -196,12 +197,13 @@ App (`.env`):
 - `STRIPE_PUBLISHABLE_KEY` — Stripe publishable key (wallet / challenges only)
 - `REVENUECAT_IOS_API_KEY` — RevenueCat iOS public SDK key (Pro via Apple IAP)
 - `REVENUECAT_ANDROID_API_KEY` — RevenueCat Android public SDK key (Pro via Google Play)
-- `DEEPSEEK_API_KEY` — AI insights API key
 
 Supabase Edge Function secrets (set in Dashboard → Edge Functions → Secrets):
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY` — wallet deposits + challenge payments
 - `REVENUECAT_WEBHOOK_AUTH` — shared secret expected in the RevenueCat webhook Authorization header
+- `DEEPSEEK_API_KEY` — Insights AI (server-only; never ship in the app)
+- `SIGHTENGINE_API_USER`, `SIGHTENGINE_API_SECRET` — media moderation
 
 ---
 
@@ -228,9 +230,20 @@ Variables:
 ```
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
-STRIPE_PUBLISHABLE_KEY=
-DEEPSEEK_API_KEY=   # optional
+STRIPE_PUBLISHABLE_KEY=   # pk_live_… for production deposits; Pro is NOT Stripe
+REVENUECAT_IOS_API_KEY=
+REVENUECAT_ANDROID_API_KEY=
 ```
+
+DeepSeek / Sightengine / `STRIPE_SECRET_KEY` / `REVENUECAT_WEBHOOK_AUTH` go in Supabase Edge Function secrets only (not the app `.env`).
+
+### Go live (Stripe live + RevenueCat Pro)
+Full checklist: [`supabase/README.md`](supabase/README.md) → **Go live checklist**.
+
+Short version:
+- **Pro** → RevenueCat + App Store subscription (entitlement `pro`); webhook → `revenuecat-webhook`
+- **Deposits** → Stripe **live** keys: `pk_live_…` in app/EAS, `sk_live_…` in Edge secrets
+- Do not use Stripe for membership; old Stripe subscription edge functions have been deleted
 
 ### Run Development Server
 ```bash

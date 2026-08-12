@@ -13,6 +13,69 @@ const corsHeaders = {
 // window short enough that completion data is effectively final.
 const EARLY_SETTLE_HOURS = 2;
 
+async function finaliseParticipantStatuses(supabase: any, challengeId: string) {
+  const { data: challengeData, error: cErr } = await supabase
+    .from('challenges')
+    .select('start_date, end_date')
+    .eq('id', challengeId)
+    .single();
+
+  if (cErr || !challengeData) {
+    console.error(`finaliseParticipantStatuses: cannot load challenge ${challengeId}`, cErr);
+    return;
+  }
+
+  const startDate = new Date(challengeData.start_date);
+  const endDate = new Date(challengeData.end_date);
+  const totalDays = Math.max(
+    1,
+    Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  );
+
+  const { data: participants, error: pErr } = await supabase
+    .from('challenge_participants')
+    .select('id, user_id, status')
+    .eq('challenge_id', challengeId)
+    .in('status', ['active', 'completed']);
+
+  if (pErr || !participants) {
+    console.error(`finaliseParticipantStatuses: cannot load participants`, pErr);
+    return;
+  }
+
+  for (const p of participants) {
+    const { count, error: sErr } = await supabase
+      .from('challenge_submissions')
+      .select('submission_date', { count: 'exact', head: true })
+      .eq('challenge_id', challengeId)
+      .eq('user_id', p.user_id)
+      .not('submission_date', 'is', null);
+
+    if (sErr) {
+      console.error(`finaliseParticipantStatuses: error counting submissions for ${p.user_id}`, sErr);
+      continue;
+    }
+
+    const submittedDays = count ?? 0;
+    const pct = Math.min(100, Math.round((submittedDays / totalDays) * 100));
+    const newStatus = pct >= 100 ? 'completed' : 'failed';
+
+    if (p.status !== newStatus) {
+      await supabase
+        .from('challenge_participants')
+        .update({ completion_percentage: pct, status: newStatus })
+        .eq('id', p.id);
+    } else {
+      await supabase
+        .from('challenge_participants')
+        .update({ completion_percentage: pct })
+        .eq('id', p.id);
+    }
+  }
+
+  console.log(`✅ finaliseParticipantStatuses: ${participants.length} participants for ${challengeId} (totalDays=${totalDays})`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -33,16 +96,12 @@ Deno.serve(async (req) => {
     console.log(`   Settling holds for challenges ending before: ${settleWindowISO}`);
 
     // ─── Phase 1: Early payment settlement ───────────────────────────────────
-    // Find challenges that end within the next 2 hours (or have already ended)
-    // and still have unsettled hold-based participants.
-    // settle-challenge-payments is idempotent (skips payment_settled = true rows),
-    // so it is safe to call early and again when the challenge officially closes.
     const { data: challengesToSettle, error: settleQueryError } = await supabase
       .from('challenges')
       .select('id, title, end_date')
-      .lte('end_date', settleWindowISO)   // ends within the next 2 hours (or already ended)
-      .is('approval_status', null)
-      .in('status', ['upcoming', 'active']);
+      .lte('end_date', settleWindowISO)
+      .or('approval_status.is.null,approval_status.eq.pending')
+      .in('status', ['upcoming', 'active', 'completed']);
 
     if (settleQueryError) {
       console.error('Error fetching challenges for early settlement:', settleQueryError);
@@ -55,7 +114,6 @@ Deno.serve(async (req) => {
           ? `ends in ${minutesUntilEnd} min (early settle)`
           : `ended ${Math.abs(minutesUntilEnd)} min ago`;
 
-        // Only settle payments if the challenge actually has participants
         const { count: earlyParticipantCount } = await supabase
           .from('challenge_participants')
           .select('*', { count: 'exact', head: true })
@@ -94,13 +152,12 @@ Deno.serve(async (req) => {
     }
 
     // ─── Phase 2: Close challenges that have officially ended ─────────────────
-    // Mark as pending admin review. Payment settlement above will have already
-    // run (or will run in the same pass for challenges that just ended).
+    // Also reprocess pending challenges with no flags (stuck false-positives).
     const { data: endedChallenges, error } = await supabase
       .from('challenges')
-      .select('id, title, end_date, status')
+      .select('id, title, end_date, status, approval_status')
       .lt('end_date', nowISO)
-      .is('approval_status', null)
+      .or('approval_status.is.null,approval_status.eq.pending')
       .in('status', ['upcoming', 'active', 'completed']);
 
     if (error) {
@@ -123,7 +180,6 @@ Deno.serve(async (req) => {
 
     for (const challenge of endedChallenges) {
       try {
-        // Check participant count — challenges with no participants don't need admin review
         const { count: participantCount } = await supabase
           .from('challenge_participants')
           .select('*', { count: 'exact', head: true })
@@ -132,10 +188,14 @@ Deno.serve(async (req) => {
         const hasParticipants = (participantCount ?? 0) > 0;
 
         if (!hasParticipants) {
-          // Auto-approve: no participants means nothing to review
           const { error: updateError } = await supabase
             .from('challenges')
-            .update({ approval_status: 'approved', status: 'completed' })
+            .update({
+              approval_status: 'approved',
+              status: 'completed',
+              reviewed_at: nowISO,
+              admin_notes: 'Auto-approved: no participants',
+            })
             .eq('id', challenge.id);
 
           if (updateError) {
@@ -148,8 +208,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Has participants — check whether any submission has been community-flagged.
-        // Flagged challenges go to admin review; unflagged ones auto-approve.
         const { count: flaggedCount } = await supabase
           .from('challenge_submissions')
           .select('id', { count: 'exact', head: true })
@@ -157,6 +215,15 @@ Deno.serve(async (req) => {
           .eq('is_flagged', true);
 
         const hasFlaggedSubmissions = (flaggedCount ?? 0) > 0;
+
+        // Already correctly pending with real flags — leave for admin
+        if (challenge.approval_status === 'pending' && hasFlaggedSubmissions) {
+          console.log(`🚩 Skipping "${challenge.title}" — already pending with ${flaggedCount} flag(s)`);
+          continue;
+        }
+
+        // Pass/fail every participant from actual submission days
+        await finaliseParticipantStatuses(supabase, challenge.id);
 
         // Settle payments regardless of flag status (idempotent)
         try {
@@ -188,7 +255,14 @@ Deno.serve(async (req) => {
         const newApprovalStatus = hasFlaggedSubmissions ? 'pending' : 'approved';
         const { error: updateError } = await supabase
           .from('challenges')
-          .update({ approval_status: newApprovalStatus, status: 'completed' })
+          .update({
+            approval_status: newApprovalStatus,
+            status: 'completed',
+            reviewed_at: hasFlaggedSubmissions ? null : nowISO,
+            admin_notes: hasFlaggedSubmissions
+              ? null
+              : 'Auto-approved: no flagged submissions',
+          })
           .eq('id', challenge.id);
 
         if (updateError) {
@@ -229,4 +303,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-

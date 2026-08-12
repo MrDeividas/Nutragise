@@ -227,11 +227,6 @@ export default function FullJourneyModal({ visible, userId, onClose, readOnly = 
           </TouchableOpacity>
           <View style={styles.headerCenter} pointerEvents="none">
             <Text style={styles.modalTitle}>Journey</Text>
-            {stats?.totalDays > 0 && (
-              <Text style={styles.modalSubtitle}>
-                {stats.totalDays} {stats.totalDays === 1 ? 'day' : 'days'} logged
-              </Text>
-            )}
           </View>
           <View style={styles.headerSpacer} />
         </View>
@@ -426,16 +421,9 @@ const styles = StyleSheet.create({
     width: 44,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 28,
     fontWeight: '700',
     color: '#1F2937',
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#9CA3AF',
-    marginTop: 1,
     textAlign: 'center',
   },
   statsContainer: {

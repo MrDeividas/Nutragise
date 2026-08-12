@@ -727,21 +727,37 @@ const formatHabitScheduleDescription = (habit: CustomHabit): string => {
   }
 };
 
-// Helper function to save pillar progress snapshot at start of day
+// Helper function to save pillar progress snapshot at start of day / week
 async function savePillarProgressSnapshot(userId: string, today: string): Promise<void> {
   try {
     const startOfDayKey = `pillar_progress_start_of_day_${userId}`;
     const startOfDayDateKey = `pillar_progress_start_of_day_date_${userId}`;
     const storedDate = await AsyncStorage.getItem(startOfDayDateKey);
+
+    const [ty, tm, td] = today.split('-').map(Number);
+    const weekDate = new Date(ty, tm - 1, td);
+    weekDate.setDate(weekDate.getDate() - weekDate.getDay());
+    const weekStart = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
+    const startOfWeekKey = `pillar_progress_start_of_week_${userId}`;
+    const startOfWeekDateKey = `pillar_progress_start_of_week_date_${userId}`;
+    const storedWeekDate = await AsyncStorage.getItem(startOfWeekDateKey);
     
-    
-    // Only save if we haven't saved today already (new calendar day)
-    if (storedDate !== today) {
+    const needsDay = storedDate !== today;
+    const needsWeek = storedWeekDate !== weekStart;
+
+    if (needsDay || needsWeek) {
       const progress = await pillarProgressService.getPillarProgress(userId);
-      
-      await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
-      await AsyncStorage.setItem(startOfDayDateKey, today);
-    } else {
+
+      if (needsDay) {
+        await AsyncStorage.setItem(startOfDayKey, JSON.stringify(progress));
+        await AsyncStorage.setItem(startOfDayDateKey, today);
+      }
+
+      if (needsWeek) {
+        // Capture week baseline at the first app open of the week (before later gains)
+        await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(progress));
+        await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
+      }
     }
   } catch {}
 }
@@ -2012,7 +2028,7 @@ function ActionScreen() {
     setIsLevelExpanded(!isLevelExpanded);
   };
   const [totalPoints, setTotalPoints] = useState(0);
-  const [todayPoints, setTodayPoints] = useState(0);
+  const [weekPoints, setWeekPoints] = useState(0);
   const [showLevelModal, setShowLevelModal] = useState(false);
   const progressFillAnim = useRef(new Animated.Value(getLevelFillPercent(levelProgress))).current;
   const progressPointsAnim = useRef(new Animated.Value(levelProgress.pointsInCurrentLevel)).current;
@@ -2226,11 +2242,12 @@ function ActionScreen() {
         })
       : null;
 
-  const todayExpShareInLevel = (() => {
-    const todayInLevel = Math.min(Math.max(todayPoints, 0), levelProgress.pointsInCurrentLevel);
+  const weekExpShareInLevel = (() => {
+    const weekInLevel = Math.min(Math.max(weekPoints, 0), levelProgress.pointsInCurrentLevel);
     if (levelProgress.pointsInCurrentLevel <= 0) return 0;
-    return Math.min(todayInLevel / levelProgress.pointsInCurrentLevel, 1);
+    return Math.min(weekInLevel / levelProgress.pointsInCurrentLevel, 1);
   })();
+  const priorExpShareInFill = Math.max(0, 1 - weekExpShareInLevel);
 
   const markHabitNeedsDetails = useCallback((habitId: string) => {
     if (!HABITS_REQUIRING_DETAILS.has(habitId)) return;
@@ -2455,9 +2472,10 @@ function ActionScreen() {
     const hour = new Date().getHours();
     const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     const dayCount = user?.created_at ? Math.floor((new Date().getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1;
-    const namePart = user?.username ? ` ${user.username}` : '';
+    const name = user?.display_name || user?.username;
+    const namePart = name ? ` ${name}` : '';
     return `${prefix}${namePart}, it's day ${dayCount}`;
-  }, [user?.created_at, user?.username]);
+  }, [user?.created_at, user?.display_name, user?.username]);
 
   const habitSpotlightCardsBase = useMemo(() => ([
     {
@@ -4610,18 +4628,18 @@ function ActionScreen() {
     if (!user) return;
 
     try {
-      const [total, today] = await Promise.all([
+      const [total, week] = await Promise.all([
         pointsService.getTotalPoints(user.id),
-        pointsService.getTodaysPoints(user.id),
+        pointsService.getThisWeeksPoints(user.id),
       ]);
       const progress = pointsService.getLevelProgress(total);
 
       setTotalPoints(total);
-      setTodayPoints(today.total || 0);
+      setWeekPoints(week || 0);
       setLevelProgress(progress);
     } catch (error) {
       setTotalPoints(0);
-      setTodayPoints(0);
+      setWeekPoints(0);
     }
   }
 
@@ -4804,8 +4822,9 @@ function ActionScreen() {
         progressService.getCheckInsForDateRange(user.id, new Date(), new Date())
       ]);
       
-      // Process today's check-ins first
-      const todayStr = new Date().toISOString().split('T')[0];
+      // Process today's check-ins first (local calendar day)
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       for (const checkIn of todayCheckIns) {
         if (checkIn.check_in_date.split('T')[0] === todayStr) {
           checkedInSet.add(checkIn.goal_id);
@@ -4918,18 +4937,19 @@ function ActionScreen() {
     }
   }, [selectedWeek]);
 
-  // Refresh check-ins when screen comes into focus (useful after deleting check-ins)
+  // Refresh check-ins when screen comes into focus (useful after updating / deleting check-ins)
   useFocusEffect(
     useCallback(() => {
       if (user && userGoals.length > 0) {
         checkTodaysCheckIns();
+        checkForOverdueGoals();
       }
       // Refresh level progress and core habits when screen comes into focus
       if (user) {
         fetchUserPoints();
         loadCoreHabitsStatus();
       }
-    }, [user, userGoals.length, checkTodaysCheckIns, loadCoreHabitsStatus])
+    }, [user, userGoals.length, checkTodaysCheckIns, checkForOverdueGoals, loadCoreHabitsStatus])
   );
 
   // Load my active challenges
@@ -5557,19 +5577,41 @@ function ActionScreen() {
         </View>
 
         {/* Level Progress Bar */}
-        <View style={{ marginHorizontal: 24, marginBottom: 16, marginTop: 0 }}>
-          <TouchableOpacity 
-            onPress={toggleLevelExpansion}
-            activeOpacity={0.7}
-          >
-            <Animated.View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: isLevelExpanded ? 30 : 10 }}>
-              {isLevelExpanded && (
-                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginRight: 6 }}>{levelProgress.currentLevel}</Text>
-              )}
+        <View
+          style={{
+            marginHorizontal: 24,
+            marginBottom: 16,
+            marginTop: 0,
+            paddingBottom: isLevelExpanded ? 4 : 0,
+          }}
+        >
+          <TouchableOpacity onPress={toggleLevelExpansion} activeOpacity={0.7}>
+            {/* Fixed row height so the bar never drops when levels appear */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                width: '100%',
+                height: 20,
+              }}
+            >
+              {isLevelExpanded ? (
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: theme.textPrimary,
+                    marginRight: 6,
+                    minWidth: 14,
+                    textAlign: 'center',
+                  }}
+                >
+                  {levelProgress.currentLevel}
+                </Text>
+              ) : null}
               <View
                 style={{
                   flex: 1,
-                  marginHorizontal: 4,
                   height: 8,
                   position: 'relative',
                 }}
@@ -5580,33 +5622,38 @@ function ActionScreen() {
                   }
                 }}
               >
-                {/* Pill track; rounded fill shell + green tip (regular View clips radii reliably) */}
+                {/* Pill track; full green underlay, dark rounded fill on top */}
                 <View style={styles.levelProgressTrack}>
                   {fillWidthInterpolation ? (
                     <Animated.View style={{ width: fillWidthInterpolation, height: '100%' }}>
-                      <View
-                        style={[
-                          styles.levelProgressFillCombined,
-                          { backgroundColor: theme.textPrimary },
-                        ]}
-                      >
-                        {todayExpShareInLevel > 0 ? (
-                          <View
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: `${todayExpShareInLevel * 100}%`,
-                              backgroundColor: '#22C55E',
-                            }}
-                          />
-                        ) : null}
-                      </View>
+                      {weekExpShareInLevel > 0 ? (
+                        <View style={styles.levelProgressWeekTip} />
+                      ) : null}
+                      {priorExpShareInFill > 0 ? (
+                        <View
+                          style={[
+                            styles.levelProgressPriorFill,
+                            {
+                              width:
+                                weekExpShareInLevel > 0
+                                  ? `${priorExpShareInFill * 100}%`
+                                  : '100%',
+                              backgroundColor: theme.textPrimary,
+                            },
+                          ]}
+                        />
+                      ) : weekExpShareInLevel <= 0 ? (
+                        <View
+                          style={[
+                            styles.levelProgressPriorFill,
+                            { width: '100%', backgroundColor: theme.textPrimary },
+                          ]}
+                        />
+                      ) : null}
                     </Animated.View>
                   ) : null}
                 </View>
-                {fillWidthInterpolation && isLevelExpanded && (
+                {fillWidthInterpolation && isLevelExpanded ? (
                   <>
                     <Animated.View
                       style={[
@@ -5634,47 +5681,78 @@ function ActionScreen() {
                     >
                       <Text style={[styles.levelProgressFloatingText, { color: theme.textPrimary }]}>
                         {animatedPoints}
-          </Text>
+                      </Text>
                     </Animated.View>
                   </>
-                )}
-        </View>
-              {isLevelExpanded && (
-                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginLeft: 6 }}>{levelProgress.nextLevel}</Text>
-              )}
-            </Animated.View>
+                ) : null}
+              </View>
+              {isLevelExpanded ? (
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: theme.textPrimary,
+                    marginLeft: 6,
+                    minWidth: 14,
+                    textAlign: 'center',
+                  }}
+                >
+                  {levelProgress.nextLevel}
+                </Text>
+              ) : null}
+            </View>
           </TouchableOpacity>
 
-          {isLevelExpanded && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 20 }} />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>EXP</Text>
-              </View>
-            <TouchableOpacity 
-              onPress={async () => {
-                // Refresh data before opening modal to ensure live updates
-                if (user) {
-                  const today = new Date();
-                  const hour = today.getHours();
-                  const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
-                  const dateString = dateToUse.toISOString().split('T')[0];
-                  
-                  // Refresh daily habits and core habits status
-                  await Promise.all([
-                    loadDailyHabits(dateString),
-                    loadCoreHabitsStatus(),
-                    fetchUserPoints()
-                  ]);
-                }
-                setShowLevelModal(true);
+          {isLevelExpanded ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: 18,
               }}
-              activeOpacity={0.7}
             >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>EXP</Text>
+                {weekPoints > 0 ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: '#22C55E',
+                      }}
+                    />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#22C55E' }}>
+                      +{weekPoints} this week
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (user) {
+                    const today = new Date();
+                    const hour = today.getHours();
+                    const dateToUse = hour < 4 ? new Date(today.getTime() - 24 * 60 * 60 * 1000) : today;
+                    const dateString = dateToUse.toISOString().split('T')[0];
+
+                    await Promise.all([
+                      loadDailyHabits(dateString),
+                      loadCoreHabitsStatus(),
+                      fetchUserPoints(),
+                    ]);
+                  }
+                  setShowLevelModal(true);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="information-circle-outline" size={18} color={theme.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
         {/* Greeting Section */}
@@ -9725,6 +9803,24 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 999,
     overflow: 'hidden',
+  },
+  levelProgressPriorFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    zIndex: 2,
+  },
+  levelProgressWeekTip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: '#22C55E',
+    borderRadius: 999,
+    zIndex: 1,
   },
   levelProgressDash: {
     position: 'absolute',

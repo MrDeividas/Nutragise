@@ -1,11 +1,18 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
 import {
+  assertMediaBase64IsSafe,
   assertMediaIsSafe,
   InappropriateMediaError,
   isInappropriateMediaError,
+  isModerationUnavailableError,
 } from './mediaModerationService';
 
-export { InappropriateMediaError, isInappropriateMediaError };
+export {
+  InappropriateMediaError,
+  isInappropriateMediaError,
+  isModerationUnavailableError,
+};
 
 export type SafeUploadOptions = {
   /** Local file:// / content:// URI, or already-remote https URL */
@@ -17,6 +24,9 @@ export type SafeUploadOptions = {
   upsert?: boolean;
   mediaType?: 'image' | 'video';
 };
+
+/** Keep base64 payloads under Edge Function / Sightengine practical limits. */
+const MAX_PRECHECK_BYTES = 4.5 * 1024 * 1024;
 
 function guessMediaType(uri: string, contentType?: string, explicit?: 'image' | 'video'): 'image' | 'video' {
   if (explicit) return explicit;
@@ -41,9 +51,33 @@ async function removeUploadedFile(path: string | null | undefined) {
   }
 }
 
+/** Returns true when Sightengine already approved the local image bytes. */
+async function precheckLocalImage(uri: string, contentType: string): Promise<boolean> {
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists) {
+    throw new Error('Could not read the selected media file.');
+  }
+  if (typeof info.size === 'number' && info.size > MAX_PRECHECK_BYTES) {
+    return false;
+  }
+
+  const mediaBase64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: 'base64',
+  });
+  if (!mediaBase64) {
+    throw new Error('Could not read the selected media file.');
+  }
+  await assertMediaBase64IsSafe(mediaBase64, {
+    mediaType: 'image',
+    contentType,
+  });
+  return true;
+}
+
 /**
- * Upload local media to the `users` bucket, run Sightengine moderation,
- * and delete the file if it fails the check. Returns the public URL.
+ * Upload local media to the `users` bucket only after moderation when possible.
+ * Images are pre-checked via base64 so unsafe content never becomes public.
+ * Videos (or oversized images) upload then moderate, and are deleted if unsafe/unavailable.
  *
  * If `uri` is already an https URL, skips upload and only moderates.
  */
@@ -63,6 +97,21 @@ export async function uploadMediaSafely(options: SafeUploadOptions): Promise<str
   if (isRemote) {
     await assertMediaIsSafe(uri, kind);
     return uri;
+  }
+
+  let imagePrechecked = false;
+  if (kind === 'image') {
+    try {
+      imagePrechecked = await precheckLocalImage(uri, contentType);
+    } catch (error) {
+      if (isInappropriateMediaError(error) || isModerationUnavailableError(error)) {
+        throw error;
+      }
+      if (__DEV__) {
+        console.warn('Local media pre-check skipped:', error);
+      }
+      imagePrechecked = false;
+    }
   }
 
   const name =
@@ -90,18 +139,18 @@ export async function uploadMediaSafely(options: SafeUploadOptions): Promise<str
   const { data: urlData } = supabase.storage.from('users').getPublicUrl(uploadedPath);
   const publicUrl = urlData.publicUrl;
 
-  try {
-    await assertMediaIsSafe(publicUrl, kind);
-    return publicUrl;
-  } catch (moderationError) {
-    // Only remove when content was judged unsafe. Quota / other errors should
-    // not leave the user with a failed upload after a successful storage write
-    // if we're fail-opening — but quota is handled inside assertMediaIsSafe.
-    if (isInappropriateMediaError(moderationError)) {
+  // Always moderate after upload unless this image already passed a base64 pre-check.
+  if (kind === 'video' || !imagePrechecked) {
+    try {
+      await assertMediaIsSafe(publicUrl, kind);
+      return publicUrl;
+    } catch (moderationError) {
       await removeUploadedFile(uploadedPath);
+      throw moderationError;
     }
-    throw moderationError;
   }
+
+  return publicUrl;
 }
 
 /**
@@ -124,6 +173,9 @@ export async function moderateExistingMediaUrl(
 export function moderationAlertMessage(error: unknown): string {
   if (isInappropriateMediaError(error)) {
     return 'This media was blocked because it appears to contain inappropriate content. Please choose a different photo or video.';
+  }
+  if (isModerationUnavailableError(error)) {
+    return error.message;
   }
   if (error instanceof Error && error.message) {
     return error.message;

@@ -12,24 +12,86 @@ CLI is linked to this project (see `.supabase-project-ref`).
 ```env
 SUPABASE_URL=https://gtnjrauujrzkesaulius.supabase.co
 SUPABASE_ANON_KEY=<anon key from Dashboard → Settings → API>
-STRIPE_PUBLISHABLE_KEY=pk_live_or_test_...
+# Wallet deposits + challenge payments ONLY (not Pro). Use pk_live_… for production.
+STRIPE_PUBLISHABLE_KEY=pk_live_...
 REVENUECAT_IOS_API_KEY=appl_...
 REVENUECAT_ANDROID_API_KEY=goog_...
-DEEPSEEK_API_KEY=...
 ```
 
-Restart Metro after changes: `npm start -- --reset-cache`
+Server-only Edge Function secrets (Dashboard → Edge Functions → Secrets):
+
+```env
+DEEPSEEK_API_KEY=...
+SIGHTENGINE_API_USER=...
+SIGHTENGINE_API_SECRET=...
+STRIPE_SECRET_KEY=sk_live_...   # same mode as publishable key (live ↔ live)
+REVENUECAT_WEBHOOK_AUTH=...     # shared secret for RevenueCat → revenuecat-webhook
+```
+
+Deploy AI + moderation proxies:
+
+```bash
+supabase functions deploy deepseek-chat
+supabase functions deploy moderate-media
+```
+
+Restart Metro after app `.env` changes: `npm start -- --reset-cache`
+
+## Money split (important)
+
+| What | Provider |
+|------|----------|
+| **Pro membership** (trial + monthly) | **RevenueCat** + Apple IAP (entitlement `pro`) |
+| **Wallet deposits / challenge card payments** | **Stripe** PaymentIntents only |
+
+Do **not** recreate Stripe Checkout subscriptions, Customer Portal, or a Stripe webhook that sets `profiles.is_pro`. Those edge functions were deleted:
+
+- `create-subscription`
+- `create-subscription-payment-sheet`
+- `get-customer-portal`
+- `sync-subscription-status`
+- `stripe-webhook` (old Pro webhook)
+
+Pro source of truth: `revenuecat-webhook` → `profiles.is_pro`.
+
+## Go live checklist
+
+### 1. Stripe → Live mode (deposits)
+
+1. Stripe Dashboard → toggle **Test mode OFF**.
+2. Developers → API keys → copy **Publishable** (`pk_live_…`) and **Secret** (`sk_live_…`).
+3. App `.env`: set `STRIPE_PUBLISHABLE_KEY=pk_live_…`
+4. Supabase → Edge Functions → Secrets: set `STRIPE_SECRET_KEY=sk_live_…` (replace any `sk_test_…`).
+5. Stripe → Developers → Webhooks: **delete** any endpoint that pointed at `…/functions/v1/stripe-webhook` (that function is gone). Deposits are confirmed in-app; no Stripe webhook is required for Pro.
+6. Optional cleanup: remove unused Stripe Product/Price for “Pro membership” and secrets like `STRIPE_PRO_PRICE_ID` / `STRIPE_WEBHOOK_SECRET` if still present.
+7. EAS / store builds: set the same `STRIPE_PUBLISHABLE_KEY` live value as a build secret (`.env` is not shipped in release builds).
+
+### 2. RevenueCat + App Store (Pro)
+
+1. App Store Connect → subscription product (e.g. `nutragise_pro_monthly`) + **1-week free trial** introductory offer.
+2. RevenueCat → products / offering / entitlement **`pro`** linked to that App Store product.
+3. RevenueCat → Project settings → API keys → iOS public SDK key in `.env` + EAS as `REVENUECAT_IOS_API_KEY`.
+4. RevenueCat → Integrations → Webhooks:
+   - URL: `https://gtnjrauujrzkesaulius.supabase.co/functions/v1/revenuecat-webhook`
+   - Authorization: `Bearer <same value as REVENUECAT_WEBHOOK_AUTH>`
+5. Test with a **Sandbox** Apple ID on a **TestFlight / device build** (not Expo Go).
+
+### 3. Ship
+
+```bash
+# After secrets are live:
+eas build --platform ios --profile production   # or your TestFlight profile
+```
+
+Confirm deposit: Wallet → Add funds → live card (small amount).  
+Confirm Pro: paywall → Sandbox purchase → `profiles.is_pro` becomes true after webhook.
 
 ## Migrations
 
-Most files in `migrations/` are **not** applied by `supabase db push` until renamed to `YYYYMMDDHHMMSS_name.sql`. Until then, run needed SQL manually in **SQL Editor** on the Application project.
+Common scripts (also applied remotely when using MCP / SQL Editor):
 
-Common scripts to run by hand:
-
-- `add_delete_user_rpc.sql` — account deletion
-- `20260518204312_create_reminders_table.sql` — reminders table
 - `20260609120000_add_subscription_source.sql` — RevenueCat columns on `profiles`
-- `swap_pro_15k_steps_and_no_junk_food.sql` — requires `public.challenges` to exist
+- `20260811120000_retire_stripe_membership.sql` — clears legacy `stripe_subscription_id`; Pro = RevenueCat only
 
 ## Edge Functions
 
@@ -42,13 +104,11 @@ supabase functions deploy
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `STRIPE_SECRET_KEY` — wallet deposits + challenge payments
-- `REVENUECAT_WEBHOOK_AUTH` — shared secret expected as `Authorization: Bearer ...` on RevenueCat webhook calls
-
-Pro subscriptions now flow through **RevenueCat** (Apple IAP / Google Play Billing). The Stripe subscription edge functions and webhook have been removed.
+- `STRIPE_SECRET_KEY` — **live** `sk_live_…` for production deposits/challenges
+- `REVENUECAT_WEBHOOK_AUTH` — `Authorization: Bearer …` on RevenueCat webhook calls
 
 RevenueCat webhook URL: `https://gtnjrauujrzkesaulius.supabase.co/functions/v1/revenuecat-webhook`
 
 ## TestFlight / Play internal testing
 
-Use the same `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `STRIPE_PUBLISHABLE_KEY`, `REVENUECAT_IOS_API_KEY`, and `REVENUECAT_ANDROID_API_KEY` as EAS build secrets (`.env` is not bundled into store builds).
+Use the same `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `STRIPE_PUBLISHABLE_KEY` (**live** for real money), `REVENUECAT_IOS_API_KEY`, and `REVENUECAT_ANDROID_API_KEY` as EAS build secrets (`.env` is not bundled into store builds).

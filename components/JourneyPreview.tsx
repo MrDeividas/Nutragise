@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,18 +6,23 @@ import {
   Image,
   StyleSheet,
   ActivityIndicator,
-  ScrollView,
   Modal,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { dailyPostsService, DailyPost } from '../lib/dailyPostsService';
-import { formatJourneyDate, formatDate, calculateDayNumber } from '../lib/timeService';
+import { calculateDayNumber } from '../lib/timeService';
 import { supabase } from '../lib/supabase';
 import GesturePhotoCarousel from './GesturePhotoCarousel';
 
 const { width } = Dimensions.get('window');
+const H_PAD = 24;
+const GAP = 12;
+/** Fit exactly 3 large thumbs in the viewport */
+const PHOTO_SIZE = Math.floor((width - H_PAD * 2 - GAP * 2) / 3);
+const SNAP = PHOTO_SIZE + GAP;
 
 interface JourneyPreviewProps {
   userId: string;
@@ -49,15 +54,10 @@ export default function JourneyPreview({
         .select('created_at')
         .eq('id', userId)
         .single();
-      
-      if (error) {
-        return;
-      }
-      
-      if (data) {
-        setAccountCreatedAt(data.created_at);
-      }
-    } catch (error) {
+
+      if (error) return;
+      if (data) setAccountCreatedAt(data.created_at);
+    } catch {
       // Don't block loading if this fails
     }
   };
@@ -65,16 +65,25 @@ export default function JourneyPreview({
   const loadRecentJourney = async () => {
     try {
       setLoading(true);
-      // Load last 10 days - service handles errors internally
-      const days = await dailyPostsService.getRecentJourney(userId, 10);
+      const days = await dailyPostsService.getRecentJourney(userId, 30);
       setRecentDays(days || []);
-    } catch (error) {
-      // Set empty array on error to show empty state
+    } catch {
       setRecentDays([]);
     } finally {
       setLoading(false);
     }
   };
+
+  const baseDate = accountCreatedAt || recentDays[recentDays.length - 1]?.date;
+
+  const dayItems = useMemo(
+    () =>
+      recentDays.map((day, index) => ({
+        day,
+        dayNumber: baseDate ? calculateDayNumber(baseDate, day.date) : index + 1,
+      })),
+    [recentDays, baseDate]
+  );
 
   if (loading) {
     return (
@@ -82,7 +91,7 @@ export default function JourneyPreview({
         <View style={styles.journeyHeader}>
           <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
         </View>
-        <ActivityIndicator size="small" color={"#1f2937"} />
+        <ActivityIndicator size="small" color="#1f2937" />
       </View>
     );
   }
@@ -100,44 +109,43 @@ export default function JourneyPreview({
     );
   }
 
-  // Calculate day numbers from account creation date
-  // Use account creation date if available, otherwise fall back to first post date
-  const baseDate = accountCreatedAt || recentDays[recentDays.length - 1]?.date;
-
   return (
     <View style={styles.journeyPreview}>
       <View style={styles.journeyHeader}>
         <Text style={[styles.journeyTitle, { color: theme.textPrimary }]}>Posts</Text>
-        <TouchableOpacity onPress={onViewAll}>
-          <Text style={[styles.viewAllText, { color: theme.textSecondary }]}>View All →</Text>
+        <TouchableOpacity
+          onPress={onViewAll}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-forward-outline" size={20} color="#1f2937" />
         </TouchableOpacity>
       </View>
-      
-      <ScrollView 
-        horizontal 
+
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.journeyDays}
-        style={styles.journeyScrollView}
+        decelerationRate="normal"
+        snapToInterval={SNAP}
+        snapToAlignment="start"
+        bounces
+        alwaysBounceHorizontal
+        nestedScrollEnabled
+        contentContainerStyle={styles.carouselContent}
       >
-        {recentDays.map((day, index) => {
-          const dayNumber = baseDate ? calculateDayNumber(baseDate, day.date) : index + 1;
-          return (
-            <JourneyDayPreview 
-              key={day.id}
-              day={day}
-              dayNumber={dayNumber}
-              theme={theme}
-              onPress={() => {
-                setSelectedDay(day);
-                setSelectedDayNumber(dayNumber);
-              }}
-            />
-          );
-        })}
+        {dayItems.map((item) => (
+          <JourneyDayPreview
+            key={item.day.id}
+            day={item.day}
+            onPress={() => {
+              setSelectedDay(item.day);
+              setSelectedDayNumber(item.dayNumber);
+            }}
+          />
+        ))}
       </ScrollView>
 
-      {/* Day Detail Modal */}
-      {selectedDay && (
+      {selectedDay ? (
         <DayDetailModal
           visible={!!selectedDay}
           day={selectedDay}
@@ -145,76 +153,47 @@ export default function JourneyPreview({
           onClose={() => setSelectedDay(null)}
           theme={theme}
         />
-      )}
+      ) : null}
     </View>
   );
 }
 
 interface JourneyDayPreviewProps {
   day: DailyPost;
-  dayNumber: number;
-  theme: any;
   onPress: () => void;
 }
 
-function JourneyDayPreview({ day, dayNumber, theme, onPress }: JourneyDayPreviewProps) {
-  // Ensure photos is always an array
-  const photos = Array.isArray(day.photos) ? day.photos : (day.photos ? [day.photos] : []);
-  
-  // Calculate photo size to fit exactly 4 photos
-  // Container: width - 48 (margins) - 32 (padding) = width - 80
-  // Gaps: 3 gaps of 8px = 24px
-  // Available: width - 80 - 24 = width - 104
-  // Per photo: (width - 104) / 4
-  const photoSize = Math.floor((width - 104) / 4);
-  
+function JourneyDayPreview({ day, onPress }: JourneyDayPreviewProps) {
+  const photos = Array.isArray(day.photos)
+    ? day.photos
+    : day.photos
+      ? [day.photos]
+      : [];
+
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.dayPreview}>
-      {/* Single Photo Thumbnail - Most Recent */}
-      <View style={styles.photoThumbnails}>
-        {photos.length > 0 && photos[0] ? (
-          <View style={styles.singlePhotoContainer}>
-            <Image 
-              source={{ uri: photos[0] }}
-              style={[styles.singlePhotoThumbnail, { width: photoSize, height: photoSize }]}
-              resizeMode="cover"
-              blurRadius={0}
-            />
-            {photos.length > 1 && (
-              <View style={[styles.photoCountBadge, { backgroundColor: 'rgba(0, 0, 0, 0.7)' }]}>
-                <Text style={[styles.photoCountText, { color: '#ffffff' }]}>
-                  {photos.length}
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          // Show placeholder if no photos
-          <View style={[styles.singlePhotoThumbnail, { 
-            backgroundColor: '#F3F4F6',
-            borderWidth: 1,
-            borderColor: '#E5E7EB',
-            justifyContent: 'center',
-            alignItems: 'center',
-            width: Math.floor((width - 104) / 4),
-            height: Math.floor((width - 104) / 4),
-          }]}>
-            <Ionicons name="image-outline" size={24} color="#9CA3AF" />
-          </View>
-        )}
-      </View>
-      
-      {/* Day Info */}
-      <Text style={[styles.dayLabel, { color: theme.textSecondary, width: Math.floor((width - 104) / 4) }]}>
-        Day {dayNumber} • {formatJourneyDate(day.date)}
-      </Text>
-      </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.dayPreview}>
+      {photos.length > 0 && photos[0] ? (
+        <View style={styles.singlePhotoContainer}>
+          <Image
+            source={{ uri: photos[0] }}
+            style={styles.singlePhotoThumbnail}
+            resizeMode="cover"
+          />
+          {photos.length > 1 ? (
+            <View style={styles.photoCountBadge}>
+              <Text style={styles.photoCountText}>{photos.length}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        <View style={[styles.singlePhotoThumbnail, styles.photoPlaceholder]}>
+          <Ionicons name="image-outline" size={28} color="#9CA3AF" />
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
 
-// Day Detail Modal Component
 interface DayDetailModalProps {
   visible: boolean;
   day: DailyPost;
@@ -223,10 +202,9 @@ interface DayDetailModalProps {
   theme: any;
 }
 
-function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailModalProps) {
+function DayDetailModal({ visible, day, dayNumber, onClose }: DayDetailModalProps) {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  
-  // Map habit names to their display info
+
   const habitMap: Record<string, { label: string }> = {
     gym: { label: '🏋️ Gym' },
     meditation: { label: '🧘 Meditation' },
@@ -238,43 +216,30 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
     cold_shower: { label: '🚿 Cold Shower' },
   };
 
-  // Create habits list from habits_completed array
   const allHabits = Object.keys(habitMap);
-  const habitsList = allHabits.map(key => ({
+  const habitsList = allHabits.map((key) => ({
     key,
     label: habitMap[key].label,
     value: day.habits_completed?.includes(key) || false,
   }));
 
-  const completedHabits = habitsList.filter(h => h.value).length;
+  const completedHabits = habitsList.filter((h) => h.value).length;
   const photos = Array.isArray(day.photos) ? day.photos : [];
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <TouchableOpacity 
-          style={styles.overlayTouchable}
-          activeOpacity={1}
-          onPress={onClose}
-        />
+        <TouchableOpacity style={styles.overlayTouchable} activeOpacity={1} onPress={onClose} />
         <View style={styles.modalWrapper}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Day {dayNumber}</Text>
-              <Text style={styles.headerSubtitle}>{formatDate(day.date)}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
               <Ionicons name="close" size={20} color="#6B7280" />
             </TouchableOpacity>
           </View>
 
-          {/* Summary strip */}
           <View style={styles.summaryStrip}>
             <View style={styles.summaryItem}>
               <Ionicons name="images-outline" size={16} color="#10B981" />
@@ -289,17 +254,16 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
             </View>
           </View>
 
-          <ScrollView 
+          <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
             style={styles.scrollView}
           >
-            {/* Photos */}
             {photos.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Progress Photos</Text>
                 <View style={styles.photoCarouselContainer}>
-                  <GesturePhotoCarousel 
+                  <GesturePhotoCarousel
                     photos={photos}
                     currentIndex={currentPhotoIndex}
                     onIndexChange={setCurrentPhotoIndex}
@@ -310,7 +274,6 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
               </View>
             )}
 
-            {/* Daily Habits */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Daily Habits</Text>
@@ -321,17 +284,19 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
               </View>
               <View style={styles.habitsGrid}>
                 {habitsList.map((habit) => (
-                  <View 
-                    key={habit.key} 
+                  <View
+                    key={habit.key}
                     style={[
                       styles.habitItemCompact,
                       habit.value ? styles.habitItemDone : styles.habitItemTodo,
                     ]}
                   >
-                    <View style={[
-                      styles.habitCheckbox, 
-                      { backgroundColor: habit.value ? '#10B981' : '#E5E7EB' }
-                    ]}>
+                    <View
+                      style={[
+                        styles.habitCheckbox,
+                        { backgroundColor: habit.value ? '#10B981' : '#E5E7EB' },
+                      ]}
+                    >
                       {habit.value && <Ionicons name="checkmark" size={11} color="#FFFFFF" />}
                     </View>
                     <Text
@@ -348,7 +313,6 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
               </View>
             </View>
 
-            {/* Captions */}
             {day.captions && day.captions.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Notes</Text>
@@ -368,24 +332,17 @@ function DayDetailModal({ visible, day, dayNumber, onClose, theme }: DayDetailMo
 
 const styles = StyleSheet.create({
   journeyPreview: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    marginHorizontal: 24,
+    marginHorizontal: 0,
     marginBottom: 0,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   journeyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingHorizontal: H_PAD,
   },
   journeyTitle: {
     fontSize: 20,
@@ -395,55 +352,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  journeyScrollView: {
-    flexGrow: 0,
-  },
-  journeyDays: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 24, // Add padding to the right for better scrolling experience
+  carouselContent: {
+    paddingHorizontal: H_PAD,
   },
   dayPreview: {
-    gap: 6,
-    alignItems: 'center',
-  },
-  photoThumbnails: {
-    flexDirection: 'row',
-    gap: 6,
+    width: PHOTO_SIZE,
+    marginRight: GAP,
   },
   singlePhotoContainer: {
     position: 'relative',
   },
   singlePhotoThumbnail: {
-    borderRadius: 12,
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+  },
+  photoPlaceholder: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   photoCountBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
+    top: 8,
+    right: 8,
     borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    minWidth: 20,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    minWidth: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   photoCountText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  dayLabel: {
     fontSize: 11,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: '700',
+    color: '#ffffff',
   },
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
     fontStyle: 'italic',
+    paddingHorizontal: H_PAD,
   },
-  // Modal Styles
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(17, 24, 39, 0.45)',
@@ -482,12 +435,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#1F2937',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#9CA3AF',
-    marginTop: 2,
   },
   closeButton: {
     width: 32,
