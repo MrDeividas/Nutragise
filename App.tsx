@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import type { NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, ActivityIndicator, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, StatusBar, AppState, type AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,6 +16,7 @@ import { iapService } from './lib/iapService';
 import { challengesService } from './lib/challengesService';
 import { initializeAI } from './lib/config';
 import { pushNotificationService } from './lib/pushNotificationService';
+import { appleHealthService } from './lib/appleHealthService';
 import CustomBackground from './components/CustomBackground';
 import CustomTabBar from './components/CustomTabBar';
 import InAppNotificationBanner from './components/InAppNotificationBanner';
@@ -751,6 +752,33 @@ export default function App() {
     };
   }, [user?.id]);
 
+  // Apple Health: ask permission once in the main app, then refresh on foreground
+  useEffect(() => {
+    if (supabaseConfigError || !user || onboardingComplete !== true) return;
+    if (!appleHealthService.isSupported()) return;
+
+    let cancelled = false;
+
+    const syncHealth = (force = false) => {
+      appleHealthService.sync({ force }).catch(() => {});
+    };
+
+    const t = setTimeout(() => {
+      if (!cancelled) syncHealth(true);
+    }, 800);
+
+    const onAppState = (next: AppStateStatus) => {
+      if (next === 'active' && !cancelled) syncHealth(false);
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      sub.remove();
+    };
+  }, [user?.id, onboardingComplete]);
+
   useEffect(() => {
     if (supabaseConfigError) return;
     // Check if user has completed onboarding
@@ -772,7 +800,7 @@ export default function App() {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('onboarding_completed, onboarding_last_step, username')
+          .select('onboarding_completed, onboarding_last_step, username, avatar_url')
           .eq('id', user.id)
           .single();
 
@@ -785,13 +813,19 @@ export default function App() {
           return;
         }
 
-        // Quiz/onboarding finished, but username setup still lives in OnboardingStack
-        const username = data?.username;
-        const hasRealUsername =
-          !!username &&
-          username !== user.id &&
-          username !== user.email?.split('@')[0];
-        const isComplete = !!data?.onboarding_completed && hasRealUsername;
+        // Existing accounts with a real username (and usually an avatar) must not
+        // be forced through onboarding/ProfileSetup if the completed flag was never set.
+        const { isRealProfileUsername } = await import('./lib/profileCompleteness');
+        const hasRealUsername = isRealProfileUsername(data?.username, user.id);
+
+        if (hasRealUsername && !data?.onboarding_completed) {
+          await supabase
+            .from('profiles')
+            .update({ onboarding_completed: true })
+            .eq('id', user.id);
+        }
+
+        const isComplete = hasRealUsername;
 
         // Add small delay to prevent navigation stack conflicts
         setTimeout(() => {

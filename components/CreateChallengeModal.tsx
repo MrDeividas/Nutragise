@@ -391,14 +391,6 @@ export default function CreateChallengeModal({
                 contentContainerStyle={[styles.content, { paddingBottom: 24 + insets.bottom }]}
                 showsVerticalScrollIndicator={false}
               >
-                <View style={styles.heroCard}>
-                  <Text style={styles.heroEyebrow}>Step 1</Text>
-                  <Text style={styles.heroTitle}>Who is this challenge for?</Text>
-                  <Text style={styles.heroSubtitle}>
-                    Private challenges stay with your invite code. Public requests are reviewed by Nutragise.
-                  </Text>
-                </View>
-
                 {renderTypeCard(
                   'private',
                   'lock-closed-outline',
@@ -428,16 +420,6 @@ export default function CreateChallengeModal({
                 keyboardShouldPersistTaps="handled"
                 scrollEnabled={!showDatePicker}
               >
-                <View style={styles.heroCard}>
-                  <Text style={styles.heroEyebrow}>Step 2</Text>
-                  <Text style={styles.heroTitle}>Challenge details</Text>
-                  <Text style={styles.heroSubtitle}>
-                    {challengeType === 'private'
-                      ? 'Set the rules, stake, cover, and start date for your private group.'
-                      : 'Use the same details as a private challenge so our team can review your request.'}
-                  </Text>
-                </View>
-
                 <Text style={styles.sectionLabel}>Basics</Text>
                 <View style={styles.formCard}>
                   <Text style={styles.fieldLabel}>Title</Text>

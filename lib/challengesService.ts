@@ -13,6 +13,8 @@ import {
   CreateChallengeData,
   JoinChallengeData,
   SubmitChallengeProofData,
+  CHALLENGE_ENTRY_FEES,
+  FREE_USER_MAX_ACTIVE_CHALLENGES,
   isChallengeActive,
   isChallengeUpcoming,
   getChallengeWeekNumber,
@@ -20,8 +22,55 @@ import {
   getCurrentWeekForRecurringChallenge,
   getCurrentRecurringPeriod,
 } from '../types/challenges';
-import { isRetiredPublicChallengeTitle } from './challengeTitleUtils';
+import { isProOnlyChallengeTitle, isRetiredPublicChallengeTitle, getStepChallengeConfig, getStepChallengeEntryFee } from './challengeTitleUtils';
 import { localDeviceCalendarYmd } from './timeService';
+
+/** Official public entry fee for recurring system challenges (never copy stale £10 templates). */
+function resolveOfficialEntryFee(challenge: {
+  title: string;
+  entry_fee?: number | null;
+  is_pro_only?: boolean | null;
+}): number {
+  const stepFee = getStepChallengeEntryFee(challenge.title);
+  if (stepFee != null) return stepFee;
+
+  const current = Number(challenge.entry_fee) || 0;
+  if (current <= 0) return 0;
+  if (challenge.is_pro_only || isProOnlyChallengeTitle(challenge.title)) {
+    return CHALLENGE_ENTRY_FEES.PRO;
+  }
+  return CHALLENGE_ENTRY_FEES.STANDARD;
+}
+
+function resolveIsProOnly(challenge: {
+  title: string;
+  is_pro_only?: boolean | null;
+}): boolean {
+  // Step challenges are always open to everyone
+  if (getStepChallengeConfig(challenge.title)) return false;
+  return !!(challenge.is_pro_only || isProOnlyChallengeTitle(challenge.title));
+}
+
+/** Next start on preferred weekday after endDate, lasting durationDays (inclusive). */
+function getNextWeekdayDurationWindow(
+  endDate: Date,
+  startWeekday: number,
+  durationDays: number
+): { start: Date; end: Date } {
+  const start = new Date(endDate);
+  start.setUTCDate(start.getUTCDate() + 1);
+  start.setUTCHours(0, 1, 0, 0);
+
+  const day = start.getUTCDay();
+  const daysUntil = (startWeekday - day + 7) % 7;
+  start.setUTCDate(start.getUTCDate() + daysUntil);
+
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + Math.max(1, durationDays) - 1);
+  end.setUTCHours(23, 59, 59, 999);
+
+  return { start, end };
+}
 
 class ChallengesService {
   /**
@@ -96,14 +145,26 @@ class ChallengesService {
         });
       }
 
-      // Map counts to challenges and include approval_status
-      let challenges = (data || []).map((challenge) => ({
-        ...challenge,
-        participant_count: countMap.get(challenge.id) || 0,
-        approval_status: challenge.approval_status || undefined,
-      }));
+      // Map counts + normalize official fees (stop stale £10 templates leaking into UI)
+      let challenges = (data || []).map((challenge) => {
+        const base = {
+          ...challenge,
+          participant_count: countMap.get(challenge.id) || 0,
+          approval_status: challenge.approval_status || undefined,
+        };
+        if (base.is_user_created) return base;
+        const fee = Number(base.entry_fee) || 0;
+        if (fee <= 0) {
+          return { ...base, entry_fee: 0, is_pro_only: false };
+        }
+        return {
+          ...base,
+          entry_fee: resolveOfficialEntryFee(base),
+          is_pro_only: resolveIsProOnly(base),
+        };
+      });
 
-      // Aggressive deduplication: Remove duplicates by title + date + entry_fee
+      // Aggressive deduplication: Remove duplicates by title + date (ignore fee)
       // Keep only the most recent instance (by created_at or start_date)
       // This handles cases where multiple instances are created for the same day
       const challengeMap = new Map<string, Challenge>();
@@ -118,18 +179,20 @@ class ChallengesService {
         challengeDate.setUTCMilliseconds(0);
         const dateKey = challengeDate.toISOString().split('T')[0];
         
-        // Create deduplication key: title + date (day only) + entry_fee
-        const dedupKey = `${challenge.title}_${dateKey}_${challenge.entry_fee || 0}`;
+        const dedupKey = `${challenge.title}_${dateKey}`;
         
         const existing = challengeMap.get(dedupKey);
         if (!existing) {
           challengeMap.set(dedupKey, challenge);
         } else {
           duplicateCount.found++;
-          // Keep the one with the later created_at or start_date
+          const preferCurrent =
+            (challenge.status === 'active' || challenge.status === 'upcoming') &&
+            existing.status !== 'active' &&
+            existing.status !== 'upcoming';
           const existingDate = new Date(existing.created_at || existing.start_date);
           const currentDate = new Date(challenge.created_at || challenge.start_date);
-          if (currentDate > existingDate) {
+          if (preferCurrent || currentDate > existingDate) {
             duplicateCount.removed++;
             challengeMap.set(dedupKey, challenge);
           } else {
@@ -190,8 +253,8 @@ class ChallengesService {
                 challenge.status = 'active';
               }
 
-              // One card per daily title + fee (today only)
-              const key = `${challenge.title}_${challenge.entry_fee || 0}`;
+              // One card per daily title (today only)
+              const key = challenge.title;
               if (!recurringTitles.has(key)) {
                 filteredChallenges.push(challenge);
                 recurringTitles.add(key);
@@ -200,10 +263,12 @@ class ChallengesService {
           } else {
             // For weekly recurring challenges, show current week's instance
             const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-            
+            const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
             const isActive = (now >= challengeStart && now <= challengeEnd);
             const isUpcoming = (now < challengeStart && challengeStart <= oneWeekFromNow);
-            const isRecentlyEnded = (now > challengeEnd && now <= oneWeekFromNow);
+            // Bridge only for challenges that ended within the last week (not all history)
+            const isRecentlyEnded = now > challengeEnd && challengeEnd >= oneWeekAgo;
             
             if (__DEV__) {
               console.log(`📅 [Weekly] ${challenge.title}:`, {
@@ -219,16 +284,25 @@ class ChallengesService {
             
             // Show if active, upcoming, or recently ended (to bridge gaps)
             if (isActive || isUpcoming || isRecentlyEnded) {
-              // Only add if we haven't already added a challenge with this title
-              // Use title + entry_fee to distinguish free vs paid versions
-              const key = `${challenge.title}_${challenge.entry_fee || 0}`;
-              if (!recurringTitles.has(key)) {
+              const key = challenge.title;
+              const existingIdx = filteredChallenges.findIndex(
+                (c) => c.is_recurring && c.title === key
+              );
+              if (existingIdx < 0) {
                 filteredChallenges.push(challenge);
                 recurringTitles.add(key);
                 if (__DEV__) {
                   console.log(`  ✅ Added ${challenge.title}`);
                 }
               } else {
+                const existing = filteredChallenges[existingIdx];
+                const existingLive =
+                  existing.status === 'active' || existing.status === 'upcoming';
+                const currentLive =
+                  challenge.status === 'active' || challenge.status === 'upcoming';
+                if (currentLive && !existingLive) {
+                  filteredChallenges[existingIdx] = challenge;
+                }
                 if (__DEV__) {
                   console.log(`  ⏭️  Skipped duplicate ${challenge.title}`);
                 }
@@ -315,8 +389,35 @@ class ChallengesService {
 
       const creator = profilesMap.get(challenge.created_by);
 
+      const normalized = challenge.is_user_created
+        ? challenge
+        : {
+            ...challenge,
+            entry_fee:
+              Number(challenge.entry_fee) > 0
+                ? resolveOfficialEntryFee(challenge)
+                : 0,
+            is_pro_only:
+              Number(challenge.entry_fee) > 0 ? resolveIsProOnly(challenge) : false,
+          };
+
+      // Heal stale £10 (etc.) on live system challenges so join charges the official fee
+      if (
+        !challenge.is_user_created &&
+        Number(challenge.entry_fee) > 0 &&
+        Number(normalized.entry_fee) !== Number(challenge.entry_fee)
+      ) {
+        void supabase
+          .from('challenges')
+          .update({
+            entry_fee: normalized.entry_fee,
+            is_pro_only: normalized.is_pro_only,
+          })
+          .eq('id', challenge.id);
+      }
+
       return {
-        ...challenge,
+        ...normalized,
         requirements: requirements || [],
         participants: participantsWithProfiles || [],
         user_submissions: [], // Will be populated separately if needed
@@ -341,6 +442,17 @@ class ChallengesService {
     clientSecret: string;
   }> {
     try {
+      await this.validateUserId(userId);
+
+      const { data: challenge } = await supabase
+        .from('challenges')
+        .select('id, title, duration_weeks, is_pro_only, status')
+        .eq('id', challengeId)
+        .single();
+
+      if (!challenge) throw new Error('Challenge not found');
+      await this.assertCanJoinChallenge(userId, challenge);
+
       const { paymentIntentId } = await stripeService.payChallengeFromWallet(
         userId,
         challengeId,
@@ -358,11 +470,100 @@ class ChallengesService {
   }
 
   /**
-   * Challenge join access — open to all users.
-   * (Previously free users were limited to 7-day challenges.)
+   * Challenge join access:
+   * - Free: max FREE_USER_MAX_ACTIVE_CHALLENGES concurrent active/upcoming joins
+   * - Pro: unlimited
+   * - Pro-only challenges require Pro
    */
-  async checkChallengeAccessForUser(_userId: string, _durationWeeks: number): Promise<void> {
-    return;
+  async checkChallengeAccessForUser(
+    userId: string,
+    _durationWeeks?: number,
+    options?: {
+      challengeId?: string;
+      isProOnly?: boolean;
+      title?: string;
+    }
+  ): Promise<void> {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('is_pro')
+      .eq('id', userId)
+      .single();
+
+    if (profileError) {
+      console.error('Error loading profile for challenge access:', profileError);
+    }
+
+    const isPro = !!profile?.is_pro;
+    const isProOnly =
+      !!options?.isProOnly ||
+      (!!options?.title && isProOnlyChallengeTitle(options.title));
+
+    if (isProOnly && !isPro) {
+      throw new Error('This is a Pro challenge. Upgrade to Pro to join.');
+    }
+
+    // Pro members: unlimited concurrent challenges
+    if (isPro) return;
+
+    const { data: rows, error } = await supabase
+      .from('challenge_participants')
+      .select(
+        `
+        challenge_id,
+        status,
+        challenge:challenges!inner (
+          id,
+          status,
+          end_date
+        )
+      `
+      )
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    if (error) {
+      console.error('Error counting active challenge joins:', error);
+      throw new Error('Could not verify challenge limits. Please try again.');
+    }
+
+    const now = Date.now();
+    const activeCount = (rows || []).filter((row: any) => {
+      const c = row.challenge;
+      if (!c) return false;
+      // Rejoining / completing payment for the same challenge doesn't consume an extra slot
+      if (options?.challengeId && row.challenge_id === options.challengeId) return false;
+      if (c.status === 'cancelled' || c.status === 'completed') return false;
+      const end = new Date(c.end_date);
+      end.setHours(23, 59, 59, 999);
+      if (end.getTime() < now) return false;
+      return c.status === 'active' || c.status === 'upcoming';
+    }).length;
+
+    if (activeCount >= FREE_USER_MAX_ACTIVE_CHALLENGES) {
+      throw new Error(
+        `Free members can join up to ${FREE_USER_MAX_ACTIVE_CHALLENGES} challenges at a time. Upgrade to Pro for unlimited challenges, or finish/leave one first.`
+      );
+    }
+  }
+
+  /**
+   * Shared gate used by all join entry points (before charging wallet).
+   */
+  private async assertCanJoinChallenge(
+    userId: string,
+    challenge: {
+      id: string;
+      duration_weeks?: number;
+      is_pro_only?: boolean | null;
+      title?: string;
+    }
+  ): Promise<void> {
+    await this.checkChallengeAccessForUser(userId, challenge.duration_weeks, {
+      challengeId: challenge.id,
+      isProOnly: !!challenge.is_pro_only || resolveIsProOnly(challenge as any),
+      title: challenge.title,
+    });
   }
 
   /**
@@ -416,7 +617,7 @@ class ChallengesService {
 
       if (!challenge) throw new Error('Challenge not found');
 
-      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
+      await this.assertCanJoinChallenge(userId, challenge);
 
       const { data: existing } = await supabase
         .from('challenge_participants')
@@ -462,7 +663,7 @@ class ChallengesService {
       // Get challenge details
       const { data: challenge } = await supabase
         .from('challenges')
-        .select('entry_fee')
+        .select('entry_fee, title, is_pro_only, is_user_created, duration_weeks, id')
         .eq('id', challengeId)
         .single();
 
@@ -470,7 +671,11 @@ class ChallengesService {
         throw new Error('Challenge not found');
       }
 
-      const entryFee = challenge.entry_fee || 0;
+      await this.assertCanJoinChallenge(userId, challenge);
+
+      const entryFee = challenge.is_user_created
+        ? Number(challenge.entry_fee) || 0
+        : resolveOfficialEntryFee(challenge);
 
       // Create or update participant record
       const { data: existing } = await supabase
@@ -560,6 +765,8 @@ class ChallengesService {
         throw new Error('Challenge not found');
       }
 
+      await this.assertCanJoinChallenge(userId, challenge);
+
       // Check if user is already participating in THIS SPECIFIC challenge instance
       // For both recurring and non-recurring challenges, we check the specific instance
       const { data: existing } = await supabase
@@ -593,7 +800,23 @@ class ChallengesService {
         }
       }
 
-      const entryFee = challenge.entry_fee || 0;
+      const entryFee = challenge.is_user_created
+        ? Number(challenge.entry_fee) || 0
+        : resolveOfficialEntryFee(challenge);
+
+      if (
+        !challenge.is_user_created &&
+        Number(challenge.entry_fee) > 0 &&
+        entryFee !== Number(challenge.entry_fee)
+      ) {
+        await supabase
+          .from('challenges')
+          .update({
+            entry_fee: entryFee,
+            is_pro_only: resolveIsProOnly(challenge),
+          })
+          .eq('id', challengeId);
+      }
 
       // For challenges with entry fee, payment is handled via Stripe Connect escrow
       // The payment intent is created and user pays via Stripe Payment Sheet
@@ -807,7 +1030,7 @@ class ChallengesService {
   async submitChallengeProof(
     challengeId: string,
     userId: string,
-    photoUrl: string,
+    photoUrl: string | null,
     weekNumber: number,
     submissionNotes?: string
   ): Promise<boolean> {
@@ -956,14 +1179,23 @@ class ChallengesService {
         // Get challenge to check verification type
         const { data: challengeData } = await supabase
           .from('challenges')
-          .select('verification_type')
+          .select('verification_type, title')
           .eq('id', challengeId)
           .single();
 
-        // For automatic verification, photo_url is optional and status is approved
+        // Automatic / Apple Health step submissions can omit a photo
         const isAutomatic = challengeData?.verification_type === 'automatic';
-        
-        // Create new submission
+        const isHealthSteps =
+          !photoUrl &&
+          !!submissionNotes &&
+          /apple health/i.test(submissionNotes) &&
+          /step/i.test(challengeData?.title || '');
+        const allowWithoutPhoto = isAutomatic || isHealthSteps;
+
+        if (!photoUrl && !allowWithoutPhoto) {
+          throw new Error('A photo is required for this challenge submission.');
+        }
+
         if (__DEV__) {
           console.log('📝 Creating new submission:', {
             challengeId,
@@ -971,19 +1203,20 @@ class ChallengesService {
             weekNumber,
             hasPhoto: !!photoUrl,
             isAutomatic,
+            isHealthSteps,
           });
         }
-        
+
         const { data: newSubmission, error } = await supabase
           .from('challenge_submissions')
           .insert({
             challenge_id: challengeId,
             user_id: userId,
-            photo_url: photoUrl || null, // Allow null for automatic submissions
+            photo_url: photoUrl || null,
             week_number: weekNumber,
             submission_notes: submissionNotes,
-            verification_status: isAutomatic ? 'approved' : 'pending',
-            submission_date: proofDayYmd, // Set submission_date for unique constraint
+            verification_status: allowWithoutPhoto ? 'approved' : 'pending',
+            submission_date: proofDayYmd,
           })
           .select('*')
           .single();
@@ -992,7 +1225,7 @@ class ChallengesService {
           console.error('❌ Error creating submission:', error);
           throw error;
         }
-        
+
         if (__DEV__) {
           console.log('✅ Submission created successfully:', {
             submission: newSubmission,
@@ -1001,7 +1234,7 @@ class ChallengesService {
             weekNumber: newSubmission?.week_number,
           });
         }
-        
+
         submissionId = newSubmission?.id;
       }
 
@@ -1282,11 +1515,11 @@ class ChallengesService {
         return;
       }
 
-      // Deduplicate: keep only the most recent instance per unique recurring challenge
-      // (identified by title + entry_fee + schedule).
+      // Deduplicate: keep only the most recent instance per unique recurring challenge.
+      // Key by title + schedule only (NOT entry_fee) so old £10 templates can't spawn a parallel chain.
       const mostRecent = new Map<string, Challenge>();
       for (const c of allRecurring || []) {
-        const key = `${c.title}_${c.entry_fee || 0}_${c.recurring_schedule || 'weekly'}`;
+        const key = `${c.title}_${c.recurring_schedule || 'weekly'}`;
         if (!mostRecent.has(key)) {
           mostRecent.set(key, c); // First = most recent (sorted by end_date desc)
         }
@@ -1356,10 +1589,8 @@ class ChallengesService {
         .gte('start_date', todayStart.toISOString())
         .lt('start_date', nextDayStart.toISOString());
       
-      // Filter to match entry_fee as well (to distinguish free vs paid versions)
-      const matchingTodayChallenges = (todayChallenges || []).filter(
-        c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
-      );
+      // Prefer any existing instance for this title today (fee may have been migrated)
+      const matchingTodayChallenges = todayChallenges || [];
       
       // If multiple exist, log and keep only the first one (we'll deduplicate in getChallenges)
       if (matchingTodayChallenges.length > 1) {
@@ -1395,10 +1626,8 @@ class ChallengesService {
           .gte('start_date', nextDayStart.toISOString())
           .lt('start_date', new Date(nextDayStart.getTime() + 24 * 60 * 60 * 1000).toISOString());
 
-        // Filter to match entry_fee
-        const matchingExisting = (existingChallenges || []).filter(
-          c => (c.entry_fee || 0) === (challenge.entry_fee || 0)
-        );
+        // Any instance for this title tomorrow counts (fee may have been migrated)
+        const matchingExisting = existingChallenges || [];
 
         // Only create if no matching challenge exists for tomorrow
         if (matchingExisting.length === 0) {
@@ -1434,35 +1663,34 @@ class ChallengesService {
   }
 
   /**
-   * Handle weekly recurring challenge - create new instance each week.
+   * Handle weekly recurring challenge - create new instance each cycle.
    * Self-healing: walks forward from the most recent instance's end_date,
-   * creating any missing weeks up to next week. This fixes broken chains
-   * where no instance was created for one or more weeks.
+   * creating any missing windows up to ~1 week ahead.
    */
   private async handleWeeklyRecurringChallenge(challenge: Challenge, now: Date): Promise<void> {
     try {
-      // Walk forward from the most recent instance, filling any missing weeks.
-      // Cap at 10 iterations (10 weeks max catch-up) to avoid runaway loops.
       let cursor = new Date(challenge.end_date);
       const nextWeekCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const MAX_ITERATIONS = 10;
       let iterations = 0;
+      const stepCfg = getStepChallengeConfig(challenge.title);
 
       while (iterations < MAX_ITERATIONS) {
         iterations++;
 
-        const { start: nextStart, end: nextEnd } = this.getNextMondaySundayWindow(cursor);
+        const { start: nextStart, end: nextEnd } = stepCfg
+          ? getNextWeekdayDurationWindow(cursor, stepCfg.startWeekday, stepCfg.durationDays)
+          : this.getNextMondaySundayWindow(cursor);
 
         // Stop once we've scheduled up to 1 week in the future
         if (nextStart > nextWeekCutoff) break;
 
-        // Check if an instance already exists for this window
+        // Check if an instance already exists for this window (ignore fee — templates may be stale)
         const { data: existing } = await supabase
           .from('challenges')
           .select('id, status')
           .eq('title', challenge.title)
           .eq('is_recurring', true)
-          .eq('entry_fee', challenge.entry_fee || 0)
           .gte('start_date', nextStart.toISOString())
           .lte('start_date', nextEnd.toISOString());
 
@@ -1472,12 +1700,9 @@ class ChallengesService {
             const label = weeksAgo > 0 ? `(catch-up: ${weeksAgo}w ago)` : '(next week)';
             console.log(`  ✨ Creating missing instance for "${challenge.title}" ${nextStart.toISOString().split('T')[0]} ${label}`);
           }
-          // Create from a temporary object with the cursor end_date so
-          // createRecurringInstance computes the correct Mon–Sun window
           await this.createRecurringInstance({ ...challenge, end_date: cursor.toISOString() });
         }
 
-        // Advance cursor to the end of the instance we just ensured exists
         cursor = nextEnd;
       }
     } catch (error) {
@@ -1502,7 +1727,7 @@ class ChallengesService {
           description: originalChallenge.description,
           category: originalChallenge.category,
           duration_weeks: originalChallenge.duration_weeks,
-          entry_fee: originalChallenge.entry_fee,
+          entry_fee: resolveOfficialEntryFee(originalChallenge),
           verification_type: originalChallenge.verification_type,
           start_date: startDate.toISOString(),
           end_date: endDate.toISOString(),
@@ -1511,7 +1736,7 @@ class ChallengesService {
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: 'daily',
-          is_pro_only: false,
+          is_pro_only: resolveIsProOnly(originalChallenge),
           next_recurrence: new Date(endDate.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -1552,32 +1777,42 @@ class ChallengesService {
   }
 
   /**
-   * Create a new instance of a weekly recurring challenge (always Monday–Sunday).
+   * Create a new instance of a weekly recurring challenge.
+   * Step challenges use custom weekday + duration; others stay Mon–Sun.
    */
   private async createRecurringInstance(originalChallenge: Challenge): Promise<void> {
     try {
-      const { start: nextWeekStart, end: nextWeekEnd } = this.getNextMondaySundayWindow(
-        new Date(originalChallenge.end_date)
-      );
+      const stepCfg = getStepChallengeConfig(originalChallenge.title);
+      const { start: nextWeekStart, end: nextWeekEnd } = stepCfg
+        ? getNextWeekdayDurationWindow(
+            new Date(originalChallenge.end_date),
+            stepCfg.startWeekday,
+            stepCfg.durationDays
+          )
+        : this.getNextMondaySundayWindow(new Date(originalChallenge.end_date));
+
+      const durationWeeks = stepCfg
+        ? Math.max(1, Math.ceil(stepCfg.durationDays / 7))
+        : originalChallenge.duration_weeks;
       
-      // Create new challenge instance for next week
+      // Create new challenge instance for next cycle
       const { data: newChallenge, error: challengeError } = await supabase
         .from('challenges')
         .insert({
           title: originalChallenge.title,
           description: originalChallenge.description,
           category: originalChallenge.category,
-          duration_weeks: originalChallenge.duration_weeks,
-          entry_fee: originalChallenge.entry_fee,
-          verification_type: originalChallenge.verification_type,
+          duration_weeks: durationWeeks,
+          entry_fee: resolveOfficialEntryFee(originalChallenge),
+          verification_type: originalChallenge.verification_type || 'automatic',
           start_date: nextWeekStart.toISOString(),
           end_date: nextWeekEnd.toISOString(),
           created_by: originalChallenge.created_by,
-          status: 'active',
+          status: 'upcoming',
           image_url: originalChallenge.image_url,
           is_recurring: true,
           recurring_schedule: originalChallenge.recurring_schedule,
-          is_pro_only: false,
+          is_pro_only: resolveIsProOnly(originalChallenge),
           next_recurrence: new Date(nextWeekEnd.getTime() + 24 * 60 * 60 * 1000).toISOString(),
         })
         .select()
@@ -1820,7 +2055,7 @@ class ChallengesService {
       }
 
       await this.validateUserId(userId);
-      await this.checkChallengeAccessForUser(userId, challenge.duration_weeks);
+      await this.assertCanJoinChallenge(userId, challenge);
 
       const { data: existing } = await supabase
         .from('challenge_participants')

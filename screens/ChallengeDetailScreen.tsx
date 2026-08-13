@@ -12,6 +12,7 @@ import {
   Modal,
   Pressable,
   Animated,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,6 +43,7 @@ import { postsService } from '../lib/postsService';
 import { getDailyPostDate, localDeviceCalendarYmd } from '../lib/timeService';
 import { getChallengeDisplayTitle, challengeAllowsGalleryProofUpload, stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 import { getChallengeCardHeroSource } from '../lib/challengeHeroImages';
+import { appleHealthService } from '../lib/appleHealthService';
 import {
   challengeBusinessYmd,
   challengeDateYmd,
@@ -291,11 +293,38 @@ export default function ChallengeDetailScreen({ route }: any) {
   /** 1-indexed day selected in the participants day picker */
   const [selectedParticipantDay, setSelectedParticipantDay] = useState<number>(1);
   const [customCoverAspect, setCustomCoverAspect] = useState<number | null>(null);
+  const [healthSteps, setHealthSteps] = useState<number | null>(null);
+  const [submittingHealthSteps, setSubmittingHealthSteps] = useState(false);
 
   useEffect(() => {
+    setIsParticipating(false);
+    setProgress(null);
     loadChallengeDetails();
     loadUserProfile();
-  }, [challengeId]);
+  }, [challengeId, user?.id]);
+
+  // Prefill Apple Health steps for step challenges
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !challenge) return;
+    if (!appleHealthService.isStepChallengeTitle(challenge.title)) return;
+
+    let cancelled = false;
+    (async () => {
+      const snap = await appleHealthService.sync({ force: false });
+      if (!cancelled && snap.authorized) {
+        setHealthSteps(snap.steps);
+      }
+    })().catch(() => {});
+
+    const unsub = appleHealthService.subscribe((snap) => {
+      if (snap.authorized) setHealthSteps(snap.steps);
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [challenge?.id, challenge?.title]);
 
   useEffect(() => {
     setCustomCoverAspect(null);
@@ -493,6 +522,7 @@ export default function ChallengeDetailScreen({ route }: any) {
   ) => {
     try {
       const isParticipatingCheck = await challengesService.isUserParticipating(cId, userId);
+      if (userId !== useAuthStore.getState().user?.id) return;
       setIsParticipating(isParticipatingCheck);
 
       if (isParticipatingCheck) {
@@ -679,7 +709,7 @@ export default function ChallengeDetailScreen({ route }: any) {
                   await chargeWalletThenJoin(shortBy, entryFee);
                 } catch (error: any) {
                   console.error('❌ [ChallengeDetailScreen] Charge & join error:', error);
-                  Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+                  showJoinError(error);
                 } finally {
                   setJoining(false);
                 }
@@ -690,16 +720,49 @@ export default function ChallengeDetailScreen({ route }: any) {
       );
     } catch (error: any) {
       console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
-      Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+      showJoinError(error);
     } finally {
       setJoining(false);
     }
+  };
+
+  const showJoinError = (error: any) => {
+    const message = error?.message || 'Failed to join challenge. Please try again.';
+    const wantsUpgrade =
+      /upgrade to pro/i.test(message) ||
+      /free members can join/i.test(message) ||
+      /pro challenge/i.test(message);
+
+    if (wantsUpgrade) {
+      Alert.alert('Challenge limit', message, [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Upgrade to Pro',
+          onPress: () => (navigation as any).navigate('UpgradeToPro'),
+        },
+      ]);
+      return;
+    }
+
+    Alert.alert('Error', message);
   };
 
   const handleJoinChallenge = async () => {
     if (!user || !challenge) return;
 
     const entryFee = challenge.entry_fee || 0;
+
+    // Enforce free/Pro join limits before any wallet charge
+    try {
+      await challengesService.checkChallengeAccessForUser(user.id, challenge.duration_weeks, {
+        challengeId: challenge.id,
+        isProOnly: !!challenge.is_pro_only,
+        title: challenge.title,
+      });
+    } catch (error: any) {
+      showJoinError(error);
+      return;
+    }
 
     if (entryFee <= 0) {
       try {
@@ -710,7 +773,7 @@ export default function ChallengeDetailScreen({ route }: any) {
         await loadChallengeDetails();
       } catch (error: any) {
         console.error('❌ [ChallengeDetailScreen] Error joining challenge:', error);
-        Alert.alert('Error', error.message || 'Failed to join challenge. Please try again.');
+        showJoinError(error);
       } finally {
         setJoining(false);
       }
@@ -965,6 +1028,113 @@ export default function ChallengeDetailScreen({ route }: any) {
     }
   };
 
+  const handleSubmitHealthSteps = async () => {
+    if (!user || !challenge) return;
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Not Available', 'Apple Health is only available on iOS.');
+      return;
+    }
+
+    try {
+      setSubmittingHealthSteps(true);
+      const snap = await appleHealthService.sync({ force: true });
+      if (!snap.authorized) {
+        Alert.alert(
+          'Permission needed',
+          'Allow Nutragise to read Steps in Settings → Health → Data Access & Devices.'
+        );
+        return;
+      }
+
+      const steps = snap.steps;
+      setHealthSteps(steps);
+      const target = appleHealthService.parseStepTarget(challenge.title);
+      if (target && steps < target) {
+        setSubmittingHealthSteps(false);
+        Alert.alert(
+          'Target not reached yet',
+          `Apple Health shows ${steps.toLocaleString()} steps today. This challenge targets ${target.toLocaleString()}. You can still submit, or keep walking and come back later.`,
+          [
+            { text: 'Keep walking', style: 'cancel' },
+            {
+              text: 'Submit anyway',
+              onPress: () => {
+                setSubmittingHealthSteps(true);
+                void submitHealthStepsNow(steps).finally(() => setSubmittingHealthSteps(false));
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      await submitHealthStepsNow(steps);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to submit steps';
+      Alert.alert('Error', msg);
+    } finally {
+      setSubmittingHealthSteps(false);
+    }
+  };
+
+  const submitHealthStepsNow = async (steps: number) => {
+    if (!user || !challenge) return;
+    const weekNumber = isRecurringChallenge(challenge)
+      ? getCurrentWeekForRecurringChallenge(challenge)
+      : getChallengeWeekNumber(challenge);
+    const notes = `Apple Health: ${steps.toLocaleString()} steps`;
+
+    const success = await challengesService.submitChallengeProof(
+      challenge.id,
+      user.id,
+      null,
+      weekNumber,
+      notes
+    );
+
+    if (!success) {
+      Alert.alert('Error', 'Failed to submit steps');
+      return;
+    }
+
+    const submittedAt = new Date().toISOString();
+    const proofDayYmd = challengeBusinessYmd();
+    const optimisticSubmission: ChallengeSubmission = {
+      id: `temp-${submittedAt}`,
+      challenge_id: challenge.id,
+      user_id: user.id,
+      photo_url: null as any,
+      submitted_at: submittedAt,
+      submission_date: proofDayYmd,
+      week_number: weekNumber,
+      verification_status: 'approved',
+      submission_notes: notes,
+      is_flagged: false,
+      flag_count: 0,
+      has_flagged_by_me: false,
+    };
+
+    setParticipantSubmissions((prev) => ({
+      ...prev,
+      [user.id]: upsertSubmissionByDate(prev[user.id] ?? [], optimisticSubmission),
+    }));
+    setParticipantTodaySubmissions((prev) => {
+      const next = new Set(prev);
+      next.add(user.id);
+      return next;
+    });
+
+    const [freshChallenge, freshProgress] = await Promise.all([
+      challengesService.getChallengeById(challenge.id),
+      challengesService.getChallengeProgress(challenge.id, user.id),
+      loadParticipantTodaySubmissions(challenge.id),
+      loadParticipantSubmissionsData(challenge.id, user.id),
+    ]);
+    setChallenge(freshChallenge);
+    setProgress(freshProgress);
+    Alert.alert('Submitted', `${notes} saved for today.`);
+  };
+
   const getTodaysSubmission = (): ChallengeSubmission | null => {
     if (!progress || !challenge) return null;
     const todayDateString = challengeBusinessYmd();
@@ -1143,15 +1313,12 @@ export default function ChallengeDetailScreen({ route }: any) {
   return (
     <CustomBackground>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        {/* Header — back, date + title centre */}
+        {/* Header — back + challenge name */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={theme.textPrimary} />
           </TouchableOpacity>
           <View style={styles.headerCenterColumn}>
-            <Text style={[styles.headerDateRange, { color: theme.textSecondary }]} numberOfLines={1}>
-              {formatDateRange()}
-            </Text>
             <Text
               style={[styles.headerChallengeTitle, { color: theme.textPrimary }]}
               numberOfLines={2}
@@ -1225,6 +1392,15 @@ export default function ChallengeDetailScreen({ route }: any) {
             }
             return null;
           })()}
+        </View>
+
+        {/* Date range + duration — moved out of the top header */}
+        <View style={styles.scheduleUnderHero}>
+          <Text style={[styles.scheduleUnderHeroText, { color: theme.textSecondary }]}>
+            {formatDateRange()}
+            {formatDateRange() ? '  ·  ' : ''}
+            {formatDuration(challenge.duration_weeks)}
+          </Text>
         </View>
         
         {/* Stats Card */}
@@ -1780,13 +1956,13 @@ export default function ChallengeDetailScreen({ route }: any) {
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Ionicons name="play-circle-outline" size={18} color={theme.textPrimary} />
                         <Text style={[styles.detailText, { color: theme.textSecondary, flex: 1 }]}>
-                          Started {started}
+                          Starts {started}
                         </Text>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Ionicons name="flag-outline" size={18} color={theme.textPrimary} />
                         <Text style={[styles.detailText, { color: theme.textSecondary, flex: 1 }]}>
-                          Finished {finished}
+                          Finishes {finished}
                         </Text>
                       </View>
                     </View>
@@ -2112,6 +2288,53 @@ export default function ChallengeDetailScreen({ route }: any) {
 
             return (
               <>
+                {appleHealthService.isStepChallengeTitle(challenge.title) &&
+                  Platform.OS === 'ios' &&
+                  !hasSubmittedToday &&
+                  hasStarted &&
+                  !uploadLocked && (
+                  <View style={{ marginBottom: 10, alignItems: 'center' }}>
+                    <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                      Apple Health today:{' '}
+                      {healthSteps == null ? '…' : `${healthSteps.toLocaleString()} steps`}
+                      {(() => {
+                        const target = appleHealthService.parseStepTarget(challenge.title);
+                        return target ? ` / ${target.toLocaleString()}` : '';
+                      })()}
+                    </Text>
+                  </View>
+                )}
+
+                {appleHealthService.isStepChallengeTitle(challenge.title) &&
+                Platform.OS === 'ios' &&
+                !hasSubmittedToday &&
+                hasStarted &&
+                !photoActionLocked ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.actionButton,
+                      {
+                        backgroundColor: theme.textPrimary,
+                        opacity: submittingHealthSteps ? 0.7 : 1,
+                      },
+                    ]}
+                    onPress={handleSubmitHealthSteps}
+                    disabled={submittingHealthSteps}
+                  >
+                    {submittingHealthSteps ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="heart" size={20} color="#FFFFFF" />
+                        <Text style={styles.actionButtonText}>
+                          {healthSteps != null && healthSteps > 0
+                            ? `Submit ${healthSteps.toLocaleString()} steps`
+                            : 'Submit steps from Apple Health'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                ) : (
                 <TouchableOpacity
                   style={[
                     styles.actionButton,
@@ -2146,6 +2369,24 @@ export default function ChallengeDetailScreen({ route }: any) {
                     </>
                   )}
                 </TouchableOpacity>
+                )}
+
+                {/* Photo still available as secondary for step challenges */}
+                {appleHealthService.isStepChallengeTitle(challenge.title) &&
+                  Platform.OS === 'ios' &&
+                  !hasSubmittedToday &&
+                  hasStarted &&
+                  !photoActionLocked && (
+                  <TouchableOpacity
+                    onPress={handleUploadPhoto}
+                    style={{ alignItems: 'center', marginTop: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ color: theme.textPrimary, fontSize: 13, fontWeight: '600' }}>
+                      Or take a photo instead
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
                 {/* Replace link — only shown when already submitted today */}
                 {hasSubmittedToday && hasStarted && !photoActionLocked && (
@@ -2308,16 +2549,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 6,
   },
-  headerDateRange: {
-    fontSize: 11,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
   headerChallengeTitle: {
     fontSize: 17,
     fontWeight: '700',
     textAlign: 'center',
-    marginTop: 2,
     lineHeight: 22,
   },
   headerRightSpacer: {
@@ -2326,6 +2561,18 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 4,
     width: 40,
+  },
+  scheduleUnderHero: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    alignItems: 'center',
+  },
+  scheduleUnderHeroText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.2,
   },
   headerTitle: {
     fontSize: 28,

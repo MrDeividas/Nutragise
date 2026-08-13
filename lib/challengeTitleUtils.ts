@@ -106,8 +106,6 @@ export function sortCoreHabitChallengesByDisplayOrder<T extends { title: string 
 const PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED: readonly string[] = [
   'daily sweat',
   '6am club',
-  '15k steps daily',
-  '15k steps',
   'reduce social media',
   '100 press ups',
   '100 squats',
@@ -118,13 +116,18 @@ const PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED: readonly string[] = [
 export const PRO_ONLY_CHALLENGE_DISPLAY_ORDER: readonly string[] = [
   'Daily Sweat',
   '6AM Club',
-  '15k Steps Daily',
   'Reduce Social Media',
   '100 Press Ups',
   '100 Squats',
   'Mobility Every Day',
   'Deep Work',
 ];
+
+/** True when title matches the curated Pro Challenges list. */
+export function isProOnlyChallengeTitle(title: string): boolean {
+  const key = stripTrailingChallengeWord(title).toLowerCase();
+  return PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED.includes(key);
+}
 
 export function sortProOnlyChallengesByDisplayOrder<T extends { title: string }>(
   challenges: T[]
@@ -136,6 +139,73 @@ export function sortProOnlyChallengesByDisplayOrder<T extends { title: string }>
     const bi = PRO_ONLY_CHALLENGE_DISPLAY_ORDER_NORMALIZED.indexOf(bKey);
     const aRank = ai === -1 ? 999 : ai;
     const bRank = bi === -1 ? 999 : bi;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+/**
+ * Steps section on Compete — everyone can join; custom fees / durations / start weekdays.
+ * startWeekday: 0=Sun … 1=Mon … 5=Fri … 6=Sat (JS getDay).
+ */
+export type StepChallengeConfig = {
+  /** Canonical display / DB title */
+  title: string;
+  entryFee: number;
+  durationDays: number;
+  startWeekday: number;
+};
+
+const STEP_CHALLENGE_CONFIGS: readonly StepChallengeConfig[] = [
+  { title: '15K Steps Daily', entryFee: 30, durationDays: 12, startWeekday: 0 },
+  { title: '10K Steps Daily', entryFee: 35, durationDays: 15, startWeekday: 3 },
+  { title: '12K Steps Daily', entryFee: 30, durationDays: 10, startWeekday: 5 },
+  { title: '8K Steps Daily', entryFee: 40, durationDays: 12, startWeekday: 1 },
+];
+
+const STEP_CHALLENGE_KEYS = new Set(
+  STEP_CHALLENGE_CONFIGS.flatMap((c) => {
+    const base = stripTrailingChallengeWord(c.title).toLowerCase();
+    // also match "8k steps" without Daily
+    const withoutDaily = base.replace(/\s+daily$/, '');
+    return [base, withoutDaily];
+  })
+);
+
+export function isStepsChallengeTitle(title: string): boolean {
+  const key = stripTrailingChallengeWord(title).toLowerCase();
+  const withoutDaily = key.replace(/\s+daily$/, '');
+  return STEP_CHALLENGE_KEYS.has(key) || STEP_CHALLENGE_KEYS.has(withoutDaily);
+}
+
+export function getStepChallengeConfig(title: string): StepChallengeConfig | null {
+  const key = stripTrailingChallengeWord(title).toLowerCase();
+  const withoutDaily = key.replace(/\s+daily$/, '');
+  return (
+    STEP_CHALLENGE_CONFIGS.find((c) => {
+      const ck = stripTrailingChallengeWord(c.title).toLowerCase();
+      return ck === key || ck.replace(/\s+daily$/, '') === withoutDaily;
+    }) ?? null
+  );
+}
+
+/** Official entry fee for step challenges (overrides default £15/£25). */
+export function getStepChallengeEntryFee(title: string): number | null {
+  return getStepChallengeConfig(title)?.entryFee ?? null;
+}
+
+export function sortStepsChallengesByDisplayOrder<T extends { title: string }>(
+  challenges: T[]
+): T[] {
+  return [...challenges].sort((a, b) => {
+    const aCfg = getStepChallengeConfig(a.title);
+    const bCfg = getStepChallengeConfig(b.title);
+    const aRank = aCfg
+      ? STEP_CHALLENGE_CONFIGS.findIndex((c) => c.title === aCfg.title)
+      : 999;
+    const bRank = bCfg
+      ? STEP_CHALLENGE_CONFIGS.findIndex((c) => c.title === bCfg.title)
+      : 999;
     if (aRank !== bRank) return aRank - bRank;
     return a.title.localeCompare(b.title);
   });

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   ScrollView,
@@ -76,105 +75,102 @@ export default function SignInScreen({ navigation }: any) {
 
   return (
     <OnboardingShell hideHeader showProgress={false}>
-      <KeyboardAvoidingView
+      <ScrollView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <Animated.View entering={FadeIn.duration(500)} style={styles.brandBlock}>
-              <Text style={styles.brand}>NUTRAGISE</Text>
-              <Text style={styles.tagline}>reach your peak</Text>
-            </Animated.View>
-          </View>
+        <View style={styles.header}>
+          <Animated.View entering={FadeIn.duration(500)} style={styles.brandBlock}>
+            <Text style={styles.brand}>NUTRAGISE</Text>
+            <Text style={styles.tagline}>reach your peak</Text>
+          </Animated.View>
+        </View>
 
-          <View style={styles.mid}>
-            <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.formBlock}>
-              <Text style={styles.title}>Welcome back</Text>
-              <Text style={styles.subtitle}>Sign in to continue your habit journey.</Text>
+        <View style={styles.mid}>
+          <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.formBlock}>
+            <Text style={styles.title}>Welcome back</Text>
+            <Text style={styles.subtitle}>Sign in to continue your habit journey.</Text>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email"
-                  placeholderTextColor={OB.textSoft}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor={OB.textSoft}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
-              </View>
-
-              <PrimaryButton
-                label="Sign in"
-                onPress={handleSignIn}
-                loading={loading}
-                disabled={loading}
-                variant="white"
-                showArrow={false}
-                style={styles.signInBtn}
-                textStyle={styles.signInBtnText}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                placeholderTextColor={OB.textSoft}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
               />
+            </View>
 
-              {appleAvailable ? (
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-              ) : null}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                placeholderTextColor={OB.textSoft}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+            </View>
 
-              {appleAvailable ? (
-                <View style={styles.appleWrap}>
-                  {appleLoading ? (
-                    <View style={styles.appleLoading}>
-                      <ActivityIndicator color="#FFFFFF" />
-                    </View>
-                  ) : (
-                    <AppleAuthentication.AppleAuthenticationButton
-                      buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                      buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                      cornerRadius={16}
-                      style={styles.appleBtn}
-                      onPress={handleAppleSignIn}
-                    />
-                  )}
-                </View>
-              ) : null}
+            <PrimaryButton
+              label="Sign in"
+              onPress={handleSignIn}
+              loading={loading}
+              disabled={loading}
+              variant="white"
+              showArrow={false}
+              style={styles.signInBtn}
+              textStyle={styles.signInBtnText}
+            />
 
-              <TouchableOpacity
-                onPress={() => navigation.navigate('SignUp')}
-                style={styles.footerBtn}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.footerText}>
-                  Don&apos;t have an account?{' '}
-                  <Text style={styles.linkText}>Sign up</Text>
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            {appleAvailable ? (
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            ) : null}
+
+            {appleAvailable ? (
+              <View style={styles.appleWrap}>
+                {appleLoading ? (
+                  <View style={styles.appleLoading}>
+                    <ActivityIndicator color="#FFFFFF" />
+                  </View>
+                ) : (
+                  <AppleAuthentication.AppleAuthenticationButton
+                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                    buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                    cornerRadius={16}
+                    style={styles.appleBtn}
+                    onPress={handleAppleSignIn}
+                  />
+                )}
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('SignUp')}
+              style={styles.footerBtn}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.footerText}>
+                Don&apos;t have an account?{' '}
+                <Text style={styles.linkText}>Sign up</Text>
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </ScrollView>
     </OnboardingShell>
   );
 }
@@ -205,8 +201,7 @@ const styles = StyleSheet.create({
     color: OB.textMuted,
   },
   mid: {
-    flexGrow: 1,
-    justifyContent: 'center',
+    marginTop: 28,
     paddingBottom: 24,
   },
   formBlock: {

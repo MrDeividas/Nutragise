@@ -105,6 +105,14 @@ function ProfileScreen({ navigation }: any) {
     team_spirit: 35,
     overall: 35,
   });
+  // Raw this-week pillar gains (%) — drives green tip size like Action EXP week points
+  const [weekPillarGains, setWeekPillarGains] = useState({
+    strength_fitness: 0,
+    growth_wisdom: 0,
+    discipline: 0,
+    team_spirit: 0,
+    overall: 0,
+  });
   
   // Track which pillars show the green arrow indicator (today only)
   const [showProgressIndicator, setShowProgressIndicator] = useState<{
@@ -530,21 +538,12 @@ function ProfileScreen({ navigation }: any) {
         const progress = await pillarProgressService.getPillarProgress(user.id);
         
         const today = new Date().toISOString().split('T')[0];
-        const [ty, tm, td] = today.split('-').map(Number);
-        const weekDate = new Date(ty, tm - 1, td);
-        weekDate.setDate(weekDate.getDate() - weekDate.getDay());
-        const weekStart = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
         
-        // Load start of day progress snapshot from AsyncStorage
+        // Load start of day progress snapshot from AsyncStorage (for today-only ↑ arrows)
         const startOfDayKey = `pillar_progress_start_of_day_${user.id}`;
         const startOfDayDateKey = `pillar_progress_start_of_day_date_${user.id}`;
         const storedStartOfDayDate = await AsyncStorage.getItem(startOfDayDateKey);
         const storedStartOfDayProgress = await AsyncStorage.getItem(startOfDayKey);
-
-        const startOfWeekKey = `pillar_progress_start_of_week_${user.id}`;
-        const startOfWeekDateKey = `pillar_progress_start_of_week_date_${user.id}`;
-        const storedStartOfWeekDate = await AsyncStorage.getItem(startOfWeekDateKey);
-        const storedStartOfWeekProgress = await AsyncStorage.getItem(startOfWeekKey);
         
         let startOfDayProgress = progress;
         let needsSnapshotReset = false;
@@ -589,45 +588,19 @@ function ProfileScreen({ navigation }: any) {
           'overall',
         ];
 
-        let startOfWeekProgress = progress;
-        if (storedStartOfWeekDate === weekStart && storedStartOfWeekProgress) {
-          try {
-            const parsedWeek = JSON.parse(storedStartOfWeekProgress);
-            const isInvalidWeek = pillarKeys.some(
-              (key) => parsedWeek[key] > progress[key]
-            );
-            if (isInvalidWeek) {
-              // Prefer morning baseline over current so the tip isn't wiped
-              startOfWeekProgress =
-                storedStartOfDayDate === today ? startOfDayProgress : progress;
-              await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfWeekProgress));
-              await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
-            } else {
-              startOfWeekProgress = parsedWeek;
-              // Heal snapshots that were wrongly saved as "current" (no week growth visible)
-              const weekHasGrowth = pillarKeys.some(
-                (key) => progress[key] > (parsedWeek[key] ?? progress[key])
-              );
-              const dayHasGrowth =
-                storedStartOfDayDate === today &&
-                pillarKeys.some((key) => progress[key] > startOfDayProgress[key]);
-              if (!weekHasGrowth && dayHasGrowth) {
-                startOfWeekProgress = startOfDayProgress;
-                await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfDayProgress));
-                await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
-              }
-            }
-          } catch {
-            startOfWeekProgress =
-              storedStartOfDayDate === today ? startOfDayProgress : progress;
-          }
-        } else {
-          // First snapshot this week: seed from start-of-day when possible (never lock in current)
-          startOfWeekProgress =
-            storedStartOfDayDate === today ? startOfDayProgress : progress;
-          await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfWeekProgress));
-          await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
-        }
+        // Whole-week green tip: derive from this week's habit reward gains (reliable)
+        const weekGains = await pillarProgressService.getThisWeeksPillarGains(user.id);
+        const startOfWeekProgress = pillarProgressService.getStartOfWeekBaselines(
+          progress,
+          weekGains
+        );
+
+        // Persist derived baseline so other screens stay consistent
+        const weekStart = pillarProgressService.getWeekStartDate(today);
+        const startOfWeekKey = `pillar_progress_start_of_week_${user.id}`;
+        const startOfWeekDateKey = `pillar_progress_start_of_week_date_${user.id}`;
+        await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfWeekProgress));
+        await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
         
         // Compare current progress vs start of day - show indicator if increased today
         const newIndicators: { [key: string]: boolean } = {};
@@ -645,6 +618,7 @@ function ProfileScreen({ navigation }: any) {
         // Update indicators state
         setShowProgressIndicator(newIndicators);
 
+        setWeekPillarGains({ ...weekGains });
         setStartOfWeekPillarProgress({ ...startOfWeekProgress });
         
         // Update previous progress state
@@ -1453,14 +1427,13 @@ function ProfileScreen({ navigation }: any) {
               ].map((bar) => {
                 const showIndicator = !!showProgressIndicator[bar.key];
                 const pct = Math.max(0, Math.min(100, bar.progress || 0));
-                const weekStartPct = Math.max(
+                // Size green tip from this week's gains (Action EXP style), not day snapshot
+                const weekGainPct = Math.max(
                   0,
-                  Math.min(
-                    pct,
-                    startOfWeekPillarProgress[bar.key as keyof typeof startOfWeekPillarProgress] || 0
-                  )
+                  weekPillarGains[bar.key as keyof typeof weekPillarGains] || 0
                 );
-                const weekGrowthPct = Math.max(0, pct - weekStartPct);
+                const weekGrowthPct = Math.min(weekGainPct, pct);
+                const weekStartPct = Math.max(0, pct - weekGrowthPct);
                 const priorShareInFill = pct > 0 ? weekStartPct / pct : 1;
                 const displayProgress = Math.floor(pct);
                 const accentColor = showIndicator ? '#10B981' : DARK;

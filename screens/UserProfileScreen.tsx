@@ -16,7 +16,6 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useTheme } from '../state/themeStore';
 import { useAuthStore } from '../state/authStore';
 import { useSocialStore } from '../state/socialStore';
-import { useGoalsStore } from '../state/goalsStore';
 import { useActionStore } from '../state/actionStore';
 import { socialService, Profile } from '../lib/socialService';
 import { pointsService, LEVEL_TITLES } from '../lib/pointsService';
@@ -55,7 +54,6 @@ export default function UserProfileScreen({ navigation, route }: Props) {
   const { theme, isDark } = useTheme();
   const { user } = useAuthStore();
   const { followUser, unfollowUser, isLoading } = useSocialStore();
-  const { goals: userGoals, fetchGoals, loading: goalsLoading } = useGoalsStore();
   const { segmentChecked, getActiveSegmentCount } = useActionStore();
   
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -451,9 +449,16 @@ export default function UserProfileScreen({ navigation, route }: Props) {
 
   const loadViewedUserGoals = async () => {
     try {
-      // Fetch goals for the viewed user using the goals store
-      await fetchGoals(userId);
-      setViewedUserGoals(userGoals || []);
+      // Fetch this profile's goals directly — don't use the shared goals store
+      // (that store holds the signed-in user's goals; reading it here showed your goals on their profile)
+      const { data, error } = await supabase
+        .from('goals')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setViewedUserGoals(data || []);
     } catch (error) {
       console.error('Error loading viewed user goals:', error);
       setViewedUserGoals([]);
@@ -769,8 +774,17 @@ export default function UserProfileScreen({ navigation, route }: Props) {
         </View>
 
 
+        {/* Posts Section — same order as ProfileScreen */}
+        <View style={{ marginTop: 8 }}>
+          <JourneyPreview
+            userId={userId}
+            onViewAll={() => setShowFullJourney(true)}
+            emptyStateText="No posts yet."
+          />
+        </View>
+
         {/* Goals Section */}
-        <View style={[styles.keepTrackSection, { marginTop: 8 }]}>
+        <View style={[styles.keepTrackSection, styles.goalsSection]}>
           <View style={styles.goalsSectionHeader}>
             <Text style={[styles.keepTrackTitle, { color: theme.textPrimary }]}>Goals</Text>
           </View>
@@ -780,7 +794,7 @@ export default function UserProfileScreen({ navigation, route }: Props) {
             </View>
           ) : (
             <View style={styles.circularGoalsContainer}>
-              {activeGoals.map((goal, index) => {
+              {activeGoals.map((goal) => {
                 const checkInCount = goalProgress[goal.id] || 0;
                 const mockProgressEntries = Array(checkInCount).fill({}).map((_, index) => ({
                   id: `mock-${index}`,
@@ -840,13 +854,6 @@ export default function UserProfileScreen({ navigation, route }: Props) {
             </View>
           )}
         </View>
-
-        {/* Journey Section */}
-        <JourneyPreview 
-          userId={userId}
-          onViewAll={() => setShowFullJourney(true)}
-          emptyStateText="No posts yet."
-        />
 
         {/* Progress Bars Section - Only show if stats are visible */}
         {statsVisible && (
@@ -1333,6 +1340,10 @@ const styles = StyleSheet.create({
   keepTrackSection: {
     marginHorizontal: 24,
     marginBottom: 20,
+  },
+  goalsSection: {
+    paddingBottom: 4,
+    paddingTop: 6,
   },
   profileSectionSpacing: {
     marginTop: 20,

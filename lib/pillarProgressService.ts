@@ -607,6 +607,105 @@ class PillarProgressService {
       };
     }
   }
+
+  /**
+   * Calendar week start (Sunday) for a YYYY-MM-DD date, matching EXP week bounds.
+   */
+  getWeekStartDate(dateStr: string): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const weekDate = new Date(y, m - 1, d);
+    weekDate.setDate(weekDate.getDate() - weekDate.getDay());
+    return formatDateOnly(weekDate);
+  }
+
+  /**
+   * Sum of pillar gains this calendar week from habit_reward notifications.
+   * Used so profile Stats green tips reflect the whole week (not fragile AsyncStorage snapshots).
+   */
+  async getThisWeeksPillarGains(userId: string): Promise<PillarProgressMap> {
+    const gains: PillarProgressMap = {
+      strength_fitness: 0,
+      growth_wisdom: 0,
+      discipline: 0,
+      team_spirit: 0,
+      overall: 0,
+    };
+
+    try {
+      if (!userId) return gains;
+
+      const today = formatDateOnly(new Date());
+      const weekStart = this.getWeekStartDate(today);
+      const [wy, wm, wd] = weekStart.split('-').map(Number);
+      const sinceIso = new Date(wy, wm - 1, wd, 0, 0, 0, 0).toISOString();
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('pillar_type, pillar_progress')
+        .eq('user_id', userId)
+        .eq('notification_type', 'habit_reward')
+        .gte('created_at', sinceIso)
+        .not('pillar_progress', 'is', null);
+
+      if (error) {
+        console.error('Error fetching this week pillar gains:', error);
+        return gains;
+      }
+
+      for (const row of data || []) {
+        const key = row.pillar_type as PillarType | null;
+        const amount = typeof row.pillar_progress === 'number' ? row.pillar_progress : 0;
+        if (!key || key === 'overall' || !(key in gains) || amount <= 0) continue;
+        gains[key] += amount;
+      }
+
+      gains.overall =
+        (gains.strength_fitness +
+          gains.growth_wisdom +
+          gains.discipline +
+          gains.team_spirit) /
+        4;
+
+      return gains;
+    } catch (error) {
+      console.error('Error in getThisWeeksPillarGains:', error);
+      return gains;
+    }
+  }
+
+  /**
+   * Start-of-week pillar levels = current minus this week's gains.
+   * Do not clamp to MIN_PROGRESS here — that floor is for live values only.
+   * Clamping the baseline hid earlier-week gains whenever progress sat near 35%.
+   */
+  getStartOfWeekBaselines(
+    current: PillarProgressMap,
+    weekGains: PillarProgressMap
+  ): PillarProgressMap {
+    const keys: (keyof PillarProgressMap)[] = [
+      'strength_fitness',
+      'growth_wisdom',
+      'discipline',
+      'team_spirit',
+    ];
+
+    const baselines = { ...current };
+    for (const key of keys) {
+      const gain = Math.max(0, weekGains[key] || 0);
+      baselines[key] = Math.max(0, Math.min(current[key], current[key] - gain));
+    }
+
+    baselines.overall = Math.max(
+      0,
+      (baselines.strength_fitness +
+        baselines.growth_wisdom +
+        baselines.discipline +
+        baselines.team_spirit) /
+        4
+    );
+
+    return baselines;
+  }
 }
 
 export const pillarProgressService = new PillarProgressService();

@@ -19,6 +19,7 @@ import { socialService } from '../lib/socialService';
 import { supabase } from '../lib/supabase';
 import { moderationAlertMessage, uploadMediaSafely } from '../lib/safeMediaUpload';
 import CustomBackground from '../components/CustomBackground';
+import { isRealProfileUsername } from '../lib/profileCompleteness';
 
 export default function ProfileSetupScreen() {
   const { theme } = useTheme();
@@ -36,7 +37,7 @@ export default function ProfileSetupScreen() {
     useAuthStore.getState().notifyOnboardingFinished();
   };
 
-  // Check on mount if user already has profile and onboarding is complete - skip if so
+  // Check on mount if user already has a real username — skip setup (heal flag if needed)
   useEffect(() => {
     const checkExistingProfile = async () => {
       if (!user || finishingRef.current) return;
@@ -45,7 +46,7 @@ export default function ProfileSetupScreen() {
         const [profileResult, userResult] = await Promise.all([
           supabase
             .from('profiles')
-            .select('username, display_name, onboarding_completed')
+            .select('username, display_name, onboarding_completed, avatar_url')
             .eq('id', user.id)
             .single(),
           supabase
@@ -58,16 +59,16 @@ export default function ProfileSetupScreen() {
         const profileData = profileResult.data;
         const userData = userResult.data;
         const existingUsername = profileData?.username || userData?.username;
+        const hasRealUsername = isRealProfileUsername(existingUsername, user.id);
 
-        // Check if username exists and is not just a UUID or email prefix
-        const hasRealUsername = existingUsername && 
-                               existingUsername !== user.id &&
-                               existingUsername !== user.email?.split('@')[0];
-
-        // Already set up — enter main app. Do NOT goBack(): this screen is often
-        // the only route in OnboardingStack (navigation.replace), so GO_BACK fails.
-        if (profileData?.onboarding_completed && hasRealUsername) {
-          console.log('✅ Profile already set up and onboarding complete, entering app');
+        if (hasRealUsername) {
+          if (!profileData?.onboarding_completed) {
+            await supabase
+              .from('profiles')
+              .update({ onboarding_completed: true })
+              .eq('id', user.id);
+          }
+          console.log('✅ Profile already set up, entering app');
           enterMainApp();
         }
       } catch (error) {

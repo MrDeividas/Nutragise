@@ -23,6 +23,10 @@ import {
   stripTrailingChallengeWord,
   sortCoreHabitChallengesByDisplayOrder,
   sortProOnlyChallengesByDisplayOrder,
+  sortStepsChallengesByDisplayOrder,
+  isProOnlyChallengeTitle,
+  isStepsChallengeTitle,
+  isRetiredPublicChallengeTitle,
 } from '../lib/challengeTitleUtils';
 import { emailService } from '../lib/emailService';
 import { supabase } from '../lib/supabase';
@@ -33,12 +37,20 @@ import JoinPrivateChallengeModal from '../components/JoinPrivateChallengeModal';
 import MyChallengesSection from '../components/MyChallengesSection';
 import CreateJoinBox from '../components/CreateJoinBox';
 
+/** Keep curated order as tie-break; put busiest challenges first. */
+function sortChallengesByParticipants<T extends { participant_count?: number }>(challenges: T[]): T[] {
+  return [...challenges].sort(
+    (a, b) => (b.participant_count || 0) - (a.participant_count || 0)
+  );
+}
+
 export default function CompeteScreen({ navigation }: any) {
   const { theme } = useTheme();
   const bottomNavPadding = useBottomNavPadding();
   const { user, initialize, loading } = useAuthStore();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [freeChallenges, setFreeChallenges] = useState<Challenge[]>([]);
+  const [stepsChallenges, setStepsChallenges] = useState<Challenge[]>([]);
   const [proOnlyChallenges, setProOnlyChallenges] = useState<Challenge[]>([]);
   const [investChallenges, setInvestChallenges] = useState<Challenge[]>([]);
   const [challengesLoading, setChallengesLoading] = useState(true);
@@ -56,6 +68,7 @@ export default function CompeteScreen({ navigation }: any) {
   const [coreHabitsExpanded, setCoreHabitsExpanded] = useState(true);
   const [proOnlyExpanded, setProOnlyExpanded] = useState(true);
   const [investExpanded, setInvestExpanded] = useState(true);
+  const [stepsExpanded, setStepsExpanded] = useState(true);
   const [freeExpanded, setFreeExpanded] = useState(true);
   
   const { width } = Dimensions.get('window');
@@ -70,29 +83,43 @@ export default function CompeteScreen({ navigation }: any) {
     if (!user && !loading) {
       initialize();
     }
-    
-    // Only load data when auth is ready
-    if (!loading) {
-      loadChallenges();
-      loadUserProfile();
+  }, [loading, user, initialize]);
+
+  // Always reload challenge membership when the signed-in user changes
+  useEffect(() => {
+    setJoinedChallengeIds(new Set());
+    setCompletedChallengeIds(new Set());
+    setPrivateChallenges([]);
+    setMyCreatedChallenges([]);
+    setChallenges([]);
+    setCoreHabitChallenges([]);
+    setStepsChallenges([]);
+    setFreeChallenges([]);
+    setProOnlyChallenges([]);
+    setInvestChallenges([]);
+
+    if (loading) return;
+
+    if (!user?.id) {
+      return;
     }
-  }, [loading]);
+
+    loadChallenges();
+    loadUserProfile();
+    loadPrivateChallenges();
+  }, [user?.id, loading]);
 
   useEffect(() => {
     loadUserProfile();
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (userProfile?.is_pro && user) {
+    if (userProfile?.is_pro && user?.id) {
       loadUserChallenges();
+    } else {
+      setMyCreatedChallenges([]);
     }
-  }, [userProfile, user]);
-
-  useEffect(() => {
-    if (user) {
-      loadPrivateChallenges();
-    }
-  }, [user]);
+  }, [userProfile?.is_pro, user?.id]);
 
   // Auto-collapse sections if they have no challenges
   useEffect(() => {
@@ -159,6 +186,7 @@ export default function CompeteScreen({ navigation }: any) {
 
 
   const loadChallenges = async () => {
+    const userId = user?.id;
     try {
       setChallengesLoading(true);
       
@@ -171,6 +199,9 @@ export default function CompeteScreen({ navigation }: any) {
       // Handle recurring challenges first
       console.log('🔄 Handling recurring challenges...');
       await challengesService.handleRecurringChallenges();
+
+      // Bail if the signed-in user changed mid-load
+      if (userId !== useAuthStore.getState().user?.id) return;
       
       const allChallenges = await challengesService.getChallenges();
       console.log(`📊 Total challenges fetched: ${allChallenges.length}`);
@@ -185,38 +216,40 @@ export default function CompeteScreen({ navigation }: any) {
         const isNotEnded = now <= endDate; // Include challenges that haven't ended yet
         const isActiveOrUpcoming = (challenge.status === 'active' || challenge.status === 'upcoming'); // Show both active and upcoming
         const isPublic = challenge.visibility !== 'private'; // Only show public challenges
-        const shouldShow = isNotEnded && isActiveOrUpcoming && isPublic;
+        const isRetired = isRetiredPublicChallengeTitle(challenge.title);
+        const shouldShow = isNotEnded && isActiveOrUpcoming && isPublic && !isRetired;
         
         return shouldShow;
       });
       
-      // Check participation and completion status for each challenge
+      // Check participation and completion status in one query (avoids stale
+      // per-challenge results bleeding across account switches).
       const joinedIds = new Set<string>();
       const completedIds = new Set<string>();
-      if (user?.id) {
-        await Promise.all(
-          availableChallenges.map(async (challenge) => {
-            // Check if user is participating
-            const isJoined = await challengesService.isUserParticipating(challenge.id, user.id);
-            if (isJoined) {
-              joinedIds.add(challenge.id);
-              
-              // Check if user has completed this challenge (status = 'completed')
-              const { data: participation } = await supabase
-                .from('challenge_participants')
-                .select('status')
-                .eq('challenge_id', challenge.id)
-                .eq('user_id', user.id)
-                .single();
-              
-              if (participation?.status === 'completed') {
-                completedIds.add(challenge.id);
-              }
+      if (userId) {
+        const availableIds = availableChallenges.map((c) => c.id);
+        if (availableIds.length > 0) {
+          const { data: participations } = await supabase
+            .from('challenge_participants')
+            .select('challenge_id, status')
+            .eq('user_id', userId)
+            .in('challenge_id', availableIds)
+            .in('status', ['active', 'completed']);
+
+          if (userId !== useAuthStore.getState().user?.id) return;
+
+          (participations || []).forEach((p: { challenge_id: string; status: string }) => {
+            joinedIds.add(p.challenge_id);
+            if (p.status === 'completed') {
+              completedIds.add(p.challenge_id);
             }
-          })
-        );
+          });
+        }
         setJoinedChallengeIds(joinedIds);
         setCompletedChallengeIds(completedIds);
+      } else {
+        setJoinedChallengeIds(new Set());
+        setCompletedChallengeIds(new Set());
       }
       
       // Deduplicate by ID (final safety check)
@@ -229,8 +262,8 @@ export default function CompeteScreen({ navigation }: any) {
         }
       });
       
-      // Additional deduplication for recurring challenges with same title + entry_fee
-      // For recurring daily challenges, show only the most relevant one (prioritize today, then tomorrow, etc.)
+      // Additional deduplication for recurring challenges with same title
+      // (ignore fee so £10/£15 duplicates collapse after fee migrations)
       const recurringChallengeMap = new Map<string, Challenge>();
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -255,18 +288,35 @@ export default function CompeteScreen({ navigation }: any) {
         // Tomorrow comes second
         if (aIsTomorrow && !bIsTomorrow) return -1;
         if (!aIsTomorrow && bIsTomorrow) return 1;
+        // Prefer higher participant counts when dates tie
+        const participantDiff = (b.participant_count || 0) - (a.participant_count || 0);
+        if (participantDiff !== 0) return participantDiff;
         // Then by date
         return dateA.getTime() - dateB.getTime();
       });
       
       sortedChallenges.forEach(challenge => {
         if (challenge.is_recurring) {
-          const dedupKey = `${challenge.title}_${challenge.entry_fee || 0}`;
+          const dedupKey = stripTrailingChallengeWord(challenge.title).toLowerCase();
           const existing = recurringChallengeMap.get(dedupKey);
           
           if (!existing) {
             recurringChallengeMap.set(dedupKey, challenge);
           } else {
+            const existingLive =
+              existing.status === 'active' || existing.status === 'upcoming';
+            const currentLive =
+              challenge.status === 'active' || challenge.status === 'upcoming';
+
+            // Always prefer joinable (active/upcoming) over completed/cancelled
+            if (currentLive && !existingLive) {
+              recurringChallengeMap.set(dedupKey, challenge);
+              return;
+            }
+            if (!currentLive && existingLive) {
+              return;
+            }
+
             // Compare dates to find the most relevant one
             const existingDate = new Date(existing.start_date);
             existingDate.setHours(0, 0, 0, 0);
@@ -282,13 +332,16 @@ export default function CompeteScreen({ navigation }: any) {
             let shouldReplace = false;
             
             if (currentIsToday && !existingIsToday) {
-              // Current is today, existing is not - replace
               shouldReplace = true;
             } else if (currentIsTomorrow && !existingIsToday && !existingIsTomorrow) {
-              // Current is tomorrow, existing is neither today nor tomorrow - replace
               shouldReplace = true;
-            } else if (currentDate < existingDate && !existingIsToday && !existingIsTomorrow) {
-              // Current is earlier and neither is today/tomorrow - prefer earlier
+            } else if (currentDate > existingDate && !existingIsToday && !existingIsTomorrow) {
+              // Prefer the more recent period (current week over last week)
+              shouldReplace = true;
+            } else if (
+              currentDate.getTime() === existingDate.getTime() &&
+              (challenge.participant_count || 0) > (existing.participant_count || 0)
+            ) {
               shouldReplace = true;
             }
             
@@ -326,8 +379,10 @@ export default function CompeteScreen({ navigation }: any) {
       };
       
       // Separate core habit challenges (Gym → Exercise → Sleep first, then rest)
-      const coreHabits = sortCoreHabitChallengesByDisplayOrder(
-        deduplicatedChallenges.filter(isCoreHabitChallenge)
+      const coreHabits = sortChallengesByParticipants(
+        sortCoreHabitChallengesByDisplayOrder(
+          deduplicatedChallenges.filter(isCoreHabitChallenge)
+        )
       );
       const otherChallenges = deduplicatedChallenges.filter(challenge => !isCoreHabitChallenge(challenge));
       
@@ -338,38 +393,65 @@ export default function CompeteScreen({ navigation }: any) {
         end: new Date(c.end_date).toLocaleDateString(),
       })));
       
-      // Pro-only challenges (any price) → Pro section; paid non-pro → Everyone Can Play; free non-pro → Free to Play
-      const proOnly = sortProOnlyChallengesByDisplayOrder(
-        otherChallenges.filter(c => c.is_pro_only)
+      // Pro challenges: DB flag or curated title list (visible to free + pro members)
+      // Step challenges live in their own section (not Pro / Everyone Can Play)
+      const isProChallenge = (c: Challenge) =>
+        !isStepsChallengeTitle(c.title) &&
+        (!!c.is_pro_only || isProOnlyChallengeTitle(c.title));
+
+      // Steps: fixed display order (15k → 10k → …), not by participant count
+      const steps = sortStepsChallengesByDisplayOrder(
+        otherChallenges.filter((c) => isStepsChallengeTitle(c.title))
       );
-      const free = otherChallenges.filter(c => !c.is_pro_only && (!c.entry_fee || c.entry_fee === 0));
-      const invest = otherChallenges.filter(c => !c.is_pro_only && c.entry_fee && c.entry_fee > 0);
+      const nonStepOthers = otherChallenges.filter((c) => !isStepsChallengeTitle(c.title));
+
+      const proOnly = sortChallengesByParticipants(
+        sortProOnlyChallengesByDisplayOrder(nonStepOthers.filter(isProChallenge))
+      );
+      const free = sortChallengesByParticipants(
+        nonStepOthers.filter(c => !isProChallenge(c) && (!c.entry_fee || c.entry_fee === 0))
+      );
+      const invest = sortChallengesByParticipants(
+        nonStepOthers.filter(c => !isProChallenge(c) && c.entry_fee && c.entry_fee > 0)
+      );
+
+      if (userId !== useAuthStore.getState().user?.id) return;
       
       setChallenges(deduplicatedChallenges);
       setCoreHabitChallenges(coreHabits);
+      setStepsChallenges(steps);
       setFreeChallenges(free);
       setProOnlyChallenges(proOnly);
       setInvestChallenges(invest);
     } catch (error) {
       console.error('Error loading challenges:', error);
-      setChallenges([]);
-      setFreeChallenges([]);
-      setProOnlyChallenges([]);
-      setInvestChallenges([]);
+      if (userId === useAuthStore.getState().user?.id) {
+        setChallenges([]);
+        setStepsChallenges([]);
+        setFreeChallenges([]);
+        setProOnlyChallenges([]);
+        setInvestChallenges([]);
+      }
     } finally {
-      setChallengesLoading(false);
+      if (userId === useAuthStore.getState().user?.id || !userId) {
+        setChallengesLoading(false);
+      }
     }
   };
 
   const loadPrivateChallenges = async () => {
-    if (!user?.id) return;
+    const userId = user?.id;
+    if (!userId) {
+      setPrivateChallenges([]);
+      return;
+    }
     
     try {
       // Get all private challenges the user has joined OR created
       const { data: participations, error } = await supabase
         .from('challenge_participants')
         .select('challenge_id')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
 
@@ -380,7 +462,7 @@ export default function CompeteScreen({ navigation }: any) {
       const { data: createdChallenges, error: createdError } = await supabase
         .from('challenges')
         .select('id')
-        .eq('created_by', user.id)
+        .eq('created_by', userId)
         .eq('visibility', 'private');
 
       if (createdError) throw createdError;
@@ -389,6 +471,8 @@ export default function CompeteScreen({ navigation }: any) {
 
       // Combine both sets of challenge IDs (joined or created)
       const allPrivateChallengeIds = [...new Set([...participationChallengeIds, ...createdChallengeIds])];
+
+      if (userId !== useAuthStore.getState().user?.id) return;
 
       if (allPrivateChallengeIds.length === 0) {
         setPrivateChallenges([]);
@@ -441,21 +525,22 @@ export default function CompeteScreen({ navigation }: any) {
         participant_count: countMap.get(challenge.id) || 0,
       }));
 
+      if (userId !== useAuthStore.getState().user?.id) return;
+
       setPrivateChallenges(challengesWithCounts);
       
-      // Update joined challenge IDs for private challenges
-      const privateJoinedIds = new Set<string>();
-      challengesWithCounts.forEach(challenge => {
-        privateJoinedIds.add(challenge.id);
-      });
-      setJoinedChallengeIds(prev => {
+      // Merge private joins into membership set (public joins come from loadChallenges)
+      const privateJoinedIds = challengesWithCounts.map((challenge) => challenge.id);
+      setJoinedChallengeIds((prev) => {
         const updated = new Set(prev);
-        privateJoinedIds.forEach(id => updated.add(id));
+        privateJoinedIds.forEach((id) => updated.add(id));
         return updated;
       });
     } catch (error) {
       console.error('Error loading private challenges:', error);
-      setPrivateChallenges([]);
+      if (userId === useAuthStore.getState().user?.id) {
+        setPrivateChallenges([]);
+      }
     }
   };
 
@@ -464,12 +549,20 @@ export default function CompeteScreen({ navigation }: any) {
   };
 
   const loadUserChallenges = async () => {
-    if (!user?.id) return;
+    const userId = user?.id;
+    if (!userId) {
+      setMyCreatedChallenges([]);
+      return;
+    }
     try {
-      const challenges = await challengesService.getUserCreatedChallenges(user.id);
+      const challenges = await challengesService.getUserCreatedChallenges(userId);
+      if (userId !== useAuthStore.getState().user?.id) return;
       setMyCreatedChallenges(challenges);
     } catch (error) {
       console.error('Error loading user challenges:', error);
+      if (userId === useAuthStore.getState().user?.id) {
+        setMyCreatedChallenges([]);
+      }
     }
   };
 
@@ -666,7 +759,7 @@ export default function CompeteScreen({ navigation }: any) {
                     key={challenge.id}
                     challenge={challenge}
                     onPress={() => handleChallengePress(challenge)}
-                    isJoined={joinedChallengeIds.has(challenge.id)}
+                    isJoined
                     isCompleted={completedChallengeIds.has(challenge.id)}
                   />
                 ))}
@@ -845,7 +938,62 @@ export default function CompeteScreen({ navigation }: any) {
           </View>
         )}
 
-        {/* Free entry (£0) — section title: Free to Play */}
+        {/* Steps — 15k → 10k → 12k → 8k */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.sectionHeader}
+            onPress={() => setStepsExpanded(!stepsExpanded)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                Steps
+              </Text>
+            <Ionicons 
+              name={stepsExpanded ? "chevron-up" : "chevron-down"} 
+              size={20} 
+              color={theme.textSecondary} 
+            />
+            </TouchableOpacity>
+          
+          {stepsExpanded && (
+          <View style={styles.challengesContent}>
+            {challengesLoading ? (
+              <View style={styles.challengesLoadingContainer}>
+                <ActivityIndicator size="large" color={"#1f2937"} />
+              </View>
+            ) : stepsChallenges.length === 0 ? (
+              <View style={styles.emptyChallengesContainer}>
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  No step challenges available right now
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={snapInterval}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                contentContainerStyle={styles.challengesScrollContent}
+                style={{ overflow: 'visible' }}
+              >
+                {stepsChallenges.map((challenge) => (
+                  <ChallengeCard
+                    key={challenge.id}
+                    challenge={challenge}
+                    onPress={handleChallengePress}
+                    isJoined={joinedChallengeIds.has(challenge.id)}
+                    isCompleted={completedChallengeIds.has(challenge.id)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+          </View>
+          )}
+        </View>
+
+        {/* Free entry (£0) — only if any remain */}
+        {freeChallenges.length > 0 && (
         <View style={styles.section}>
           <TouchableOpacity 
             style={styles.sectionHeader}
@@ -867,12 +1015,6 @@ export default function CompeteScreen({ navigation }: any) {
             {challengesLoading ? (
               <View style={styles.challengesLoadingContainer}>
                 <ActivityIndicator size="large" color={"#1f2937"} />
-              </View>
-            ) : freeChallenges.length === 0 ? (
-              <View style={styles.emptyChallengesContainer}>
-                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  No upcoming free challenges available
-                </Text>
               </View>
             ) : (
               <ScrollView
@@ -898,6 +1040,7 @@ export default function CompeteScreen({ navigation }: any) {
           </View>
           )}
         </View>
+        )}
 
         {/* Private Challenges Section - Show at bottom if empty */}
         {privateChallenges.length === 0 && (

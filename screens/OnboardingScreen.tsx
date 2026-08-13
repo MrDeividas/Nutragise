@@ -9,6 +9,7 @@ import { useAuthStore } from '../state/authStore';
 import { onboardingService } from '../lib/onboardingService';
 import { supabase } from '../lib/supabase';
 import { dailyHabitsService } from '../lib/dailyHabitsService';
+import { isRealProfileUsername } from '../lib/profileCompleteness';
 
 import WelcomeStep from '../components/onboarding/flow/WelcomeStep';
 import MemberCardStep from '../components/onboarding/flow/MemberCardStep';
@@ -102,16 +103,21 @@ export default function OnboardingScreen({ navigation, route }: any) {
 
         if (finishingRef.current) return;
 
-        // Already finished — don't bounce the wizard back to Let's Go
-        if (profileData?.onboarding_completed) {
-          const username = profileData.username;
-          const hasRealUsername =
-            username && username !== user.id && username !== user.email?.split('@')[0];
-          if (!hasRealUsername) {
-            navigation.replace('ProfileSetup');
-          } else {
-            useAuthStore.getState().notifyOnboardingFinished();
+        // Existing account with a real username — enter app (heal stale flag if needed)
+        if (isRealProfileUsername(profileData?.username, user.id)) {
+          if (!profileData?.onboarding_completed) {
+            await supabase
+              .from('profiles')
+              .update({ onboarding_completed: true })
+              .eq('id', user.id);
           }
+          useAuthStore.getState().notifyOnboardingFinished();
+          return;
+        }
+
+        // Quiz finished but still needs a real username
+        if (profileData?.onboarding_completed) {
+          navigation.replace('ProfileSetup');
           return;
         }
 
@@ -266,8 +272,7 @@ export default function OnboardingScreen({ navigation, route }: any) {
         supabase.from('users').select('username').eq('id', user.id).single(),
       ]);
       const username = profileResult.data?.username || userResult.data?.username;
-      const hasRealUsername =
-        username && username !== user.id && username !== user.email?.split('@')[0];
+      const hasRealUsername = isRealProfileUsername(username, user.id);
 
       // Keep the loading screen up and DO NOT reset() before leaving this screen —
       // reset() was sending users back to "Let's Go!" via the welcome→memberCard effect.

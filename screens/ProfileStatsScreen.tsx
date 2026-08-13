@@ -54,53 +54,6 @@ async function getStartOfDayPillars(
   return startOfDayProgress;
 }
 
-async function getStartOfWeekPillars(
-  userId: string,
-  progress: PillarProgressMap
-): Promise<PillarProgressMap> {
-  const today = new Date().toISOString().split('T')[0];
-  const [ty, tm, td] = today.split('-').map(Number);
-  const weekDate = new Date(ty, tm - 1, td);
-  weekDate.setDate(weekDate.getDate() - weekDate.getDay());
-  const weekStart = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`;
-
-  const startOfWeekKey = `pillar_progress_start_of_week_${userId}`;
-  const startOfWeekDateKey = `pillar_progress_start_of_week_date_${userId}`;
-  const storedWeekDate = await AsyncStorage.getItem(startOfWeekDateKey);
-  const storedWeekProgress = await AsyncStorage.getItem(startOfWeekKey);
-  const startOfDayProgress = await getStartOfDayPillars(userId, progress);
-  const dayKey = `pillar_progress_start_of_day_date_${userId}`;
-  const storedDayDate = await AsyncStorage.getItem(dayKey);
-  const hasDaySnapshot = storedDayDate === today;
-
-  const keys = Object.keys(progress) as (keyof PillarProgressMap)[];
-
-  if (storedWeekDate === weekStart && storedWeekProgress) {
-    try {
-      const parsedSnapshot = JSON.parse(storedWeekProgress) as PillarProgressMap;
-      const isInvalid = keys.some((key) => parsedSnapshot[key] > progress[key]);
-      if (!isInvalid) {
-        const weekHasGrowth = keys.some((key) => progress[key] > parsedSnapshot[key]);
-        const dayHasGrowth =
-          hasDaySnapshot && keys.some((key) => progress[key] > startOfDayProgress[key]);
-        if (!weekHasGrowth && dayHasGrowth) {
-          await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(startOfDayProgress));
-          await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
-          return startOfDayProgress;
-        }
-        return parsedSnapshot;
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  const seed = hasDaySnapshot ? startOfDayProgress : progress;
-  await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(seed));
-  await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
-  return seed;
-}
-
 async function getPillarsActiveToday(
   userId: string,
   progress: PillarProgressMap
@@ -274,6 +227,13 @@ export default function ProfileStatsScreen() {
     team_spirit: 0,
     overall: 0,
   });
+  const [weekPillarGains, setWeekPillarGains] = useState<PillarProgressMap>({
+    strength_fitness: 0,
+    growth_wisdom: 0,
+    discipline: 0,
+    team_spirit: 0,
+    overall: 0,
+  });
   const [rewards, setRewards] = useState<Notification[]>([]);
   const [showAllRewards, setShowAllRewards] = useState(false);
   const [showAllDays, setShowAllDays] = useState(false);
@@ -315,7 +275,13 @@ export default function ProfileStatsScreen() {
       setTotalPoints(points);
       setTodayBreakdown(today);
       setPillars(pillarMap);
-      const weekBaselines = await getStartOfWeekPillars(user.id, pillarMap);
+      const weekGains = await pillarProgressService.getThisWeeksPillarGains(user.id);
+      const weekBaselines = pillarProgressService.getStartOfWeekBaselines(pillarMap, weekGains);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const weekStart = pillarProgressService.getWeekStartDate(todayStr);
+      await AsyncStorage.setItem(`pillar_progress_start_of_week_${user.id}`, JSON.stringify(weekBaselines));
+      await AsyncStorage.setItem(`pillar_progress_start_of_week_date_${user.id}`, weekStart);
+      setWeekPillarGains(weekGains);
       setStartOfWeekPillars(weekBaselines);
       setPillarsActiveToday(await getPillarsActiveToday(user.id, pillarMap));
       setRewards(rewardHistory);
@@ -432,8 +398,9 @@ export default function ProfileStatsScreen() {
                 const isActiveToday = !!pillarsActiveToday[pillar.key];
                 const accent = isActiveToday ? ACTIVE_GREEN : theme.textPrimary;
                 const pct = Math.max(0, Math.min(100, value));
-                const startPct = Math.max(0, Math.min(pct, startOfWeekPillars[pillar.key] || 0));
-                const growthPct = Math.max(0, pct - startPct);
+                const weekGainPct = Math.max(0, weekPillarGains[pillar.key] || 0);
+                const growthPct = Math.min(weekGainPct, pct);
+                const startPct = Math.max(0, pct - growthPct);
                 const priorShareInFill = pct > 0 ? startPct / pct : 1;
                 return (
                   <View key={pillar.key} style={styles.pillarRow}>
@@ -492,8 +459,9 @@ export default function ProfileStatsScreen() {
                 const overallActive = !!pillarsActiveToday.overall;
                 const overallAccent = overallActive ? ACTIVE_GREEN : theme.textPrimary;
                 const pct = Math.max(0, Math.min(100, overallValue));
-                const startPct = Math.max(0, Math.min(pct, startOfWeekPillars.overall || 0));
-                const growthPct = Math.max(0, pct - startPct);
+                const weekGainPct = Math.max(0, weekPillarGains.overall || 0);
+                const growthPct = Math.min(weekGainPct, pct);
+                const startPct = Math.max(0, pct - growthPct);
                 const priorShareInFill = pct > 0 ? startPct / pct : 1;
                 return (
                   <View style={[styles.pillarRow, styles.overallPillar, { borderTopColor: theme.border }]}>

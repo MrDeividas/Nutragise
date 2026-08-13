@@ -42,6 +42,7 @@ import { useRemindersStore } from '../state/remindersStore';
 import LevelInfoModal from '../components/LevelInfoModal';
 import ChallengeCard from '../components/ChallengeCard';
 import { Challenge } from '../types/challenges';
+import { stripTrailingChallengeWord } from '../lib/challengeTitleUtils';
 
 import { dailyHabitsService } from '../lib/dailyHabitsService';
 import { notificationService } from '../lib/notificationService';
@@ -62,19 +63,7 @@ import {
   parseWaterTargetLiters,
   type HabitCardMetric,
 } from '../lib/habitCardMetrics';
-
-// Soft-load HealthKit — missing native module must not crash the Action tab on TestFlight
-let AppleHealthKit: any = null;
-try {
-  AppleHealthKit = require('react-native-health').default ?? require('react-native-health');
-} catch {
-  AppleHealthKit = null;
-}
-type HealthValue = any;
-type HealthKitPermissions = any;
-
-
-
+import { appleHealthService, type AppleHealthSnapshot } from '../lib/appleHealthService';
 
 // Days constants
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -754,8 +743,11 @@ async function savePillarProgressSnapshot(userId: string, today: string): Promis
       }
 
       if (needsWeek) {
-        // Capture week baseline at the first app open of the week (before later gains)
-        await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(progress));
+        // Prefer reward-history baseline so Stats green tip covers the whole week
+        // even if the first open of the week happens after habits were already logged.
+        const weekGains = await pillarProgressService.getThisWeeksPillarGains(userId);
+        const weekBaseline = pillarProgressService.getStartOfWeekBaselines(progress, weekGains);
+        await AsyncStorage.setItem(startOfWeekKey, JSON.stringify(weekBaseline));
         await AsyncStorage.setItem(startOfWeekDateKey, weekStart);
       }
     }
@@ -2006,6 +1998,8 @@ function ActionScreen() {
   const [showNewReminderModal, setShowNewReminderModal] = useState(false);
   const unreadNotificationCount = useNotificationsStore((s) => s.unreadCount);
   const [myActiveChallenges, setMyActiveChallenges] = useState<Challenge[]>([]);
+  /** Shown on Action when the user has no active challenges — sorted by people joined */
+  const [trendingChallenges, setTrendingChallenges] = useState<Challenge[]>([]);
   /** Challenge IDs where the user submitted proof for the current calendar day (for Done badge on cards) */
   const [challengeSubmittedTodayIds, setChallengeSubmittedTodayIds] = useState<Set<string>>(new Set());
   const [loadingChallenges, setLoadingChallenges] = useState(false);
@@ -2100,6 +2094,10 @@ function ActionScreen() {
       cancelled = true;
     };
   }, [showGymModal, user?.id]);
+
+  /** Habits with Apple Health data ready (bar fills ~50% until user confirms). */
+  const [healthReadyHabits, setHealthReadyHabits] = useState<Set<string>>(new Set());
+  const healthSnapshotRef = useRef<AppleHealthSnapshot>(appleHealthService.getSnapshot());
 
   const [sleepQuestionnaire, setSleepQuestionnaire] = useState({
     sleepQuality: 50, // Changed to number for slider
@@ -2696,142 +2694,150 @@ function ActionScreen() {
     return null;
   }, [user]);
 
-  // Initialize HealthKit
+  // Initialize + sync Apple Health (permission + silent prefill)
   useEffect(() => {
-    if (Platform.OS === 'ios') {
-      try {
-        // Check if AppleHealthKit is available and has the required methods
-        if (!AppleHealthKit || typeof AppleHealthKit.initHealthKit !== 'function') {
-          return;
-        }
+    if (Platform.OS !== 'ios') return;
 
-        const permissions: HealthKitPermissions = {
-          permissions: {
-            read: [
-              AppleHealthKit.Constants.Permissions.SleepAnalysis,
-              AppleHealthKit.Constants.Permissions.Steps,
-              AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
-            ],
-            write: []
-          }
-        };
-
-        AppleHealthKit.initHealthKit(permissions, (error: string) => {
-          // HealthKit initialized
-        });
-      } catch (error) {
-        // Error initializing HealthKit
+    const applySnapshot = (snap: AppleHealthSnapshot) => {
+      healthSnapshotRef.current = snap;
+      const ready = new Set<string>();
+      if (snap.authorized && snap.sleep && snap.sleep.totalMinutes >= 30) {
+        ready.add('sleep');
       }
-    }
-  }, []);
+      if (snap.authorized && snap.steps >= 500) {
+        ready.add('run');
+      }
+      setHealthReadyHabits(ready);
 
-  // Load sleep data from Apple Health
-  const loadSleepFromiPhone = useCallback(() => {
-    if (Platform.OS !== 'ios') {
-      Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
-      return;
-    }
+      // Prefill sleep form silently when we have Health data and no saved sleep yet
+      const habits = useActionStore.getState().dailyHabits;
+      if (snap.sleep && (!habits || habits.sleep_quality == null)) {
+        const defaults = appleHealthService.sleepQuestionnaireDefaults(snap.sleep);
+        sleepQualityLiveRef.current = defaults.sleepQuality;
+        setSleepQuestionnaire((prev) => ({
+          ...prev,
+          ...defaults,
+        }));
+      }
 
-    if (!AppleHealthKit || typeof AppleHealthKit.getSleepSamples !== 'function') {
-      Alert.alert('Not Available', 'Apple Health integration is not available. Please ensure the app has proper permissions.');
-      return;
-    }
-
-    const options = {
-      startDate: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Last 24 hours
-      endDate: new Date().toISOString(),
+      // Prefill exercise notes / Walk when steps exist and exercise not completed
+      if (snap.steps >= 500 && (!habits || !habits.run_activity_type)) {
+        const distanceKm = Math.round((snap.distanceMeters / 1000) * 100) / 100;
+        setExerciseQuestionnaire((prev) => {
+          if (prev.selectedSport) return prev;
+          const preferWalk = snap.steps >= 2000 && distanceKm < 8;
+          const preferRun = distanceKm >= 1.5;
+          return {
+            ...prev,
+            selectedSport: preferRun ? 'Running' : preferWalk ? 'Walk' : prev.selectedSport || 'Walk',
+            distance: preferRun ? Math.max(distanceKm, 1) : prev.distance,
+            exerciseNotes:
+              prev.exerciseNotes?.trim()
+                ? prev.exerciseNotes
+                : `Apple Health: ${snap.steps.toLocaleString()} steps` +
+                  (distanceKm > 0 ? ` · ${distanceKm} km` : ''),
+          };
+        });
+      }
     };
 
-    AppleHealthKit.getSleepSamples(options, (err: Object, results: HealthValue[]) => {
-      if (err) {
-        Alert.alert('Error', 'Could not load sleep data. Make sure you\'ve granted permission in Settings > Health > Data Access & Devices.');
+    const unsub = appleHealthService.subscribe(applySnapshot);
+    appleHealthService.sync({ force: false }).catch(() => {});
+    return unsub;
+  }, []);
+
+  // Refresh Health whenever Action tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'ios') return;
+      appleHealthService.sync({ force: false }).catch(() => {});
+    }, [])
+  );
+
+  // Load sleep data from Apple Health (manual button — silent when silent=true)
+  const loadSleepFromiPhone = useCallback((opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    if (Platform.OS !== 'ios') {
+      if (!silent) Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
+      return;
+    }
+
+    (async () => {
+      const snap = await appleHealthService.sync({ force: true });
+      if (!snap.authorized) {
+        if (!silent) {
+          Alert.alert(
+            'Permission needed',
+            "Allow Nutragise to read Sleep in Settings → Health → Data Access & Devices."
+          );
+        }
         return;
       }
-
-      if (results && results.length > 0) {
-        // Calculate total sleep duration
-        let totalSleepMinutes = 0;
-        let bedtime: Date | null = null;
-        let wakeTime: Date | null = null;
-
-        results.forEach((sample: any) => {
-          if (sample.value === 'ASLEEP' || sample.value === 'INBED') {
-            const start = new Date(sample.startDate);
-            const end = new Date(sample.endDate);
-            const duration = (end.getTime() - start.getTime()) / (1000 * 60); // minutes
-            totalSleepMinutes += duration;
-
-            if (!bedtime || start < bedtime) bedtime = start;
-            if (!wakeTime || end > wakeTime) wakeTime = end;
-          }
-        });
-
-        const hours = Math.floor(totalSleepMinutes / 60);
-        const minutes = Math.round(totalSleepMinutes % 60);
-
-        // Auto-fill sleep data
-        const quality = Math.min(100, Math.round((totalSleepMinutes / 480) * 100)); // 8 hours = 100%
-        sleepQualityLiveRef.current = quality;
-        setSleepQuestionnaire(prev => ({
-          ...prev,
-          sleepQuality: quality,
-          bedtimeHours: bedtime ? bedtime.getHours() : 22,
-          bedtimeMinutes: bedtime ? roundSleepMinutes(bedtime.getMinutes()) : 0,
-          wakeupHours: wakeTime ? wakeTime.getHours() : 6,
-          wakeupMinutes: wakeTime ? roundSleepMinutes(wakeTime.getMinutes()) : 0,
-        }));
-
-        Alert.alert('Success!', `Loaded ${hours}h ${minutes}m of sleep from Apple Health`);
-      } else {
-        Alert.alert('No Data', 'No sleep data found in Apple Health for the last 24 hours.');
+      if (!snap.sleep) {
+        if (!silent) Alert.alert('No Data', 'No sleep data found in Apple Health for the last night.');
+        return;
       }
+      const defaults = appleHealthService.sleepQuestionnaireDefaults(snap.sleep);
+      sleepQualityLiveRef.current = defaults.sleepQuality;
+      setSleepQuestionnaire((prev) => ({ ...prev, ...defaults }));
+      setHealthReadyHabits((prev) => new Set(prev).add('sleep'));
+      if (!silent) {
+        Alert.alert(
+          'Loaded',
+          `${snap.sleep.hours}h ${snap.sleep.minutes}m from Apple Health — tap Complete Sleep Log to save.`
+        );
+      }
+    })().catch(() => {
+      if (!silent) Alert.alert('Error', 'Could not load sleep data from Apple Health.');
     });
   }, []);
 
   // Load exercise data from Apple Health (steps and distance)
-  const loadExerciseFromiPhone = useCallback(() => {
+  const loadExerciseFromiPhone = useCallback((opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     if (Platform.OS !== 'ios') {
-      Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
+      if (!silent) Alert.alert('Not Available', 'Apple Health is only available on iOS devices.');
       return;
     }
 
-    if (!AppleHealthKit || typeof AppleHealthKit.getStepCount !== 'function') {
-      Alert.alert('Not Available', 'Apple Health integration is not available. Please ensure the app has proper permissions.');
-      return;
-    }
-
-    const options = {
-      date: new Date().toISOString(),
-    };
-
-    // Get steps
-    AppleHealthKit.getStepCount(options, (err: Object, stepsResult: HealthValue) => {
-      if (err) {
-        Alert.alert('Error', 'Could not load step data. Make sure you\'ve granted permission in Settings > Health > Data Access & Devices.');
+    (async () => {
+      const snap = await appleHealthService.sync({ force: true });
+      if (!snap.authorized) {
+        if (!silent) {
+          Alert.alert(
+            'Permission needed',
+            "Allow Nutragise to read Steps in Settings → Health → Data Access & Devices."
+          );
+        }
+        return;
+      }
+      if (snap.steps <= 0 && snap.distanceMeters <= 0) {
+        if (!silent) Alert.alert('No Data', 'No step or distance data found in Apple Health for today.');
         return;
       }
 
-      const steps = stepsResult?.value || 0;
-
-      // Get distance
-      AppleHealthKit.getDistanceWalkingRunning(options, (err: Object, distanceResult: HealthValue) => {
-        const distanceMeters = distanceResult?.value || 0;
-        const distanceKm = (distanceMeters / 1000).toFixed(2);
-
-        // Auto-select Running if there's significant distance
-        if (distanceMeters > 1000) {
-          setExerciseQuestionnaire(prev => ({
-            ...prev,
-            selectedSport: 'Running',
-            distance: parseFloat(distanceKm),
-          }));
-        }
-
+      const distanceKm = Math.round((snap.distanceMeters / 1000) * 100) / 100;
+      const preferRun = distanceKm >= 1.5;
+      setExerciseQuestionnaire((prev) => ({
+        ...prev,
+        selectedSport: preferRun ? 'Running' : prev.selectedSport || 'Walk',
+        distance: preferRun ? Math.max(distanceKm, 1) : prev.distance,
+        exerciseNotes: `Apple Health: ${snap.steps.toLocaleString()} steps` +
+          (distanceKm > 0 ? ` · ${distanceKm} km` : ''),
+      }));
+      if (snap.steps >= 500) {
+        setHealthReadyHabits((prev) => new Set(prev).add('run'));
+      }
+      if (!silent) {
         Alert.alert(
-          'Success!', 
-          `Loaded from Apple Health:\n\n${steps.toLocaleString()} steps\n${distanceKm} km distance${distanceMeters > 1000 ? '\n\nAuto-selected Running sport' : ''}`
+          'Loaded',
+          `${snap.steps.toLocaleString()} steps` +
+            (distanceKm > 0 ? `\n${distanceKm} km` : '') +
+            '\n\nReview and tap Complete Exercise to save.'
         );
-      });
+      }
+    })().catch(() => {
+      if (!silent) Alert.alert('Error', 'Could not load activity data from Apple Health.');
     });
   }, []);
 
@@ -4290,15 +4296,24 @@ function ActionScreen() {
             sleepNotes: dailyHabits.sleep_notes || ''
           });
         } else {
-          sleepQualityLiveRef.current = 50;
-          setSleepQuestionnaire({
-            sleepQuality: 50,
-            bedtimeHours: 22,
-            bedtimeMinutes: 0,
-            wakeupHours: 6,
-            wakeupMinutes: 0,
-            sleepNotes: ''
-          });
+          const snap = healthSnapshotRef.current;
+          if (snap.sleep) {
+            const defaults = appleHealthService.sleepQuestionnaireDefaults(snap.sleep);
+            sleepQualityLiveRef.current = defaults.sleepQuality;
+            setSleepQuestionnaire(defaults);
+          } else {
+            sleepQualityLiveRef.current = 50;
+            setSleepQuestionnaire({
+              sleepQuality: 50,
+              bedtimeHours: 22,
+              bedtimeMinutes: 0,
+              wakeupHours: 6,
+              wakeupMinutes: 0,
+              sleepNotes: ''
+            });
+            // Pull Health in background and fill when ready
+            loadSleepFromiPhone({ silent: true });
+          }
         }
         modalPosition.setValue(0);
         setShowSleepModal(true);
@@ -4368,16 +4383,35 @@ function ActionScreen() {
             exerciseNotes: dailyHabits.run_notes || ''
           });
         } else {
-          setExerciseQuestionnaire({ 
-            selectedSport: '', 
-            customSport: '', 
-            runType: '', 
-            distance: 5, 
-            durationHours: 0, 
-            durationMinutes: 30, 
-            durationSeconds: 0, 
-            exerciseNotes: '' 
-          });
+          const snap = healthSnapshotRef.current;
+          if (snap.steps >= 500) {
+            const distanceKm = Math.round((snap.distanceMeters / 1000) * 100) / 100;
+            const preferRun = distanceKm >= 1.5;
+            setExerciseQuestionnaire({
+              selectedSport: preferRun ? 'Running' : 'Walk',
+              customSport: '',
+              runType: '',
+              distance: preferRun ? Math.max(distanceKm, 1) : 5,
+              durationHours: 0,
+              durationMinutes: 30,
+              durationSeconds: 0,
+              exerciseNotes:
+                `Apple Health: ${snap.steps.toLocaleString()} steps` +
+                (distanceKm > 0 ? ` · ${distanceKm} km` : ''),
+            });
+          } else {
+            setExerciseQuestionnaire({
+              selectedSport: '',
+              customSport: '',
+              runType: '',
+              distance: 5,
+              durationHours: 0,
+              durationMinutes: 30,
+              durationSeconds: 0,
+              exerciseNotes: '',
+            });
+            loadExerciseFromiPhone({ silent: true });
+          }
         }
         modalPosition.setValue(0);
         setShowExerciseModal(true);
@@ -4454,7 +4488,7 @@ function ActionScreen() {
       default:
         return;
     }
-  }, [navigation, modalPosition, dailyHabits, user?.id, loadLiveHabitCardMetrics]);
+  }, [navigation, modalPosition, dailyHabits, user?.id, loadLiveHabitCardMetrics, loadSleepFromiPhone, loadExerciseFromiPhone]);
 
   // Handle habit press from the new ring
   const handleHabitPress = useCallback((habitId: string) => {
@@ -4952,13 +4986,59 @@ function ActionScreen() {
     }, [user, userGoals.length, checkTodaysCheckIns, checkForOverdueGoals, loadCoreHabitsStatus])
   );
 
-  // Load my active challenges
+  // Load my active challenges (or trending joinable challenges as incentive)
+  const loadTrendingChallenges = useCallback(async (excludeIds: Set<string>) => {
+    try {
+      const all = await challengesService.getChallenges();
+      const now = new Date();
+
+      const joinable = all.filter((c) => {
+        if (excludeIds.has(c.id)) return false;
+        if (c.status !== 'active' && c.status !== 'upcoming') return false;
+        if (c.is_user_created) return false;
+        const end = new Date(c.end_date);
+        end.setHours(23, 59, 59, 999);
+        return now <= end;
+      });
+
+      // One card per title — keep the instance with the most participants
+      const byTitle = new Map<string, Challenge>();
+      for (const c of joinable) {
+        const key = stripTrailingChallengeWord(c.title).toLowerCase();
+        const existing = byTitle.get(key);
+        if (
+          !existing ||
+          (c.participant_count || 0) > (existing.participant_count || 0)
+        ) {
+          byTitle.set(key, c);
+        }
+      }
+
+      const ranked = Array.from(byTitle.values()).sort(
+        (a, b) => (b.participant_count || 0) - (a.participant_count || 0)
+      );
+
+      // Prefer challenges people have already joined; if none yet, still show top open ones
+      const withJoins = ranked.filter((c) => (c.participant_count || 0) > 0);
+      const trending = (withJoins.length > 0 ? withJoins : ranked).slice(0, 6);
+      setTrendingChallenges(trending);
+    } catch {
+      setTrendingChallenges([]);
+    }
+  }, []);
+
   const loadMyActiveChallenges = useCallback(async () => {
-    if (!user?.id) return;
+    const userId = user?.id;
+    if (!userId) {
+      setMyActiveChallenges([]);
+      setTrendingChallenges([]);
+      return;
+    }
     
     setLoadingChallenges(true);
     try {
-      const challenges = await challengesService.getUserChallenges(user.id);
+      const challenges = await challengesService.getUserChallenges(userId);
+      if (userId !== useAuthStore.getState().user?.id) return;
       const now = new Date();
       
       // Helper function to normalize dates to start of day for comparison
@@ -5001,32 +5081,52 @@ function ActionScreen() {
         })
         .map(entry => entry.challenge);
 
+      if (userId !== useAuthStore.getState().user?.id) return;
+
       setMyActiveChallenges(relevant);
 
       // Done badge = submitted today (resets each day), not whole-challenge completion
       const submittedToday = new Set<string>();
-      if (user?.id && relevant.length > 0) {
+      if (relevant.length > 0) {
         const challengeIds = relevant.map(c => c.id);
         const todayStr = new Date().toISOString().split('T')[0];
         const { data: rows } = await supabase
           .from('challenge_submissions')
           .select('challenge_id')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('submission_date', todayStr)
           .in('challenge_id', challengeIds);
 
         rows?.forEach((r) => submittedToday.add(r.challenge_id));
       }
-      setChallengeSubmittedTodayIds(submittedToday);
-    } catch (error) {
-      setMyActiveChallenges([]);
-    } finally {
-      setLoadingChallenges(false);
-    }
-  }, [user?.id]);
 
-  // Load challenges when user changes
+      if (userId !== useAuthStore.getState().user?.id) return;
+
+      setChallengeSubmittedTodayIds(submittedToday);
+
+      if (relevant.length === 0) {
+        const exclude = new Set(challenges.map((c) => c.id));
+        await loadTrendingChallenges(exclude);
+      } else {
+        setTrendingChallenges([]);
+      }
+    } catch (error) {
+      if (userId === useAuthStore.getState().user?.id) {
+        setMyActiveChallenges([]);
+        await loadTrendingChallenges(new Set());
+      }
+    } finally {
+      if (userId === useAuthStore.getState().user?.id) {
+        setLoadingChallenges(false);
+      }
+    }
+  }, [user?.id, loadTrendingChallenges]);
+
+  // Clear then reload challenges when the signed-in user changes
   useEffect(() => {
+    setMyActiveChallenges([]);
+    setTrendingChallenges([]);
+    setChallengeSubmittedTodayIds(new Set());
     loadMyActiveChallenges();
   }, [loadMyActiveChallenges]);
 
@@ -5511,7 +5611,7 @@ function ActionScreen() {
             >
                   <View style={styles.headerStat}>
                     <Text style={[styles.headerStatLabel, { color: theme.textSecondary }]}>Balance:</Text>
-                    <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>£{walletBalance.toFixed(0)}</Text>
+                    <Text style={[styles.headerStatText, { color: theme.textPrimary }]}>${walletBalance.toFixed(0)}</Text>
                   </View>
                 </Animated.View>
           </TouchableOpacity>
@@ -5580,7 +5680,7 @@ function ActionScreen() {
         <View
           style={{
             marginHorizontal: 24,
-            marginBottom: 16,
+            marginBottom: 8,
             marginTop: 0,
             paddingBottom: isLevelExpanded ? 4 : 0,
           }}
@@ -5796,7 +5896,9 @@ function ActionScreen() {
                 const isCompletedCard = completedHabits.has(displayCard.habitId);
                 const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
                 const displayProgress = !isCompletedCard
-                  ? 0.05
+                  ? healthReadyHabits.has(displayCard.habitId)
+                    ? 0.5
+                    : 0.05
                   : isQuickComplete
                     ? 0.9
                     : 1;
@@ -5873,7 +5975,9 @@ function ActionScreen() {
               const isCompletedCard = completedHabits.has(displayCard.habitId);
               const isQuickComplete = quickCompletedHabits.has(displayCard.habitId);
               const displayProgress = !isCompletedCard
-                ? 0.05
+                ? healthReadyHabits.has(displayCard.habitId)
+                  ? 0.5
+                  : 0.05
                 : isQuickComplete
                   ? 0.9
                   : 1;
@@ -6157,8 +6261,19 @@ function ActionScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-              Challenges
+              {myActiveChallenges.length > 0 ? 'Challenges' : 'Trending Challenges'}
             </Text>
+            {myActiveChallenges.length === 0 && trendingChallenges.length > 0 && (
+              <TouchableOpacity
+                onPress={() => (navigation as any).navigate('Discover')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                  See all
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
           {myActiveChallenges.length > 0 ? (
             <ScrollView
@@ -6184,10 +6299,40 @@ function ActionScreen() {
               );
             })}
             </ScrollView>
+          ) : trendingChallenges.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ overflow: 'visible', marginTop: 10 }}
+              contentContainerStyle={styles.challengesScrollContent}
+              snapToInterval={challengeSnapInterval}
+              snapToAlignment="start"
+              decelerationRate="fast"
+            >
+              {trendingChallenges.map((challenge) => (
+                <ChallengeCard
+                  key={challenge.id}
+                  challenge={challenge}
+                  onPress={() =>
+                    (navigation as any).navigate('ChallengeDetail', {
+                      challengeId: challenge.id,
+                    })
+                  }
+                  isJoined={false}
+                  isCompleted={false}
+                />
+              ))}
+            </ScrollView>
+          ) : loadingChallenges ? (
+            <View style={[styles.challengesContainer, { paddingVertical: 20, alignItems: 'center' }]}>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Loading challenges…
+              </Text>
+            </View>
           ) : (
             <View style={[styles.challengesContainer, { paddingVertical: 20, alignItems: 'center' }]}>
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                No active challenges. Join a challenge on the Challenge page!
+                No challenges open right now. Check the Challenge tab soon.
               </Text>
             </View>
           )}
@@ -10495,9 +10640,9 @@ const styles = StyleSheet.create({
   // New styles for the greeting section
   greetingSection: {
     paddingHorizontal: 24,
-    paddingVertical: 10,
+    paddingVertical: 6,
     paddingBottom: 0,
-    marginTop: 4,
+    marginTop: 0,
   },
   greetingText: {
     fontSize: 20,

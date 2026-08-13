@@ -8,6 +8,9 @@ export const CHALLENGE_ENTRY_FEES = {
   PRO: 25,
 } as const;
 
+/** Free members can have this many concurrent joined challenges (active/upcoming). Pro = unlimited. */
+export const FREE_USER_MAX_ACTIVE_CHALLENGES = 2;
+
 export interface Challenge {
   id: string;
   title: string;

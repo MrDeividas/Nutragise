@@ -16,7 +16,8 @@ import {
 } from '../lib/challengeTitleUtils';
 import { getChallengeCardHeroSource } from '../lib/challengeHeroImages';
 import {
-  formatChallengeShortDate,
+  challengeDateYmd,
+  localYmd,
   getChallengePeriodDays,
 } from '../lib/challengeDates';
 
@@ -24,6 +25,23 @@ const { width } = Dimensions.get('window');
 const horizontalPadding = 24 * 2;
 const gap = 12; // Match habit card width calculation
 const CARD_WIDTH = Math.max(160, (width - horizontalPadding - gap) / 2);
+
+/** Bottom band shades for Steps ladder — lighter → darker as step target rises */
+const STEP_CARD_BAND_COLORS: Record<string, string> = {
+  '8k steps daily': '#10B981', // emerald
+  '8k steps': '#10B981',
+  '10k steps daily': '#047857', // darker
+  '10k steps': '#047857',
+  '12k steps daily': '#065F46', // darker still
+  '12k steps': '#065F46',
+  '15k steps daily': '#022C22', // darkest
+  '15k steps': '#022C22',
+};
+
+function getStepsCardBandColor(title: string): string | null {
+  const key = stripTrailingChallengeWord(title).toLowerCase();
+  return STEP_CARD_BAND_COLORS[key] ?? STEP_CARD_BAND_COLORS[key.replace(/\s+daily$/, '')] ?? null;
+}
 
 const CORE_HABIT_TITLES = new Set([
   'Gym',
@@ -41,6 +59,41 @@ const CORE_HABIT_TITLES = new Set([
 
 function isCoreHabitTitle(title: string): boolean {
   return CORE_HABIT_TITLES.has(stripTrailingChallengeWord(title));
+}
+
+/** Top-right timing chip, e.g. "Starts in 3 days" */
+function getStartsLabel(startIso: string, endIso: string): string | null {
+  const startYmd = challengeDateYmd(startIso);
+  const endYmd = challengeDateYmd(endIso);
+  if (!startYmd || !endYmd) return null;
+
+  const today = localYmd(new Date());
+  const start = new Date(`${startYmd}T12:00:00`);
+  const end = new Date(`${endYmd}T12:00:00`);
+  const todayDate = new Date(`${today}T12:00:00`);
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysUntilStart = Math.round((start.getTime() - todayDate.getTime()) / msPerDay);
+  const daysUntilEnd = Math.round((end.getTime() - todayDate.getTime()) / msPerDay);
+
+  if (daysUntilStart > 1) return `Starts in ${daysUntilStart} days`;
+  if (daysUntilStart === 1) return 'Starts in 1 day';
+  if (daysUntilStart === 0) return 'Starts today';
+  if (daysUntilEnd < 0) return 'Ended';
+  if (daysUntilEnd === 0) return 'Ends today';
+  if (daysUntilEnd === 1) return 'Ends in 1 day';
+  return `Ends in ${daysUntilEnd} days`;
+}
+
+function getDurationLabel(startIso: string, endIso: string): string | null {
+  const days = getChallengePeriodDays(startIso, endIso);
+  if (!days || days < 1) return null;
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+function formatUsd(amount: number): string {
+  const n = Math.round(Number(amount) || 0);
+  return `$${n.toLocaleString('en-US')}`;
 }
 
 export default function ChallengeCard({ challenge, onPress, isJoined, isCompleted }: ChallengeCardProps) {
@@ -79,36 +132,42 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
     }
   };
 
-  const formatDuration = (weeks: number) => {
-    const spanDays = getChallengePeriodDays(challenge.start_date, challenge.end_date);
-
-    if (spanDays === 1) return '1 day';
-    if (spanDays < 7) return `${spanDays} days`;
-    if (weeks === 1) return '1 week';
-    return `${weeks} weeks`;
-  };
-
-  /** e.g. "23 Mar - 30 Mar • 1 week" */
-  const scheduleLine = `${formatChallengeShortDate(challenge.start_date)} - ${formatChallengeShortDate(challenge.end_date)} • ${formatDuration(challenge.duration_weeks)}`;
-
   const categoryColor = getCategoryColor(challenge.category);
-  const categoryLabel = (challenge.category || 'fitness')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const stepsBandColor = getStepsCardBandColor(challenge.title);
   
-  // For core habit challenges, use dark grey color (matching ActionScreen core habit cards)
-  // For private challenges, use dark purple, otherwise use category color
-  const sectionColor = challenge.visibility === 'private' 
-    ? '#4B0082' 
-    : (isCoreHabit ? (isDark ? '#1f1f1f' : '#111827') : categoryColor);
+  // Steps ladder: progressively darker bottom bands. Core habits dark grey. Private purple. Else category.
+  const sectionColor =
+    challenge.visibility === 'private'
+      ? '#4B0082'
+      : stepsBandColor
+        ? stepsBandColor
+        : isCoreHabit
+          ? isDark
+            ? '#1f1f1f'
+            : '#111827'
+          : categoryColor;
 
-  /** On full-bleed hero art, muted grey vanishes on light artwork (e.g. Sleep). Use dark slate, not theme.textPrimary (can be light in dark theme). */
-  const participantIconColor = isJoined
-    ? '#10B981'
-    : heroImageSource != null
-      ? '#111827'
-      : theme.textSecondary;
-  const participantNumberColor = participantIconColor;
+  /** Participant count always green (joined state used elsewhere, not for this chip). */
+  const participantIconColor = '#10B981';
+  const participantNumberColor = '#10B981';
+  const startsLabel = getStartsLabel(challenge.start_date, challenge.end_date);
+  const durationLabel = getDurationLabel(challenge.start_date, challenge.end_date);
+  const displayParticipantCount = challenge.participant_count || 0;
+
+  const audiencePill =
+    challenge.visibility === 'private' ? (
+      <View style={styles.privatePill}>
+        <Text style={[styles.pillLabel, styles.privatePillText]}>Private</Text>
+      </View>
+    ) : challenge.is_pro_only ? (
+      <View style={styles.memberPill}>
+        <Text style={[styles.pillLabel, styles.memberPillText]}>Member</Text>
+      </View>
+    ) : (
+      <View style={styles.everyonePill}>
+        <Text style={[styles.pillLabel, styles.everyonePillText]}>Everyone</Text>
+      </View>
+    );
 
   return (
     <TouchableOpacity
@@ -132,49 +191,22 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
       
       {/* Content */}
       <View style={styles.content}>
-        {/* Category + Private / Everyone (or Member) */}
-        <View style={styles.topPillsColumn} pointerEvents="none">
-          <View
-            style={[
-              styles.categoryPill,
-              {
-                borderColor: `${categoryColor}55`,
-                backgroundColor: 'rgba(255, 255, 255, 0.96)',
-              },
-            ]}
-          >
-            <Text
-              style={[styles.pillLabel, styles.categoryPillLabel, { color: theme.textPrimary }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {categoryLabel}
-            </Text>
-          </View>
-          {challenge.visibility === 'private' ? (
-            <View style={styles.privatePill}>
-              <Text style={[styles.pillLabel, styles.privatePillText]}>Private</Text>
-            </View>
-          ) : challenge.is_pro_only ? (
-            <View style={styles.memberPill}>
-              <Text style={[styles.pillLabel, styles.memberPillText]}>Member</Text>
-            </View>
-          ) : (
-            <View style={styles.everyonePill}>
-              <Text style={[styles.pillLabel, styles.everyonePillText]}>Everyone</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* "Done today" badge — top-right, same pill style as Pending/Rejected */}
-        {isCompleted && (
+        {/* Top-right: Done today, else starts/ends timing chip */}
+        {isCompleted ? (
           <View style={styles.doneBadge} pointerEvents="none">
             <Ionicons name="checkmark-done-circle" size={14} color="#F59E0B" />
             <Text style={styles.doneText}>Done</Text>
           </View>
-        )}
+        ) : startsLabel ? (
+          <View style={styles.startsBadge} pointerEvents="none">
+            <Ionicons name="time-outline" size={11} color="#4B5563" />
+            <Text style={styles.startsBadgeText} numberOfLines={1}>
+              {startsLabel}
+            </Text>
+          </View>
+        ) : null}
 
-        {/* Top half: badges + participants only; title lives in bottom half */}
+        {/* Top half: audience + duration (left) + participants (right) */}
         <View style={styles.topSection}>
           <View
             style={[
@@ -182,56 +214,71 @@ export default function ChallengeCard({ challenge, onPress, isJoined, isComplete
               heroImageSource != null && styles.topBadgesRowWithHero,
             ]}
           >
-            {challenge.approval_status === 'pending' ? (
-              <View style={styles.pendingBadge}>
-                <Ionicons name="time-outline" size={14} color="#F59E0B" />
-                <Text style={styles.pendingText}>Pending Review</Text>
-              </View>
-            ) : challenge.approval_status === 'rejected' ? (
-              <View style={styles.rejectedBadge}>
-                <Ionicons name="close-circle" size={14} color="#EF4444" />
-                <Text style={styles.rejectedText}>Rejected</Text>
-              </View>
-            ) : null}
-          <View style={styles.participantsContainerAction}>
-            <Ionicons name="people" size={14} color={participantIconColor} />
-            <Text
-              style={[
-                styles.participantsTextAction,
-                { color: participantNumberColor },
-              ]}
-            >
-              <Text style={{ fontWeight: '700' }}>{challenge.participant_count || 0}</Text>
-            </Text>
+            <View style={styles.topLeftBadges}>
+              {challenge.approval_status === 'pending' ? (
+                <View style={styles.pendingBadge}>
+                  <Ionicons name="time-outline" size={14} color="#F59E0B" />
+                  <Text style={styles.pendingText}>Pending Review</Text>
+                </View>
+              ) : challenge.approval_status === 'rejected' ? (
+                <View style={styles.rejectedBadge}>
+                  <Ionicons name="close-circle" size={14} color="#EF4444" />
+                  <Text style={styles.rejectedText}>Rejected</Text>
+                </View>
+              ) : (
+                audiencePill
+              )}
+            </View>
+            <View style={styles.participantsContainerAction}>
+              <Ionicons name="people" size={14} color={participantIconColor} />
+              <Text
+                style={[
+                  styles.participantsTextAction,
+                  { color: participantNumberColor },
+                ]}
+              >
+                <Text style={{ fontWeight: '700' }}>{displayParticipantCount}</Text>
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Bottom half: schedule, title, entry/pot */}
+        {/* Bottom half: title on top line, entry/pot at bottom */}
         <View style={styles.bottomSection}>
-          <Text style={[styles.timeRemaining, styles.bottomSecondaryText]}>
-            {scheduleLine}
+          <Text
+            style={[styles.title, styles.titleInBottom]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {getChallengeDisplayTitle(challenge.title)}
           </Text>
-
-          <View style={styles.bottomTitleWrap}>
-            <Text
-              style={[styles.title, styles.titleInBottom]}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {getChallengeDisplayTitle(challenge.title)}
-            </Text>
-          </View>
+          {durationLabel ? (
+            <View style={styles.durationUnderTitleRow}>
+              <Ionicons name="calendar-outline" size={11} color="rgba(255, 255, 255, 0.68)" />
+              <Text style={styles.durationUnderTitle} numberOfLines={1}>
+                {durationLabel}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.feeContainer}>
-            <Text style={[styles.entryPotText, styles.bottomSecondaryText]}>
-              Entry: £{challenge.entry_fee ?? 0}
-            </Text>
-            <Text style={[styles.entryPotText, styles.bottomSecondaryText]}>
-              Pot: £{(challenge.participant_count || 0) * (challenge.entry_fee ?? 0)}
-            </Text>
+            <View style={styles.feeBlockLeft}>
+              <Text style={styles.prizePoolLabel} numberOfLines={1}>
+                prize pool
+              </Text>
+              <Text style={styles.prizePoolAmount} numberOfLines={1}>
+                {formatUsd(displayParticipantCount * (challenge.entry_fee ?? 0))}
+              </Text>
+            </View>
+            <View style={styles.feeBlockRight}>
+              <Text style={styles.entryAmount} numberOfLines={1}>
+                {formatUsd(challenge.entry_fee ?? 0)}
+              </Text>
+              <Text style={styles.entryLabel} numberOfLines={1}>
+                entry
+              </Text>
+            </View>
           </View>
-
         </View>
       </View>
     </TouchableOpacity>
@@ -280,34 +327,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 2,
   },
-  topPillsColumn: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    right: 8,
-    zIndex: 9,
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  /** Hug text width; cap width so long names ellipsize + second pill still fits */
-  categoryPill: {
-    alignSelf: 'flex-start',
-    flexShrink: 1,
-    maxWidth: '72%',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  categoryPillLabel: {
-    flexShrink: 1,
-  },
   everyonePill: {
     alignSelf: 'flex-start',
     paddingHorizontal: 6,
@@ -316,11 +335,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(34, 197, 94, 0.45)',
     backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 2,
   },
   everyonePillText: {
     color: '#15803D',
@@ -333,11 +347,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(75, 0, 130, 0.35)',
     backgroundColor: 'rgba(75, 0, 130, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 2,
   },
   privatePillText: {
     color: '#4B0082',
@@ -350,11 +359,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FF1F4F',
     backgroundColor: 'rgba(255, 31, 79, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
   },
   memberPillText: {
     color: '#FF1F4F',
@@ -366,15 +370,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.12,
   },
-  /** Top ~60% — extra paddingTop clears stacked category + Everyone/Member pills */
+  /** Top ~60% — audience + participants sit along the bottom edge of the photo */
   topSection: {
     height: '60%',
     justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingTop: 52,
-    paddingBottom: 6,
+    paddingHorizontal: 12,
+    paddingTop: 36,
+    paddingBottom: 8,
   },
-  /** Bottom 40% — date, title, Entry/Pot (marginTop:auto on fee row) */
+  /** Bottom 40% — title on top line (where date was), fees at bottom */
   bottomSection: {
     height: '40%',
     paddingTop: 8,
@@ -382,24 +386,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     flexDirection: 'column',
     position: 'relative',
-  },
-  /** Flex:1 fills the space between date and fee; title is vertically centered inside */
-  bottomTitleWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    alignSelf: 'stretch',
-    paddingHorizontal: 0,
-  },
-  /** Schedule + Entry/Pot — dimmer so title reads as primary */
-  bottomSecondaryText: {
-    color: 'rgba(255, 255, 255, 0.68)',
-    fontWeight: '600',
-  },
-  timeRemaining: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 0,
   },
   title: {
     fontSize: 15,
@@ -414,13 +400,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     lineHeight: 20,
   },
-  topBadgesRow: {
+  durationUnderTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  durationUnderTitle: {
+    color: 'rgba(255, 255, 255, 0.68)',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 14,
+    letterSpacing: 0.1,
+    flexShrink: 1,
+  },
+  topBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     width: '100%',
+    gap: 8,
   },
-  /** Hero cards: lift row above Image layer (no background — icon + count only, like before) */
+  topLeftBadges: {
+    flexShrink: 1,
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  /** Hero cards: lift row above Image layer */
   topBadgesRowWithHero: {
     zIndex: 12,
     elevation: 10,
@@ -430,10 +436,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginLeft: 'auto',
+    alignSelf: 'flex-end',
   },
   participantsTextAction: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  startsBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    maxWidth: '62%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(75, 85, 99, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  startsBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#374151',
+    letterSpacing: 0.1,
+    flexShrink: 1,
   },
   doneBadge: {
     position: 'absolute',
@@ -483,13 +513,46 @@ const styles = StyleSheet.create({
   },
   feeContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
     width: '100%',
     marginTop: 'auto',
+    gap: 8,
   },
-  entryPotText: {
-    fontSize: 12,
+  feeBlockLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+  feeBlockRight: {
+    alignItems: 'flex-end',
+  },
+  /** Label sits on the middle line; amount below matches title weight */
+  prizePoolLabel: {
+    color: 'rgba(255, 255, 255, 0.68)',
+    fontSize: 11,
     fontWeight: '600',
+    lineHeight: 14,
+    letterSpacing: 0.1,
+  },
+  prizePoolAmount: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 26,
+    marginTop: 1,
+  },
+  entryAmount: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  entryLabel: {
+    color: 'rgba(255, 255, 255, 0.68)',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 14,
+    marginTop: 1,
   },
 });
